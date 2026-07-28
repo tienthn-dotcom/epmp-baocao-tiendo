@@ -25,6 +25,10 @@ const VARS = {
 };
 
 const cfg = JSON.parse(fs.readFileSync(WRANGLER, "utf8"));
+// ÉP TÊN WORKER = worker LIVE thật. Từ khi thêm git remote (github), Nitro tự đặt tên worker theo
+// tên repo (tienthn-dotcom-epmp-baocao-tiendo) → deploy NHẦM sang worker mới, URL live cũ không cập
+// nhật. Ghim cứng để mọi deploy luôn trúng đúng worker/URL đang chạy.
+cfg.name = "baocao-tiendo-pmo";
 cfg.kv_namespaces = [KV_BINDING];
 cfg.vars = { ...(cfg.vars ?? {}), ...VARS };
 // Chỉ gắn D1 khi đã có database_id — tránh deploy hỏng vì binding trỏ vào id rỗng.
