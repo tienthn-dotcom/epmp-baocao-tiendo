@@ -127,6 +127,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.9.2 (28/07/2026): Gantt "Tổng thể tiến độ": ô SX (Nhà máy sản xuất) đổi từ NHIỀU Ô VUÔNG
+ *     rời từng tuần → MỘT DẢI ĐỎ LIỀN MẠCH (giữ viền đen). Hết cảnh "cắt cắt / line trắng" khi
+ *     bật "Hiện tất cả đầu việc". Legend SX chỉnh cùng hình dải.
  *   v3.9.1 (28/07/2026): (a) NGÀY KẾT THÚC THỰC TẾ: hạng mục đạt 100% → gạch ngang ngày kế hoạch +
  *     thêm dòng ngày thực tế (ngày lần đầu 100%, lưu KV completed:v1); rớt <100% tự về như cũ.
  *     (b) Ô đỏ SX (NMSX) thêm VIỀN ĐEN. (c) Bảng tuân thủ đổi tab nguồn (gid 490936703).
@@ -235,7 +238,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.9.1";
+const APP_VERSION = "3.9.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3958,7 +3961,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[10.5px] text-slate-600 print:hidden">
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.bar }} />Tiến độ (Bắt đầu→Kết thúc)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.done }} />% đã hoàn thành (theo cột % Thực tế)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-[1px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />Nhà máy sản xuất (SX)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-[2px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />Nhà máy sản xuất (SX)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-4 rounded-sm" style={{ background: "#fca5a5" }} />Ngày hiện hành</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm border" style={{ background: GC.overdueBg, borderColor: GC.overdueEdge }} />Quá hạn</span>
       </div>
@@ -4091,15 +4094,13 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                   {flatStages && projSpan && pctRow > 0 && (
                     <div style={{ position: "absolute", top: 6, bottom: 6, left: pct(projSpan.L), width: pct(projSpan.W * pctRow / 100), background: GC.done, borderRadius: 2, zIndex: 3 }} />
                   )}
-                  {/* SX (Nhà máy sản xuất) = MỖI CỘT TUẦN trong khoảng SX có ĐÚNG 1 Ô VUÔNG ĐỎ, nằm
-                      GIỮA ô (y hệt file import PMP). CHỈ ở chế độ dự án (không phải lọc hạng mục). */}
-                  {!flatStages && sxSpan && Array.from({ length: sxSpan.ei - sxSpan.si + 1 }, (_, k) => {
-                    const i = sxSpan.si + k;
-                    return (
-                      <div key={i} title="Nhà máy sản xuất (SX)" style={{ position: "absolute", left: pct(colX(i) + colW / 2), top: "50%",
-                        width: 10, height: 10, transform: "translate(-50%,-50%)", background: GC.sx, border: "1px solid #0f172a", borderRadius: 1, zIndex: 3 }} />
-                    );
-                  })}
+                  {/* SX (Nhà máy sản xuất) = MỘT DẢI ĐỎ LIỀN MẠCH suốt khoảng SX (không còn ô vuông
+                      rời từng tuần — trước đây bị "cắt cắt" trông xấu). Viền đen giữ nguyên. CHỈ ở chế
+                      độ dự án (không phải lọc hạng mục). */}
+                  {!flatStages && sxSpan && (
+                    <div title="Nhà máy sản xuất (SX)" style={{ position: "absolute", left: pct(sxSpan.L), width: pct(sxSpan.W), top: "50%",
+                      height: 10, transform: "translateY(-50%)", background: GC.sx, border: "1px solid #0f172a", borderRadius: 2, zIndex: 3 }} />
+                  )}
                 </td>
               </tr>
 
