@@ -1,0 +1,523 @@
+
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-glow: var(--primary-glow);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.16 0.025 256);
+  --foreground: oklch(0.97 0.01 250);
+  --card: oklch(0.21 0.028 258);
+  --card-foreground: oklch(0.97 0.01 250);
+  --popover: oklch(0.21 0.028 258);
+  --popover-foreground: oklch(0.97 0.01 250);
+
+  --primary: oklch(0.78 0.17 195);
+  --primary-foreground: oklch(0.14 0.02 256);
+  --primary-glow: oklch(0.85 0.16 195);
+
+  --secondary: oklch(0.26 0.03 258);
+  --secondary-foreground: oklch(0.97 0.01 250);
+  --muted: oklch(0.24 0.025 258);
+  --muted-foreground: oklch(0.72 0.02 256);
+  --accent: oklch(0.85 0.18 80);
+  --accent-foreground: oklch(0.14 0.02 256);
+
+  --danger: oklch(0.7 0.22 25);
+  --warning: oklch(0.82 0.17 75);
+  --success: oklch(0.78 0.16 165);
+
+  --destructive: oklch(0.7 0.22 25);
+  --destructive-foreground: oklch(0.98 0.01 250);
+  --border: oklch(0.32 0.02 258 / 60%);
+  --input: oklch(0.28 0.025 258);
+  --ring: oklch(0.78 0.17 195);
+
+  --chart-1: oklch(0.78 0.17 195);
+  --chart-2: oklch(0.78 0.16 165);
+  --chart-3: oklch(0.82 0.17 75);
+  --chart-4: oklch(0.7 0.22 25);
+  --chart-5: oklch(0.65 0.2 305);
+
+  --sidebar: oklch(0.18 0.025 258);
+  --sidebar-foreground: oklch(0.97 0.01 250);
+  --sidebar-primary: oklch(0.78 0.17 195);
+  --sidebar-primary-foreground: oklch(0.14 0.02 256);
+  --sidebar-accent: oklch(0.24 0.025 258);
+  --sidebar-accent-foreground: oklch(0.97 0.01 250);
+  --sidebar-border: oklch(0.32 0.02 258 / 60%);
+  --sidebar-ring: oklch(0.78 0.17 195);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 0%, oklch(0.25 0.07 240 / 50%) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 50% at 90% 100%, oklch(0.25 0.09 195 / 30%) 0%, transparent 60%),
+      var(--background);
+    min-height: 100vh;
+  }
+  .font-display { font-family: var(--font-display); letter-spacing: -0.015em; }
+  .font-mono { font-family: var(--font-mono); }
+}
+
+@layer utilities {
+  .glass {
+    background: oklch(0.21 0.028 258 / 75%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid oklch(1 0 0 / 7%);
+  }
+  .glass-strong {
+    background: oklch(0.23 0.03 258 / 90%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid oklch(1 0 0 / 10%);
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(oklch(0.32 0.02 258 / 30%) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.32 0.02 258 / 30%) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .text-gradient-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-danger {
+    background: linear-gradient(135deg, var(--danger) 0%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glow-primary { box-shadow: 0 0 32px oklch(0.78 0.17 195 / 30%); }
+  .glow-danger { box-shadow: 0 0 24px oklch(0.7 0.22 25 / 35%); }
+  .ring-pulse {
+    position: relative;
+  }
+  .ring-pulse::after {
+    content: "";
+    position: absolute; inset: -2px;
+    border-radius: inherit;
+    animation: ringpulse 2.4s ease-out infinite;
+    box-shadow: 0 0 0 0 oklch(0.7 0.22 25 / 60%);
+  }
+  @keyframes ringpulse {
+    0% { box-shadow: 0 0 0 0 oklch(0.7 0.22 25 / 50%); }
+    100% { box-shadow: 0 0 0 12px oklch(0.7 0.22 25 / 0%); }
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: oklch(0.4 0.03 258 / 60%);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* ============= PRINT — A4 portrait, no clipping ============= */
+@media print {
+  /* @page is injected dynamically per export (A4/A3 landscape).
+     A safe landscape default in case dynamic injection hasn't run yet. */
+  @page { size: A4 landscape; margin: 8mm; }
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 9.5pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body { background-image: none !important; }
+
+  /* Force-show collapsed sections when printing */
+  .hidden.print\:block { display: block !important; }
+
+  /* Each top-level report block sits on its own A4 page, never split mid-block */
+  .print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-block:last-child { break-after: auto; page-break-after: auto; }
+
+  /* Don't split chart cards, KPI cards, or table rows across pages */
+  .print\:break-inside-avoid,
+  .print-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Recharts: let SVG scale down to container */
+  .recharts-responsive-container,
+  .recharts-wrapper,
+  .recharts-surface {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
+
+
+/* ============= PRINT REPORT (A4/A3 portrait, single page, dynamic) ============= */
+.print-report {
+  display: none;
+  --pr-scale: 1;
+  font-family: "Be Vietnam Pro", "Inter", system-ui, -apple-system, sans-serif;
+  color: #000;
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  font-size: calc(10pt * var(--pr-scale));
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  padding: 0;
+  margin: 0;
+}
+
+/* ---- Title block: 3 dòng cùng cỡ, canh trái mép trái bảng ---- */
+.print-report .pr-title-block {
+  margin: 0 0 0.5em 0;
+  padding: 0;
+  text-align: left;
+}
+.print-report .pr-title-line {
+  font-size: calc(10pt * var(--pr-scale));
+  line-height: 1.35;
+  color: #000;
+  text-align: left;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Matrix (legacy — vẫn giữ nếu nơi khác dùng) ---- */
+.print-report .pr-matrix {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(7.5pt * var(--pr-scale));
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  border: 0.6pt solid #16202E;
+}
+.print-report .pr-matrix th,
+.print-report .pr-matrix td {
+  height: 2.1em; padding: 0 0.4em; vertical-align: middle; overflow: hidden;
+  border: 0.3pt solid #8A95A5; box-sizing: border-box;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.print-report .pr-matrix thead th {
+  background: #1f2937 !important; color: #fff !important; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.92em;
+  text-align: center; height: 2.4em;
+}
+.print-report .pr-matrix tbody tr:nth-child(even) td { background: #f6f7f9; }
+
+/* ---- Flat table (báo cáo PDF chính) ---- */
+.print-report .pr-flat {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(6.5pt * var(--pr-scale));
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  border: 0.4pt solid #c9ced6;
+  color: #000;
+}
+.print-report .pr-flat th,
+.print-report .pr-flat td {
+  border: 0.3pt solid #c9ced6;
+  padding: 2px 5px;
+  vertical-align: middle;
+  overflow: hidden;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: normal;
+  color: #000;
+  line-height: 1.2;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* Mọi hàng dữ liệu CAO BẰNG NHAU — siết gọn */
+.print-report .pr-flat tbody tr {
+  height: calc(2.6em * var(--pr-scale, 1)) !important;
+}
+.print-report .pr-flat tbody td {
+  height: calc(2.6em * var(--pr-scale, 1)) !important;
+  max-height: calc(2.6em * var(--pr-scale, 1));
+  overflow: hidden !important;
+}
+/* Wrapper trong từng ô để clamp 2 dòng đúng cách */
+.print-report .pr-flat td .pr-cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  width: 100%;
+}
+.print-report .pr-flat thead th {
+  background: #1e3a8a !important;
+  color: #fff !important;
+  font-weight: 700;
+  font-size: calc(6pt * var(--pr-scale));
+  text-align: center !important;
+  vertical-align: middle;
+  padding: 3px 4px;
+  border: 0.4pt solid #1e3a8a;
+  line-height: 1.15;
+}
+/* PIC cell: không clamp, cho hiện đủ 2 dòng "PM /" + "P.Kế hoạch" */
+.print-report .pr-flat td.pr-pic {
+  overflow: hidden;
+  text-align: center;
+  white-space: normal;
+  padding: 1px 2px;
+}
+.print-report .pr-flat td.pr-pic .pr-pic-inner {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: calc(6.2pt * var(--pr-scale));
+  line-height: 1.15;
+  white-space: normal;
+  word-break: break-word;
+  text-align: center;
+  width: 100%;
+}
+
+/* Zebra */
+.print-report .pr-flat tbody tr { background: #fff; }
+.print-report .pr-flat tbody tr:nth-child(even) { background: #f6f7f9; }
+.print-report .pr-flat tbody td { background: transparent; }
+
+/* Alignment helpers */
+.print-report .pr-flat .pr-c { text-align: center; }
+.print-report .pr-flat .pr-l { text-align: left; }
+/* Mã CT: 1 dòng, font mono nhỏ gọn — nếu có nhiều mã (chứa ",") cho phép wrap */
+.print-report .pr-flat .pr-code {
+  font-family: "SF Mono", Menlo, monospace;
+  white-space: nowrap;
+  text-align: center;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.print-report .pr-flat .pr-code.pr-code-multi {
+  white-space: normal;
+}
+.print-report .pr-flat .pr-code .pr-cell {
+  -webkit-line-clamp: 1;
+}
+.print-report .pr-flat .pr-code.pr-code-multi .pr-cell {
+  -webkit-line-clamp: 2;
+}
+/* Tên dự án: chữ thường (không đậm), giữ nguyên text */
+.print-report .pr-flat .pr-proj {
+  font-weight: 400;
+  text-align: left;
+}
+/* Cột ngày: nowrap, có khoảng thở 2 bên */
+.print-report .pr-flat .pr-date {
+  white-space: nowrap;
+  text-align: center;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+.print-report .pr-flat .pr-date .pr-cell {
+  -webkit-line-clamp: 1;
+}
+/* Tình trạng */
+.print-report .pr-flat .pr-status {
+  font-weight: 700;
+  color: #000;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* ---- Footer ---- */
+.print-report .pr-footer {
+  margin-top: 0.5em;
+  padding-top: 0.25em;
+  border-top: 0.3pt solid #c9ced6;
+  text-align: center;
+  font-size: calc(6pt * var(--pr-scale));
+  color: #6b7280;
+}
+
+/* Off-screen measurement state */
+body.measuring-report .print-report {
+  display: block !important;
+  position: fixed !important;
+  left: -100000px !important;
+  top: 0 !important;
+  visibility: hidden !important;
+  background: #fff !important;
+}
+
+/* ============= PRINT — chế độ in báo cáo ============= */
+@media print {
+  @page { size: A4 portrait; margin: 8mm 5mm; }
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body { background-image: none !important; }
+
+  /* Khi đang in báo cáo: ẨN mọi thứ khác (visibility) rồi đẩy print-report về (0,0).
+     Cách này an toàn với cây DOM lồng nhiều cấp. */
+  body.printing-report * { visibility: hidden !important; }
+  body.printing-report .print-report,
+  body.printing-report .print-report * { visibility: visible !important; }
+  body.printing-report .print-report {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  /* Triệt min-height/100vh trên toàn cây để không tạo trang trắng */
+  body.printing-report,
+  body.printing-report main,
+  body.printing-report div {
+    min-height: 0 !important;
+    height: auto !important;
+  }
+  body.printing-report header,
+  body.printing-report aside,
+  body.printing-report nav,
+  body.printing-report footer { display: none !important; }
+
+  .print-report .pr-flat {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+  .print-report .pr-flat tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .print-report .pr-footer {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* Lovable badge */
+  body.printing-report iframe,
+  body.printing-report [class*="lovable"],
+  body.printing-report [id*="lovable"] {
+    display: none !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * XEM TOÀN MÀN HÌNH khối table / Tổng thể tiến độ (nút "Toàn màn hình").
+ * Ép cứng khối fullscreen lấp ĐẦY màn hình và giữ đúng flex column, để bảng
+ * bên trong giãn hết chiều cao — không chừa khoảng trống dưới đáy.
+ * (Không phụ thuộc class flex-1 của phần tử: khi fullscreen nó là position:fixed
+ *  nên không còn là flex item, dễ sinh khoảng dư.)
+ * ────────────────────────────────────────────────────────────── */
+section:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * BẢNG "VIỆC CẦN XỬ LÝ" — MỌI HÀNG CAO BẰNG NHAU (50px).
+ * 50px = vừa đủ chứa nội dung CAO NHẤT (đo thật ở font 11px) → không ô nào bị
+ * cắt mà hàng cũng không nở lệch:
+ *   • Tên dự án 3 dòng (các tên rất dài)        41 + 8  = 49px  ← quyết định
+ *   • badge Tình trạng 2 dòng ("TRỄ TIẾN ĐỘ")   34 + 8  = 42px
+ *   • Vướng mắc / Nhân sự / Mã CT (kẹp 2 dòng)  27.5 + 8 = 35px
+ *   • ma trận badge của hàng gộp dự án          20 + 12 = 32px
+ * LƯU Ý: `height` trên ô bảng chỉ là mức TỐI THIỂU — nội dung cao hơn thì hàng
+ * VẪN NỞ. Nên mọi ô phải kẹp số dòng (line-clamp) thì con số này mới giữ được.
+ * Đặt trên `td` (KHÔNG phải `tr`): bước Xuất PDF có xoá chiều cao inline của `tr`
+ * trước khi chụp — đặt ở `td` thì bản PDF cũng giữ hàng đều y như trên màn.
+ * Loại trừ chế độ gộp "Cần cập nhật MP" (badge CẬP NHẬT MP cao 3.8em).
+ * ────────────────────────────────────────────────────────────── */
+#pdf-table tbody.rows-equal td {
+  height: 50px;
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * AUTO-FIT: PADDING Ô BẢNG PHẢI THEO `em`, KHÔNG ĐƯỢC LÀ PX CỐ ĐỊNH.
+ *
+ * Cỡ chữ bảng tỉ lệ thuận với bề rộng bảng (0.718cqw) và độ rộng cột là %, nên MỌI
+ * thứ bên trong phải co giãn cùng nhịp thì tỉ lệ mới không đổi. Tailwind sinh padding
+ * px CỐ ĐỊNH (px-1 = 4px, px-2 = 8px): màn hẹp lại thì cột co theo %, còn padding
+ * đứng yên ⇒ chỗ cho nội dung co NHANH HƠN nội dung ⇒ badge cỡ em tràn ra ngoài.
+ *
+ * Đo được: badge "Tình trạng" (7.6em) vừa khít ô ĐÚNG 68.6/68.6px ở màn 1920 — không
+ * dư một pixel. Xuống 1440, cột co 10% nhưng padding vẫn 8px nên content chỉ còn 61.0px
+ * trong khi badge là 61.8px → lấn 0.8px trên 137 ô.
+ *
+ * Quy đổi ở cỡ chữ gốc 11px:  4px = 0.364em · 8px = 0.727em  → màn 1920 GIỮ NGUYÊN
+ * như cũ, các màn nhỏ hơn thì padding co cùng nhịp với chữ và cột.
+ * Selector có #pdf-table nên thắng specificity của lớp Tailwind; chỉ ảnh hưởng bảng này.
+ * ────────────────────────────────────────────────────────────── */
+#pdf-table td.px-1, #pdf-table th.px-1 { padding-inline: 0.364em; }
+#pdf-table td.px-2, #pdf-table th.px-2 { padding-inline: 0.727em; }
+#pdf-table td.py-1, #pdf-table th.py-1 { padding-block: 0.364em; }
+
+/* ── Sếp yêu cầu (24/07): chữ HEADER + MỌI cột bảng Danh sách bằng size cột Vướng mắc (1.1em),
+ *    ĐỒNG ĐỀU. Hàng DỮ LIỆU (công đoạn/bảng phẳng) màu ĐEN; hàng CẤP DỰ ÁN (nền tối) GIỮ TRẮNG.
+ *    Chỉ đổi size + màu; vẫn kéo chỉnh cột được (chỉ là CSS chữ). Id-scope #pdf-table nên thắng
+ *    specificity của mọi lớp text-[..]/text-slate-.. đặt trên chính ô (td/th). */
+#pdf-table thead th,
+#pdf-table tbody td { font-size: 1.1em; }
+#pdf-table tbody tr:not([data-group-header="1"]) td { color: #000; }

@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<title>Trung tâm theo dõi tiến độ lắp đặt — AA Corporation</title>
+<style>
+  :root {
+    --bg:#e9ebf0; --panel:#f8f9fb; --panel-2:#fff; --side:#f2f4f8;
+    --ink:#1a2230; --ink-soft:#566076; --ink-faint:#8a93a6;
+    --line:#d7dbe4; --line-soft:#e6e9f0; --accent:#2f6df0;
+    --ontrack:#3f96dd; --behind:#efbb18; --today:#ea7c22; --alarm:#d6472c;
+    --plan-line:#2b3446; --good:#1f9d63; --nodata:#a7afc0;
+    --shadow:0 1px 2px rgba(20,28,45,.06),0 8px 22px rgba(20,28,45,.08);
+    --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0a0e15;--panel:#141a24;--panel-2:#1a2130;--side:#10151e;--ink:#e7ebf3;--ink-soft:#a3adc2;--ink-faint:#6b7488;
+    --line:#283143;--line-soft:#1e2534;--accent:#5b8cff;--ontrack:#4aa6ee;--behind:#f0c53a;--today:#f2903a;--alarm:#ef6a4d;
+    --plan-line:#cbd4e6;--good:#35c281;--nodata:#4a5268;--shadow:0 1px 2px rgba(0,0,0,.45),0 10px 26px rgba(0,0,0,.4);}}
+  :root[data-theme="light"]{--bg:#e9ebf0;--panel:#f8f9fb;--panel-2:#fff;--side:#f2f4f8;--ink:#1a2230;--ink-soft:#566076;--ink-faint:#8a93a6;--line:#d7dbe4;--line-soft:#e6e9f0;--accent:#2f6df0;--ontrack:#3f96dd;--behind:#efbb18;--today:#ea7c22;--alarm:#d6472c;--plan-line:#2b3446;--good:#1f9d63;--nodata:#a7afc0;--shadow:0 1px 2px rgba(20,28,45,.06),0 8px 22px rgba(20,28,45,.08);}
+  :root[data-theme="dark"]{--bg:#0a0e15;--panel:#141a24;--panel-2:#1a2130;--side:#10151e;--ink:#e7ebf3;--ink-soft:#a3adc2;--ink-faint:#6b7488;--line:#283143;--line-soft:#1e2534;--accent:#5b8cff;--ontrack:#4aa6ee;--behind:#f0c53a;--today:#f2903a;--alarm:#ef6a4d;--plan-line:#cbd4e6;--good:#35c281;--nodata:#4a5268;--shadow:0 1px 2px rgba(0,0,0,.45),0 10px 26px rgba(0,0,0,.4);}
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden;}
+  .app{display:flex;height:100vh;}
+
+  /* SIDEBAR */
+  .side{width:224px;flex:none;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;}
+  .side .brand{display:flex;align-items:center;gap:9px;padding:14px 15px 10px;}
+  .side .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px color-mix(in srgb,var(--good) 22%,transparent);flex:none;}
+  .side .brand b{font-size:13px;font-weight:670;line-height:1.15;}
+  .side .brand .sub{font-size:9px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .side .date{margin:0 15px 10px;font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;}
+  .side .date b{color:var(--ink);}
+  .side .sec{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);font-weight:650;padding:6px 16px 3px;}
+  .rlist{overflow-y:auto;padding:0 8px 6px;display:flex;flex-direction:column;gap:1px;}
+  .rrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;background:none;color:inherit;font:inherit;text-align:left;width:100%;}
+  .rrow:hover{background:var(--panel);}
+  .rrow.active{background:var(--panel);border-color:var(--line);}
+  .rrow:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .rrow .nm{font-size:12px;font-weight:560;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rrow .ct{font-family:var(--mono);font-size:11px;color:var(--ink-faint);}
+  .rrow .dots{display:flex;gap:3px;}
+  .rrow .dots i{width:6px;height:6px;border-radius:50%;}
+  .stats{display:flex;flex-direction:column;gap:1px;padding:0 8px 8px;}
+  .stat{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;}
+  .stat:hover{background:var(--panel);}
+  .stat.active{background:var(--panel);border-color:var(--line);}
+  .stat .sw{width:8px;height:8px;border-radius:2px;flex:none;}
+  .stat .t{font-size:11.5px;color:var(--ink-soft);flex:1;}
+  .stat .v{font-family:var(--mono);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .side .foot{margin-top:auto;padding:9px 15px;border-top:1px solid var(--line);}
+  .leg{display:flex;flex-direction:column;gap:5px;}
+  .leg .it{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--ink-soft);}
+  .leg .sw{width:12px;height:9px;border-radius:2px;flex:none;}
+  .leg .sw.line{height:0;border-top:2px dashed var(--plan-line);border-radius:0;}
+
+  /* MAIN */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .topbar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap;}
+  .topbar h1{font-size:13px;margin:0;font-weight:600;color:var(--ink-soft);}
+  .topbar h1 b{color:var(--ink);font-weight:680;}
+  .topbar .spacer{flex:1;}
+  .scopectl{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:2px;}
+  .scopectl button{border:none;background:none;color:var(--ink-soft);font:inherit;font-size:11.5px;padding:4px 12px;border-radius:6px;cursor:pointer;}
+  .scopectl button.on{background:var(--accent);color:#fff;}
+  .denslbl{font-size:11px;color:var(--ink-faint);}
+  .topbar input[type=range]{width:96px;accent-color:var(--accent);}
+
+  .scroll{flex:1;overflow-y:auto;padding:6px 14px 30px;}
+  .region-sec{margin-top:12px;}
+  .region-hd{display:flex;align-items:center;gap:10px;padding:8px 2px 8px;position:sticky;top:0;background:linear-gradient(var(--bg),var(--bg) 78%,transparent);z-index:2;}
+  .region-hd h2{font-size:13.5px;margin:0;font-weight:700;letter-spacing:.2px;}
+  .region-hd .code{font-family:var(--mono);font-size:10px;color:var(--ink-faint);border:1px solid var(--line);border-radius:5px;padding:1px 6px;}
+  .region-hd .rmeta{font-size:11px;color:var(--ink-faint);margin-left:auto;display:flex;gap:6px;align-items:center;}
+  .wall{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(var(--tile,246px),1fr));align-content:start;}
+
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;padding:0;color:inherit;font:inherit;text-align:left;transition:border-color .1s,box-shadow .1s,transform .1s;}
+  .tile:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px);}
+  .tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tile .th{display:flex;align-items:center;gap:7px;padding:8px 10px 3px;}
+  .tile .th .live{font-family:var(--mono);font-size:7.5px;letter-spacing:.4px;color:var(--ink-faint);display:flex;align-items:center;gap:4px;text-transform:uppercase;flex:none;}
+  .tile .th .live::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--good);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--good) 25%,transparent);}
+  .tile.nd .th .live{color:var(--nodata);} .tile.nd .th .live::before{background:var(--nodata);box-shadow:none;}
+  .tile .th h3{margin:0;font-size:12px;font-weight:620;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tile .th .cam{font-family:var(--mono);font-size:8px;color:var(--ink-faint);flex:none;}
+  .tile .cv{padding:0 4px;min-height:120px;display:flex;align-items:center;justify-content:center;}
+  .tile .cv svg{width:100%;}
+  .tile .nodata{font-size:11px;color:var(--ink-faint);text-align:center;padding:16px 8px;line-height:1.4;}
+  .tile .tf{display:flex;gap:4px;padding:2px 10px 9px;flex-wrap:wrap;align-items:center;min-height:14px;}
+  .tile .avg{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink-soft);margin-right:auto;}
+  .tile .avg b{color:var(--ink);}
+  .pill{font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .pill.alarm{color:var(--alarm);background:color-mix(in srgb,var(--alarm) 14%,transparent);}
+  .pill.warn{color:color-mix(in srgb,var(--behind) 80%,var(--ink));background:color-mix(in srgb,var(--behind) 18%,transparent);}
+  .pill.ok{color:var(--good);background:color-mix(in srgb,var(--good) 13%,transparent);}
+  .pill.mut{color:var(--ink-faint);background:color-mix(in srgb,var(--ink-faint) 12%,transparent);}
+  .pill.mut::before{opacity:.5;}
+  .emptyscope{grid-column:1/-1;font-size:12px;color:var(--ink-faint);padding:6px 2px;}
+
+  svg text{font-family:var(--sans);}
+  .axis{fill:var(--ink-faint);} .axis-mono{fill:var(--ink-faint);font-family:var(--mono);}
+  .gridline{stroke:var(--line-soft);stroke-width:1;} .baseline{stroke:var(--line);stroke-width:1.2;}
+  .lbl{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums;}
+
+  /* MODAL */
+  .overlay{position:fixed;inset:0;background:color-mix(in srgb,#05070c 58%,transparent);backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow-y:auto;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--panel-2);border:1px solid var(--line);border-radius:14px;width:min(1060px,100%);box-shadow:var(--shadow);overflow:hidden;animation:pop .15s ease;}
+  @keyframes pop{from{transform:translateY(8px);opacity:0;}to{transform:none;opacity:1;}}
+  @media (prefers-reduced-motion:reduce){.modal{animation:none;}.tile{transition:none;}}
+  .modal .mh{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .modal .mh h2{margin:0;font-size:17px;font-weight:660;}
+  .modal .mh .rg{font-size:11px;color:var(--ink-faint);font-family:var(--mono);border:1px solid var(--line);border-radius:5px;padding:1px 6px;}
+  .modal .mh .tabs{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:2px;}
+  .modal .mh .tabs button{border:none;background:none;color:var(--ink-soft);font:inherit;font-size:12px;padding:4px 12px;border-radius:6px;cursor:pointer;}
+  .modal .mh .tabs button.on{background:var(--accent);color:#fff;}
+  .modal .mh .tabs button:disabled{opacity:.4;cursor:not-allowed;}
+  .modal .close{margin-left:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink-soft);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center;}
+  .modal .close:hover{color:var(--ink);border-color:var(--ink-faint);}
+  .modal .mb{padding:6px 14px 18px;}
+  .modal .mb svg{width:100%;}
+  table.grid{width:100%;border-collapse:collapse;margin-top:4px;font-size:12px;}
+  table.grid th,table.grid td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line-soft);}
+  table.grid th{color:var(--ink-faint);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;}
+  table.grid td:first-child,table.grid th:first-child{text-align:left;}
+  table.grid td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  table.grid tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent);}
+  .tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;white-space:nowrap;}
+  .tag.alarm{color:var(--alarm);background:color-mix(in srgb,var(--alarm) 14%,transparent);}
+  .tag.warn{color:color-mix(in srgb,var(--behind) 80%,var(--ink));background:color-mix(in srgb,var(--behind) 18%,transparent);}
+  .tag.ok{color:var(--good);background:color-mix(in srgb,var(--good) 13%,transparent);}
+  .gap.neg{color:var(--alarm);} .gap.pos{color:var(--good);}
+  .note{font-size:11px;color:var(--ink-faint);margin:12px 2px 0;}
+</style>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="dot"></span><div><b>Theo dõi lắp đặt</b><div class="sub">AA Corporation · Monitoring</div></div></div>
+    <div class="date">Ngày báo cáo · <b id="reportDate">09/07/2026</b></div>
+    <div class="sec">Trạng thái khu</div>
+    <div class="stats" id="stats"></div>
+    <div class="sec">Vùng</div>
+    <div class="rlist" id="rlist"></div>
+    <div class="foot"><div class="leg">
+      <div class="it"><span class="sw" style="background:var(--ontrack)"></span> Đạt / Chậm nhẹ</div>
+      <div class="it"><span class="sw" style="background:var(--behind)"></span> Nguy cơ trễ</div>
+      <div class="it"><span class="sw" style="background:var(--today)"></span> Tăng thêm hôm nay</div>
+      <div class="it"><span class="sw line"></span> Kế hoạch</div>
+    </div></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1><b id="projCount">0</b> dự án · <span id="viewName">tất cả vùng</span></h1>
+      <div class="spacer"></div>
+      <div class="scopectl" id="scopeCtl">
+        <button data-s="all" class="on">Tất cả</button>
+        <button data-s="public">Public</button>
+        <button data-s="rooms">Khối phòng</button>
+      </div>
+      <span class="denslbl">Mật độ</span>
+      <input type="range" id="dens" min="180" max="360" step="10" value="246" aria-label="Mật độ ô">
+    </div>
+    <div class="scroll" id="scroll"></div>
+  </main>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <div class="mh">
+      <h2 id="mtitle">—</h2><span class="rg" id="mregion"></span>
+      <div class="tabs" id="segTabs"></div>
+      <button class="close" id="closeBtn" aria-label="Đóng">×</button>
+    </div>
+    <div class="mb">
+      <svg id="bigChart" viewBox="0 0 1020 420" role="img"></svg>
+      <div style="overflow-x:auto"><table class="grid" id="detailTable"></table></div>
+      <p class="note" id="detailNote"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+const DIRECTORY = [{"code":"North","name":"Miền Bắc","projects":[{"group":"3.NG","name":"Số 1 VIP","cam":"CAM-001","real":false,"units":[{"name":"Số 1 VIP","start":"2026-05-01","deadline":"2026-08-15","plan":0.659,"actual":0.69,"prev":0.61,"scope":"other"},{"name":"Cải tạo sửa chữa Villa","start":"2026-05-01","deadline":"2026-08-15","plan":0.601,"actual":0.76,"prev":0.67,"scope":"rooms"},{"name":"Văn phòng bán hàng Cổn","start":"2026-05-01","deadline":"2026-08-15","plan":0.518,"actual":0.52,"prev":0.45,"scope":"rooms"},{"name":"Số 02 Lê Thạch_Tầng 5","start":"2026-05-01","deadline":"2026-08-15","plan":0.427,"actual":0.53,"prev":0.44,"scope":"other"},{"name":"Chairman Villa Thanh X","start":"2026-05-01","deadline":"2026-08-15","plan":0.647,"actual":0.44,"prev":0.4,"scope":"rooms"}]},{"group":"DAL","name":"Văn Lang Empire Golf Club (Phú Thọ)","cam":"CAM-002","real":false,"units":[{"name":"Văn Lang Empire Golf C","start":"2026-05-01","deadline":"2026-08-15","plan":0.71,"actual":0.7,"prev":0.64,"scope":"other"},{"name":"Nhà hát Ngọc Trai","start":"2026-05-01","deadline":"2026-08-15","plan":0.515,"actual":0.36,"prev":0.31,"scope":"other"},{"name":"Tiến Bộ Plaza_BP12_Pub","start":"2026-05-01","deadline":"2026-08-15","plan":0.632,"actual":0.65,"prev":0.58,"scope":"public"},{"name":"Tiến Bộ Plaza_Căn hộ k","start":"2026-05-01","deadline":"2026-08-15","plan":0.425,"actual":0.39,"prev":0.32,"scope":"rooms"}]},{"group":"(khác)","name":"Cải tạo sửa chữa Villa A3","cam":"CAM-003","real":false,"units":[{"name":"Cải tạo sửa chữa Villa","start":"2026-05-01","deadline":"2026-08-15","plan":0.738,"actual":0.99,"prev":0.88,"scope":"rooms"},{"name":"Cát Bà tòa HH3_Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.748,"actual":0.49,"prev":0.47,"scope":"public"},{"name":"Tiến Bộ Plaza Căn mẫu ","start":"2026-05-01","deadline":"2026-08-15","plan":0.767,"actual":0.51,"prev":0.49,"scope":"rooms"},{"name":"Intercontinental Hạ Lo","start":"2026-05-01","deadline":"2026-08-15","plan":0.6,"actual":0.9,"prev":0.78,"scope":"rooms"}]},{"group":"43 ĐTM","name":"St.Regis","cam":"CAM-004","real":false,"units":[{"name":"Căn mẫu tại site","start":"2026-05-01","deadline":"2026-08-15","plan":0.41,"actual":0.23,"prev":0.19,"scope":"rooms"},{"name":"43 ĐTM St.Regis_Đại tr","start":"2026-05-01","deadline":"2026-08-15","plan":0.599,"actual":0.53,"prev":0.47,"scope":"rooms"},{"name":"43 ĐTM St.Regis_Đại tr","start":"2026-05-01","deadline":"2026-08-15","plan":0.784,"actual":0.73,"prev":0.67,"scope":"public"},{"name":"43 ĐTM Marriott_Đại tr","start":"2026-05-01","deadline":"2026-08-15","plan":0.684,"actual":0.63,"prev":0.57,"scope":"rooms"},{"name":"43 ĐTM Marriott_Phần p","start":"2026-05-01","deadline":"2026-08-15","plan":0.704,"actual":0.45,"prev":0.42,"scope":"rooms"},{"name":"43 ĐTM Marriott_Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.563,"actual":0.61,"prev":0.53,"scope":"public"},{"name":"43 ĐTM Villa Blue","start":"2026-05-01","deadline":"2026-08-15","plan":0.627,"actual":0.4,"prev":0.37,"scope":"rooms"},{"name":"43 ĐTM Villa Rose","start":"2026-05-01","deadline":"2026-08-15","plan":0.56,"actual":0.41,"prev":0.37,"scope":"rooms"}]},{"group":"Cát Bà","name":"Cát Bà tòa HH3","cam":"CAM-005","real":false,"units":[{"name":"Cát Bà tòa HH3","start":"2026-05-01","deadline":"2026-08-15","plan":0.489,"actual":0.57,"prev":0.49,"scope":"other"}]},{"group":"THV","name":"Tây Hồ View - Public (Tháp 4S)","cam":"CAM-006","real":false,"units":[{"name":"(Gym, Spa, Swimming Po","start":"2026-05-01","deadline":"2026-08-15","plan":0.695,"actual":0.85,"prev":0.75,"scope":"public"},{"name":"Tây Hồ View - Tháp 4A","start":"2026-05-01","deadline":"2026-08-15","plan":0.738,"actual":0.9,"prev":0.8,"scope":"other"},{"name":"Tây Hồ View - Tháp 4B","start":"2026-05-01","deadline":"2026-08-15","plan":0.736,"actual":0.6,"prev":0.55,"scope":"other"},{"name":"THV_Căn hộ 2B-L06","start":"2026-05-01","deadline":"2026-08-15","plan":0.8,"actual":0.9,"prev":0.81,"scope":"rooms"},{"name":"THV_Căn hộ 2B-L09","start":"2026-05-01","deadline":"2026-08-15","plan":0.802,"actual":0.92,"prev":0.83,"scope":"rooms"},{"name":"THV_Nhà hàng Tây Ban N","start":"2026-05-01","deadline":"2026-08-15","plan":0.706,"actual":0.46,"prev":0.43,"scope":"public"},{"name":"THV_Nhà hàng Italia","start":"2026-05-01","deadline":"2026-08-15","plan":0.548,"actual":0.51,"prev":0.45,"scope":"public"},{"name":"THV_3A_Penthouse","start":"2026-05-01","deadline":"2026-08-15","plan":0.603,"actual":0.43,"prev":0.39,"scope":"rooms"},{"name":"THV_Penthouse T3D - Nh","start":"2026-05-01","deadline":"2026-08-15","plan":0.425,"actual":0.58,"prev":0.48,"scope":"rooms"},{"name":"THV_Penthouse Mr. Hùng","start":"2026-05-01","deadline":"2026-08-15","plan":0.621,"actual":0.72,"prev":0.64,"scope":"rooms"},{"name":"THV_Penthouse 2A","start":"2026-05-01","deadline":"2026-08-15","plan":0.684,"actual":0.75,"prev":0.67,"scope":"rooms"},{"name":"THV_Căn hộ 2B-L11","start":"2026-05-01","deadline":"2026-08-15","plan":0.591,"actual":0.61,"prev":0.53,"scope":"rooms"},{"name":"THV_Villa A2","start":"2026-05-01","deadline":"2026-08-15","plan":0.57,"actual":0.57,"prev":0.5,"scope":"rooms"},{"name":"THV_Căn hộ 3A-L09,10","start":"2026-05-01","deadline":"2026-08-15","plan":0.797,"actual":0.63,"prev":0.59,"scope":"rooms"},{"name":"THV_Sky Villa tháp 4B","start":"2026-05-01","deadline":"2026-08-15","plan":0.603,"actual":0.37,"prev":0.34,"scope":"rooms"},{"name":"THV_Villa A4","start":"2026-05-01","deadline":"2026-08-15","plan":0.574,"actual":0.49,"prev":0.43,"scope":"rooms"}]},{"group":"*","name":"Cát Bà tòa HH1","cam":"CAM-007","real":false,"units":[{"name":"Cát Bà tòa HH1","start":"2026-05-01","deadline":"2026-08-15","plan":0.748,"actual":0.66,"prev":0.6,"scope":"other"},{"name":"59 Nguyễn Du - Hà Nội","start":"2026-05-01","deadline":"2026-08-15","plan":0.685,"actual":0.71,"prev":0.63,"scope":"other"}]},{"group":"CDD","name":"Tulip Villa.","cam":"CAM-008","real":false,"units":[{"name":"Vinhomes Riverside Hà ","start":"2026-05-01","deadline":"2026-08-15","plan":0.626,"actual":0.49,"prev":0.45,"scope":"rooms"},{"name":"Hyatt Regency Hạ Long","start":"2026-05-01","deadline":"2026-08-15","plan":0.648,"actual":0.59,"prev":0.53,"scope":"other"}]}]},{"code":"PQ","name":"Phú Quốc","projects":[{"group":"PQs","name":"Sunset Town High Rise","cam":"CAM-009","real":false,"units":[{"name":"B4.7","start":"2026-05-01","deadline":"2026-08-15","plan":0.648,"actual":0.84,"prev":0.74,"scope":"other"},{"name":"Trục Đông Tây 2C_Publi","start":"2026-05-01","deadline":"2026-08-15","plan":0.521,"actual":0.69,"prev":0.59,"scope":"public"},{"name":"Trục Đông Tây 2C_Phòng","start":"2026-05-01","deadline":"2026-08-15","plan":0.849,"actual":0.73,"prev":0.68,"scope":"rooms"},{"name":"Bệnh viện Mặt Trời - G","start":"2026-05-01","deadline":"2026-08-15","plan":0.562,"actual":0.78,"prev":0.67,"scope":"rooms"}]},{"group":"NPHH","name":"Nam Phương Hoàng Hậu","cam":"CAM-010","real":false,"units":[{"name":"Public Lobby","start":"2026-05-01","deadline":"2026-08-15","plan":0.881,"actual":1,"prev":0.89,"scope":"public"},{"name":"Public Nhà hàng Maxine","start":"2026-05-01","deadline":"2026-08-15","plan":0.493,"actual":0.25,"prev":0.22,"scope":"public"},{"name":"Phòng (302 căn)","start":"2026-05-01","deadline":"2026-08-15","plan":0.667,"actual":0.72,"prev":0.64,"scope":"rooms"},{"name":"The Market (Tháp A)","start":"2026-05-01","deadline":"2026-08-15","plan":0.453,"actual":0.32,"prev":0.28,"scope":"public"},{"name":"Executive Lounge (Tháp","start":"2026-05-01","deadline":"2026-08-15","plan":0.61,"actual":0.63,"prev":0.56,"scope":"public"},{"name":"Vietnamese Nam Phương ","start":"2026-05-01","deadline":"2026-08-15","plan":0.612,"actual":0.57,"prev":0.51,"scope":"other"},{"name":"Sun Kraft (Tháp C-L1)","start":"2026-05-01","deadline":"2026-08-15","plan":0.481,"actual":0.77,"prev":0.65,"scope":"other"},{"name":"Tocha (Tháp E-L10)","start":"2026-05-01","deadline":"2026-08-15","plan":0.805,"actual":0.85,"prev":0.77,"scope":"other"},{"name":"The Sole (Tháp E-L11)","start":"2026-05-01","deadline":"2026-08-15","plan":0.893,"actual":0.9,"prev":0.83,"scope":"other"},{"name":"Golden Hour (Tháp E-L1","start":"2026-05-01","deadline":"2026-08-15","plan":0.764,"actual":1,"prev":0.89,"scope":"other"},{"name":"Basement Lobby","start":"2026-05-01","deadline":"2026-08-15","plan":0.446,"actual":0.67,"prev":0.56,"scope":"public"}]},{"group":"Tro","name":"Sun Tropical Village PQ","cam":"CAM-011","real":false,"units":[{"name":"98 căn Villas","start":"2026-05-01","deadline":"2026-08-15","plan":0.817,"actual":0.79,"prev":0.72,"scope":"rooms"}]},{"group":"APEC","name":"Sân bay PQ","cam":"CAM-012","real":false,"units":[{"name":"Nhà ga VVIP","start":"2026-05-01","deadline":"2026-08-15","plan":0.47,"actual":0.39,"prev":0.33,"scope":"public"},{"name":"Nhà ga T2_Vip Lounge [","start":"2026-05-01","deadline":"2026-08-15","plan":0.64,"actual":0.66,"prev":0.59,"scope":"public"},{"name":"APEC_S4_MUR Marriott (","start":"2026-05-01","deadline":"2026-08-15","plan":0.889,"actual":1,"prev":0.88,"scope":"rooms"},{"name":"APEC_S4_Khách sạn Marr","start":"2026-05-01","deadline":"2026-08-15","plan":0.664,"actual":0.58,"prev":0.52,"scope":"other"},{"name":"APEC_S4_Khách sạn Marr","start":"2026-05-01","deadline":"2026-08-15","plan":0.495,"actual":0.57,"prev":0.49,"scope":"public"},{"name":"APEC_S4_Khách sạn Marr","start":"2026-05-01","deadline":"2026-08-15","plan":0.871,"actual":1,"prev":0.89,"scope":"rooms"},{"name":"APEC_S3_Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.738,"actual":0.5,"prev":0.47,"scope":"public"},{"name":"APEC_S2_Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.668,"actual":0.59,"prev":0.53,"scope":"public"}]},{"group":"Mini","name":"Mini Hotel","cam":"CAM-013","real":true,"units":[{"name":"Res ADD_B1","start":"2026-05-05","deadline":"2026-07-27","plan":0.7857,"actual":0.65,"prev":0.62,"scope":"public"},{"name":"Res ADD_B3","start":"2026-05-07","deadline":"2026-08-25","plan":0.5766,"actual":0.45,"prev":0.42,"scope":"public"},{"name":"Res ADD_B4","start":"2026-05-08","deadline":"2026-08-25","plan":0.5727,"actual":0.45,"prev":0.4,"scope":"public"},{"name":"Res ADD_B5","start":"2026-05-09","deadline":"2026-08-25","plan":0.5688,"actual":0.45,"prev":0.42,"scope":"public"},{"name":"Spa","start":"2026-05-04","deadline":"2026-08-25","plan":0.5877,"actual":0.6,"prev":0.55,"scope":"public"},{"name":"Lobby B3","start":"2026-05-12","deadline":"2026-08-25","plan":0.5566,"actual":0.65,"prev":0.6,"scope":"public"},{"name":"Lobby B1","start":"2026-05-10","deadline":"2026-07-29","plan":0.7531,"actual":0.9,"prev":0.78,"scope":"public"},{"name":"Lobby B2","start":"2026-05-11","deadline":"2026-07-29","plan":0.75,"actual":0.9,"prev":0.85,"scope":"public"},{"name":"Kid-Space B2","start":"2026-05-06","deadline":"2026-07-31","plan":0.7471,"actual":0.9,"prev":0.8,"scope":"public"},{"name":"Lobby B4","start":"2026-05-13","deadline":"2026-07-29","plan":0.7436,"actual":0.9,"prev":0.85,"scope":"public"},{"name":"Lobby B5","start":"2026-05-14","deadline":"2026-07-29","plan":0.7403,"actual":0.9,"prev":0.79,"scope":"public"},{"name":"Gym","start":"2026-05-03","deadline":"2026-07-29","plan":0.7727,"actual":1,"prev":1,"scope":"public"},{"name":"Toà B1","start":"2026-04-18","deadline":"2026-08-05","plan":0.74,"actual":0.78,"prev":0.75,"scope":"rooms"},{"name":"Toà B2","start":"2026-04-20","deadline":"2026-08-10","plan":0.72,"actual":0.83,"prev":0.8,"scope":"rooms"},{"name":"Toà B3","start":"2026-04-22","deadline":"2026-08-10","plan":0.7,"actual":0.75,"prev":0.72,"scope":"rooms"},{"name":"Toà B4","start":"2026-04-25","deadline":"2026-08-15","plan":0.66,"actual":0.26,"prev":0.24,"scope":"rooms"},{"name":"Toà B5","start":"2026-04-28","deadline":"2026-08-20","plan":0.63,"actual":0.23,"prev":0.2,"scope":"rooms"}]},{"group":"CDD","name":"Park Hyatt Phú Quốc","cam":"CAM-014","real":false,"units":[{"name":"Village Center","start":"2026-05-01","deadline":"2026-08-15","plan":0.768,"actual":0.67,"prev":0.62,"scope":"public"},{"name":"Hotel","start":"2026-05-01","deadline":"2026-08-15","plan":0.707,"actual":0.59,"prev":0.54,"scope":"other"}]},{"group":"*","name":"Khách sạn Nam Phương Hoàng Hậu","cam":"CAM-015","real":false,"units":[{"name":"Căn mẫu dạng King","start":"2026-05-01","deadline":"2026-08-15","plan":0.602,"actual":0.74,"prev":0.65,"scope":"rooms"}]},{"group":"(khác)","name":"Runam Hòn Thơm","cam":"CAM-016","real":false,"units":[{"name":"Runam Hòn Thơm","start":"2026-05-01","deadline":"2026-08-15","plan":0.836,"actual":0.55,"prev":0.53,"scope":"other"}]}]},{"code":"Middle","name":"Miền Trung","projects":[{"group":"(khác)","name":"Vương Thừa Vũ","cam":"CAM-017","real":false,"units":[{"name":"Tòa A2","start":"2026-05-01","deadline":"2026-08-15","plan":0.604,"actual":0.75,"prev":0.65,"scope":"other"},{"name":"Tòa A1","start":"2026-05-01","deadline":"2026-08-15","plan":0.602,"actual":0.44,"prev":0.4,"scope":"other"},{"name":"Số 09 Lê Duẩn","start":"2026-05-01","deadline":"2026-08-15","plan":0.641,"actual":0.7,"prev":0.62,"scope":"other"}]},{"group":"3.NG","name":"Olalani Penthouse","cam":"CAM-018","real":false,"units":[{"name":"Tháp B1.03","start":"2026-05-01","deadline":"2026-08-15","plan":0.498,"actual":0.8,"prev":0.68,"scope":"rooms"},{"name":"Tháp B1.02","start":"2026-05-01","deadline":"2026-08-15","plan":0.5,"actual":0.43,"prev":0.37,"scope":"rooms"},{"name":"Ponte Apartment (Ms. M","start":"2026-05-01","deadline":"2026-08-15","plan":0.837,"actual":0.65,"prev":0.61,"scope":"other"},{"name":"Khu căn hộ phía Đông T","start":"2026-05-01","deadline":"2026-08-15","plan":0.659,"actual":0.78,"prev":0.69,"scope":"rooms"},{"name":"Khu căn hộ phía Đông T","start":"2026-05-01","deadline":"2026-08-15","plan":0.657,"actual":0.6,"prev":0.54,"scope":"rooms"},{"name":"Khu du lịch ven sông H","start":"2026-05-01","deadline":"2026-08-15","plan":0.799,"actual":0.88,"prev":0.8,"scope":"other"}]},{"group":"*","name":"Olalani River Side Towers","cam":"CAM-019","real":false,"units":[{"name":"Olalani River Side Tow","start":"2026-05-01","deadline":"2026-08-15","plan":0.815,"actual":0.85,"prev":0.77,"scope":"other"}]},{"group":"DAL","name":"Khối tháp 2 Holiday Inn Bà Nà","cam":"CAM-020","real":false,"units":[{"name":"Phòng (846 PHÒNG)","start":"2026-05-01","deadline":"2026-08-15","plan":0.534,"actual":0.51,"prev":0.44,"scope":"rooms"},{"name":"Khu Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.442,"actual":0.66,"prev":0.55,"scope":"public"}]}]},{"code":"HCM","name":"TP.HCM","projects":[{"group":"3.NG","name":"Villa Tulip 3","cam":"CAM-021","real":false,"units":[{"name":"Villa Tulip 3","start":"2026-05-01","deadline":"2026-08-15","plan":0.582,"actual":0.85,"prev":0.74,"scope":"rooms"},{"name":"Văn phòng công ty Cao ","start":"2026-05-01","deadline":"2026-08-15","plan":0.752,"actual":0.73,"prev":0.66,"scope":"rooms"}]},{"group":"(khác)","name":"Union Square Sales Gallery","cam":"CAM-022","real":false,"units":[{"name":"Union Square Sales Gal","start":"2026-05-01","deadline":"2026-08-15","plan":0.518,"actual":0.57,"prev":0.49,"scope":"other"},{"name":"Nước - Văn phòng SB","start":"2026-05-01","deadline":"2026-08-15","plan":0.411,"actual":0.12,"prev":0.1,"scope":"rooms"}]},{"group":"DAN","name":"Đại học Văn Lang","cam":"CAM-023","real":false,"units":[{"name":"Đại học Văn Lang","start":"2026-05-01","deadline":"2026-08-15","plan":0.872,"actual":0.63,"prev":0.6,"scope":"other"},{"name":"Hotel Des Arts Sài Gòn","start":"2026-05-01","deadline":"2026-08-15","plan":0.543,"actual":0.79,"prev":0.68,"scope":"other"},{"name":"Nước - Văn phòng SB","start":"2026-05-01","deadline":"2026-08-15","plan":0.543,"actual":0.83,"prev":0.71,"scope":"rooms"},{"name":"Nước - Runam Thảo Điền","start":"2026-05-01","deadline":"2026-08-15","plan":0.525,"actual":0.23,"prev":0.21,"scope":"other"}]},{"group":"Đông Du","name":"Số 20 Đông Du","cam":"CAM-024","real":false,"units":[{"name":"Phòng & Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.688,"actual":0.81,"prev":0.72,"scope":"public"}]},{"group":"DAL","name":"Chateau De Saigon","cam":"CAM-025","real":false,"units":[{"name":"Chateau De Saigon","start":"2026-05-01","deadline":"2026-08-15","plan":0.456,"actual":0.64,"prev":0.54,"scope":"other"}]}]},{"code":"South","name":"Miền Nam","projects":[{"group":"DAL","name":"Hyatt Regency Hồ Tràm","cam":"CAM-026","real":false,"units":[{"name":"Khu Public","start":"2026-05-01","deadline":"2026-08-15","plan":0.884,"actual":0.68,"prev":0.64,"scope":"public"},{"name":"61 Villas","start":"2026-05-01","deadline":"2026-08-15","plan":0.463,"actual":0.17,"prev":0.15,"scope":"rooms"}]}]},{"code":"Oversea","name":"Nước ngoài","projects":[{"group":"DAN","name":"Nhà mẫu Borey Chulassa (Campuchia)","cam":"CAM-027","real":false,"units":[{"name":"Nhà mẫu Borey Chulassa","start":"2026-05-01","deadline":"2026-08-15","plan":0.742,"actual":0.87,"prev":0.78,"scope":"other"}]},{"group":"(khác)","name":"Villa Chulassa Estate","cam":"CAM-028","real":false,"units":[{"name":"Villa Chulassa Estate","start":"2026-05-01","deadline":"2026-08-15","plan":0.449,"actual":0.37,"prev":0.31,"scope":"rooms"}]}]}];
+const REPORT_DATE = "2026-07-09";
+const SCOPE_LABEL = { all:"Tất cả", public:"Public", rooms:"Khối phòng", other:"Khác" };
+
+/* ── enrich ── (chịu được TH chưa có kế hoạch: plan==null → trạng thái trung tính "nodata") */
+function enrich(u){
+  const hasPlan = u.plan!=null;
+  const prev = u.prev!=null ? u.prev : u.actual;         // chưa có snapshot → không có đoạn "+hôm nay"
+  const gap = hasPlan ? u.actual-u.plan : 0;
+  const inc = Math.max(0,u.actual-prev);
+  const status = !hasPlan ? "nodata" : gap<-0.05?"alarm":gap<0?"warn":"ok";
+  const label  = !hasPlan ? "CHƯA CÓ KH" : gap<-0.05?"CHẬM – BÁO ĐỘNG":gap<0?"CHẬM NHẸ":"ĐẠT";
+  return {...u, prev, gap, inc, status, label, hasPlan};
+}
+const sortRows = a => a.slice().sort((x,y)=>x.gap-y.gap);
+function applyEnrich(){
+  DIRECTORY.forEach(rg=> rg.projects.forEach(p=>{
+    p.rowsAll = sortRows(p.units.map(enrich));
+    p.hasData = p.rowsAll.length>0;
+  }));
+}
+applyEnrich();
+function projRows(p, scope){ return scope==="all"?p.rowsAll:p.rowsAll.filter(r=>r.scope===scope); }
+function projAvg(rows){ return rows.length?rows.reduce((a,r)=>a+r.actual,0)/rows.length:null; }
+function projCounts(rows){ return ["alarm","warn","ok"].map(k=>rows.filter(r=>r.status===k).length); }
+
+const pct = x => x==null?"—":Math.round(x*100)+"%";
+const dmy = iso => { const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`; };
+const CSS = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+document.getElementById("reportDate").textContent = dmy(REPORT_DATE);
+
+let scope = "all";    // bộ chọn scope toàn cục
+let regionFilter = "all";
+let statusFilter = "all";
+
+/* ── CHART ── */
+function renderChart(svg, rows, o){
+  o = Object.assign({w:1020,h:420,mini:false,labels:true}, o);
+  const padL=o.mini?14:44,padR=o.mini?8:16,padT=o.mini?12:26,padB=o.mini?24:60;
+  const W=o.w,H=o.h,iw=W-padL-padR,ih=H-padT-padB,n=rows.length,band=iw/Math.max(1,n);
+  const bw=Math.min(o.mini?18:44, band*0.64);
+  const x=i=>padL+band*i+band/2, y=v=>padT+ih*(1-v);
+  const NS="http://www.w3.org/2000/svg";
+  const el=(t,a,tx)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(tx!=null)e.textContent=tx;return e;};
+  while(svg.firstChild)svg.removeChild(svg.firstChild);
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const cOn=CSS("--ontrack"),cBe=CSS("--behind"),cTo=CSS("--today"),cPlan=CSS("--plan-line"),cAlarm=CSS("--alarm"),cInk=CSS("--ink"),cPanel=CSS("--panel-2")||CSS("--panel"),cNod=CSS("--nodata")||"#a7afc0";
+  for(let gr=0;gr<=100;gr+=25){const yy=y(gr/100);
+    svg.appendChild(el("line",{x1:padL,y1:yy,x2:W-padR,y2:yy,class:gr===0?"baseline":"gridline"}));
+    if(!o.mini)svg.appendChild(el("text",{x:padL-8,y:yy+3,"text-anchor":"end",class:"axis-mono","font-size":10},gr+"%"));
+  }
+  rows.forEach((r,i)=>{
+    const cx=x(i),left=cx-bw/2,yPrev=y(r.prev),yAct=y(r.actual),y0=y(0);
+    svg.appendChild(el("rect",{x:left,y:yPrev,width:bw,height:Math.max(0,y0-yPrev),fill:r.status==="nodata"?cNod:r.status==="ok"?cOn:cBe,rx:2}));
+    if(r.inc>0.001)svg.appendChild(el("rect",{x:left,y:yAct,width:bw,height:Math.max(0,yPrev-yAct),fill:cTo,rx:2}));
+    if(o.labels&&(!o.mini||n<=16))svg.appendChild(el("text",{x:cx,y:yAct-5,"text-anchor":"middle",class:"lbl",fill:r.gap<0?cAlarm:cInk,"font-size":o.mini?8.5:12.5},pct(r.actual)));
+    if(!o.mini)svg.appendChild(el("text",{x:cx,y:H-padB+15,"text-anchor":"end",class:"axis","font-size":10,transform:`rotate(-34 ${cx} ${H-padB+15})`},r.name));
+    else if(n<=12)svg.appendChild(el("text",{x:cx,y:H-padB+9,"text-anchor":"middle",class:"axis","font-size":7},r.name.length>7?r.name.slice(0,6)+"…":r.name));
+  });
+  // Đường kế hoạch: chỉ vẽ khi MỌI unit có plan (chưa nạp ngày → ẩn hẳn, không vẽ NaN).
+  if(n>0 && rows.every(r=>r.hasPlan!==false && r.plan!=null)){
+    const pts=rows.map((r,i)=>`${x(i)},${y(r.plan)}`).join(" ");
+    svg.appendChild(el("polyline",{points:pts,fill:"none",stroke:cPlan,"stroke-width":o.mini?1.5:2,"stroke-dasharray":o.mini?"3.5 2.5":"6 4","stroke-linecap":"round"}));
+    if(!o.mini)rows.forEach((r,i)=>svg.appendChild(el("circle",{cx:x(i),cy:y(r.plan),r:3,fill:cPanel,stroke:cPlan,"stroke-width":1.6})));
+  }
+}
+
+/* ── SIDEBAR ── */
+function allRowsScoped(){ return DIRECTORY.flatMap(rg=>rg.projects.flatMap(p=>projRows(p,scope))); }
+function buildStats(){
+  const all=allRowsScoped();
+  const c={all:DIRECTORY.reduce((a,r)=>a+r.projects.length,0),
+    alarm:all.filter(r=>r.status==="alarm").length,
+    warn:all.filter(r=>r.status==="warn").length,
+    ok:all.filter(r=>r.status==="ok").length};
+  const rowsS=[
+    {k:"all",sw:"var(--accent)",t:"Tất cả dự án",v:c.all},
+    {k:"alarm",sw:"var(--alarm)",t:"Khu báo động",v:c.alarm},
+    {k:"warn",sw:"var(--behind)",t:"Khu chậm nhẹ",v:c.warn},
+    {k:"ok",sw:"var(--good)",t:"Khu đạt",v:c.ok}];
+  document.getElementById("stats").innerHTML=rowsS.map(r=>
+    `<div class="stat${statusFilter===r.k?' active':''}" data-f="${r.k}"><span class="sw" style="background:${r.sw}"></span><span class="t">${r.t}</span><span class="v">${r.v}</span></div>`).join("");
+  document.querySelectorAll(".stat").forEach(s=>s.addEventListener("click",()=>{statusFilter=s.dataset.f;buildStats();buildWall();}));
+}
+function buildRlist(){
+  const rows=[{code:"all",name:"Tất cả vùng",projects:DIRECTORY.flatMap(r=>r.projects)}].concat(DIRECTORY);
+  document.getElementById("rlist").innerHTML=rows.map(rg=>{
+    const rr=rg.projects.flatMap(p=>projRows(p,scope));
+    const c=projCounts(rr);
+    const dot=c[0]?"var(--alarm)":c[1]?"var(--behind)":rr.length?"var(--good)":"var(--nodata)";
+    return `<button class="rrow${regionFilter===rg.code?' active':''}" data-r="${rg.code}"><span class="nm">${rg.name}</span><span class="dots"><i style="background:${dot}"></i></span><span class="ct">${rg.projects.length}</span></button>`;
+  }).join("");
+  document.querySelectorAll(".rrow").forEach(b=>b.addEventListener("click",()=>{regionFilter=b.dataset.r;buildRlist();buildWall();}));
+}
+
+/* ── WALL (sectioned theo vùng) ── */
+function tileHTML(p){
+  const rows=projRows(p,scope);
+  const [a,w,k]=projCounts(rows);
+  const avg=projAvg(rows);
+  const hasScope=rows.length>0;
+  return `<button class="tile${hasScope?'':' nd'}" data-pid="${p.cam}" aria-label="Chi tiết ${p.name}">
+    <div class="th"><span class="live">${p.real?'LIVE':'DEMO'}</span><h3>${p.name}</h3><span class="cam">${p.cam}</span></div>
+    <div class="cv">${hasScope?'<svg viewBox="0 0 320 150"></svg>':`<div class="nodata">Không có hạng mục<br>${SCOPE_LABEL[scope]}</div>`}</div>
+    <div class="tf">${hasScope?`<span class="avg">TB <b>${pct(avg)}</b></span>${a?`<span class="pill alarm">${a}</span>`:''}${w?`<span class="pill warn">${w}</span>`:''}${k?`<span class="pill ok">${k}</span>`:''}${p.real?'':'<span class="pill mut">mẫu</span>'}`:''}</div>
+  </button>`;
+}
+function projPassStatus(p){
+  if(statusFilter==="all")return true;
+  const c=projCounts(projRows(p,scope));
+  return (statusFilter==="alarm"?c[0]:statusFilter==="warn"?c[1]:c[2])>0;
+}
+function buildWall(){
+  const scroll=document.getElementById("scroll"); scroll.innerHTML="";
+  const regions=DIRECTORY.filter(rg=>regionFilter==="all"||rg.code===regionFilter);
+  let shown=0;
+  regions.forEach(rg=>{
+    const projs=rg.projects.filter(projPassStatus);
+    if(!projs.length)return;
+    shown+=projs.length;
+    const sec=document.createElement("section"); sec.className="region-sec";
+    const withData=projs.filter(p=>projRows(p,scope).length>0).length;
+    sec.innerHTML=`<div class="region-hd"><h2>${rg.name}</h2><span class="code">${rg.code}</span>
+      <span class="rmeta">${projs.length} dự án · ${withData} có hạng mục ${SCOPE_LABEL[scope]}</span></div>
+      <div class="wall">${projs.map(tileHTML).join("")}</div>`;
+    scroll.appendChild(sec);
+    // vẽ chart cho tile có data
+    projs.forEach(p=>{
+      const rows=projRows(p,scope); if(!rows.length)return;
+      const btn=sec.querySelector(`.tile[data-pid="${p.cam}"] svg`);
+      if(btn)renderChart(btn,rows,{w:320,h:150,mini:true,labels:true});
+    });
+  });
+  if(!shown)scroll.innerHTML=`<p class="emptyscope">Không có dự án khớp bộ lọc hiện tại.</p>`;
+  document.getElementById("projCount").textContent=shown;
+  document.getElementById("viewName").textContent =
+    (regionFilter==="all"?"tất cả vùng":DIRECTORY.find(r=>r.code===regionFilter).name)
+    + (scope!=="all"?" · "+SCOPE_LABEL[scope]:"");
+  // gắn click mở detail
+  scroll.querySelectorAll(".tile").forEach(t=>t.addEventListener("click",()=>{
+    const p=DIRECTORY.flatMap(r=>r.projects).find(x=>x.cam===t.dataset.pid); if(p)openDetail(p);
+  }));
+}
+
+/* ── DETAIL ── */
+const overlay=document.getElementById("overlay");
+let openP=null, openScope="all";
+function scopesOf(p){
+  const set=new Set(p.rowsAll.map(r=>r.scope));
+  const order=["all","public","rooms","other"];
+  return order.filter(s=>s==="all"||set.has(s));
+}
+function renderDetail(){
+  const rows=projRows(openP,openScope);
+  renderChart(document.getElementById("bigChart"),rows,{w:1020,h:420,mini:false,labels:true});
+  const tb=document.getElementById("detailTable");
+  if(!rows.length){ tb.innerHTML=`<tbody><tr><td style="color:var(--ink-faint);padding:16px">Không có hạng mục ${SCOPE_LABEL[openScope]} cho dự án này.</td></tr></tbody>`; return; }
+  tb.innerHTML=`<thead><tr><th>Hạng mục</th><th>Nhóm</th><th>Bắt đầu</th><th>Bàn giao</th><th>% kế hoạch</th><th>% thực tế</th><th>Chênh lệch</th><th>+ hôm nay</th><th>Trạng thái</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${r.name}</td><td>${SCOPE_LABEL[r.scope]||"—"}</td><td class="num">${dmy(r.start)}</td><td class="num">${dmy(r.deadline)}</td><td class="num">${pct(r.plan)}</td><td class="num">${pct(r.actual)}</td><td class="num gap ${!r.hasPlan?'':r.gap<0?'neg':'pos'}">${!r.hasPlan?'—':(r.gap>=0?'+':'')+Math.round(r.gap*100)+' pp'}</td><td class="num">${r.inc>0?'+'+Math.round(r.inc*100)+' pp':'—'}</td><td><span class="tag ${r.status}">${r.label}</span></td></tr>`).join("")}</tbody>`;
+}
+function openDetail(p){
+  openP=p;
+  const scopes=scopesOf(p);
+  openScope = scopes.includes(scope)?scope:"all"; // đồng bộ với scope toàn cục nếu dự án có
+  const rgObj=DIRECTORY.find(r=>r.projects.includes(p));
+  document.getElementById("mtitle").textContent=p.name;
+  document.getElementById("mregion").textContent=`${rgObj.name} · ${p.cam}`;
+  const tabs=document.getElementById("segTabs");
+  tabs.innerHTML=scopes.map(s=>`<button data-k="${s}"${s===openScope?' class="on"':''}>${SCOPE_LABEL[s]}</button>`).join("");
+  tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    openScope=b.dataset.k; tabs.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); renderDetail();
+  }));
+  document.getElementById("detailNote").textContent = p.real
+    ? "Dữ liệu thật từ file báo cáo Mini Hotel (Phú Quốc). % thực tế = cột TỔNG khu vực trong ma trận lắp đặt."
+    : "Dữ liệu mẫu minh hoạ — dự án này chưa nạp file báo cáo % thật.";
+  renderDetail();
+  overlay.classList.add("open");
+  document.getElementById("closeBtn").focus();
+}
+function closeDetail(){ overlay.classList.remove("open"); openP=null; }
+document.getElementById("closeBtn").addEventListener("click",closeDetail);
+overlay.addEventListener("click",e=>{if(e.target===overlay)closeDetail();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail();});
+
+/* ── scope toàn cục ── */
+document.getElementById("scopeCtl").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  scope=b.dataset.s;
+  document.getElementById("scopeCtl").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+  buildStats(); buildRlist(); buildWall();
+}));
+
+/* ── density ── */
+const dens=document.getElementById("dens");
+dens.addEventListener("input",()=>document.documentElement.style.setProperty("--tile",dens.value+"px"));
+document.documentElement.style.setProperty("--tile",dens.value+"px");
+
+/* ── theme re-render ── */
+new MutationObserver(()=>{ buildWall(); if(openP)renderDetail(); }).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+buildStats(); buildRlist(); buildWall();
+
+/* ── NẠP DỮ LIỆU THẬT từ app ePMP (postMessage) — thay data DEMO bằng data reader ──
+   payload = { type:"mtldLoad", directory:[...], reportDate:"YYYY-MM-DD", noPlan:true }.
+   Giữ nguyên toàn bộ UI, chỉ đổi nguồn số. noPlan=true → banner nhắc "chưa nạp ngày". */
+function loadMtld(payload){
+  if(!payload || !Array.isArray(payload.directory)) return;
+  DIRECTORY.length=0; payload.directory.forEach(d=>DIRECTORY.push(d));
+  if(payload.reportDate){ try{ document.getElementById("reportDate").textContent=dmy(payload.reportDate); }catch(_){} }
+  applyEnrich();
+  scope="all"; regionFilter="all"; statusFilter="all";
+  let b=document.getElementById("mtldBanner");
+  if(!b){
+    b=document.createElement("div"); b.id="mtldBanner";
+    b.style.cssText="margin:0 0 10px;padding:8px 12px;border-radius:8px;font:600 12px/1.45 var(--font-mono,ui-monospace,monospace);background:rgba(239,187,24,.14);color:var(--behind);border:1px solid rgba(239,187,24,.4)";
+    const sc=document.getElementById("scroll"); sc.parentNode.insertBefore(b,sc);
+  }
+  b.style.display = payload.noPlan ? "block" : "none";
+  b.textContent="⚠ Đang hiện % THỰC TẾ thật đọc từ file — CHƯA nạp ngày kế hoạch nên chưa vẽ đường KH và chưa đánh giá nhịp/báo động (cột xám = trung tính).";
+  buildStats(); buildRlist(); buildWall();
+}
+window.addEventListener("message",e=>{ if(e && e.data && e.data.type==="mtldLoad") loadMtld(e.data); });
+</script>
