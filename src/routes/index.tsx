@@ -127,6 +127,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.10.2 (28/07/2026): Popup % Block hiện ĐÚNG theo dự án: (a) Phòng — % = "đã giao thô" (kèm
+ *     số căn giao thô + giao tinh; sửa lỗi HOÁN tinh↔thô). (b) Public — % = TRUNG BÌNH tiến độ các
+ *     khu: đọc CÔNG THỨC AVERAGE trong file → liệt kê đúng từng khu (Lobby/Res/Gym/Spa…) + %.
  *   v3.10.1 (28/07/2026): Summary — đổi mốc quét ghim-theo-ngày 06:00 → 08:00 giờ VN (báo cáo ma
  *     trận lắp đặt tự làm mới lần mở đầu sau 8h sáng, rồi ghim nguyên ngày). Xem REFRESH_HOUR_VN.
  *   v3.10.0 (28/07/2026): DROPDOWN "Thi công lắp đặt" — hạng mục TC có dòng con Block 1..5 (Mã
@@ -256,7 +259,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.10.1";
+const APP_VERSION = "3.10.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3782,17 +3785,19 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         document.body,
       )}
 
-      {/* POPOVER chi tiết 1 Block (thi công lắp đặt) — bàn giao tinh / thô nếu file có số. */}
+      {/* POPOVER chi tiết 1 Block. Ý nghĩa % theo LOẠI (đọc từ file):
+          • kind=tho  → % = ĐÃ GIAO THÔ; hiện số căn giao thô + giao tinh.
+          • kind=avg  → % = TRUNG BÌNH tiến độ các khu; liệt kê từng khu + %.
+          • kind=plain→ chỉ có %. */}
       {blockPop && typeof document !== "undefined" && createPortal(
         (() => {
           const b = blockPop.block;
-          const hv = (h?: { done: number | null; total: number | null; pct: number | null }) =>
-            !!h && (h.done != null || h.total != null || h.pct != null);
+          const pctTxt = (v: number | null) => v != null ? `${Math.round(v)}%` : "—";
           const hrow = (label: string, h?: { done: number | null; total: number | null; pct: number | null }) => (
             <tr className="border-b border-slate-100 last:border-0">
               <td className="py-0.5 pr-3 text-slate-600 whitespace-nowrap">{label}</td>
-              <td className="py-0.5 pr-1 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{h?.done ?? "—"}<span className="font-normal text-slate-400">/{h?.total ?? "—"}</span></td>
-              <td className="py-0.5 pl-2 text-right tabular-nums text-slate-500">{h?.pct != null ? `${Math.round(h.pct)}%` : "—"}</td>
+              <td className="py-0.5 pr-1 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{h?.done ?? "—"}<span className="font-normal text-slate-400">/{h?.total ?? "—"} căn</span></td>
+              <td className="py-0.5 pl-2 text-right tabular-nums text-slate-500">{pctTxt(h?.pct ?? null)}</td>
             </tr>
           );
           return (
@@ -3800,18 +3805,35 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               <div style={{ position: "fixed", inset: 0, zIndex: 70 }} onClick={() => setBlockPop(null)} />
               <div onClick={(e) => e.stopPropagation()}
                    style={{ position: "fixed", left: blockPop.x, top: blockPop.y + 6, transform: "translateX(-50%)", zIndex: 71 }}
-                   className="w-max max-w-[260px] rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] shadow-xl">
+                   className="w-max max-w-[300px] rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] shadow-xl">
                 <div className="mb-1 font-semibold text-slate-700">{b.label} · <span className="text-teal-700">{b.code}</span></div>
-                <div className="mb-2 text-slate-600">% thực tế: <b className="text-[12px] text-slate-900">{b.pctActual != null ? `${Math.round(b.pctActual)}%` : "—"}</b></div>
-                {(hv(b.tinh) || hv(b.tho)) ? (
-                  <table className="w-full border-collapse">
-                    <tbody>
-                      {hrow("Bàn giao tinh", b.tinh)}
-                      {hrow("Bàn giao thô", b.tho)}
-                    </tbody>
-                  </table>
+                {b.kind === "tho" ? (
+                  <>
+                    <div className="mb-2 text-slate-600">% đã giao thô: <b className="text-[12px] text-slate-900">{pctTxt(b.pctActual)}</b></div>
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        {hrow("Đã giao thô", b.tho)}
+                        {hrow("Đã giao tinh", b.tinh)}
+                      </tbody>
+                    </table>
+                  </>
+                ) : b.kind === "avg" ? (
+                  <>
+                    <div className="mb-1.5 text-slate-600">Trung bình tiến độ các khu: <b className="text-[12px] text-slate-900">{pctTxt(b.pctActual)}</b></div>
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        {(b.areas ?? []).map((a, i) => (
+                          <tr key={i} className="border-b border-slate-100 last:border-0">
+                            <td className="py-0.5 pr-3 text-slate-600 whitespace-nowrap">{a.label}</td>
+                            <td className="py-0.5 pl-2 text-right font-semibold tabular-nums text-slate-900">{pctTxt(a.pct)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-1 text-[10px] text-slate-400">TB = trung bình cộng % các khu trên.</div>
+                  </>
                 ) : (
-                  <div className="rounded bg-slate-50 px-1.5 py-1 text-slate-500">Chưa có chi tiết bàn giao tinh/thô cho Block này.</div>
+                  <div className="text-slate-600">% thực tế: <b className="text-[12px] text-slate-900">{pctTxt(b.pctActual)}</b></div>
                 )}
               </div>
             </>

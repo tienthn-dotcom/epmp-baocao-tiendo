@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import type { BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
+import type { BlockArea, BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
 import { getDaysOverdue } from "./overdue";
 
 export const GUARD_PLANNED_MIN = 0.15; // raw decimal (15%)
@@ -431,7 +431,7 @@ function detectTop20Col(headerRow: unknown[]): number {
 }
 
 /** Parse rows[][] from the Timeline sheet (header row index 5, data from index 7). */
-export function parseTimelineRows(rows: unknown[][], refDateIso: string): ReportData {
+export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined): ReportData {
   const projects: ProjectRow[] = [];
   const items: ItemRow[] = [];
   let current: ProjectRow | null = null;
@@ -565,25 +565,40 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string): Report
 
     // ── DÒNG CON "Thi công lắp đặt": Mã dạng TC1..TCn (Block 1..5). KHÔNG phải giai đoạn
     //    riêng → gom làm con của item "Thi công lắp đặt" cùng dự án (post-pass gắn vào).
-    //    Số bàn giao tinh (U+1..U+3) / thô (U+4..U+6) chỉ nhận khi ô "done" là SỐ (dự án
-    //    để nhãn "Lobby…" ở khối cột này ⇒ bỏ qua, không coi là bàn giao). ──
+    //    Ý nghĩa % KHÁC nhau theo dự án:
+    //     • Ô U+1 (khối sau Vướng mắc) là SỐ → GIAO THÔ: U+1..U+3 = đã giao thô (done/total/%),
+    //       U+4..U+6 = đã giao tinh (nhãn dòng header: "Bàn giao thô:" / "Bàn giao tinh:").
+    //     • Ô U+1 là CHỮ ("Lobby…") → % = TRUNG BÌNH tiến độ các khu: đọc CÔNG THỨC ô % (AVERAGE)
+    //       để lấy đúng các khu thành phần (nhãn khu ở cột trái-2 của ô tham chiếu). ──
     if (current && /^TC\d+$/i.test(rawCode)) {
       const u = COL.U;
-      // Ô "done" phải là SỐ THUẦN mới coi là bàn giao (dự án để nhãn "Lobby…/Spa B5:" ở khối cột
-      // này → num() dễ trích nhầm chữ số trong chữ, nên chặn bằng kiểm tra ô số thuần).
       const numericCell = (v: unknown): boolean =>
         typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && /^\s*-?\d+([.,]\d+)?%?\s*$/.test(v);
-      const handover = (d: number, t: number, p: number): BlockHandover | undefined =>
-        numericCell(r[d])
-          ? { done: num(r[d]), total: num(r[t]), pct: normPctStrict(num(r[p])).value }
-          : undefined;
-      const blk: BlockChild = {
-        code: rawCode.toUpperCase(),
-        label: str(r[COL.M]) || rawCode,
-        pctActual: normPctStrict(num(r[COL.S])).value,
-        tinh: handover(u + 1, u + 2, u + 3),
-        tho: handover(u + 4, u + 5, u + 6),
-      };
+      const code = rawCode.toUpperCase();
+      const label = str(r[COL.M]) || rawCode;
+      const pctActual = normPctStrict(num(r[COL.S])).value;
+      let blk: BlockChild;
+      if (numericCell(r[u + 1])) {
+        const hv = (d: number, t: number, p: number): BlockHandover | undefined =>
+          numericCell(r[d]) ? { done: num(r[d]), total: num(r[t]), pct: normPctStrict(num(r[p])).value } : undefined;
+        blk = { code, label, pctActual, kind: "tho", tho: hv(u + 1, u + 2, u + 3), tinh: hv(u + 4, u + 5, u + 6) };
+      } else {
+        // TRUNG BÌNH khu: đọc công thức ô % (AVERAGE(Yr,ABr,…)); mỗi tham chiếu → 1 khu:
+        // giá trị = ô tham chiếu, nhãn = ô CỘT-2 cùng dòng ("Lobby B1:", "Res. B1:"…).
+        const areas: BlockArea[] = [];
+        const formula = getFormula?.(i, COL.S) ?? "";
+        for (const ref of formula.match(/\b[A-Za-z]{1,3}\d+\b/g) ?? []) {
+          const m = /^([A-Za-z]{1,3})(\d+)$/.exec(ref);
+          if (!m) continue;
+          const c = XLSX.utils.decode_col(m[1].toUpperCase());
+          const rr = parseInt(m[2], 10) - 1; // Excel 1-based → 0-based
+          if (rr < 0 || c < 2 || !rows[rr]) continue;
+          const lb = str(rows[rr][c - 2]).replace(/:\s*$/, "").trim();
+          const pv = normPctStrict(num(rows[rr][c])).value;
+          if (lb || pv != null) areas.push({ label: lb || "—", pct: pv });
+        }
+        blk = areas.length ? { code, label, pctActual, kind: "avg", areas } : { code, label, pctActual, kind: "plain" };
+      }
       const arr = blocksByProj.get(current) ?? [];
       arr.push(blk);
       blocksByProj.set(current, arr);
@@ -811,13 +826,16 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string): Report
 }
 
 export async function parseXlsxBuffer(buf: ArrayBuffer, refDateIso: string): Promise<ReportData> {
-  const wb = XLSX.read(buf, { type: "array" });
+  const wb = XLSX.read(buf, { type: "array", cellFormula: true });
   const sheetName = wb.SheetNames.find((n) => /timeline/i.test(n)) ?? wb.SheetNames[0];
   const sh = wb.Sheets[sheetName];
   if (!sh) throw new Error("Không tìm thấy sheet Timeline trong file Excel.");
   const rows: unknown[][] = XLSX.utils.sheet_to_json(sh, { header: 1, raw: true, defval: null });
   expandMergedNotes(sh, rows, detectColumns(rows).U);
-  return parseTimelineRows(rows, refDateIso);
+  // Đọc CÔNG THỨC ô (cho % Block kiểu "trung bình khu" — cần AVERAGE(...) để lấy đúng các khu).
+  const getFormula = (r: number, c: number): string | undefined =>
+    (sh[XLSX.utils.encode_cell({ r, c })] as { f?: string } | undefined)?.f;
+  return parseTimelineRows(rows, refDateIso, getFormula);
 }
 
 /** Cột "Vướng mắc / Cần xử lý" (U) trong file gốc thường bị MERGE dọc — một ô

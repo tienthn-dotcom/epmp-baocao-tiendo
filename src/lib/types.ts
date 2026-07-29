@@ -23,14 +23,23 @@ export type CodeCount = {
  *  Chỉ có khi file điền số (dự án để nhãn "Lobby…" ở đó ⇒ undefined). */
 export type BlockHandover = { done: number | null; total: number | null; pct: number | null };
 
+/** Một khu thành phần khi % Block = TRUNG BÌNH tiến độ các khu (dự án kiểu Public). */
+export type BlockArea = { label: string; pct: number | null };
+
 /** Dòng con "Thi công lắp đặt" (Block 1..5) — Mã dạng TC1..TCn trong file. Đính vào item
- *  giai đoạn "Thi công lắp đặt" (không phải giai đoạn riêng). pctActual = % thực tế Block. */
+ *  giai đoạn "Thi công lắp đặt" (không phải giai đoạn riêng). pctActual = % thực tế Block.
+ *  Ý NGHĨA của % KHÁC NHAU theo dự án (đọc từ file):
+ *   • kind="tho": % thực tế = % ĐÃ GIAO THÔ; kèm số bàn giao thô + tinh (căn).
+ *   • kind="avg": % thực tế = TRUNG BÌNH tiến độ các khu (components); đọc từ công thức AVERAGE.
+ *   • kind="plain": chỉ có % (không rõ chi tiết). */
 export type BlockChild = {
   code: string;              // TC1
-  label: string;             // Block 1
+  label: string;             // Block 1 (86 căn) / Block 1 (Lobby + Res…)
   pctActual: number | null;  // % thực tế Block (thang 0..100)
-  tinh?: BlockHandover;      // Bàn giao tinh
-  tho?: BlockHandover;       // Bàn giao thô
+  kind: "tho" | "avg" | "plain";
+  tho?: BlockHandover;       // ĐÃ GIAO THÔ (kind=tho) — done/total = số căn
+  tinh?: BlockHandover;      // ĐÃ GIAO TINH (kind=tho)
+  areas?: BlockArea[];       // các khu (kind=avg) — nhãn + % từng khu
 };
 
 export type ItemRow = {
