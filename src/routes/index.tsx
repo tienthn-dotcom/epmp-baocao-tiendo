@@ -41,7 +41,7 @@ import { AppShell } from "@/lib/app-shell";
 import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
-import { getSummaryFile } from "@/lib/mtld-install.functions";
+import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchEdits, saveEdits, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, type EditsMap, type ItemEdit, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
@@ -127,6 +127,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.10.4 (28/07/2026): Client gửi TOÀN BỘ fileId install-link vào registry khi load → worker
+ *     cron phụ (baocao-tiendo-warmer, cron 8h VN) warm SẴN ma trận lắp đặt mọi dự án mỗi sáng.
+ *   v3.10.3 (28/07/2026): getSummaryFile ghi fileId vào REGISTRY (KV sfile:index) mỗi lần fetch →
+ *     nền tảng cho WORKER CRON phụ (baocao-tiendo-warmer) warm Summary sẵn mỗi sáng 8h VN.
  *   v3.10.2 (28/07/2026): Popup % Block hiện ĐÚNG theo dự án: (a) Phòng — % = "đã giao thô" (kèm
  *     số căn giao thô + giao tinh; sửa lỗi HOÁN tinh↔thô). (b) Public — % = TRUNG BÌNH tiến độ các
  *     khu: đọc CÔNG THỨC AVERAGE trong file → liệt kê đúng từng khu (Lobby/Res/Gym/Spa…) + %.
@@ -259,7 +263,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.10.2";
+const APP_VERSION = "3.10.4";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1286,6 +1290,12 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   // Popup "Thi công lắp đặt": map maCT→fileId Summary — ĐỌC Ở CLIENT (trong data, xem gQuery), KHÔNG
   // parse trên Worker (tránh Error 1102). Bấm chữ hạng mục có link → mở modal ma trận lắp đặt.
   const installLinks = data.installLinks ?? {};
+  // Gửi TOÀN BỘ fileId Summary vào registry (KV sfile:index) → worker cron sáng warm sẵn mọi dự án.
+  useEffect(() => {
+    const ids = [...new Set(Object.values(installLinks).filter(Boolean))];
+    if (ids.length) void recordSummaryFiles({ data: { fileIds: ids } }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(Object.values(installLinks).sort())]);
   const [summaryFileId, setSummaryFileId] = useState<string | null>(null);
   useEffect(() => {
     void whoami({ data: { devAs: devAs() } }).then(setMe).catch(() => {});

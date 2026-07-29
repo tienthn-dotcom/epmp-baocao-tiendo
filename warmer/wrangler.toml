@@ -1,0 +1,14 @@
+# WORKER PHỤ "WARMER" — quét Summary mỗi sáng 8h VN. ĐỘC LẬP với app chính (baocao-tiendo-pmo),
+# dùng CHUNG KV namespace PMO_EDITS. Deploy 1 lần:  cd warmer && npx wrangler deploy
+name = "baocao-tiendo-warmer"
+main = "src/index.mjs"
+compatibility_date = "2024-09-23"
+
+# Cron: 01:00 UTC = 08:00 giờ VN mỗi ngày. (Cloudflare cron chạy theo UTC.)
+[triggers]
+crons = ["0 1 * * *"]
+
+# KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
+[[kv_namespaces]]
+binding = "PMO_EDITS"
+id = "2bdbce7b49014e538ee3156728ab9548"

@@ -91,6 +91,7 @@ const DAY_MS = 86_400_000;
 const VN_OFFSET_MS = 7 * 3_600_000;      // giờ VN = UTC+7
 const REFRESH_HOUR_VN = 8;               // mốc "quét" mỗi ngày: 08:00 giờ VN (đổi tại đây)
 const CACHE_TTL_S = 3 * 86_400;          // giữ cache 3 ngày (đủ sống qua cuối tuần) → daily refresh lo phần tươi
+const SFILE_INDEX_KEY = "sfile:index";   // registry fileId đã từng mở → worker cron warm sẵn buổi sáng
 
 /** Mốc quét gần nhất (UTC ms) = REFRESH_HOUR_VN:00 giờ VN của hôm nay; nếu chưa tới thì lùi 1 ngày. */
 function lastRefreshBoundary(now: number): number {
@@ -118,9 +119,34 @@ async function refreshAndStore(fileId: string, kv: KVLike | null, cacheKey: stri
   try { bytes = extractSummaryXlsx(raw); }          // ~170KB
   catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
   const b64 = toB64(bytes);
-  if (kv) { try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi thì bỏ qua */ } }
+  if (kv) {
+    try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi thì bỏ qua */ }
+    // Ghi fileId vào REGISTRY (sfile:index) — worker cron sáng đọc list này để warm SẴN mọi file.
+    try {
+      const idxRaw = await kv.get(SFILE_INDEX_KEY);
+      const arr: string[] = idxRaw ? (JSON.parse(idxRaw) as string[]) : [];
+      if (!arr.includes(fileId)) { arr.push(fileId); await kv.put(SFILE_INDEX_KEY, JSON.stringify(arr)); }
+    } catch { /* registry hỏng không ảnh hưởng tải Summary */ }
+  }
   return b64;
 }
+
+/** CLIENT gửi TOÀN BỘ fileId install-link (đọc từ hyperlink) → gộp vào REGISTRY sfile:index để
+ *  worker cron sáng warm SẴN mọi dự án (không chờ từng người mở). Idempotent, gọi mỗi lần load. */
+export const recordSummaryFiles = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ fileIds: z.array(z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/)).max(1000) }).parse(input))
+  .handler(async ({ data }): Promise<{ count: number }> => {
+    const kv = await getKv();
+    if (!kv || !data.fileIds.length) return { count: 0 };
+    try {
+      const raw = await kv.get(SFILE_INDEX_KEY);
+      const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+      let added = 0;
+      for (const id of data.fileIds) if (!arr.includes(id)) { arr.push(id); added++; }
+      if (added) await kv.put(SFILE_INDEX_KEY, JSON.stringify(arr));
+      return { count: arr.length };
+    } catch { return { count: 0 }; }
+  });
 
 /** TẢI file Summary về CLIENT — chỉ gửi riêng sheet "Summary" (~170KB) thay vì cả file 2MB.
  *  KHÔNG parse trên Worker (parse xlsx 2MB làm OOM → Error 1102). Việc parse + render ở CLIENT.
