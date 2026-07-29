@@ -257,13 +257,14 @@ export const saveEdits = createServerFn({ method: "POST" })
  *   add    : ai cũng thêm được; author = email phiên đăng nhập.
  *   hide   : ẩn khỏi bảng (= đã giải quyết) — ai cũng được; unhide = mở lại.
  *   delete : CHỈ ADMIN — xoá hẳn (user KHÔNG có quyền, chỉ ẩn).
- *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của message. */
+ *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của 1 message.
+ *   hiall  : CHỈ ADMIN — tô CẢ Ô (mọi message KHÔNG ẩn tô full); unhiall = bỏ tô cả ô. */
 export const editMessages = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
       key: z.string().min(1).max(600),
       field: z.enum(["note", "action"]),
-      op: z.enum(["add", "hide", "unhide", "delete", "sethi"]),
+      op: z.enum(["add", "hide", "unhide", "delete", "sethi", "hiall", "unhiall"]),
       text: z.string().max(8000).optional(),
       msgId: z.string().max(80).optional(),
       hi: hiSchema.nullable().optional(),
@@ -292,6 +293,15 @@ export const editMessages = createServerFn({ method: "POST" })
       if (await callerIsAdmin(data.devAs)) {
         const m = list.find((x) => x.id === data.msgId);
         if (m) { if (!data.hi || data.hi.length === 0) delete m.hi; else m.hi = clampRanges(data.hi, m.text.length); }
+      }
+    } else if (data.op === "hiall" || data.op === "unhiall") {
+      // Tô/bỏ tô CẢ Ô: áp cho MỌI message KHÔNG ẩn (message ẩn không đụng).
+      if (await callerIsAdmin(data.devAs)) {
+        for (const m of list) {
+          if (m.hidden) continue;
+          if (data.op === "hiall") m.hi = m.text ? [[0, m.text.length]] : undefined;
+          else delete m.hi;
+        }
       }
     }
     cur[listKey] = list.length ? list : undefined;
