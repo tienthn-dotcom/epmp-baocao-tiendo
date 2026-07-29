@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 
-import type { CodeCount, ItemRow, ProjectRow, ReportData } from "@/lib/types";
+import type { BlockChild, CodeCount, ItemRow, ProjectRow, ReportData } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -127,6 +127,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.10.0 (28/07/2026): DROPDOWN "Thi công lắp đặt" — hạng mục TC có dòng con Block 1..5 (Mã
+ *     TC1..TCn trong file) → bấm ▶ xổ ra. Mỗi Block là ĐẦU VIỆC đầy đủ: kế thừa người phụ trách/
+ *     ngày/dự án từ dòng TC, tự tính quá hạn + cảnh báo, vướng mắc/giải pháp sửa được. Bấm % Block
+ *     → popover bàn giao tinh/thô. Áp cho CẢ bảng Danh sách LẪN Tổng thể tiến độ (Gantt cũng dropdown).
+ *   v3.9.7 (28/07/2026): HOÀN NGUYÊN v3.9.2 — ô SX (NMSX) trên Gantt về lại NHIỀU Ô VUÔNG rời từng
+ *     tuần (không dùng dải liền). Legend SX cũng về ô vuông nhỏ.
  *   v3.9.6 (28/07/2026): Summary TẢI NHANH — cache KV đổi từ 10' → GHIM THEO NGÀY + tự làm mới
  *     nền (stale-while-revalidate): bấm luôn trả cache tức thì, chỉ âm thầm fetch bản mới ở nền khi
  *     cache cũ hơn mốc 06:00 VN (đổi REFRESH_HOUR_VN). Nút "Làm mới" vẫn lấy live. Hết cảnh chờ Drive.
@@ -248,7 +254,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.9.6";
+const APP_VERSION = "3.10.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1080,6 +1086,9 @@ type EnrichedItem = ItemRow & {
   _editedAt: string | null;
   _key: string;
   _sheet: { note: string; pic: string; deadline: string | null };
+  /** Dòng con Block (Thi công lắp đặt) ĐÃ enrich — kế thừa dòng TC cha, chạy qua enrichItem như
+   *  item thường (người phụ trách/ngày/quá hạn/cảnh báo/vướng mắc/giải pháp). Chỉ item TC có. */
+  _blockItems?: EnrichedItem[];
 };
 
 /** Tổng hợp chi tiết "số mã / tổng mã" của 1 giai đoạn để hiện popover.
@@ -1154,6 +1163,8 @@ type GanttChild = {
   overdue: number;
   actual: number | null;     // % thực tế của công đoạn (cho phần xanh lá)
   actualEnd?: string | null; // ngày kết thúc THỰC TẾ (lần đầu 100%) — gạch ngang `end`, thêm dòng mới
+  /** Block con (Thi công lắp đặt) — chỉ tác vụ TC có. Có = hiện ▶ dropdown trong Gantt, bấm mới xổ. */
+  blocks?: GanttChild[];
 };
 
 type GanttRow = {
@@ -1487,9 +1498,35 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     }
   }, [th, pmByCode, today, edits]);
 
+  // Dựng 1 Block (Thi công lắp đặt) thành ĐẦU VIỆC hoàn chỉnh: KẾ THỪA dòng TC cha (người phụ
+  // trách/ngày bắt đầu-kết thúc/dự án…), lấy %/tên riêng của Block, rồi enrich NHƯ item thường —
+  // áp edit Vướng mắc/Giải pháp/PIC/Deadline theo KHOÁ RIÊNG của Block (rawCode=TC1..TCn).
+  const buildBlockItem = useCallback((parent: EnrichedItem, b: BlockChild, bi: number): EnrichedItem => {
+    const raw: ItemRow = {
+      ...(parent as ItemRow),
+      rawCode: b.code, dupIdx: bi, desc: b.label,
+      pctActual: b.pctActual, pctActualInvalid: false,
+      codeCounts: undefined, blocks: undefined, note: "",
+      overdueDays: getDaysOverdue({ deadline: parent.deadline, pctActual: b.pctActual }, today),
+    };
+    const ed = edits[itemKeyOf(raw)];
+    const deadline = ed?.deadline ?? raw.deadline;
+    const edited: ItemRow = {
+      ...raw,
+      note: ed?.note ?? "",
+      owner: ed?.pic ?? raw.owner,
+      deadline,
+      overdueDays: getDaysOverdue({ deadline, pctActual: b.pctActual }, today),
+    };
+    return enrichItem(raw, edited);
+  }, [edits, today, enrichItem]);
+
   const enriched: EnrichedItem[] = useMemo(
-    () => data.items.map((raw, i) => enrichItem(raw, effectiveItems[i])),
-    [data.items, effectiveItems, enrichItem],
+    () => data.items.map((raw, i) => enrichItem(raw, effectiveItems[i]))
+      .map((it) => (it.stage === "Thi công lắp đặt" && it.blocks?.length
+        ? { ...it, _blockItems: it.blocks.map((b, bi) => buildBlockItem(it, b, bi)) }
+        : it)),
+    [data.items, effectiveItems, enrichItem, buildBlockItem],
   );
   // Việc ĐÃ HOÀN THÀNH (pct ≥ 100, còn Show) — CHỈ dựng khi bật "Hiện tất cả đầu việc". Enrich y
   // hệt việc đang làm. KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng.
@@ -1923,6 +1960,17 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       let arr = childrenByProject.get(pk);
       if (!arr) { arr = []; childrenByProject.set(pk, arr); }
       const sid = it._stageId as StageOrOther;
+      const blockKids: GanttChild[] = (it._blockItems ?? []).map((bit) => ({
+        key: `${pk} ${bit.rawCode} ${bit.dupIdx ?? 0}`,
+        stageAbbr: bit.rawCode,
+        stageLabel: bit.desc,
+        pic: bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId),
+        start: bit.start, end: bit.deadline,
+        color: bit._alertColor,
+        overdue: bit.overdueDays ?? 0,
+        actual: clampPct(bit.pctActual),
+        actualEnd: completedDates[itemKeyOf(bit)] ?? null,
+      }));
       arr.push({
         key: `${pk} ${it.rawCode} ${it.dupIdx ?? 0}`,
         stageAbbr: stageAbbrOf(sid),
@@ -1936,6 +1984,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         overdue: it.overdueDays ?? 0,
         actual: clampPct(it.pctActual),
         actualEnd: completedDates[itemKeyOf(it)] ?? null,
+        blocks: blockKids.length ? blockKids : undefined,
       });
     }
     // Trong mỗi dự án: sắp theo thứ tự giai đoạn (TK→…→TC), rồi theo ngày bắt đầu.
@@ -2921,6 +2970,18 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     window.addEventListener("resize", close);
     return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [codePop]);
+  // Dropdown "Thi công lắp đặt": item nào đang xổ các Block con (khoá = itemKeyOf).
+  const [expandedTC, setExpandedTC] = useState<Set<string>>(new Set());
+  const toggleTC = (k: string) => setExpandedTC((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  // Popover chi tiết khi bấm % của 1 Block (bàn giao tinh/thô).
+  const [blockPop, setBlockPop] = useState<{ x: number; y: number; block: BlockChild } | null>(null);
+  useEffect(() => {
+    if (!blockPop) return;
+    const close = () => setBlockPop(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [blockPop]);
   const charOffsetIn = (root: HTMLElement, node: Node, nodeOff: number): number => {
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let n = 0, cur: Node | null;
@@ -3038,9 +3099,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     // "Thi công lắp đặt" đã hyperlink file Summary → bấm chữ mở popup ma trận lắp đặt.
     const installFid = it.stage === "Thi công lắp đặt" ? installLinks?.[it.maCT] : undefined;
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId);
+    // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
+    const hasBlocks = it.stage === "Thi công lắp đặt" && (it.blocks?.length ?? 0) > 0;
+    const blkKey = itemKeyOf(it);
+    const isBlkOpen = hasBlocks && expandedTC.has(blkKey);
     return (
-      <tr key={`${it.projectCode}-${it.rawCode}-${idx}`}
-          className={`border-b border-slate-100 align-middle ${idx % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-teal-50/40`}>
+      <Fragment key={`${it.projectCode}-${it.rawCode}-${idx}`}>
+      <tr className={`border-b border-slate-100 align-middle ${idx % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-teal-50/40`}>
         {/* Ngày update — chip nhỏ, thang màu xanh→đỏ theo độ cũ.
             Ngày này thuộc về DỰ ÁN (mọi đầu việc con dùng chung), nên khi có hàng dự án
             tổng thì chỉ hiện ở đó — lặp lại y hệt ở từng dòng con chỉ gây nhiễu.
@@ -3070,18 +3135,30 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
           {/* Nhóm theo dự án: tên dự án đã ở HÀNG GỘP → dòng con hiện TÊN HẠNG MỤC (đầy đủ,
               không viết tắt) cho đỡ thừa. Khi lọc theo hạng mục (groupMode=false, mọi dòng cùng
               hạng mục) thì hiện lại TÊN DỰ ÁN vì đó mới là thứ để phân biệt. */}
-          {installFid ? (
-            <button type="button"
-              onClick={(e) => { e.stopPropagation(); onOpenSummary?.(installFid); }}
-              className="line-clamp-3 text-left font-semibold leading-tight text-teal-700 underline decoration-dotted decoration-1 underline-offset-2 hover:text-teal-900"
-              style={{ wordBreak: "break-word" }}
-              title="Bấm xem tiến độ lắp đặt (ma trận Summary)">
-              {groupMode ? it._stageLabel : it.projectName} 📊
-            </button>
-          ) : (
-            <div className="line-clamp-3 font-semibold text-black leading-tight" style={{ wordBreak: "break-word" }}
-                 title={groupMode ? it._stageLabel : it.projectName}>{groupMode ? it._stageLabel : it.projectName}</div>
-          )}
+          <div className="flex items-start gap-1">
+            {/* ▶ xổ các Block con (chỉ item "Thi công lắp đặt" có dữ liệu Block). */}
+            {hasBlocks && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleTC(blkKey); }}
+                title={isBlkOpen ? "Thu các Block" : "Xổ các Block (thi công lắp đặt)"}
+                className="mt-0.5 shrink-0 text-[9px] leading-none text-slate-500 hover:text-teal-700">
+                <span className="inline-block transition-transform" style={{ transform: isBlkOpen ? "rotate(90deg)" : "none" }}>▶</span>
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              {installFid ? (
+                <button type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenSummary?.(installFid); }}
+                  className="line-clamp-3 text-left font-semibold leading-tight text-teal-700 underline decoration-dotted decoration-1 underline-offset-2 hover:text-teal-900"
+                  style={{ wordBreak: "break-word" }}
+                  title="Bấm xem tiến độ lắp đặt (ma trận Summary)">
+                  {groupMode ? it._stageLabel : it.projectName} 📊
+                </button>
+              ) : (
+                <div className="line-clamp-3 font-semibold text-black leading-tight" style={{ wordBreak: "break-word" }}
+                     title={groupMode ? it._stageLabel : it.projectName}>{groupMode ? it._stageLabel : it.projectName}</div>
+              )}
+            </div>
+          </div>
         </td>
         {/* Bàn giao — bảng NHÓM theo dự án ĐÃ BỎ cột này (ngày bàn giao hiện ở cột Deadline cam
             kết trên HÀNG DỰ ÁN như PMP); bảng thường/lọc vẫn giữ. */}
@@ -3179,6 +3256,71 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
         </td>
       </tr>
+      {/* DÒNG CON: Block 1..5 của "Thi công lắp đặt" = ĐẦU VIỆC hoàn chỉnh (kế thừa dòng TC cha).
+          Mọi cột theo LOGIC THƯỜNG: người phụ trách, ngày, quá hạn, cảnh báo, vướng mắc, giải pháp
+          (sửa được). Riêng Mã/Tên hiện mã Block + "↳ Block N"; % bấm ra chi tiết bàn giao tinh/thô. */}
+      {isBlkOpen && (it._blockItems ?? []).map((bit, bi) => {
+        const b = it.blocks![bi];
+        const bActual = bit.pctActual != null ? Math.round(bit.pctActual) : null;
+        const bOverdue = bit.overdueDays || 0;
+        const bPic = bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId);
+        return (
+        <tr key={`blk-${blkKey}-${bi}`} className="border-b border-slate-100 bg-teal-50/30 align-middle hover:bg-teal-50/60">
+          <td className="border-r border-slate-100 px-1 py-0.5 text-center">
+            {!groupMode && <UpdateChip date={bit.updateDate} today={today} />}
+          </td>
+          <td className={`border-r border-slate-100 px-1 py-0.5 text-[0.85em] font-semibold text-teal-700 whitespace-nowrap${groupMode ? " text-center" : ""}`}>{b.code}</td>
+          <td className="border-r border-slate-100 px-2 py-0.5">
+            <div className="pl-4 text-[0.92em] font-medium leading-tight text-slate-700">↳ {b.label}</div>
+          </td>
+          {!groupMode && <td className="border-r border-slate-100 px-[0.5em] py-0.5 text-center text-[0.8em] tabular-nums text-slate-600 whitespace-nowrap">{fmtDateVN2(bit.projectDeadline)}</td>}
+          {!groupMode && <td className="border-r border-slate-100 px-2 py-0.5 text-center text-[0.78em] font-semibold text-slate-500">{stageAbbrOf(bit._stageId)}</td>}
+          <td className="border-r border-slate-100 px-2 py-0.5 text-[0.9em] text-slate-700 leading-tight" style={{ wordBreak: "break-word" }}>
+            <div className="line-clamp-2">
+              {bit._picEdited && <span className="mr-1 rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800" title={`PM cập nhật lúc ${fmtDateTimeVN(bit._editedAt)}`}>✎</span>}
+              <PicNames text={bPic} />
+            </div>
+          </td>
+          <td className="border-r border-slate-100 px-1 py-0.5 text-center text-[0.8em] tabular-nums text-slate-600 whitespace-nowrap">{fmtDateVN2(bit.start)}</td>
+          <td className="border-r border-slate-100 px-1 py-0.5 text-center text-[0.8em] tabular-nums text-slate-600 whitespace-nowrap">
+            {bit._deadlineEdited && <span className="mr-0.5 rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800" title={`PM cập nhật lúc ${fmtDateTimeVN(bit._editedAt)}`}>✎</span>}
+            {fmtDateVN2(bit.deadline)}
+          </td>
+          <td className="border-r border-slate-100 px-2 py-0.5 text-center tabular-nums whitespace-nowrap">
+            <button type="button" title="Bấm xem chi tiết bàn giao Block"
+              onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setBlockPop({ x: r.left + r.width / 2, y: r.bottom, block: b }); }}
+              className="cursor-pointer underline decoration-dotted decoration-teal-500 decoration-1 underline-offset-2 hover:text-teal-700">
+              {bActual != null ? <span className="font-semibold text-black">{bActual}%</span> : <span className="text-slate-400">—</span>}
+            </button>
+          </td>
+          <td className="border-r border-slate-100 px-1 py-0.5 text-center tabular-nums leading-tight">
+            {bOverdue > 0
+              ? <span className="font-bold text-black">{bOverdue}<br /><span className="text-[0.82em] font-normal text-slate-600">ngày</span></span>
+              : <span className="text-slate-400">0</span>}
+          </td>
+          <td className="border-r border-slate-100 px-1 py-0.5 text-center">
+            {bActual != null && bActual >= 100
+              ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
+              : <AlertBadge kind={bit._alert} color={bit._alertColor} />}
+          </td>
+          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
+              title={bit.note ? "Bấm để xem / sửa vướng mắc" : "Bấm để nhập vướng mắc"}
+              onClick={() => openEdit(bit, "note")}>
+            {bit.note
+              ? <div className="whitespace-pre-line leading-snug">{bit._noteEdited && <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800">✎ {fmtDayMonth(bit._editedAt)}</span>}<HiText text={bit.note} ranges={bit._noteHi} /></div>
+              : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+          </td>
+          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
+              title={bit._action ? "Bấm để xem / sửa giải pháp" : "Bấm để nhập giải pháp"}
+              onClick={() => openEdit(bit, "action")}>
+            {bit._action
+              ? <div className="whitespace-pre-line leading-snug">{bit._actionEdited && <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800">✎ {fmtDayMonth(bit._editedAt)}</span>}<HiText text={bit._action} ranges={bit._actionHi} field="action" /></div>
+              : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+          </td>
+        </tr>
+        );
+      })}
+      </Fragment>
     );
   };
 
@@ -3638,6 +3780,44 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         document.body,
       )}
 
+      {/* POPOVER chi tiết 1 Block (thi công lắp đặt) — bàn giao tinh / thô nếu file có số. */}
+      {blockPop && typeof document !== "undefined" && createPortal(
+        (() => {
+          const b = blockPop.block;
+          const hv = (h?: { done: number | null; total: number | null; pct: number | null }) =>
+            !!h && (h.done != null || h.total != null || h.pct != null);
+          const hrow = (label: string, h?: { done: number | null; total: number | null; pct: number | null }) => (
+            <tr className="border-b border-slate-100 last:border-0">
+              <td className="py-0.5 pr-3 text-slate-600 whitespace-nowrap">{label}</td>
+              <td className="py-0.5 pr-1 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{h?.done ?? "—"}<span className="font-normal text-slate-400">/{h?.total ?? "—"}</span></td>
+              <td className="py-0.5 pl-2 text-right tabular-nums text-slate-500">{h?.pct != null ? `${Math.round(h.pct)}%` : "—"}</td>
+            </tr>
+          );
+          return (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 70 }} onClick={() => setBlockPop(null)} />
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{ position: "fixed", left: blockPop.x, top: blockPop.y + 6, transform: "translateX(-50%)", zIndex: 71 }}
+                   className="w-max max-w-[260px] rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] shadow-xl">
+                <div className="mb-1 font-semibold text-slate-700">{b.label} · <span className="text-teal-700">{b.code}</span></div>
+                <div className="mb-2 text-slate-600">% thực tế: <b className="text-[12px] text-slate-900">{b.pctActual != null ? `${Math.round(b.pctActual)}%` : "—"}</b></div>
+                {(hv(b.tinh) || hv(b.tho)) ? (
+                  <table className="w-full border-collapse">
+                    <tbody>
+                      {hrow("Bàn giao tinh", b.tinh)}
+                      {hrow("Bàn giao thô", b.tho)}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="rounded bg-slate-50 px-1.5 py-1 text-slate-500">Chưa có chi tiết bàn giao tinh/thô cho Block này.</div>
+                )}
+              </div>
+            </>
+          );
+        })(),
+        document.body,
+      )}
+
       {/* Hộp CHỈNH SỬA đầu việc — Vướng mắc / PIC / Deadline. Lưu backend dùng chung:
           reload không mất, người khác thấy sau khi lưu. */}
       {editView && (
@@ -3819,6 +3999,9 @@ function AlertBadge({ kind, color }: { kind: AlertKind; color: AlertColor }) {
 const GANTT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void }) {
   const DAY = 86400000;
+  // Dropdown Block (Thi công lắp đặt) trong Gantt: tác vụ TC nào đang xổ các Block con.
+  const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
+  const toggleBlocks = (k: string) => setOpenBlocks((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const WEEK_PX = 22; // px / CỘT TUẦN ở khổ tối thiểu → ô tuần gọn hơn, dữ liệu bớt "tách" (Excel/PMP)
   const g = useMemo(() => {
     const iso = (s: string | null) =>
@@ -3971,7 +4154,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[10.5px] text-slate-600 print:hidden">
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.bar }} />Tiến độ (Bắt đầu→Kết thúc)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.done }} />% đã hoàn thành (theo cột % Thực tế)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-[2px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />Nhà máy sản xuất (SX)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-[1px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />Nhà máy sản xuất (SX)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-4 rounded-sm" style={{ background: "#fca5a5" }} />Ngày hiện hành</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm border" style={{ background: GC.overdueBg, borderColor: GC.overdueEdge }} />Quá hạn</span>
       </div>
@@ -4104,54 +4287,76 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                   {flatStages && projSpan && pctRow > 0 && (
                     <div style={{ position: "absolute", top: 6, bottom: 6, left: pct(projSpan.L), width: pct(projSpan.W * pctRow / 100), background: GC.done, borderRadius: 2, zIndex: 3 }} />
                   )}
-                  {/* SX (Nhà máy sản xuất) = MỘT DẢI ĐỎ LIỀN MẠCH suốt khoảng SX (không còn ô vuông
-                      rời từng tuần — trước đây bị "cắt cắt" trông xấu). Viền đen giữ nguyên. CHỈ ở chế
-                      độ dự án (không phải lọc hạng mục). */}
-                  {!flatStages && sxSpan && (
-                    <div title="Nhà máy sản xuất (SX)" style={{ position: "absolute", left: pct(sxSpan.L), width: pct(sxSpan.W), top: "50%",
-                      height: 10, transform: "translateY(-50%)", background: GC.sx, border: "1px solid #0f172a", borderRadius: 2, zIndex: 3 }} />
-                  )}
+                  {/* SX (Nhà máy sản xuất) = MỖI CỘT TUẦN trong khoảng SX có ĐÚNG 1 Ô VUÔNG ĐỎ, nằm
+                      GIỮA ô (y hệt file import PMP). CHỈ ở chế độ dự án (không phải lọc hạng mục). */}
+                  {!flatStages && sxSpan && Array.from({ length: sxSpan.ei - sxSpan.si + 1 }, (_, k) => {
+                    const i = sxSpan.si + k;
+                    return (
+                      <div key={i} title="Nhà máy sản xuất (SX)" style={{ position: "absolute", left: pct(colX(i) + colW / 2), top: "50%",
+                        width: 10, height: 10, transform: "translate(-50%,-50%)", background: GC.sx, border: "1px solid #0f172a", borderRadius: 1, zIndex: 3 }} />
+                    );
+                  })}
                 </td>
               </tr>
 
               {/* TÁC VỤ CON: mỗi đầu việc con = 1 thanh thời gian (start→deadline). CHỈ 2 màu:
                   xanh dương (tiến độ) + xanh lá (% thực tế). Nền xám nhạt + chữ nhỏ để phân cấp. */}
               {hasKids && isOpen && r.children.map(ch => {
-                const cSpan = spanOf(ch.start, ch.end);
-                const cActual = Math.min(100, Math.max(0, ch.actual ?? 0));
-                const cbg = GC.childBg;
-                const cVals: ReactNode[] = [
-                  <div className="pl-3 text-[10px] font-bold text-slate-900">{ch.stageAbbr}</div>,
-                  <div className="line-clamp-1 leading-tight text-slate-900" title={ch.stageLabel}>{ch.stageLabel}</div>,
-                  <div className="truncate text-slate-900" title={ch.pic}>{ch.pic}</div>,
-                  fmtDateVN2(ch.start),
-                  ch.actualEnd
-                    ? <span className="leading-tight"><span className="text-slate-400 line-through">{fmtDateVN2(ch.end)}</span><br /><span className="font-semibold text-emerald-700" title="Ngày kết thúc thực tế (lần đầu 100%)">{fmtDateVN2(ch.actualEnd)}</span></span>
-                    : fmtDateVN2(ch.end),
-                  <span className="text-slate-900">{Math.round(ch.actual ?? 0)}%</span>,
-                  ch.overdue > 0 ? <b className="text-red-600">{ch.overdue}</b> : "0",
-                ];
-                return (
-                  <tr key={ch.key} className="hover:bg-teal-50/40">
-                    {LC.map((c, i) => (
-                      <td key={i}
-                          className={`border-b border-r border-slate-100 px-1.5 py-0.5 text-[10px] leading-tight align-middle text-slate-900 ${alCls(c.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""}`}
-                          style={{ position: c.sticky ? "sticky" : undefined, left: c.sticky ? off[i] : undefined, zIndex: c.sticky ? 12 : undefined, background: cbg, height: 28, maxWidth: c.w }}>
-                        {cVals[i]}
-                      </td>
-                    ))}
-                    <td className="relative border-b border-r border-slate-100 p-0" style={{ height: 28, background: cbg }}>
-                      {gridOverlays(28, true)}
-                      {cSpan && (
-                        <>
-                          <div style={{ position: "absolute", top: 8, bottom: 8, left: pct(cSpan.L), width: pct(cSpan.W), background: GC.childBar, borderRadius: 2, zIndex: 2 }} />
-                          {cActual > 0 && (
-                            <div style={{ position: "absolute", top: 8, bottom: 8, left: pct(cSpan.L), width: pct(cSpan.W * cActual / 100), background: GC.done, borderRadius: 2, zIndex: 3 }} />
-                          )}
-                        </>
+                // Render 1 tác vụ con (dùng chung cho dòng công đoạn LẪN dòng Block). Dòng có Block
+                // → hiện ▶ dropdown; bấm mới xổ các Block (kế thừa timeline). isBlock = dòng Block.
+                const renderCh = (c: GanttChild, isBlock: boolean) => {
+                  const cSpan = spanOf(c.start, c.end);
+                  const cActual = Math.min(100, Math.max(0, c.actual ?? 0));
+                  const cbg = isBlock ? "#eef4f3" : GC.childBg;
+                  const hasBlk = !!c.blocks?.length;
+                  const blkOpen = openBlocks.has(c.key);
+                  const cVals: ReactNode[] = [
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-900" style={{ paddingLeft: isBlock ? 16 : 4 }}>
+                      {hasBlk && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); toggleBlocks(c.key); }}
+                          title={blkOpen ? "Thu Block" : "Xổ các Block"} className="shrink-0 text-[8px] leading-none text-slate-500 hover:text-teal-700">
+                          <span className="inline-block" style={{ transform: blkOpen ? "rotate(90deg)" : "none" }}>▶</span>
+                        </button>
                       )}
-                    </td>
-                  </tr>
+                      <span>{c.stageAbbr}</span>
+                    </div>,
+                    <div className="line-clamp-1 leading-tight text-slate-900" title={c.stageLabel}>{isBlock ? `↳ ${c.stageLabel}` : c.stageLabel}</div>,
+                    <div className="truncate text-slate-900" title={c.pic}>{c.pic}</div>,
+                    fmtDateVN2(c.start),
+                    c.actualEnd
+                      ? <span className="leading-tight"><span className="text-slate-400 line-through">{fmtDateVN2(c.end)}</span><br /><span className="font-semibold text-emerald-700" title="Ngày kết thúc thực tế (lần đầu 100%)">{fmtDateVN2(c.actualEnd)}</span></span>
+                      : fmtDateVN2(c.end),
+                    <span className="text-slate-900">{Math.round(c.actual ?? 0)}%</span>,
+                    c.overdue > 0 ? <b className="text-red-600">{c.overdue}</b> : "0",
+                  ];
+                  return (
+                    <tr key={c.key} className="hover:bg-teal-50/40">
+                      {LC.map((col, i) => (
+                        <td key={i}
+                            className={`border-b border-r border-slate-100 px-1.5 py-0.5 text-[10px] leading-tight align-middle text-slate-900 ${alCls(col.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""}`}
+                            style={{ position: col.sticky ? "sticky" : undefined, left: col.sticky ? off[i] : undefined, zIndex: col.sticky ? 12 : undefined, background: cbg, height: 28, maxWidth: col.w }}>
+                          {cVals[i]}
+                        </td>
+                      ))}
+                      <td className="relative border-b border-r border-slate-100 p-0" style={{ height: 28, background: cbg }}>
+                        {gridOverlays(28, true)}
+                        {cSpan && (
+                          <>
+                            <div style={{ position: "absolute", top: 8, bottom: 8, left: pct(cSpan.L), width: pct(cSpan.W), background: GC.childBar, borderRadius: 2, zIndex: 2 }} />
+                            {cActual > 0 && (
+                              <div style={{ position: "absolute", top: 8, bottom: 8, left: pct(cSpan.L), width: pct(cSpan.W * cActual / 100), background: GC.done, borderRadius: 2, zIndex: 3 }} />
+                            )}
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                };
+                return (
+                  <Fragment key={ch.key}>
+                    {renderCh(ch, false)}
+                    {ch.blocks && openBlocks.has(ch.key) && ch.blocks.map((bk) => renderCh(bk, true))}
+                  </Fragment>
                 );
               })}
               </Fragment>

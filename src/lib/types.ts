@@ -19,6 +19,20 @@ export type CodeCount = {
   total: number;
 };
 
+/** Số bàn giao (tinh/thô) của 1 Block — done/total/pct. Đọc từ khối cột sau Vướng mắc.
+ *  Chỉ có khi file điền số (dự án để nhãn "Lobby…" ở đó ⇒ undefined). */
+export type BlockHandover = { done: number | null; total: number | null; pct: number | null };
+
+/** Dòng con "Thi công lắp đặt" (Block 1..5) — Mã dạng TC1..TCn trong file. Đính vào item
+ *  giai đoạn "Thi công lắp đặt" (không phải giai đoạn riêng). pctActual = % thực tế Block. */
+export type BlockChild = {
+  code: string;              // TC1
+  label: string;             // Block 1
+  pctActual: number | null;  // % thực tế Block (thang 0..100)
+  tinh?: BlockHandover;      // Bàn giao tinh
+  tho?: BlockHandover;       // Bàn giao thô
+};
+
 export type ItemRow = {
   projectCode: string; // CT26-013
   projectName: string;
@@ -73,6 +87,9 @@ export type ItemRow = {
   /** Chi tiết số mã của giai đoạn (từ khối breakdown file gốc). undefined = không có
    *  chi tiết (PM nhập % chay, hoặc dự án chưa dùng breakdown). Xem [[CodeCount]]. */
   codeCounts?: CodeCount[];
+  /** Dòng con Block 1..5 của giai đoạn "Thi công lắp đặt" (Mã TC1..TCn trong file). undefined
+   *  = không có. Chỉ item stage "Thi công lắp đặt" mới mang. Xem [[BlockChild]]. */
+  blocks?: BlockChild[];
 };
 
 export type ProjectRow = {

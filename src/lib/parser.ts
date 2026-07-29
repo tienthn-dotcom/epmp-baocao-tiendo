@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import type { CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
+import type { BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
 import { getDaysOverdue } from "./overdue";
 
 export const GUARD_PLANNED_MIN = 0.15; // raw decimal (15%)
@@ -466,6 +466,9 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string): Report
   // Gom các dòng breakdown "số mã/tổng mã" theo TỪNG dự án (khối cột sau Vướng mắc).
   // Độc lập với dòng giai đoạn — gắn vào item theo NHÃN ở post-pass cuối hàm.
   const bdByProj = new Map<ProjectRow, RawBd[]>();
+  // Gom DÒNG CON "Thi công lắp đặt" (Block 1..5, Mã TC1..TCn) theo dự án → post-pass gắn
+  // vào item giai đoạn "Thi công lắp đặt".
+  const blocksByProj = new Map<ProjectRow, BlockChild[]>();
   for (let i = COL.headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
@@ -559,6 +562,34 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string): Report
     }
 
     if (!rawCode) continue;
+
+    // ── DÒNG CON "Thi công lắp đặt": Mã dạng TC1..TCn (Block 1..5). KHÔNG phải giai đoạn
+    //    riêng → gom làm con của item "Thi công lắp đặt" cùng dự án (post-pass gắn vào).
+    //    Số bàn giao tinh (U+1..U+3) / thô (U+4..U+6) chỉ nhận khi ô "done" là SỐ (dự án
+    //    để nhãn "Lobby…" ở khối cột này ⇒ bỏ qua, không coi là bàn giao). ──
+    if (current && /^TC\d+$/i.test(rawCode)) {
+      const u = COL.U;
+      // Ô "done" phải là SỐ THUẦN mới coi là bàn giao (dự án để nhãn "Lobby…/Spa B5:" ở khối cột
+      // này → num() dễ trích nhầm chữ số trong chữ, nên chặn bằng kiểm tra ô số thuần).
+      const numericCell = (v: unknown): boolean =>
+        typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && /^\s*-?\d+([.,]\d+)?%?\s*$/.test(v);
+      const handover = (d: number, t: number, p: number): BlockHandover | undefined =>
+        numericCell(r[d])
+          ? { done: num(r[d]), total: num(r[t]), pct: normPctStrict(num(r[p])).value }
+          : undefined;
+      const blk: BlockChild = {
+        code: rawCode.toUpperCase(),
+        label: str(r[COL.M]) || rawCode,
+        pctActual: normPctStrict(num(r[COL.S])).value,
+        tinh: handover(u + 1, u + 2, u + 3),
+        tho: handover(u + 4, u + 5, u + 6),
+      };
+      const arr = blocksByProj.get(current) ?? [];
+      arr.push(blk);
+      blocksByProj.set(current, arr);
+      continue;
+    }
+
     const stage = detectStage(rawCode);
     if (stage === "Khác" && !/^(TK|MA|BG|VT|TKSX|SD|SX|TC|MB|DM|PS)/i.test(rawCode)) {
       // Mã không thuộc nhóm giai đoạn nào → bị bỏ qua. ĐẾM để cảnh báo
@@ -679,6 +710,16 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string): Report
       const cc = it.stage !== "Khác" ? byStage.get(it.stage) : undefined;
       if (cc) it.codeCounts = cc;
     }
+  }
+
+  // POST-PASS: gắn Block con vào item "Thi công lắp đặt" của dự án (ưu tiên item đang shown
+  // — chính là item hiện trong bảng; cùng object nên set .blocks áp cho cả items lẫn allItems).
+  for (const proj of projects) {
+    const blks = blocksByProj.get(proj);
+    if (!blks?.length) continue;
+    const tc = proj.allItems.find((it) => it.stage === "Thi công lắp đặt" && it.shown)
+            ?? proj.allItems.find((it) => it.stage === "Thi công lắp đặt");
+    if (tc) tc.blocks = blks;
   }
 
   // Try to extract "Ngày cập nhật" from rows 0..6
