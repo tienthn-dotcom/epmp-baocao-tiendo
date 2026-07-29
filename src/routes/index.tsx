@@ -127,6 +127,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.11.3 (29/07/2026): Box chat Vướng mắc/Giải pháp — bấm ra NỀN NGOÀI KHÔNG còn tự đóng (tránh
+ *     mất tin đang soạn khi lỡ misclick); CHỈ nút X mới tắt. (khôi phục hành vi cũ bị mất khi rework)
  *   v3.11.2 (29/07/2026): Box chat — thêm lại VÍ DỤ minh hoạ cách viết (như dialog cũ) ngay trên ô
  *     soạn, khác nhau theo cột: Vướng mắc (ai làm gì, trước khi nào) · Giải pháp (người + mốc).
  *   v3.11.1 (29/07/2026): Box chat — (a) chú thích ô soạn gọn lại "Gửi rồi KHÔNG thể xoá". (b) TÔ
@@ -273,7 +275,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.11.2";
+const APP_VERSION = "3.11.3";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3829,9 +3831,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
 
       {/* Hộp CHỈNH SỬA đầu việc — Vướng mắc / PIC / Deadline. Lưu backend dùng chung:
           reload không mất, người khác thấy sau khi lưu. */}
+      {/* KHÔNG đóng khi bấm ra nền tối (tránh mất box đang soạn khi lỡ misclick) — CHỈ nút X. */}
       {editView && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 print:hidden" onClick={() => setEditView(null)}>
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 print:hidden">
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">
