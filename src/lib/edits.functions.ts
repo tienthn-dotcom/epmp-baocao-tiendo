@@ -292,8 +292,12 @@ export const editMessages = createServerFn({ method: "POST" })
         if (allowed && text) { m.text = text; m.editedAt = now; if (m.hi?.length) m.hi = [[0, text.length]]; }
       }
     } else if (data.op === "hide" || data.op === "unhide") {
+      // CHỐT QUYỀN: chỉ TÁC GIẢ (email khớp) hoặc admin mới ẩn/mở ẩn tin — không đụng tin người khác.
       const m = list.find((x) => x.id === data.msgId);
-      if (m) m.hidden = data.op === "hide";
+      if (m) {
+        const email = await callerEmail(data.devAs);
+        if ((email && email === m.author) || (await callerIsAdmin(data.devAs))) m.hidden = data.op === "hide";
+      }
     } else if (data.op === "delete") {
       // CHỐT QUYỀN Ở SERVER: user thường KHÔNG xoá được (bỏ qua lặng lẽ, UI cũng ẩn nút).
       if (await callerIsAdmin(data.devAs)) {
