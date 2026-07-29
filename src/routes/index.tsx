@@ -127,6 +127,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.11.2 (29/07/2026): Box chat — thêm lại VÍ DỤ minh hoạ cách viết (như dialog cũ) ngay trên ô
+ *     soạn, khác nhau theo cột: Vướng mắc (ai làm gì, trước khi nào) · Giải pháp (người + mốc).
  *   v3.11.1 (29/07/2026): Box chat — (a) chú thích ô soạn gọn lại "Gửi rồi KHÔNG thể xoá". (b) TÔ
  *     MÀU trở lại: admin NHẤP ĐÚP ngay trên Ô ở bảng → tô CẢ Ô (Vướng mắc đỏ · Giải pháp navy),
  *     nhấp đúp lại thì bỏ; 1 click vẫn mở ô. Hàng cấp DỰ ÁN giữ nguyên (không tô).
@@ -271,7 +273,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.11.1";
+const APP_VERSION = "3.11.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2874,6 +2876,20 @@ function ChatBox({ msgs, isAdmin, field, onOp }: { msgs: ChatMsg[]; isAdmin: boo
           ))}
       </div>
       <div className="border-t border-slate-100 pt-2">
+        {/* VÍ DỤ MINH HOẠ cách viết (giữ lại như dialog cũ) — theo cột: Vướng mắc / Giải pháp. */}
+        <div className="mb-2 rounded-md bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+          {field === "note" ? (
+            <>Viết NGẮN GỌN — mỗi tin 1 vấn đề CẤP BÁCH, nêu rõ <b>ai cần làm gì, trước khi nào</b>. Ví dụ:<br />
+              <span className="text-slate-700">CT chưa duyệt tiến độ đá. PMH chốt trước 12/07</span><br />
+              <span className="text-slate-700">Nhập kho 69/107 mã. NM tăng ca, xong trước 15/07</span><br />
+              <span className="text-slate-700">Thiếu 2 thợ lắp đặt. HR bổ sung trong tuần</span></>
+          ) : (
+            <>Ghi <b>giải pháp / hành động</b> cho từng vướng mắc, rõ <b>người + mốc</b>. Ví dụ:<br />
+              <span className="text-slate-700">Đã họp CT, chốt duyệt đá 11/07 — PMH theo dõi</span><br />
+              <span className="text-slate-700">NM tăng ca 2 tối, cam kết đủ mã 15/07</span><br />
+              <span className="text-slate-700">Điều 2 thợ tổ B, vào ca 13/07 — HR xác nhận</span></>
+          )}
+        </div>
         <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
           placeholder={`Soạn ${noun} mới…`} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
         <div className="mt-1 flex items-center justify-between gap-2">
