@@ -89,7 +89,7 @@ function extractSummaryXlsx(buf: ArrayBuffer): Uint8Array {
 //   • Nút "Làm mới" (force) vẫn lấy LIVE tức thì.
 const DAY_MS = 86_400_000;
 const VN_OFFSET_MS = 7 * 3_600_000;      // giờ VN = UTC+7
-const REFRESH_HOUR_VN = 6;               // mốc "quét" mỗi ngày: 06:00 giờ VN (đổi tại đây)
+const REFRESH_HOUR_VN = 8;               // mốc "quét" mỗi ngày: 08:00 giờ VN (đổi tại đây)
 const CACHE_TTL_S = 3 * 86_400;          // giữ cache 3 ngày (đủ sống qua cuối tuần) → daily refresh lo phần tươi
 
 /** Mốc quét gần nhất (UTC ms) = REFRESH_HOUR_VN:00 giờ VN của hôm nay; nếu chưa tới thì lùi 1 ngày. */

@@ -127,6 +127,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.10.1 (28/07/2026): Summary — đổi mốc quét ghim-theo-ngày 06:00 → 08:00 giờ VN (báo cáo ma
+ *     trận lắp đặt tự làm mới lần mở đầu sau 8h sáng, rồi ghim nguyên ngày). Xem REFRESH_HOUR_VN.
  *   v3.10.0 (28/07/2026): DROPDOWN "Thi công lắp đặt" — hạng mục TC có dòng con Block 1..5 (Mã
  *     TC1..TCn trong file) → bấm ▶ xổ ra. Mỗi Block là ĐẦU VIỆC đầy đủ: kế thừa người phụ trách/
  *     ngày/dự án từ dòng TC, tự tính quá hạn + cảnh báo, vướng mắc/giải pháp sửa được. Bấm % Block
@@ -254,7 +256,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.10.0";
+const APP_VERSION = "3.10.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
