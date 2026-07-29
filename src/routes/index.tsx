@@ -130,6 +130,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.14.0 (29/07/2026): Bảng "Đánh giá tuân thủ cập nhật Master Plan" thêm nút XUẤT PDF (A4 ngang,
+ *     đúng như đang xem — theo sort/lọc Vùng hiện tại), dùng chung engine html2canvas với bảng Danh
+ *     sách. FIX: onclone của pdf-export xoá mọi phần tử print:hidden ⇒ xoá luôn cả dialog (root có
+ *     print:hidden) → tạm gỡ print:hidden ở tổ tiên bảng trước khi chụp; recencyStyle đổi hsl sang
+ *     cú pháp phẩy cho tương thích. Dấu ✓/✕ (đúng hạn/không cập nhật) đổi TỪ icon SVG lucide SANG
+ *     ký tự unicode — html2canvas render SVG không ổn định làm PDF mất/méo dấu (đã soi pixel đúng màu).
  *   v3.13.0 (29/07/2026): (1) MATCH DỮ LIỆU THEO ID (cột STT) thay cho tên: đọc ID phân cấp
  *     (dự án 70 / hạng mục 70.1 / block 70.1a) từ file, khoá vướng mắc/giải pháp/ngày kết thúc/lịch
  *     sử update theo ID → đổi tên dự án KHÔNG mất ghi chú. Di trú 1 lần khoá tên cũ → ID (không mất
@@ -295,7 +301,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.13.0";
+const APP_VERSION = "3.14.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -4878,11 +4884,12 @@ function normProjName(s: string): string {
 }
 
 function ComplianceMark({ m }: { m: CMark }) {
-  // GLYPH (không khối nền) để bớt sặc sỡ. ✔ = "bình thường/đúng hạn" → xanh NHẠT, lùi lại;
-  // o (trễ) = vàng; x (KHÔNG cập nhật) = ĐỎ đậm → ngoại lệ cần bắt mắt nổi lên trên nền ✔.
-  if (m === "P") return <Check className="mx-auto h-3.5 w-3.5 text-emerald-400" strokeWidth={3} />;
+  // GLYPH ký tự (KHÔNG dùng icon SVG lucide): html2canvas render SVG không ổn định → khi XUẤT PDF
+  // dấu ✓/✕ bị méo/mất. Ký tự unicode render chắc chắn trên cả màn hình lẫn PDF, nhìn gần như y hệt.
+  // ✓ = đúng hạn (xanh nhạt, lùi lại); o (trễ) = vàng; ✕ = KHÔNG cập nhật (đỏ đậm, ngoại lệ nổi bật).
+  if (m === "P") return <span className="text-[13px] font-bold leading-none text-emerald-500" title="Đúng hạn">✓</span>;
   if (m === "o") return <span className="text-[11px] font-bold text-amber-500" title="Cập nhật trễ">o</span>;
-  if (m === "x") return <X className="mx-auto h-3.5 w-3.5 text-red-600" strokeWidth={3.25} />;
+  if (m === "x") return <span className="text-[13px] font-bold leading-none text-red-600" title="Không cập nhật">✕</span>;
   return <span className="text-[10px] text-slate-200" title="Chưa có dữ liệu tuần này">–</span>;
 }
 
@@ -4919,7 +4926,9 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
     const t = Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]);
     const d = Math.max(0, Math.round((tToday - t) / 86400000));
     const hue = Math.round(120 * (1 - Math.min(30, d) / 30));
-    return { background: `hsl(${hue} 75% 88%)`, color: `hsl(${hue} 55% 26%)` };
+    // Cú pháp PHẨY (hsl(H, S%, L%)) — cú pháp CÁCH (hsl(H S% L%)) làm html2canvas-pro (xuất PDF)
+    // parse lỗi "unexpected EOF" vì đọc thẳng giá trị inline. Phẩy thì cả trình duyệt lẫn PDF đều hiểu.
+    return { background: `hsl(${hue}, 75%, 88%)`, color: `hsl(${hue}, 55%, 26%)` };
   };
 
   // Tuần CÓ DỮ LIỆU mới nhất = tuần đã CHỐT gần nhất → dùng đếm "không cập nhật tuần này".
@@ -4985,22 +4994,62 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
   // có thể chưa điền → dùng tuần có dữ liệu mới nhất cho con số có nghĩa).
   const khongCNTuanNay = lastDataIdx >= 0 ? (data?.rows.filter(r => r.marks[lastDataIdx] === "x").length ?? 0) : 0;
 
+  /** XUẤT PDF bảng tuân thủ = chụp ĐÚNG bảng đang xem (đã sort/lọc Vùng) + khối tiêu đề, dựng A4
+   *  ngang qua exportDashboardPdf (dùng chung engine với bảng Danh sách). wide=true vì bảng rộng
+   *  (nhiều cột tuần) → giữ bề rộng thật rồi thu tỉ lệ cho vừa giấy. */
+  const tableRef = useRef<HTMLTableElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const doExportPdf = async () => {
+    if (exporting || !tableRef.current) return;
+    setExporting(true);
+    const tid = toast.loading("Đang tạo PDF bảng tuân thủ…", { position: "bottom-left" });
+    // onclone của pdf-export XOÁ mọi phần tử "print:hidden" khỏi ảnh chụp (để bỏ nút/điều khiển).
+    // NHƯNG ROOT dialog này cũng mang "print:hidden" (chặn Ctrl+P in modal) ⇒ sẽ bị xoá LUÔN cả
+    // dialog + bảng cần chụp → html2canvas lỗi "unexpected EOF". Tạm gỡ "print:hidden" ở các TỔ TIÊN
+    // của bảng trước khi chụp rồi trả lại — nút print:hidden BÊN TRONG vẫn bị onclone loại như thường.
+    const stripped: HTMLElement[] = [];
+    for (let el: HTMLElement | null = tableRef.current; el; el = el.parentElement) {
+      if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
+    }
+    try {
+      const { exportDashboardPdf } = await import("@/lib/pdf-export");
+      const pages = await exportDashboardPdf({
+        blocks: headerRef.current ? [headerRef.current] : [],
+        table: tableRef.current,
+        wide: true,
+        fileName: `DanhGiaTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`,
+      });
+      track("export_pdf", `Đánh giá tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${tongDuAn} dự án`.slice(0, 300));
+      toast.success(`Đã tạo PDF bảng tuân thủ (${pages} trang)`);
+    } catch (e) {
+      toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
+    } finally {
+      stripped.forEach((el) => el.classList.add("print:hidden"));
+      toast.dismiss(tid);
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
-            <div className="text-sm font-bold text-slate-900">ĐÁNH GIÁ TUÂN THỦ CẬP NHẬT MASTER PLAN{data?.monthLabel ? ` THÁNG ${data.monthLabel}` : ""}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
-              <span>Tổng dự án: <b className="tabular-nums text-slate-900">{tongDuAn}</b></span>
-              <span>Số dự án không cập nhật tuần này: <b className="tabular-nums text-red-600">{khongCNTuanNay}</b></span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-[10.5px] text-slate-600">
-              <span className="inline-flex items-center gap-1"><ComplianceMark m="P" /> Đúng hạn</span>
-              <span className="inline-flex items-center gap-1"><ComplianceMark m="o" /> Trễ</span>
-              <span className="inline-flex items-center gap-1"><ComplianceMark m="x" /> Không cập nhật</span>
-              <span className="inline-flex items-center gap-1"><ComplianceMark m={null} /> Chưa có dữ liệu</span>
+            {/* headerRef = KHỐI TIÊU ĐỀ vẽ vào đầu PDF (không gồm nút/điều khiển tương tác). */}
+            <div ref={headerRef}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
+              <div className="text-sm font-bold text-slate-900">ĐÁNH GIÁ TUÂN THỦ CẬP NHẬT MASTER PLAN{data?.monthLabel ? ` THÁNG ${data.monthLabel}` : ""}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                <span>Tổng dự án: <b className="tabular-nums text-slate-900">{tongDuAn}</b></span>
+                <span>Số dự án không cập nhật tuần này: <b className="tabular-nums text-red-600">{khongCNTuanNay}</b></span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-3 text-[10.5px] text-slate-600">
+                <span className="inline-flex items-center gap-1"><ComplianceMark m="P" /> Đúng hạn</span>
+                <span className="inline-flex items-center gap-1"><ComplianceMark m="o" /> Trễ</span>
+                <span className="inline-flex items-center gap-1"><ComplianceMark m="x" /> Không cập nhật</span>
+                <span className="inline-flex items-center gap-1"><ComplianceMark m={null} /> Chưa có dữ liệu</span>
+              </div>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-relaxed text-slate-500">
               <span><b className="text-slate-700">Điểm dự án (100 đ):</b> Trễ −{SCORING.deduct.late}đ, KHÔNG cập nhật −{SCORING.deduct.missed}đ</span>
@@ -5015,7 +5064,14 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+          <div className="flex shrink-0 items-center gap-2 print:hidden">
+            <button onClick={() => void doExportPdf()} disabled={exporting || loading || !!error || !data || !byPm.length}
+              title="Xuất bảng tuân thủ ra PDF (A4 ngang, đúng như đang xem)"
+              className="flex items-center gap-1.5 rounded-md bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">
+              {exporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Xuất PDF
+            </button>
+            <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 pb-3">
@@ -5030,7 +5086,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
           ) : !data || !byPm.length ? (
             <div className="py-16 text-center text-sm text-slate-500">File không có dòng dữ liệu nào.</div>
           ) : (
-          <table className="w-full border-collapse text-[11px]">
+          <table ref={tableRef} className="w-full border-collapse text-[11px]">
             <thead className="sticky top-0 z-20 text-white">
               <tr>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản">Điểm PM</th>
