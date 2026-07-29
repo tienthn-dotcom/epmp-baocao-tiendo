@@ -127,6 +127,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.9.6 (28/07/2026): Summary TẢI NHANH — cache KV đổi từ 10' → GHIM THEO NGÀY + tự làm mới
+ *     nền (stale-while-revalidate): bấm luôn trả cache tức thì, chỉ âm thầm fetch bản mới ở nền khi
+ *     cache cũ hơn mốc 06:00 VN (đổi REFRESH_HOUR_VN). Nút "Làm mới" vẫn lấy live. Hết cảnh chờ Drive.
  *   v3.9.5 (28/07/2026): Summary bảng chỉ số — BỎ tô vàng cả hàng "Hôm nay" + cột cuối (bê từ
  *     file); thay bằng highlight ĐỘNG: chỉ tô vàng ô "Hôm nay" có giá trị ≠ 0 (ô vừa thay đổi).
  *   v3.9.4 (28/07/2026): Summary — % lắp đặt = 100% (giá trị 1.0) không còn bị bỏ trống; nhận
@@ -245,7 +248,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.9.5";
+const APP_VERSION = "3.9.6";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */

@@ -80,10 +80,51 @@ function extractSummaryXlsx(buf: ArrayBuffer): Uint8Array {
   return zipSync(out, { level: 6 });
 }
 
+// ── CACHE GHIM THEO NGÀY (stale-while-revalidate) ──────────────────────────────
+// Mục tiêu: bấm vào Summary LUÔN nhanh. Thay vì cache 10' (cứ hết hạn là fetch Drive
+// 2MB → chậm), ta GHIM data đến "mốc quét" mỗi ngày:
+//   • Có cache → trả NGAY (tức thì), không chờ Drive.
+//   • Nếu cache cũ hơn mốc quét gần nhất → ÂM THẦM fetch bản mới ở NỀN (waitUntil),
+//     lần mở sau đã có bản mới. Data đứng yên cả ngày, tự refresh 1 lần/ngày.
+//   • Nút "Làm mới" (force) vẫn lấy LIVE tức thì.
+const DAY_MS = 86_400_000;
+const VN_OFFSET_MS = 7 * 3_600_000;      // giờ VN = UTC+7
+const REFRESH_HOUR_VN = 6;               // mốc "quét" mỗi ngày: 06:00 giờ VN (đổi tại đây)
+const CACHE_TTL_S = 3 * 86_400;          // giữ cache 3 ngày (đủ sống qua cuối tuần) → daily refresh lo phần tươi
+
+/** Mốc quét gần nhất (UTC ms) = REFRESH_HOUR_VN:00 giờ VN của hôm nay; nếu chưa tới thì lùi 1 ngày. */
+function lastRefreshBoundary(now: number): number {
+  const vnMidnight = Math.floor((now + VN_OFFSET_MS) / DAY_MS) * DAY_MS - VN_OFFSET_MS; // 00:00 VN hôm nay (UTC ms)
+  let b = vnMidnight + REFRESH_HOUR_VN * 3_600_000;
+  if (b > now) b -= DAY_MS;
+  return b;
+}
+
+/** Lấy waitUntil (nếu có) để chạy refresh ở NỀN không chặn phản hồi. */
+async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
+  try {
+    const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
+    const ev = (mod.getEvent as undefined | (() => unknown))?.() as { context?: { cloudflare?: { context?: { waitUntil?: (p: Promise<unknown>) => void } } } } | undefined;
+    const ctx = ev?.context?.cloudflare?.context;
+    if (ctx?.waitUntil) return (p) => ctx.waitUntil!(p);
+  } catch { /* runtime khác */ }
+  return null;
+}
+
+/** Fetch Drive → tách sheet Summary → b64 → ghi cache {b64, ts}. Trả b64. */
+async function refreshAndStore(fileId: string, kv: KVLike | null, cacheKey: string): Promise<string> {
+  const raw = await fetchXlsxById(fileId);
+  let bytes: Uint8Array;
+  try { bytes = extractSummaryXlsx(raw); }          // ~170KB
+  catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
+  const b64 = toB64(bytes);
+  if (kv) { try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi thì bỏ qua */ } }
+  return b64;
+}
+
 /** TẢI file Summary về CLIENT — chỉ gửi riêng sheet "Summary" (~170KB) thay vì cả file 2MB.
  *  KHÔNG parse trên Worker (parse xlsx 2MB làm OOM → Error 1102). Việc parse + render ở CLIENT.
- *  Worker chỉ: fetch → TÁCH sheet Summary (fflate, nhẹ) → b64 → cache KV 10'. Tách lỗi → gửi
- *  nguyên file (vẫn chạy). `force` (Làm mới) bỏ cache. */
+ *  Cache GHIM THEO NGÀY + tự làm mới nền (xem khối chú thích trên). `force` = lấy LIVE ngay. */
 export const getSummaryFile = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), force: z.boolean().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
@@ -91,13 +132,18 @@ export const getSummaryFile = createServerFn({ method: "POST" })
     const cacheKey = `sfile:${data.fileId}`;
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
-      if (hit) return { b64: hit, cached: true };
+      if (hit) {
+        let b64 = hit, ts = 0;
+        try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } }
+        catch { /* cache đời cũ (b64 thô) → coi như ts=0 để refresh nền 1 lần */ }
+        if (ts < lastRefreshBoundary(Date.now())) {          // cũ hơn mốc quét hôm nay → làm mới ở NỀN
+          const job = refreshAndStore(data.fileId, kv, cacheKey).catch(() => { /* nền, lỗi kệ */ });
+          const wu = await getWaitUntil();
+          if (wu) wu(job);
+        }
+        return { b64, cached: true };                        // LUÔN trả cache tức thì
+      }
     }
-    const raw = await fetchXlsxById(data.fileId);
-    let bytes: Uint8Array;
-    try { bytes = extractSummaryXlsx(raw); }          // ~170KB
-    catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
-    const b64 = toB64(bytes);
-    if (kv) { try { await kv.put(cacheKey, b64, { expirationTtl: 600 }); } catch { /* cache lỗi thì bỏ qua */ } }
+    const b64 = await refreshAndStore(data.fileId, kv, cacheKey);
     return { b64, cached: false };
   });
