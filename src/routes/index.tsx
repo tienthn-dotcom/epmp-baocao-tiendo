@@ -43,7 +43,7 @@ import { parseCsvText, parseXlsxBuffer } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, saveEdits, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, type EditsMap, type ItemEdit, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
+import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
@@ -127,6 +127,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.11.0 (28/07/2026): VƯỚNG MẮC & GIẢI PHÁP → BOX CHAT lưu vết. Mỗi mục là 1 message có NGÀY +
+ *     EMAIL người nhập (track qua phiên); bảng chỉ hiện message KHÔNG ẩn (ẩn = đã giải quyết, vẫn
+ *     xem được khi mở ô). KHÔNG cho xoá — chỉ ẨN/MỞ ẨN; CHỈ ADMIN được xoá hẳn. Admin nhấp đúp 1 từ
+ *     để tô/bỏ tô đỏ (theo từng message). MIGRATE vướng mắc/giải pháp cũ → message "(cũ)", KHÔNG mất.
+ *     Áp cho cả đầu việc · Block con · hàng gộp dự án. (backend: editMessages + migrate-on-read).
  *   v3.10.4 (28/07/2026): Client gửi TOÀN BỘ fileId install-link vào registry khi load → worker
  *     cron phụ (baocao-tiendo-warmer, cron 8h VN) warm SẴN ma trận lắp đặt mọi dự án mỗi sáng.
  *   v3.10.3 (28/07/2026): getSummaryFile ghi fileId vào REGISTRY (KV sfile:index) mỗi lần fetch →
@@ -263,7 +268,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.10.4";
+const APP_VERSION = "3.11.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1081,16 +1086,17 @@ type EnrichedItem = ItemRow & {
   _alertColor: AlertColor;
   _sevScore: number;
   _sevLabel: string;
-  /** "Hành động / Cần xử lý" — cột NHẬP TAY trên app (sheet không có). Rỗng = chưa nhập. */
+  /** "Giải pháp" — TEXT rút gọn = ghép các message KHÔNG ẩn (để lọc/xuất Excel/PDF). */
   _action: string;
-  /** Trường nào đã được chỉnh trên app (ghi đè sheet, lưu backend dùng chung). */
+  /** BOX CHAT — MỌI message (kể cả ẩn) của Vướng mắc / Giải pháp. Bảng chỉ hiện message KHÔNG ẩn;
+   *  mở ô mới thấy hết. author = email người nhập; hi = vùng tô đỏ theo TỪNG message (admin). */
+  _noteMsgs: ChatMsg[];
+  _actionMsgs: ChatMsg[];
+  /** Có message nào không (để hiện badge ✎). */
   _noteEdited: boolean;
   _actionEdited: boolean;
   _picEdited: boolean;
   _deadlineEdited: boolean;
-  /** Vùng tô đỏ (#C00000) trong Vướng mắc / Giải pháp — admin đặt, ai cũng thấy. */
-  _noteHi: HiRange[];
-  _actionHi: HiRange[];
   /** Thời điểm PM sửa lần cuối trên app (ISO) — trường hệ thống từ backend. */
   _editedAt: string | null;
   _key: string;
@@ -1148,13 +1154,13 @@ type DueMonthGroup = {
   updateDate: string | null;
   /** Dự án ĐÃ BÀN GIAO XONG (note dòng cha) → hàng gộp nền XANH LÁ, không cảnh báo. */
   delivered: boolean;
-  /** Vướng mắc cấp DỰ ÁN (nhập trong chế độ gộp), lấy từ KV theo key. */
+  /** Vướng mắc cấp DỰ ÁN — TEXT rút gọn (message không ẩn) để hiện ở bảng. */
   note: string;
-  /** Hành động / Cần xử lý cấp DỰ ÁN — cùng cơ chế với note. */
+  /** Giải pháp cấp DỰ ÁN — TEXT rút gọn. */
   action: string;
-  /** Vùng tô đỏ (admin) cho note/action cấp dự án. */
-  noteHi: HiRange[];
-  actionHi: HiRange[];
+  /** BOX CHAT cấp dự án (mọi message kể cả ẩn). */
+  noteMsgs: ChatMsg[];
+  actionMsgs: ChatMsg[];
   editedAt: string | null;
 };
 
@@ -1206,9 +1212,17 @@ type GanttRow = {
 const itemKeyOf = (it: ItemRow) =>
   [it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0].join(String.fromCharCode(0));
 
+/** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
+const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.hidden).map((m) => m.text).join("\n");
+const fmtMsgTime = (iso: string): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
 /** Patch chỉnh sửa 1 đầu việc gửi lên backend (null = xoá override field đó). */
 type HiRange = [number, number];
-type EditPatch = { note?: string | null; action?: string | null; pic?: string | null; deadline?: string | null; noteHi?: HiRange[] | null; actionHi?: HiRange[] | null };
+type EditPatch = { pic?: string | null; deadline?: string | null };
 
 type StageOrOther = StageId | "MB" | "PS" | "OTHER";
 type AlertK2 = Exclude<AlertKind, "none">;
@@ -1331,19 +1345,14 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       queryClient.setQueryData(["edits"], r.items);
       // NHẬT KÝ GHI RÕ SỬA GÌ: trường nào = giá trị nào (vd Vướng mắc = "vvvvv"), kèm dự án ·
       // công đoạn để admin nhìn phát biết ai sửa gì ở đâu — không chỉ ghi chung "sửa dữ liệu".
-      const FIELD_VN: Record<string, string> = { note: "Vướng mắc", action: "Giải pháp", pic: "Người phụ trách", deadline: "Deadline" };
+      const FIELD_VN: Record<string, string> = { pic: "Người phụ trách", deadline: "Deadline" };
       const parts: string[] = [];
-      for (const f of ["note", "action", "pic", "deadline"] as const) {
+      for (const f of ["pic", "deadline"] as const) {
         if (patch[f] === undefined) continue;
         const v = patch[f];
         parts.push(v == null || String(v).trim() === ""
           ? `${FIELD_VN[f]}: (xoá)`
           : `${FIELD_VN[f]} = "${String(v).replace(/\s+/g, " ").trim().slice(0, 140)}"`);
-      }
-      for (const [hiF, lbl] of [["noteHi", "Vướng mắc"], ["actionHi", "Giải pháp"]] as const) {
-        if (patch[hiF] === undefined) continue;
-        const n = patch[hiF]?.length ?? 0;
-        parts.push(n > 0 ? `Tô đỏ ${lbl} (${n} đoạn)` : `Bỏ tô đỏ ${lbl}`);
       }
       const it = data.items.find(x => itemKeyOf(x) === key);
       const proj = it ? null : data.projects.find(p => projectKeyOf(p.code, p.name) === key);
@@ -1353,6 +1362,24 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       toast.success("Đã lưu vào bản dùng chung, mọi người đều thấy");
     } catch (e) {
       toast.error(`Lưu thất bại (dữ liệu chưa ghi): ${(e as Error).message}`);
+    }
+  };
+
+  /** Thao tác BOX CHAT Vướng mắc / Giải pháp (add/hide/unhide/delete[admin]/sethi[admin]). */
+  const msgOp = async (key: string, field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => {
+    try {
+      const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, devAs: devAs() } });
+      queryClient.setQueryData(["edits"], r.items);
+      const FIELD_VN = field === "note" ? "Vướng mắc" : "Giải pháp";
+      const OP_VN: Record<string, string> = { add: "thêm", hide: "ẩn", unhide: "mở ẩn", delete: "XOÁ", sethi: "tô màu" };
+      const it = data.items.find(x => itemKeyOf(x) === key);
+      const proj = it ? null : data.projects.find(p => projectKeyOf(p.code, p.name) === key);
+      const ctx = it ? `${it.projectCode} ${it.projectName} · ${stageAbbrOf(stageIdOf(it))}`
+                : proj ? `${proj.maCT || proj.code} ${proj.name} (cấp dự án)` : key.slice(0, 40);
+      const detail = op === "add" && opts?.text ? `: "${opts.text.replace(/\s+/g, " ").trim().slice(0, 120)}"` : "";
+      track("save_edit", `${ctx} — ${FIELD_VN}: ${OP_VN[op]}${detail}`.slice(0, 290));
+    } catch (e) {
+      toast.error(`Thao tác thất bại: ${(e as Error).message}`);
     }
   };
 
@@ -1428,7 +1455,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       const deadline = ed?.deadline ?? it.deadline;
       return {
         ...it,
-        note: ed?.note ?? "",
+        note: visibleText(ed?.noteMsgs),
         owner: ed?.pic ?? it.owner,
         deadline,
         overdueDays: ed?.deadline
@@ -1488,6 +1515,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       const ed = edits[key];
       return {
         ...it,
+        note: visibleText(ed?.noteMsgs),   // TEXT rút gọn = message KHÔNG ẩn (bảng/xuất Excel)
         _stageId: sid,
         _stageLabel: stageLabelOf(sid),
         _stageDisplay: stageDisplayLabel(sid),
@@ -1499,11 +1527,11 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         _alertColor: alertColor,
         _sevScore: a.severityScore,
         _sevLabel: sevLabel,
-        _action: ed?.action ?? "",
-        _noteHi: ed?.noteHi ?? [],
-        _actionHi: ed?.actionHi ?? [],
-        _noteEdited: ed?.note != null,
-        _actionEdited: ed?.action != null,
+        _action: visibleText(ed?.actionMsgs),
+        _noteMsgs: ed?.noteMsgs ?? [],
+        _actionMsgs: ed?.actionMsgs ?? [],
+        _noteEdited: !!ed?.noteMsgs?.length,
+        _actionEdited: !!ed?.actionMsgs?.length,
         _picEdited: ed?.pic != null,
         _deadlineEdited: ed?.deadline != null,
         _editedAt: ed?.updatedAt ?? null,
@@ -2154,7 +2182,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     for (const it of sortedAlerts) {
       const key = projectKeyOf(it.projectCode, it.projectName);
       let g = byKey.get(key);
-      if (!g) { const ped = edits[key]; g = { key, maCT: it.maCT || it.projectCode, name: it.projectName, start: it.projectStart ?? null, deadline: it.projectDeadline, pm: it._projectPm || "—", updateDate: it.updateDate ?? null, delivered: !!it.projectDelivered, items: [], note: ped?.note ?? "", action: ped?.action ?? "", noteHi: ped?.noteHi ?? [], actionHi: ped?.actionHi ?? [], editedAt: ped?.updatedAt ?? null }; byKey.set(key, g); }
+      if (!g) { const ped = edits[key]; g = { key, maCT: it.maCT || it.projectCode, name: it.projectName, start: it.projectStart ?? null, deadline: it.projectDeadline, pm: it._projectPm || "—", updateDate: it.updateDate ?? null, delivered: !!it.projectDelivered, items: [], note: visibleText(ped?.noteMsgs), action: visibleText(ped?.actionMsgs), noteMsgs: ped?.noteMsgs ?? [], actionMsgs: ped?.actionMsgs ?? [], editedAt: ped?.updatedAt ?? null }; byKey.set(key, g); }
       // Dự phòng: nếu dòng cha KHÔNG có ngày Bắt đầu → lấy ngày bắt đầu SỚM NHẤT của công đoạn con.
       if (!it.projectStart && it.start && (!g.start || it.start < g.start)) g.start = it.start;
       g.items.push(it);
@@ -2399,6 +2427,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         onToggleDone={() => setShowDone(v => !v)}
         completedDates={completedDates}
         onSaveEdit={saveItemEdit}
+        onMsgOp={msgOp}
         onPrint={(paper) => { void doPrint(paper); }}
         onExportExcel={async () => {
           // NGUỒN DỰ ÁN = filterResult.projects (CÙNG hàm với bảng & PDF).
@@ -2793,7 +2822,90 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit }: {
+const CHAT_MSG_MAX = 1000;
+type MsgOp = (field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
+
+/** Offset ký tự của (node, nodeOff) trong 1 phần tử — để tính vùng tô theo text GỐC. */
+function charOff(root: HTMLElement, node: Node, nodeOff: number): number {
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n = 0, cur: Node | null;
+  while ((cur = walk.nextNode())) { if (cur === node) return n + nodeOff; n += (cur.textContent || "").length; }
+  return n;
+}
+
+/** Ô BẢNG (Vướng mắc / Giải pháp): CHỈ hiện message KHÔNG ẩn; nếu có ẩn thì ghi "(+N đã ẩn)".
+ *  `dark` = ô nền navy (hàng gộp dự án) → chữ trắng. */
+function ChatCell({ msgs, dark }: { msgs: ChatMsg[]; dark?: boolean }) {
+  const vis = msgs.filter((m) => !m.hidden);
+  const hiddenN = msgs.length - vis.length;
+  if (!vis.length) return <span className={dark ? "text-[10px] text-white/80 print:hidden" : "text-slate-400 print:hidden"}>{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+  return (
+    <div className={`space-y-1 leading-snug ${dark ? "font-bold text-white" : ""}`}>
+      {vis.map((m) => (
+        <div key={m.id} className="whitespace-pre-line"><HiText text={m.text} ranges={m.hi ?? []} boldOnly={dark} /></div>
+      ))}
+      {hiddenN > 0 && <div className={`text-[9px] font-medium ${dark ? "text-white/70" : "text-slate-400"}`}>+{hiddenN} đã ẩn</div>}
+    </div>
+  );
+}
+
+/** BOX CHAT trong dialog: danh sách message (ai · lúc nào) + soạn tin mới. Ẩn/mở ẩn ai cũng được;
+ *  XOÁ chỉ admin; nhấp đúp 1 từ để tô/bỏ tô đỏ (admin). */
+function ChatBox({ msgs, isAdmin, field, onOp }: { msgs: ChatMsg[]; isAdmin: boolean; field: "note" | "action"; onOp: MsgOp }) {
+  const [draft, setDraft] = useState("");
+  const noun = field === "note" ? "vướng mắc" : "giải pháp";
+  const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX) }); setDraft(""); };
+  const onDbl = (m: ChatMsg, e: { currentTarget: HTMLElement }) => {
+    if (!isAdmin) return;
+    const host = e.currentTarget; const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const rg = sel.getRangeAt(0);
+    if (!host.contains(rg.startContainer) || !host.contains(rg.endContainer)) return;
+    const a = charOff(host, rg.startContainer, rg.startOffset), b = charOff(host, rg.endContainer, rg.endOffset);
+    const start = Math.min(a, b), end = Math.max(a, b);
+    if (end <= start) return;
+    const cur = m.hi ?? [];
+    const overlaps = cur.some(([s, e2]) => start < e2 && end > s);
+    const next: HiRange[] = overlaps ? cur.filter(([s, e2]) => !(start < e2 && end > s)) : [...cur, [start, end]];
+    void onOp("sethi", { msgId: m.id, hi: next.length ? next : null });
+    sel.removeAllRanges();
+  };
+  return (
+    <div className="flex min-h-0 flex-col gap-2">
+      <div className="max-h-[46vh] space-y-2 overflow-auto pr-1">
+        {msgs.length === 0
+          ? <div className="py-6 text-center text-[12px] text-slate-400">Chưa có {noun} nào. Soạn ở ô dưới rồi bấm Gửi.</div>
+          : msgs.map((m) => (
+            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-slate-200 bg-white"}`}>
+              <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">{m.author || "?"}</span>
+                <span className="tabular-nums">{fmtMsgTime(m.at)}</span>
+                {m.hidden && <span className="rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600">ĐÃ ẨN</span>}
+                <span className="ml-auto flex items-center gap-2">
+                  <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>
+                  {isAdmin && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
+                </span>
+              </div>
+              <div className={`whitespace-pre-line text-[13px] leading-relaxed ${m.hidden ? "text-slate-400" : "text-slate-800"}`}
+                   onDoubleClick={(e) => onDbl(m, e)} title={isAdmin ? "Nhấp đúp 1 từ để tô đỏ / bỏ tô" : undefined}>
+                <HiText text={m.text} ranges={m.hi ?? []} field={field} />
+              </div>
+            </div>
+          ))}
+      </div>
+      <div className="border-t border-slate-100 pt-2">
+        <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
+          placeholder={`Soạn ${noun} mới…`} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="text-[10px] leading-tight text-slate-400">Tự đính tên bạn + ngày giờ. KHÔNG xoá được (chỉ Ẩn = đã giải quyết){isAdmin ? "; admin xoá được" : ""}.</span>
+          <button type="button" onClick={send} disabled={!draft.trim()} className="shrink-0 rounded-md bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-40">Gửi</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -2828,6 +2940,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
   onSaveEdit: (key: string, patch: EditPatch) => void | Promise<void>;
+  onMsgOp: (key: string, field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
 }) {
   const activeCount =
     filters.depts.length + filters.stages.length + filters.alerts.length
@@ -2947,35 +3060,18 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   // Hộp CHỈNH SỬA đầu việc (Vướng mắc / PIC / Deadline) — lưu backend dùng chung.
   /** `field` = đang sửa cột nào: "note" (Vướng mắc) hay "action" (Hành động / Cần xử lý).
    *  Hai cột dùng CHUNG dialog này, chỉ khác trường lưu xuống KV. */
-  const [editView, setEditView] = useState<{
-    title: string; key: string; field: "note" | "action"; fieldLabel: string;
-    sheet: { note: string; pic: string; deadline: string | null };
-    edited: { note: boolean; pic: boolean; deadline: boolean };
-    editedAt: string | null;
-  } | null>(null);
-  const NOTE_MAX = 500;
-  const [noteDraft, setNoteDraft] = useState("");
-  // Vùng TÔ ĐỎ đang soạn (chỉ admin dùng). Bôi đen trong textarea → "Tô đỏ" → thêm 1 đoạn.
-  const [hiDraft, setHiDraft] = useState<HiRange[]>([]);
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const mergeRange = (ranges: HiRange[], add: HiRange): HiRange[] => {
-    const all = [...ranges, add].filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
-    const out: HiRange[] = [];
-    for (const r of all) { const last = out[out.length - 1]; if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else out.push([r[0], r[1]]); }
-    return out;
-  };
-  const addHighlight = () => {
-    const ta = taRef.current; if (!ta) return;
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    if (s == null || e == null || e <= s) { toast.error("Bôi đen đoạn chữ cần tô đỏ trước đã"); return; }
-    setHiDraft((prev) => mergeRange(prev, [s, e]));
-  };
-  const removeHighlight = (r: HiRange) => setHiDraft((prev) => prev.filter((x) => !(x[0] === r[0] && x[1] === r[1])));
-
-  // ── TÔ NỔI NGAY TRONG Ô (admin, khỏi mở hộp sửa) ───────────────────────────────
-  // Bôi đen chữ trong ô Vướng mắc/Giải pháp → hiện nút nổi "Tô nổi" để tô 1 phát. Bấm vào đoạn
-  // đã tô để BỎ. Offset tính theo text GỐC (it.note/_action) bằng cách duyệt text-node trong span.
-  const [hiPop, setHiPop] = useState<{ key: string; field: "note" | "action"; range: HiRange; existing: HiRange[]; x: number; y: number } | null>(null);
+  const [editView, setEditView] = useState<{ title: string; key: string; field: "note" | "action" } | null>(null);
+  // Chỉ mục message theo KHOÁ (đầu việc + Block con + cấp dự án) — box chat đọc LIVE ở đây nên tự
+  // cập nhật sau mỗi thao tác (thêm/ẩn/xoá) mà không cần đóng-mở lại dialog.
+  const msgIndex = useMemo(() => {
+    const m = new Map<string, { note: ChatMsg[]; action: ChatMsg[] }>();
+    for (const it of items) {
+      m.set(it._key, { note: it._noteMsgs, action: it._actionMsgs });
+      for (const b of (it._blockItems ?? [])) m.set(b._key, { note: b._noteMsgs, action: b._actionMsgs });
+    }
+    for (const g of groups) m.set(g.key, { note: g.noteMsgs ?? [], action: g.actionMsgs ?? [] });
+    return m;
+  }, [items, groups]);
   // Popover "số mã / tổng mã" khi bấm vào con số % thực tế (chỉ ô có chi tiết breakdown).
   const [codePop, setCodePop] = useState<{ x: number; y: number; item: EnrichedItem } | null>(null);
   useEffect(() => {
@@ -2997,84 +3093,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     window.addEventListener("resize", close);
     return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [blockPop]);
-  const charOffsetIn = (root: HTMLElement, node: Node, nodeOff: number): number => {
-    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let n = 0, cur: Node | null;
-    while ((cur = walk.nextNode())) { if (cur === node) return n + nodeOff; n += (cur.textContent || "").length; }
-    return n;
-  };
-  const onCellSelect = (host: HTMLElement, key: string, field: "note" | "action", existing: HiRange[]) => {
-    if (!isAdmin) return;
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setHiPop(null); return; }
-    const range = sel.getRangeAt(0);
-    if (!host.contains(range.startContainer) || !host.contains(range.endContainer)) return;
-    const s = charOffsetIn(host, range.startContainer, range.startOffset);
-    const e = charOffsetIn(host, range.endContainer, range.endOffset);
-    const start = Math.min(s, e), end = Math.max(s, e);
-    if (end - start < 1) { setHiPop(null); return; }
-    const r = range.getBoundingClientRect();
-    setHiPop({ key, field, range: [start, end], existing, x: r.left + r.width / 2, y: r.top });
-  };
-  const applyHiPop = () => {
-    if (!hiPop) return;
-    const merged = mergeRange(hiPop.existing, hiPop.range);
-    void onSaveEdit(hiPop.key, hiPop.field === "note" ? { noteHi: merged } : { actionHi: merged });
-    window.getSelection()?.removeAllRanges();
-    setHiPop(null);
-  };
-  const removeCellHi = (key: string, field: "note" | "action", existing: HiRange[], r: HiRange) => {
-    const next = existing.filter((x) => !(x[0] === r[0] && x[1] === r[1]));
-    void onSaveEdit(key, field === "note" ? { noteHi: next } : { actionHi: next });
-  };
-  useEffect(() => {
-    if (!hiPop) return;
-    const close = () => setHiPop(null);
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
-  }, [hiPop]);
-
   const FIELD_LABEL = { note: "Vướng mắc", action: "Giải pháp" } as const;
   const openEdit = (it: EnrichedItem, field: "note" | "action" = "note") => {
-    setNoteDraft(field === "note" ? it.note : it._action);
-    setHiDraft([...(field === "note" ? it._noteHi : it._actionHi)]);
-    setEditView({
-      title: `${it.maCT || it.projectCode} · ${it.projectName} · ${it._stageLabel}`,
-      key: it._key, field, fieldLabel: FIELD_LABEL[field],
-      // Cột Hành động KHÔNG có trong sheet → không có giá trị gốc để đối chiếu.
-      sheet: field === "note" ? it._sheet : { note: "", pic: "", deadline: null },
-      edited: { note: field === "note" ? it._noteEdited : it._actionEdited, pic: it._picEdited, deadline: it._deadlineEdited },
-      editedAt: it._editedAt,
-    });
+    setEditView({ title: `${it.maCT || it.projectCode} · ${it.projectName} · ${it._stageLabel} · ${FIELD_LABEL[field]}`, key: it._key, field });
   };
-  /** Nhập Vướng mắc / Hành động CẤP DỰ ÁN (chế độ gộp) — khoá = projectKey. */
+  /** Vướng mắc / Giải pháp CẤP DỰ ÁN (chế độ gộp) — khoá = projectKey. */
   const openGroupEdit = (g: DueMonthGroup, field: "note" | "action" = "note") => {
-    setNoteDraft(field === "note" ? g.note : g.action);
-    setHiDraft([...(field === "note" ? g.noteHi : g.actionHi)]);
-    setEditView({
-      title: `${g.maCT} · ${g.name} · ${FIELD_LABEL[field]} (cấp dự án)`,
-      key: g.key, field, fieldLabel: FIELD_LABEL[field],
-      sheet: { note: "", pic: "", deadline: null },
-      edited: { note: !!(field === "note" ? g.note : g.action), pic: false, deadline: false },
-      editedAt: g.editedAt,
-    });
-  };
-  const submitEdit = () => {
-    if (!editView) return;
-    const raw = noteDraft.slice(0, NOTE_MAX);
-    const lead = raw.length - raw.trimStart().length; // .trim() cắt đầu → dời offset vùng tô theo
-    const text = raw.trim();
-    // Ghi thẳng vào kho app; để TRỐNG = xoá nội dung (gửi null). Chỉ đụng ĐÚNG trường đang sửa.
-    const patch: EditPatch = { [editView.field]: text === "" ? null : text };
-    // CHỈ admin gửi kèm vùng tô (server chốt quyền lần nữa). Text rỗng → xoá tô.
-    if (isAdmin) {
-      const remapped: HiRange[] = text === "" ? [] : hiDraft
-        .map(([s, e]) => [Math.max(0, s - lead), Math.min(e - lead, text.length)] as HiRange)
-        .filter(([s, e]) => e > s);
-      if (editView.field === "note") patch.noteHi = remapped; else patch.actionHi = remapped;
-    }
-    void onSaveEdit(editView.key, patch);
-    setEditView(null);
+    setEditView({ title: `${g.maCT} · ${g.name} · ${FIELD_LABEL[field]} (cấp dự án)`, key: g.key, field });
   };
 
   const handleExportClick = async () => {
@@ -3231,44 +3256,17 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
             : <AlertBadge kind={kind} color={it._alertColor} />}
         </td>
-        {/* VƯỚNG MẮC — nguồn: sheet (cột "Vướng mắc / Cần xử lý"), PM sửa đè trên app.
-            Click BẤT KỲ đâu trong Ô này = sửa VƯỚNG MẮC (chỉ ô này, không lẫn sang Giải pháp).
-            Đặt onClick trên cả <td> để cả vùng trống trong ô (hàng cao) đều bấm được. */}
+        {/* VƯỚNG MẮC — BOX CHAT (bảng chỉ hiện message KHÔNG ẩn). Bấm ô = mở box chat. */}
         <td className="px-2 py-1 align-top text-slate-700 cursor-pointer hover:bg-teal-50/60"
-            title={it.note ? "Bấm để xem / sửa vướng mắc" : "Bấm để nhập vướng mắc"}
-            onClick={(e) => { const s = window.getSelection(); if (isAdmin && s && !s.isCollapsed && e.currentTarget.contains(s.anchorNode)) return; openEdit(it, "note"); }}>
-          {it.note
-            ? <div className="whitespace-pre-line leading-snug">
-                {it._noteEdited && (
-                  <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800"
-                        title={`PM cập nhật trên app lúc ${fmtDateTimeVN(it._editedAt)}`}>
-                    ✎ {fmtDayMonth(it._editedAt)}
-                  </span>
-                )}
-                <span onMouseUp={(e) => onCellSelect(e.currentTarget, it._key, "note", it._noteHi)}>
-                  <HiText text={it.note} ranges={it._noteHi} onRemove={isAdmin ? (r) => removeCellHi(it._key, "note", it._noteHi, r) : undefined} />
-                </span>
-              </div>
-            : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+            title="Bấm để xem / thêm vướng mắc (lưu vết ai · lúc nào)"
+            onClick={() => openEdit(it, "note")}>
+          <ChatCell msgs={it._noteMsgs} />
         </td>
-        {/* HÀNH ĐỘNG / CẦN XỬ LÝ (Giải pháp) — cột NHẬP TAY trên app (sheet không có), lưu KV.
-            Click BẤT KỲ đâu trong Ô này = sửa GIẢI PHÁP (chỉ ô này, không lẫn sang Vướng mắc). */}
+        {/* GIẢI PHÁP — BOX CHAT. */}
         <td className="px-2 py-1 align-top text-slate-700 cursor-pointer hover:bg-teal-50/60"
-            title={it._action ? "Bấm để xem / sửa giải pháp" : "Bấm để nhập giải pháp"}
-            onClick={(e) => { const s = window.getSelection(); if (isAdmin && s && !s.isCollapsed && e.currentTarget.contains(s.anchorNode)) return; openEdit(it, "action"); }}>
-          {it._action
-            ? <div className="whitespace-pre-line leading-snug">
-                {it._actionEdited && (
-                  <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800"
-                        title={`PM cập nhật trên app lúc ${fmtDateTimeVN(it._editedAt)}`}>
-                    ✎ {fmtDayMonth(it._editedAt)}
-                  </span>
-                )}
-                <span onMouseUp={(e) => onCellSelect(e.currentTarget, it._key, "action", it._actionHi)}>
-                  <HiText text={it._action} ranges={it._actionHi} field="action" onRemove={isAdmin ? (r) => removeCellHi(it._key, "action", it._actionHi, r) : undefined} />
-                </span>
-              </div>
-            : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+            title="Bấm để xem / thêm giải pháp"
+            onClick={() => openEdit(it, "action")}>
+          <ChatCell msgs={it._actionMsgs} />
         </td>
       </tr>
       {/* DÒNG CON: Block 1..5 của "Thi công lắp đặt" = ĐẦU VIỆC hoàn chỉnh (kế thừa dòng TC cha).
@@ -3319,18 +3317,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               : <AlertBadge kind={bit._alert} color={bit._alertColor} />}
           </td>
           <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
-              title={bit.note ? "Bấm để xem / sửa vướng mắc" : "Bấm để nhập vướng mắc"}
-              onClick={() => openEdit(bit, "note")}>
-            {bit.note
-              ? <div className="whitespace-pre-line leading-snug">{bit._noteEdited && <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800">✎ {fmtDayMonth(bit._editedAt)}</span>}<HiText text={bit.note} ranges={bit._noteHi} /></div>
-              : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+              title="Bấm để xem / thêm vướng mắc" onClick={() => openEdit(bit, "note")}>
+            <ChatCell msgs={bit._noteMsgs} />
           </td>
           <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
-              title={bit._action ? "Bấm để xem / sửa giải pháp" : "Bấm để nhập giải pháp"}
-              onClick={() => openEdit(bit, "action")}>
-            {bit._action
-              ? <div className="whitespace-pre-line leading-snug">{bit._actionEdited && <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800">✎ {fmtDayMonth(bit._editedAt)}</span>}<HiText text={bit._action} ranges={bit._actionHi} field="action" /></div>
-              : <span className="text-slate-400 print:hidden">＋ nhập…</span>}
+              title="Bấm để xem / thêm giải pháp" onClick={() => openEdit(bit, "action")}>
+            <ChatCell msgs={bit._actionMsgs} />
           </td>
         </tr>
         );
@@ -3679,36 +3671,16 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                     </td>
                     {/* Vướng mắc CẤP DỰ ÁN — nhập được ngay trong chế độ gộp (khoá = projectKey,
                         tách riêng khỏi ghi chú từng công đoạn). stopPropagation để không sổ nhóm. */}
-                    <td className="px-2 py-1 align-middle text-white"
+                    <td className="cursor-pointer px-2 py-1 align-middle text-white hover:bg-white/5"
+                        title="Bấm để xem / thêm vướng mắc dự án"
                         onClick={(e) => { e.stopPropagation(); openGroupEdit(g, "note"); }}>
-                      <div className="cursor-pointer font-normal"
-                           title={g.note ? "Bấm để xem / sửa vướng mắc dự án" : "Bấm để nhập vướng mắc dự án"}>
-                        {g.note
-                          ? <div className="whitespace-pre-line font-bold leading-snug text-white hover:text-teal-300">
-                              {g.editedAt && (
-                                <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800"
-                                      title={`PM cập nhật lúc ${fmtDateTimeVN(g.editedAt)}`}>✎ {fmtDayMonth(g.editedAt)}</span>
-                              )}
-                              <HiText text={g.note} ranges={g.noteHi} boldOnly />
-                            </div>
-                          : <span className="text-[10px] text-white hover:text-teal-300 print:hidden">＋ nhập vướng mắc dự án…</span>}
-                      </div>
+                      <ChatCell msgs={g.noteMsgs} dark />
                     </td>
-                    {/* Hành động / Cần xử lý CẤP DỰ ÁN — cùng cơ chế, trường riêng trong KV. */}
-                    <td className="px-2 py-1 align-middle text-white"
+                    {/* Giải pháp CẤP DỰ ÁN — box chat, khoá = projectKey. */}
+                    <td className="cursor-pointer px-2 py-1 align-middle text-white hover:bg-white/5"
+                        title="Bấm để xem / thêm giải pháp dự án"
                         onClick={(e) => { e.stopPropagation(); openGroupEdit(g, "action"); }}>
-                      <div className="cursor-pointer font-normal"
-                           title={g.action ? "Bấm để xem / sửa giải pháp dự án" : "Bấm để nhập giải pháp"}>
-                        {g.action
-                          ? <div className="whitespace-pre-line font-bold leading-snug text-white hover:text-teal-300">
-                              {g.editedAt && (
-                                <span className="mr-1 whitespace-nowrap rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800"
-                                      title={`PM cập nhật lúc ${fmtDateTimeVN(g.editedAt)}`}>✎ {fmtDayMonth(g.editedAt)}</span>
-                              )}
-                              <HiText text={g.action} ranges={g.actionHi} boldOnly />
-                            </div>
-                          : <span className="text-[10px] text-white hover:text-teal-300 print:hidden">＋ nhập giải pháp…</span>}
-                      </div>
+                      <ChatCell msgs={g.actionMsgs} dark />
                     </td>
                   </tr>,
                 ];
@@ -3721,18 +3693,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
           </tbody>
         </table>
       </div>
-      )}
-
-      {/* NÚT NỔI "Tô nổi" (admin): hiện ngay trên đoạn chữ vừa bôi đen trong ô → tô 1 phát, khỏi
-          mở hộp sửa. onMouseDown preventDefault để KHÔNG mất vùng bôi đen khi bấm nút. */}
-      {hiPop && typeof document !== "undefined" && createPortal(
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyHiPop}
-          style={{ position: "fixed", left: hiPop.x, top: Math.max(4, hiPop.y - 38), transform: "translateX(-50%)", zIndex: 60,
-                   background: hiPop.field === "action" ? "#1E3A8A" : "#C00000" }}
-          className="flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg ring-1 ring-black/10">
-          🖍 Tô nổi {hiPop.field === "action" ? "(Giải pháp)" : "(Vướng mắc)"}
-        </button>,
-        document.body,
       )}
 
       {/* POPOVER "số mã / tổng mã" — bấm con số % thực tế ra chi tiết breakdown từ file gốc.
@@ -3855,90 +3815,24 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
       {/* Hộp CHỈNH SỬA đầu việc — Vướng mắc / PIC / Deadline. Lưu backend dùng chung:
           reload không mất, người khác thấy sau khi lưu. */}
       {editView && (
-        // KHÔNG đóng khi bấm ra nền tối: tránh mất chữ khi lỡ misclick lúc đang nhập.
-        // Chỉ đóng bằng nút X / Đóng / Lưu.
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 print:hidden">
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 print:hidden" onClick={() => setEditView(null)}>
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Chỉnh sửa đầu việc</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">
+                  {editView.field === "note" ? "Vướng mắc" : "Giải pháp"} · box chat lưu vết
+                </div>
                 <div className="text-sm font-semibold text-slate-900">{editView.title}</div>
-                {editView.editedAt && (
-                  <div className="mt-0.5 text-[11px] text-slate-500">
-                    ✎ PM cập nhật lần cuối trên app: <b className="tabular-nums text-slate-700">{fmtDateTimeVN(editView.editedAt)}</b>
-                  </div>
-                )}
               </div>
               <button onClick={() => setEditView(null)} className="mt-0.5 shrink-0 text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button>
             </div>
-            <div className="flex min-h-0 flex-col gap-3 overflow-auto px-5 py-4">
-              <div>
-                <div className="flex items-baseline justify-between">
-                  <label className="text-[11px] font-semibold text-slate-700">
-                    {editView.fieldLabel}
-                  </label>
-                  <span className={`text-[10.5px] tabular-nums ${noteDraft.length >= NOTE_MAX ? "font-bold text-red-600" : "text-slate-400"}`}>
-                    {noteDraft.length}/{NOTE_MAX}
-                  </span>
-                </div>
-                <textarea
-                  ref={taRef}
-                  value={noteDraft}
-                  onChange={(e) => setNoteDraft(e.target.value.slice(0, NOTE_MAX))}
-                  maxLength={NOTE_MAX}
-                  rows={7}
-                  placeholder={"1. Vấn đề 1\n\n2. Vấn đề 2\n\n3. Vấn đề 3"}
-                  className="mt-1 min-h-[150px] w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed text-slate-800 focus:border-teal-600 focus:outline-none"
-                />
-                {/* TÔ NỔI (chỉ admin): bôi đen đoạn chữ ở ô trên → "Tô đoạn đang bôi đen". Đoạn tô
-                    hiện ĐẬM + màu theo cột (Vướng mắc đỏ, Giải pháp navy). Bấm vào đoạn tô để bỏ. */}
-                {isAdmin && (
-                  <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-semibold text-slate-500">Tô nổi (admin):</span>
-                      <button type="button" onClick={addHighlight}
-                        className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm"
-                        style={{ background: editView.field === "action" ? "#1E3A8A" : "#C00000" }}>
-                        🖍 Tô đoạn đang bôi đen
-                      </button>
-                      {hiDraft.length > 0 && (
-                        <button type="button" onClick={() => setHiDraft([])}
-                          className="ml-auto text-[11px] text-slate-400 hover:text-slate-700">Xoá tô ({hiDraft.length})</button>
-                      )}
-                    </div>
-                    <div className="mt-2 whitespace-pre-line rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-800">
-                      {noteDraft.trim()
-                        ? <HiText text={noteDraft} ranges={hiDraft} onRemove={removeHighlight} field={editView.field} />
-                        : <span className="text-slate-400">Bôi đen đoạn chữ ở ô trên rồi bấm nút để tô nổi.</span>}
-                    </div>
-                  </div>
-                )}
-                <div className="mt-1.5 rounded-md bg-slate-50 px-3 py-2 text-[11.5px] leading-relaxed text-slate-500">
-                  Viết NGẮN GỌN — <b>tối đa 3 vấn đề CẤP BÁCH nhất</b>, mỗi vấn đề 1 dòng đánh số,
-                  nêu rõ <b>ai cần làm gì, trước khi nào</b>. Ví dụ:<br />
-                  <span className="text-slate-700">1. CT chưa duyệt tiến độ đá. PMH chốt trước 12/07</span><br />
-                  <span className="text-slate-700">2. Nhập kho 69/107 mã. NM tăng ca, xong trước 15/07</span><br />
-                  <span className="text-slate-700">3. Thiếu 2 thợ lắp đặt. HR bổ sung trong tuần</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                <div className="text-[11px] text-slate-500">
-                  Ghi chú lưu trong app, dùng chung cả team — độc lập với Google Sheet.
-                </div>
-                <div className="flex gap-2">
-                  {editView.edited.note && (
-                    <button
-                      onClick={() => { void onSaveEdit(editView.key, { [editView.field]: null }); setEditView(null); }}
-                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-red-400 hover:text-red-700">
-                      Xoá {editView.field === "note" ? "Vướng mắc" : "Giải pháp"}
-                    </button>
-                  )}
-                  <button onClick={() => setEditView(null)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs">Đóng</button>
-                  <button onClick={submitEdit} className="rounded-md bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800">
-                    Lưu
-                  </button>
-                </div>
-              </div>
+            <div className="flex min-h-0 flex-col gap-3 overflow-hidden px-5 py-4">
+              <ChatBox
+                msgs={(editView.field === "note" ? msgIndex.get(editView.key)?.note : msgIndex.get(editView.key)?.action) ?? []}
+                isAdmin={isAdmin}
+                field={editView.field}
+                onOp={(op, opts) => onMsgOp(editView.key, editView.field, op, opts)}
+              />
             </div>
           </div>
         </div>

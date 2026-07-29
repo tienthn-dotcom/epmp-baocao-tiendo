@@ -59,22 +59,55 @@ async function callerIsAdmin(devAs?: string | null): Promise<boolean> {
 
 const KV_KEY = "edits:v1";
 
-/** Đoạn tô đỏ = [start, end) theo OFFSET ký tự trong chuỗi note/action tương ứng. */
+/** Đoạn tô đỏ = [start, end) theo OFFSET ký tự trong chuỗi text của MỘT message. */
 export type HiRange = [number, number];
+
+/** MỘT tin trong "box chat" Vướng mắc / Giải pháp — lưu vết ai nhập, khi nào. Không xoá (chỉ ẩn);
+ *  chỉ ADMIN mới xoá hẳn. `hidden` = ẩn khỏi BẢNG (coi như đã giải quyết) nhưng vẫn thấy khi mở ô. */
+export type ChatMsg = {
+  id: string;
+  text: string;
+  author: string;    // email người nhập (đã track qua phiên đăng nhập)
+  at: string;        // ISO thời điểm nhập
+  hidden?: boolean;  // ẩn khỏi bảng (mặc định hiện)
+  hi?: HiRange[];    // vùng tô đỏ trong text (chỉ admin đặt)
+};
+
 export type ItemEdit = {
-  note?: string;
-  /** "Hành động / Cần xử lý" — cột NHẬP TAY trên app (sheet nguồn không có cột này).
-   *  Cùng cơ chế lưu/khoá như `note`. Thêm 06/2026 khi tách cột Vướng mắc làm đôi. */
-  action?: string;
+  /** Vướng mắc — box chat (mảng message, thay cho `note` string cũ). */
+  noteMsgs?: ChatMsg[];
+  /** Giải pháp — box chat (thay cho `action` string cũ). */
+  actionMsgs?: ChatMsg[];
   pic?: string;
   /** ISO YYYY-MM-DD */
   deadline?: string;
-  /** Đoạn tô đỏ (#C00000) trong Vướng mắc / Giải pháp — CHỈ admin đặt được. Text đổi thì xoá. */
+  updatedAt: string;
+  // ── LEGACY (đời cũ, string đơn) — migrate-on-read sang *Msgs, KHÔNG để mất. ──
+  note?: string;
+  action?: string;
   noteHi?: HiRange[];
   actionHi?: HiRange[];
-  updatedAt: string;
 };
 export type EditsMap = Record<string, ItemEdit>;
+
+/** MIGRATE 1 entry đời cũ (note/action string) → box chat (noteMsgs/actionMsgs). KHÔNG mất data:
+ *  vướng mắc/giải pháp cũ thành MESSAGE ĐẦU (author "(cũ)", giữ ngày updatedAt + vùng tô cũ). */
+function migrateEntry(e: ItemEdit): ItemEdit {
+  const out: ItemEdit = { ...e };
+  if (out.note != null && out.note.trim() !== "" && out.noteMsgs == null) {
+    out.noteMsgs = [{ id: "legacy-note", text: out.note, author: "(cũ)", at: out.updatedAt || "", ...(out.noteHi?.length ? { hi: out.noteHi } : {}) }];
+  }
+  if (out.action != null && out.action.trim() !== "" && out.actionMsgs == null) {
+    out.actionMsgs = [{ id: "legacy-action", text: out.action, author: "(cũ)", at: out.updatedAt || "", ...(out.actionHi?.length ? { hi: out.actionHi } : {}) }];
+  }
+  delete out.note; delete out.action; delete out.noteHi; delete out.actionHi;
+  return out;
+}
+function migrateMap(map: EditsMap): EditsMap {
+  const out: EditsMap = {};
+  for (const [k, v] of Object.entries(map)) out[k] = migrateEntry(v);
+  return out;
+}
 
 type KVLike = {
   get(key: string): Promise<string | null>;
@@ -117,9 +150,9 @@ async function readAll(): Promise<{ map: EditsMap; store: "kv" | "file" }> {
   const kv = await getKv();
   if (kv) {
     const raw = await kv.get(KV_KEY);
-    return { map: raw ? (JSON.parse(raw) as EditsMap) : {}, store: "kv" };
+    return { map: migrateMap(raw ? (JSON.parse(raw) as EditsMap) : {}), store: "kv" };
   }
-  return { map: await devRead(), store: "file" };
+  return { map: migrateMap(await devRead()), store: "file" };
 }
 async function writeAll(map: EditsMap): Promise<void> {
   const kv = await getKv();
@@ -180,16 +213,20 @@ export const saveAppConfig = createServerFn({ method: "POST" })
 
 const hiSchema = z.array(z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])).max(200);
 const patchSchema = z.object({
-  note: z.string().max(8000).nullable().optional(),
-  action: z.string().max(8000).nullable().optional(),
   pic: z.string().max(300).nullable().optional(),
   deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  noteHi: hiSchema.nullable().optional(),
-  actionHi: hiSchema.nullable().optional(),
 });
 
-/** Lưu chỉnh sửa cho 1..n đầu việc. Field = null → xoá override field đó;
- *  entry không còn field nào → xoá entry (khôi phục hoàn toàn theo sheet). */
+/** Entry rỗng (không còn box chat / pic / deadline) → xoá khỏi map (khôi phục theo sheet). */
+function isEmptyEntry(e: ItemEdit): boolean {
+  return !e.noteMsgs?.length && !e.actionMsgs?.length && e.pic == null && e.deadline == null;
+}
+function genId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  return c?.randomUUID ? c.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Lưu PIC / Deadline (Vướng mắc & Giải pháp đã chuyển sang box chat → xem editMessages). */
 export const saveEdits = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
@@ -200,35 +237,67 @@ export const saveEdits = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { map } = await readAll();
     const now = new Date().toISOString();
-    // Chỉ ADMIN mới được đặt vùng tô đỏ. Kiểm 1 lần (chỉ khi có patch đụng tới highlight).
-    const wantsHi = Object.values(data.entries).some((p) => p.noteHi !== undefined || p.actionHi !== undefined);
-    const isAdmin = wantsHi ? await callerIsAdmin(data.devAs) : false;
     for (const [key, patch] of Object.entries(data.entries)) {
       const cur: ItemEdit = map[key] ?? { updatedAt: now };
-      // Text: note/action/pic/deadline — ai cũng sửa được. Đổi TEXT thì XOÁ vùng tô cũ (offset
-      // hết đúng) — TRỪ khi cùng patch có gửi vùng tô mới (admin sửa text + tô một lượt).
-      for (const f of ["note", "action", "pic", "deadline"] as const) {
+      for (const f of ["pic", "deadline"] as const) {
         const v = patch[f];
         if (v === undefined) continue;
-        const before = cur[f];
         if (v === null) delete cur[f];
         else { const t = v.trim(); if (t === "") delete cur[f]; else cur[f] = t; }
-        if (f === "note" && cur.note !== before && patch.noteHi === undefined) delete cur.noteHi;
-        if (f === "action" && cur.action !== before && patch.actionHi === undefined) delete cur.actionHi;
-      }
-      // Highlight: CHỈ admin. Non-admin gửi vào cũng bị bỏ qua (server chốt quyền).
-      if (isAdmin) {
-        for (const [hiF, txtF] of [["noteHi", "note"], ["actionHi", "action"]] as const) {
-          const hv = patch[hiF];
-          if (hv === undefined) continue;
-          if (hv === null || hv.length === 0 || cur[txtF] == null) delete cur[hiF];
-          else cur[hiF] = clampRanges(hv, (cur[txtF] as string).length);
-        }
       }
       cur.updatedAt = now;
-      if (cur.note == null && cur.action == null && cur.pic == null && cur.deadline == null) delete map[key];
+      if (isEmptyEntry(cur)) delete map[key];
       else map[key] = cur;
     }
+    await writeAll(map);
+    return { items: map, fetchedAt: now };
+  });
+
+/** BOX CHAT Vướng mắc / Giải pháp — thao tác theo TỪNG message (lưu vết ai · khi nào):
+ *   add    : ai cũng thêm được; author = email phiên đăng nhập.
+ *   hide   : ẩn khỏi bảng (= đã giải quyết) — ai cũng được; unhide = mở lại.
+ *   delete : CHỈ ADMIN — xoá hẳn (user KHÔNG có quyền, chỉ ẩn).
+ *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của message. */
+export const editMessages = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      key: z.string().min(1).max(600),
+      field: z.enum(["note", "action"]),
+      op: z.enum(["add", "hide", "unhide", "delete", "sethi"]),
+      text: z.string().max(8000).optional(),
+      msgId: z.string().max(80).optional(),
+      hi: hiSchema.nullable().optional(),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { map } = await readAll();
+    const now = new Date().toISOString();
+    const cur: ItemEdit = map[data.key] ?? { updatedAt: now };
+    const listKey = data.field === "note" ? "noteMsgs" : "actionMsgs";
+    const list: ChatMsg[] = cur[listKey] ?? [];
+    if (data.op === "add") {
+      const text = (data.text ?? "").trim();
+      if (text) list.push({ id: genId(), text, author: (await callerEmail(data.devAs)) ?? "?", at: now, hidden: false });
+    } else if (data.op === "hide" || data.op === "unhide") {
+      const m = list.find((x) => x.id === data.msgId);
+      if (m) m.hidden = data.op === "hide";
+    } else if (data.op === "delete") {
+      // CHỐT QUYỀN Ở SERVER: user thường KHÔNG xoá được (bỏ qua lặng lẽ, UI cũng ẩn nút).
+      if (await callerIsAdmin(data.devAs)) {
+        const i = list.findIndex((x) => x.id === data.msgId);
+        if (i >= 0) list.splice(i, 1);
+      }
+    } else if (data.op === "sethi") {
+      if (await callerIsAdmin(data.devAs)) {
+        const m = list.find((x) => x.id === data.msgId);
+        if (m) { if (!data.hi || data.hi.length === 0) delete m.hi; else m.hi = clampRanges(data.hi, m.text.length); }
+      }
+    }
+    cur[listKey] = list.length ? list : undefined;
+    cur.updatedAt = now;
+    if (isEmptyEntry(cur)) delete map[data.key];
+    else map[data.key] = cur;
     await writeAll(map);
     return { items: map, fetchedAt: now };
   });
