@@ -69,6 +69,7 @@ export type ChatMsg = {
   text: string;
   author: string;    // email người nhập (đã track qua phiên đăng nhập)
   at: string;        // ISO thời điểm nhập
+  editedAt?: string; // ISO lần sửa gần nhất (nếu có)
   hidden?: boolean;  // ẩn khỏi bảng (mặc định hiện)
   hi?: HiRange[];    // vùng tô đỏ trong text (chỉ admin đặt)
 };
@@ -257,6 +258,7 @@ export const saveEdits = createServerFn({ method: "POST" })
  *   add    : ai cũng thêm được; author = email phiên đăng nhập.
  *   hide   : ẩn khỏi bảng (= đã giải quyết) — ai cũng được; unhide = mở lại.
  *   delete : CHỈ ADMIN — xoá hẳn (user KHÔNG có quyền, chỉ ẩn).
+ *   edit   : sửa TEXT 1 message — CHỈ tác giả (email khớp) HOẶC admin.
  *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của 1 message.
  *   hiall  : CHỈ ADMIN — tô CẢ Ô (mọi message KHÔNG ẩn tô full); unhiall = bỏ tô cả ô. */
 export const editMessages = createServerFn({ method: "POST" })
@@ -264,7 +266,7 @@ export const editMessages = createServerFn({ method: "POST" })
     z.object({
       key: z.string().min(1).max(600),
       field: z.enum(["note", "action"]),
-      op: z.enum(["add", "hide", "unhide", "delete", "sethi", "hiall", "unhiall"]),
+      op: z.enum(["add", "edit", "hide", "unhide", "delete", "sethi", "hiall", "unhiall"]),
       text: z.string().max(8000).optional(),
       msgId: z.string().max(80).optional(),
       hi: hiSchema.nullable().optional(),
@@ -280,6 +282,15 @@ export const editMessages = createServerFn({ method: "POST" })
     if (data.op === "add") {
       const text = (data.text ?? "").trim();
       if (text) list.push({ id: genId(), text, author: (await callerEmail(data.devAs)) ?? "?", at: now, hidden: false });
+    } else if (data.op === "edit") {
+      // Sửa text: CHỈ tác giả (email khớp) hoặc admin. Text mới rỗng → bỏ qua (dùng ẩn/xoá).
+      const m = list.find((x) => x.id === data.msgId);
+      if (m) {
+        const email = await callerEmail(data.devAs);
+        const allowed = (email && email === m.author) || (await callerIsAdmin(data.devAs));
+        const text = (data.text ?? "").trim();
+        if (allowed && text) { m.text = text; m.editedAt = now; if (m.hi?.length) m.hi = [[0, text.length]]; }
+      }
     } else if (data.op === "hide" || data.op === "unhide") {
       const m = list.find((x) => x.id === data.msgId);
       if (m) m.hidden = data.op === "hide";

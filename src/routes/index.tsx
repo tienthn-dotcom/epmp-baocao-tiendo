@@ -127,6 +127,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.12.0 (29/07/2026): Vướng mắc/Giải pháp trên BẢNG — mỗi tin = 1 BONG BÓNG CHAT vàng nhạt
+ *     (bo góc 1 bên), hiện luôn NGƯỜI NHẬP (email) + NGÀY GIỜ. Thêm SỬA: tác giả sửa tin của mình
+ *     (admin sửa tất) — sửa ngay ngoài bảng (nút ✎ Sửa trong bong bóng) HOẶC trong dialog; có mốc
+ *     "đã sửa". TÔ MÀU: admin nhấp đúp 1 BONG BÓNG → CHỈ tin đó đổi màu (đúp lại bỏ). Hàng cấp DỰ
+ *     ÁN giữ kiểu cũ. (backend: op "edit" chốt quyền tác-giả/admin ở server).
  *   v3.11.3 (29/07/2026): Box chat Vướng mắc/Giải pháp — bấm ra NỀN NGOÀI KHÔNG còn tự đóng (tránh
  *     mất tin đang soạn khi lỡ misclick); CHỈ nút X mới tắt. (khôi phục hành vi cũ bị mất khi rework)
  *   v3.11.2 (29/07/2026): Box chat — thêm lại VÍ DỤ minh hoạ cách viết (như dialog cũ) ngay trên ô
@@ -275,7 +280,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.11.3";
+const APP_VERSION = "3.12.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1373,12 +1378,12 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   };
 
   /** Thao tác BOX CHAT Vướng mắc / Giải pháp (add/hide/unhide/delete[admin]/sethi[admin]). */
-  const msgOp = async (key: string, field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => {
+  const msgOp = async (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => {
     try {
       const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, devAs: devAs() } });
       queryClient.setQueryData(["edits"], r.items);
       const FIELD_VN = field === "note" ? "Vướng mắc" : "Giải pháp";
-      const OP_VN: Record<string, string> = { add: "thêm", hide: "ẩn", unhide: "mở ẩn", delete: "XOÁ", sethi: "tô màu", hiall: "tô cả ô", unhiall: "bỏ tô cả ô" };
+      const OP_VN: Record<string, string> = { add: "thêm", edit: "sửa", hide: "ẩn", unhide: "mở ẩn", delete: "XOÁ", sethi: "tô màu", hiall: "tô cả ô", unhiall: "bỏ tô cả ô" };
       const it = data.items.find(x => itemKeyOf(x) === key);
       const proj = it ? null : data.projects.find(p => projectKeyOf(p.code, p.name) === key);
       const ctx = it ? `${it.projectCode} ${it.projectName} · ${stageAbbrOf(stageIdOf(it))}`
@@ -2424,6 +2429,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         ganttRows={ganttRows}
         today={today}
         isAdmin={me.isAdmin}
+        myEmail={me.email}
         installLinks={installLinks}
         onOpenSummary={setSummaryFileId}
         filters={filters}
@@ -2830,30 +2836,74 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
 }
 
 const CHAT_MSG_MAX = 1000;
-type MsgOp = (field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
+type MsgOp = (field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
 
-/** Ô BẢNG (Vướng mắc / Giải pháp): CHỈ hiện message KHÔNG ẩn; nếu có ẩn thì ghi "(+N đã ẩn)".
- *  `dark` = ô nền navy (hàng gộp dự án) → chữ trắng (giữ nguyên, KHÔNG tô đỏ/navy). `field` = màu
- *  tô theo cột (Vướng mắc đỏ / Giải pháp navy). */
-function ChatCell({ msgs, dark, field }: { msgs: ChatMsg[]; dark?: boolean; field?: "note" | "action" }) {
+/** Ô BẢNG (Vướng mắc / Giải pháp): mỗi message KHÔNG ẩn = 1 BONG BÓNG CHAT vàng nhạt (hiện người
+ *  nhập + ngày giờ). `dark` = hàng gộp dự án (nền navy) → giữ kiểu chữ trắng đơn giản (không bong
+ *  bóng). `onOp` + `myEmail`/`isAdmin`: tác giả (hoặc admin) SỬA được ngay trên bảng (nút ✎). */
+function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen }: {
+  msgs: ChatMsg[]; dark?: boolean; field?: "note" | "action";
+  myEmail?: string | null; isAdmin?: boolean; onOp?: MsgOp; onOpen?: () => void;
+}) {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vis = msgs.filter((m) => !m.hidden);
   const hiddenN = msgs.length - vis.length;
-  if (!vis.length) return <span className={dark ? "text-[10px] text-white/80 print:hidden" : "text-slate-400 print:hidden"}>{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+  // 1 click (hoãn 230ms nếu admin để chờ nhấp đúp) → mở box chat. cancelOpen: huỷ khi nhấp đúp.
+  const openDelayed = () => { if (!onOpen) return; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => { timer.current = null; onOpen(); }, isAdmin ? 230 : 0); };
+  const cancelOpen = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  // DARK (hàng dự án): giữ nguyên kiểu cũ — chữ trắng đậm, không bong bóng (mở/sửa qua dialog do <td> lo).
+  if (dark) {
+    if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+    return (
+      <div className="space-y-1 font-bold leading-snug text-white">
+        {vis.map((m) => <div key={m.id} className="whitespace-pre-line"><HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly /></div>)}
+        {hiddenN > 0 && <div className="text-[9px] font-medium text-white/70">+{hiddenN} đã ẩn</div>}
+      </div>
+    );
+  }
+  if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+  const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || (!!myEmail && m.author === myEmail));
   return (
-    <div className={`space-y-1 leading-snug ${dark ? "font-bold text-white" : ""}`}>
-      {vis.map((m) => (
-        <div key={m.id} className="whitespace-pre-line"><HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly={dark} /></div>
+    <div className="space-y-1.5" onClick={openDelayed}>
+      {vis.map((m) => editId === m.id ? (
+        <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-amber-300 bg-amber-50 p-1.5">
+          <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
+            className="w-full resize-y rounded border border-slate-300 px-1.5 py-1 text-[11px] leading-snug focus:border-teal-600 focus:outline-none" />
+          <div className="mt-1 flex items-center justify-end gap-2">
+            <button type="button" onClick={(e) => { e.stopPropagation(); setEditId(null); }} className="text-[10px] text-slate-500 hover:text-slate-800">Huỷ</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); const t = draft.trim(); if (t && t !== m.text) void onOp!("edit", { msgId: m.id, text: t }); setEditId(null); }}
+              className="rounded bg-teal-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-teal-800">Lưu</button>
+          </div>
+        </div>
+      ) : (
+        // NHẤP ĐÚP bong bóng (admin) → CHỈ bong bóng đó đổi màu (tô/bỏ full-range của tin đó).
+        <div key={m.id}
+          onDoubleClick={isAdmin && onOp ? () => { cancelOpen(); const has = (m.hi?.length ?? 0) > 0; void onOp("sethi", { msgId: m.id, hi: has ? null : [[0, m.text.length]] }); } : undefined}
+          title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ màu TIN NÀY" : undefined}
+          className="rounded-lg rounded-tl-none border border-amber-200 bg-amber-50 px-2 py-1">
+          <div className="mb-0.5 flex items-center gap-1.5 text-[9px] leading-none text-slate-500">
+            <span className="font-semibold text-slate-600">{m.author}</span>
+            <span className="tabular-nums text-slate-400">{fmtMsgTime(m.editedAt || m.at)}{m.editedAt ? " · đã sửa" : ""}</span>
+            {canEdit(m) && <button type="button" title="Sửa tin của bạn" onClick={(e) => { e.stopPropagation(); cancelOpen(); setEditId(m.id); setDraft(m.text); }} className="ml-auto shrink-0 text-teal-600 hover:underline">✎ Sửa</button>}
+          </div>
+          <div className="whitespace-pre-line text-[11px] leading-snug text-slate-800"><HiText text={m.text} ranges={m.hi ?? []} field={field} /></div>
+        </div>
       ))}
-      {hiddenN > 0 && <div className={`text-[9px] font-medium ${dark ? "text-white/70" : "text-slate-400"}`}>+{hiddenN} đã ẩn</div>}
+      {hiddenN > 0 && <div className="text-[9px] font-medium text-slate-400">+{hiddenN} đã ẩn</div>}
     </div>
   );
 }
 
 /** BOX CHAT trong dialog: danh sách message (ai · lúc nào) + soạn tin mới. Ẩn/mở ẩn ai cũng được;
  *  XOÁ chỉ admin; nhấp đúp 1 từ để tô/bỏ tô đỏ (admin). */
-function ChatBox({ msgs, isAdmin, field, onOp }: { msgs: ChatMsg[]; isAdmin: boolean; field: "note" | "action"; onOp: MsgOp }) {
+function ChatBox({ msgs, isAdmin, myEmail, field, onOp }: { msgs: ChatMsg[]; isAdmin: boolean; myEmail?: string | null; field: "note" | "action"; onOp: MsgOp }) {
   const [draft, setDraft] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
+  const canEdit = (m: ChatMsg) => isAdmin || (!!myEmail && m.author === myEmail);
   const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX) }); setDraft(""); };
   return (
     <div className="flex min-h-0 flex-col gap-2">
@@ -2861,19 +2911,32 @@ function ChatBox({ msgs, isAdmin, field, onOp }: { msgs: ChatMsg[]; isAdmin: boo
         {msgs.length === 0
           ? <div className="py-6 text-center text-[12px] text-slate-400">Chưa có {noun} nào. Soạn ở ô dưới rồi bấm Gửi.</div>
           : msgs.map((m) => (
-            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-slate-200 bg-white"}`}>
+            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-amber-200 bg-amber-50"}`}>
               <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
                 <span className="font-semibold text-slate-700">{m.author || "?"}</span>
-                <span className="tabular-nums">{fmtMsgTime(m.at)}</span>
+                <span className="tabular-nums">{fmtMsgTime(m.editedAt || m.at)}{m.editedAt ? " · đã sửa" : ""}</span>
                 {m.hidden && <span className="rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600">ĐÃ ẨN</span>}
                 <span className="ml-auto flex items-center gap-2">
+                  {canEdit(m) && editId !== m.id && <button type="button" onClick={() => { setEditId(m.id); setEditDraft(m.text); }} className="font-medium text-teal-700 hover:underline">Sửa</button>}
                   <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>
                   {isAdmin && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
                 </span>
               </div>
-              <div className={`whitespace-pre-line text-[13px] leading-relaxed ${m.hidden ? "text-slate-400" : "text-slate-800"}`}>
-                <HiText text={m.text} ranges={m.hi ?? []} field={field} />
-              </div>
+              {editId === m.id ? (
+                <div>
+                  <textarea autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
+                    className="w-full resize-y rounded border border-slate-300 px-2 py-1 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
+                  <div className="mt-1 flex items-center justify-end gap-2">
+                    <button type="button" onClick={() => setEditId(null)} className="text-[11px] text-slate-500 hover:text-slate-800">Huỷ</button>
+                    <button type="button" onClick={() => { const t = editDraft.trim(); if (t && t !== m.text) void onOp("edit", { msgId: m.id, text: t }); setEditId(null); }}
+                      className="rounded bg-teal-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-teal-800">Lưu</button>
+                  </div>
+                </div>
+              ) : (
+                <div className={`whitespace-pre-line text-[13px] leading-relaxed ${m.hidden ? "text-slate-400" : "text-slate-800"}`}>
+                  <HiText text={m.text} ranges={m.hi ?? []} field={field} />
+                </div>
+              )}
             </div>
           ))}
       </div>
@@ -2903,7 +2966,7 @@ function ChatBox({ msgs, isAdmin, field, onOp }: { msgs: ChatMsg[]; isAdmin: boo
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -2920,8 +2983,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   showGanttChildTasks: boolean;
   ganttRows: GanttRow[];
   today: string;
-  /** AI ĐANG XEM có phải admin không — chỉ admin được TÔ ĐỎ Vướng mắc/Giải pháp. */
+  /** AI ĐANG XEM có phải admin không — chỉ admin được TÔ ĐỎ + xoá; email để biết tin nào của mình (được sửa). */
   isAdmin: boolean;
+  myEmail: string | null;
   /** Map maCT → fileId Summary (ô "Thi công lắp đặt" đã hyperlink). Bấm → mở popup. */
   installLinks?: Record<string, string>;
   onOpenSummary?: (fileId: string) => void;
@@ -2938,7 +3002,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
   onSaveEdit: (key: string, patch: EditPatch) => void | Promise<void>;
-  onMsgOp: (key: string, field: "note" | "action", op: "add" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
+  onMsgOp: (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
 }) {
   const activeCount =
     filters.depts.length + filters.stages.length + filters.alerts.length
@@ -3099,23 +3163,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   const openGroupEdit = (g: DueMonthGroup, field: "note" | "action" = "note") => {
     setEditView({ title: `${g.maCT} · ${g.name} · ${FIELD_LABEL[field]} (cấp dự án)`, key: g.key, field });
   };
-  // TÔ CẢ Ô (admin, nhấp đúp): mọi message KHÔNG ẩn tô full → double-click lại thì bỏ.
-  const toggleHi = (key: string, field: "note" | "action", msgs: ChatMsg[]) => {
-    const vis = msgs.filter((m) => !m.hidden);
-    if (!vis.length) return;
-    const anyHi = vis.some((m) => (m.hi?.length ?? 0) > 0);
-    void onMsgOp(key, field, anyHi ? "unhiall" : "hiall");
-  };
-  // Phân biệt 1-click (mở ô) vs 2-click (admin tô cả ô): hoãn open 230ms để chờ nhấp đúp.
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cellClick = (openFn: () => void, dblFn?: () => void) => ({
-    onClick: () => {
-      if (!dblFn) { openFn(); return; }
-      if (clickTimer.current) clearTimeout(clickTimer.current);
-      clickTimer.current = setTimeout(() => { clickTimer.current = null; openFn(); }, 230);
-    },
-    onDoubleClick: dblFn ? () => { if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } dblFn(); } : undefined,
-  });
 
   const handleExportClick = async () => {
     if (exporting) return;
@@ -3271,17 +3318,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
             : <AlertBadge kind={kind} color={it._alertColor} />}
         </td>
-        {/* VƯỚNG MẮC — BOX CHAT. 1-click mở ô; admin NHẤP ĐÚP = tô đỏ cả ô (đúp lại: bỏ). */}
-        <td className="px-2 py-1 align-top text-slate-700 cursor-pointer hover:bg-teal-50/60"
-            title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ tô cả ô" : "Bấm để xem / thêm vướng mắc"}
-            {...cellClick(() => openEdit(it, "note"), isAdmin ? () => toggleHi(it._key, "note", it._noteMsgs) : undefined)}>
-          <ChatCell msgs={it._noteMsgs} field="note" />
+        {/* VƯỚNG MẮC — bong bóng chat. 1 click mở box; admin NHẤP ĐÚP 1 bong bóng = tô/bỏ màu TIN ĐÓ. */}
+        <td className="px-2 py-1 align-top text-slate-700">
+          <ChatCell msgs={it._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} onOp={(op, opts) => onMsgOp(it._key, "note", op, opts)} onOpen={() => openEdit(it, "note")} />
         </td>
-        {/* GIẢI PHÁP — BOX CHAT. */}
-        <td className="px-2 py-1 align-top text-slate-700 cursor-pointer hover:bg-teal-50/60"
-            title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ tô cả ô" : "Bấm để xem / thêm giải pháp"}
-            {...cellClick(() => openEdit(it, "action"), isAdmin ? () => toggleHi(it._key, "action", it._actionMsgs) : undefined)}>
-          <ChatCell msgs={it._actionMsgs} field="action" />
+        {/* GIẢI PHÁP — bong bóng chat. */}
+        <td className="px-2 py-1 align-top text-slate-700">
+          <ChatCell msgs={it._actionMsgs} field="action" myEmail={myEmail} isAdmin={isAdmin} onOp={(op, opts) => onMsgOp(it._key, "action", op, opts)} onOpen={() => openEdit(it, "action")} />
         </td>
       </tr>
       {/* DÒNG CON: Block 1..5 của "Thi công lắp đặt" = ĐẦU VIỆC hoàn chỉnh (kế thừa dòng TC cha).
@@ -3331,15 +3374,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
               : <AlertBadge kind={bit._alert} color={bit._alertColor} />}
           </td>
-          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
-              title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ tô cả ô" : "Bấm để xem / thêm vướng mắc"}
-              {...cellClick(() => openEdit(bit, "note"), isAdmin ? () => toggleHi(bit._key, "note", bit._noteMsgs) : undefined)}>
-            <ChatCell msgs={bit._noteMsgs} field="note" />
+          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700">
+            <ChatCell msgs={bit._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} onOp={(op, opts) => onMsgOp(bit._key, "note", op, opts)} onOpen={() => openEdit(bit, "note")} />
           </td>
-          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700 cursor-pointer hover:bg-teal-50/60"
-              title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ tô cả ô" : "Bấm để xem / thêm giải pháp"}
-              {...cellClick(() => openEdit(bit, "action"), isAdmin ? () => toggleHi(bit._key, "action", bit._actionMsgs) : undefined)}>
-            <ChatCell msgs={bit._actionMsgs} field="action" />
+          <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700">
+            <ChatCell msgs={bit._actionMsgs} field="action" myEmail={myEmail} isAdmin={isAdmin} onOp={(op, opts) => onMsgOp(bit._key, "action", op, opts)} onOpen={() => openEdit(bit, "action")} />
           </td>
         </tr>
         );
@@ -3848,6 +3887,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               <ChatBox
                 msgs={(editView.field === "note" ? msgIndex.get(editView.key)?.note : msgIndex.get(editView.key)?.action) ?? []}
                 isAdmin={isAdmin}
+                myEmail={myEmail}
                 field={editView.field}
                 onOp={(op, opts) => onMsgOp(editView.key, editView.field, op, opts)}
               />
