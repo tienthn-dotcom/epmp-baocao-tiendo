@@ -72,6 +72,10 @@ export type ChatMsg = {
   editedAt?: string; // ISO lần sửa gần nhất (nếu có)
   hidden?: boolean;  // ẩn khỏi bảng (mặc định hiện)
   hi?: HiRange[];    // vùng tô đỏ trong text (chỉ admin đặt)
+  /** REPLY: tin GIẢI PHÁP này trả lời cho VƯỚNG MẮC nào — id của message vướng mắc. */
+  replyTo?: string;
+  /** Trích đoạn ngắn của vướng mắc được trả lời (lưu sẵn để hiện "↩ …" không cần tra chéo). */
+  replyText?: string;
 };
 
 export type ItemEdit = {
@@ -270,6 +274,8 @@ export const editMessages = createServerFn({ method: "POST" })
       text: z.string().max(8000).optional(),
       msgId: z.string().max(80).optional(),
       hi: hiSchema.nullable().optional(),
+      replyTo: z.string().max(80).optional(),
+      replyText: z.string().max(300).optional(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
@@ -281,7 +287,11 @@ export const editMessages = createServerFn({ method: "POST" })
     const list: ChatMsg[] = cur[listKey] ?? [];
     if (data.op === "add") {
       const text = (data.text ?? "").trim();
-      if (text) list.push({ id: genId(), text, author: (await callerEmail(data.devAs)) ?? "?", at: now, hidden: false });
+      // REPLY chỉ gắn cho cột GIẢI PHÁP (action) trả lời 1 vướng mắc; cột vướng mắc bỏ qua replyTo.
+      const rep = data.field === "action" && data.replyTo
+        ? { replyTo: data.replyTo, replyText: (data.replyText ?? "").slice(0, 300) }
+        : {};
+      if (text) list.push({ id: genId(), text, author: (await callerEmail(data.devAs)) ?? "?", at: now, hidden: false, ...rep });
     } else if (data.op === "edit") {
       // Sửa text: CHỈ tác giả (email khớp) hoặc admin. Text mới rỗng → bỏ qua (dùng ẩn/xoá).
       const m = list.find((x) => x.id === data.msgId);
@@ -453,4 +463,49 @@ export const syncCompletedDates = createServerFn({ method: "POST" })
     for (const key of data.remove) if (map[key]) { delete map[key]; changed++; }
     if (changed > 0) await writeCompleted(map);
     return { completed: map, changed };
+  });
+
+/* ── DI TRÚ KHOÁ: (mã+tên) đời cũ → ID (cột STT) ──
+   App đổi khoá match từ tên dự án sang ID phân cấp (STT). Mọi ghi chú/ngày kết thúc/lịch sử update
+   ĐÃ LƯU theo khoá tên cũ sẽ "mồ côi" nếu không dời. Hàm này CHUYỂN chúng sang khoá ID.
+
+   AN TOÀN: chỉ dời khi khoá cũ CÓ dữ liệu và khoá mới CHƯA có (không đè). CHẠY 1 LẦN thực chất —
+   client chỉ gọi khi còn phát hiện khoá cũ; dời xong lần sau không còn khoá cũ → không gọi nữa →
+   không tốn ghi KV. `updates` (mảng ngày) nếu cả cũ+mới đều có thì HỢP NHẤT (không mất ngày nào). */
+export const remapKeys = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      edits: z.record(z.string().min(1).max(600), z.string().min(1).max(600)),
+      completed: z.record(z.string().min(1).max(600), z.string().min(1).max(600)),
+      updates: z.record(z.string().min(1).max(600), z.string().min(1).max(600)),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    let moved = 0;
+    // 1) EDITS (vướng mắc/giải pháp/PIC/deadline — cấp dự án lẫn hạng mục dùng chung kho này)
+    const { map: em } = await readAll();
+    let emChanged = false;
+    for (const [oldK, newK] of Object.entries(data.edits)) {
+      if (oldK === newK) continue;
+      if (em[oldK] && !em[newK]) { em[newK] = em[oldK]; delete em[oldK]; emChanged = true; moved++; }
+    }
+    if (emChanged) await writeAll(em);
+    // 2) COMPLETED (ngày kết thúc thực tế — cấp hạng mục/Block)
+    const cm = await readCompleted();
+    let cmChanged = false;
+    for (const [oldK, newK] of Object.entries(data.completed)) {
+      if (oldK === newK) continue;
+      if (cm[oldK] && !cm[newK]) { cm[newK] = cm[oldK]; delete cm[oldK]; cmChanged = true; moved++; }
+    }
+    if (cmChanged) await writeCompleted(cm);
+    // 3) UPDATES (lịch sử ngày cập nhật — cấp dự án; hợp nhất mảng nếu cả hai tồn tại)
+    const um = await readUpdates();
+    let umChanged = false;
+    for (const [oldK, newK] of Object.entries(data.updates)) {
+      if (oldK === newK || !um[oldK]) continue;
+      if (!um[newK]) { um[newK] = um[oldK]; delete um[oldK]; umChanged = true; moved++; }
+      else { um[newK] = Array.from(new Set([...um[newK], ...um[oldK]])).sort(); delete um[oldK]; umChanged = true; moved++; }
+    }
+    if (umChanged) await writeUpdates(um);
+    return { edits: em, completed: cm, updates: um, moved };
   });

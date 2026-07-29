@@ -247,9 +247,11 @@ export function qualifyItem(
   return { item: it, kind: cls.kind, reason: cls.reason };
 }
 
-/** Khóa nhận diện dự án — mã + tên. Một mã có thể có nhiều tên (CT25-070 = Lobby
- *  và Nhà hàng Maxine). Chỉ dùng mã sẽ kéo nhầm. */
-export const projectKeyOf = (code: string, name: string) =>
+/** Khóa nhận diện dự án. ƯU TIÊN ID dự án (cột STT) — ổn định & duy nhất kể cả khi đổi tên hay
+ *  hoàn thành/ẩn. Không có ID (nguồn cũ) → khoá mã+tên (một mã có thể nhiều tên: CT25-070 =
+ *  Lobby và Nhà hàng Maxine → chỉ dùng mã sẽ kéo nhầm). Lọc nội bộ filter.ts vẫn dùng nhánh tên. */
+export const projectKeyOf = (code: string, name: string, id?: string) =>
+  id && id.trim() ? `id:${id.trim()}` :
   `${code}\u0000${name}`;
 
 export type EligibleProject = {

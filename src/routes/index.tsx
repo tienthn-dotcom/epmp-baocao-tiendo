@@ -14,6 +14,7 @@ import {
   Pencil,
   Printer,
   RefreshCw,
+  Reply,
   RotateCcw,
   ScrollText,
   Search,
@@ -45,7 +46,7 @@ import { parseCsvText, parseXlsxBuffer } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
+import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
@@ -129,6 +130,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.13.0 (29/07/2026): (1) MATCH DỮ LIỆU THEO ID (cột STT) thay cho tên: đọc ID phân cấp
+ *     (dự án 70 / hạng mục 70.1 / block 70.1a) từ file, khoá vướng mắc/giải pháp/ngày kết thúc/lịch
+ *     sử update theo ID → đổi tên dự án KHÔNG mất ghi chú. Di trú 1 lần khoá tên cũ → ID (không mất
+ *     data, chỉ chạy khi còn khoá cũ). ID chỉ dùng ngầm, không hiện UI. (2) REPLY vướng mắc: nút ↩
+ *     trên mỗi bong bóng vướng mắc → mở box Giải pháp cùng dòng kèm trích dẫn; tin giải pháp hiện
+ *     header "↩ …" chỉ rõ đang trả lời vướng mắc nào. (3) DROPDOWN "Triển khai sản xuất" (TKSX):
+ *     hạng mục TKSX có dòng con Mã TKSX1..TKSXn → xổ ra Block 1..n Y HỆT "Thi công lắp đặt" (cả bảng
+ *     Danh sách lẫn Gantt); dùng chung logic Block (giao thô/tinh hoặc TB khu, tự dò).
  *   v3.12.1 (29/07/2026): Bong bóng Vướng mắc/Giải pháp gọn lại: NGÀY ra badge màu color-scale phía
  *     trước (gần hôm nay=xanh, xa=đỏ); tên bỏ đuôi @domain (chỉ "tienthn"); tin "(cũ)" chỉ hiện ngày;
  *     góc phải icon ✎ (bỏ chữ) + icon MẮT-GẠCH để ẩn; bỏ "đã sửa" + bỏ giờ; chữ ĐEN không làm mờ.
@@ -286,7 +295,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.12.1";
+const APP_VERSION = "3.13.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1228,7 +1237,11 @@ type GanttRow = {
  *  sync đổi %/mô tả/ngày → ghi chú vẫn dính đúng dòng. Đổi định dạng khoá này sẽ reset
  *  các ghi chú cũ MỘT LẦN (KV cũ dùng khoá 6-trường). */
 const itemKeyOf = (it: ItemRow) =>
-  [it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0].join(String.fromCharCode(0));
+  it.id && it.id.trim()
+    // ID phân cấp (cột STT) duy nhất toàn cục → khoá thẳng theo ID, KHÔNG lệ thuộc tên/mã/thứ tự.
+    ? `id:${it.id.trim()}`
+    // Fallback (nguồn không có cột STT — cache/CSV/demo cũ): khoá theo mã+tên+giai đoạn+dupIdx.
+    : [it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0].join(String.fromCharCode(0));
 
 /** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
 const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.hidden).map((m) => m.text).join("\n");
@@ -1345,6 +1358,30 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     return m;
   }, [data.projects]);
 
+  /** (mã dự án + tên) → ID dự án (cột STT). Vì 1 mã có thể nhiều tên, phải khoá theo mã+tên.
+   *  Dùng để suy ra ID dự án từ 1 ItemRow (item chỉ mang mã+tên dự án, không mang ID dự án). */
+  const projIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of data.projects) if (p.id && p.id.trim()) m.set(`${p.code} ${p.name}`, p.id.trim());
+    return m;
+  }, [data.projects]);
+  /** Khoá dự án (KV vướng mắc/giải pháp cấp dự án + các set lọc) — ƯU TIÊN ID dự án cho ổn định.
+   *  pkProj: từ ProjectRow (có sẵn id). pkItem: từ ItemRow (suy id qua projIdByName). Mọi điểm dùng
+   *  khoá dự án ĐỀU đi qua 2 helper này để id-based nhất quán (build set & query set khớp nhau). */
+  const pkProj = useCallback((p: { code: string; name: string; id?: string }) => projectKeyOf(p.code, p.name, p.id), []);
+  const pkItem = useCallback(
+    (i: { projectCode: string; projectName: string }) =>
+      projectKeyOf(i.projectCode, i.projectName, projIdByName.get(`${i.projectCode} ${i.projectName}`)),
+    [projIdByName],
+  );
+
+  /* ── CỔNG DI TRÚ KHOÁ (tên cũ → ID/STT) ──
+     App vừa đổi khoá match sang ID. Các effect đồng bộ "ngày kết thúc"/"lịch sử update" bên dưới
+     có bước XOÁ/GHI theo khoá — nếu chạy TRƯỚC khi di trú, chúng sẽ hiểu nhầm khoá tên cũ là "rác"
+     và xoá/ghi đè, làm mất ngày gốc. Vì thế CHẶN các effect đó tới khi di trú xong (remapReady). */
+  const [remapReady, setRemapReady] = useState(false);
+  const remapRanRef = useRef(false);
+
   /* ── CHỈNH SỬA DÙNG CHUNG (backend Cloudflare KV) ──
      UI Action → Update Local State → Call API → Save Database → Sync UI.
      Reload không mất; người khác thấy sau khi lưu. */
@@ -1373,7 +1410,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           : `${FIELD_VN[f]} = "${String(v).replace(/\s+/g, " ").trim().slice(0, 140)}"`);
       }
       const it = data.items.find(x => itemKeyOf(x) === key);
-      const proj = it ? null : data.projects.find(p => projectKeyOf(p.code, p.name) === key);
+      const proj = it ? null : data.projects.find(p => pkProj(p) === key);
       const ctx = it ? `${it.projectCode} ${it.projectName} · ${stageAbbrOf(stageIdOf(it))}`
                 : proj ? `${proj.maCT || proj.code} ${proj.name} (cấp dự án)` : key.slice(0, 40);
       track("save_edit", [ctx, parts.join(" · ")].filter(Boolean).join(" — ").slice(0, 290));
@@ -1384,14 +1421,14 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   };
 
   /** Thao tác BOX CHAT Vướng mắc / Giải pháp (add/hide/unhide/delete[admin]/sethi[admin]). */
-  const msgOp = async (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => {
+  const msgOp = async (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => {
     try {
-      const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, devAs: devAs() } });
+      const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, replyTo: opts?.replyTo, replyText: opts?.replyText, devAs: devAs() } });
       queryClient.setQueryData(["edits"], r.items);
       const FIELD_VN = field === "note" ? "Vướng mắc" : "Giải pháp";
       const OP_VN: Record<string, string> = { add: "thêm", edit: "sửa", hide: "ẩn", unhide: "mở ẩn", delete: "XOÁ", sethi: "tô màu", hiall: "tô cả ô", unhiall: "bỏ tô cả ô" };
       const it = data.items.find(x => itemKeyOf(x) === key);
-      const proj = it ? null : data.projects.find(p => projectKeyOf(p.code, p.name) === key);
+      const proj = it ? null : data.projects.find(p => pkProj(p) === key);
       const ctx = it ? `${it.projectCode} ${it.projectName} · ${stageAbbrOf(stageIdOf(it))}`
                 : proj ? `${proj.maCT || proj.code} ${proj.name} (cấp dự án)` : key.slice(0, 40);
       const detail = op === "add" && opts?.text ? `: "${opts.text.replace(/\s+/g, " ").trim().slice(0, 120)}"` : "";
@@ -1415,12 +1452,13 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
      gọi API, nên bình thường KHÔNG ghi gì cả (tránh mọi lượt mở app đều đọc-ghi KV
      → giảm hẳn rủi ro tranh chấp ghi đè). */
   useEffect(() => {
+    if (!remapReady) return; // chờ di trú khoá xong mới ghi lịch sử theo khoá ID
     if (historyQuery.isLoading || !data.projects.length) return;
     const moi: Record<string, string> = {};
     for (const p of data.projects) {
       const d = p.updateDate;
       if (!d) continue;
-      const key = projectKeyOf(p.code, p.name);
+      const key = pkProj(p);
       if (!(updateHistory[key] ?? []).includes(d)) moi[key] = d;
     }
     if (!Object.keys(moi).length) return;
@@ -1430,7 +1468,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         queryClient.setQueryData(["updateHistory"], r.history);
       } catch { /* ghi nhận lịch sử là phụ trợ — hỏng thì không được làm hỏng bảng */ }
     })();
-  }, [data.projects, updateHistory, historyQuery.isLoading, queryClient]);
+  }, [remapReady, data.projects, updateHistory, historyQuery.isLoading, queryClient]);
 
   /* ── NGÀY KẾT THÚC THỰC TẾ (khi hạng mục đạt 100%) — kho dùng chung (KV) ──
      Quét TẤT CẢ hạng mục (allItems, gồm việc 100% mà data.items đã loại). Việc ≥100% chưa ghi →
@@ -1442,7 +1480,60 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     staleTime: 60_000,
   });
   const completedDates: CompletedDates = useMemo(() => completedQuery.data ?? {}, [completedQuery.data]);
+
+  /* ── DI TRÚ KHOÁ 1 LẦN: (mã+tên) đời cũ → ID (cột STT) ──
+     Dữ liệu vướng mắc/giải pháp/ngày kết thúc/lịch sử update ĐÃ LƯU theo khoá tên cũ. App nay khoá
+     theo ID → phải dời sang khoá ID kẻo "mồ côi". CHỈ gọi khi CÒN phát hiện khoá tên cũ trong dữ
+     liệu đã tải (dời xong lần sau không còn → không gọi nữa → không tốn ghi KV). Xong mới mở cổng
+     remapReady cho các effect sync chạy. Không có ID (file/CSV cũ) → bỏ qua, giữ khoá tên. */
   useEffect(() => {
+    if (remapRanRef.current) return;
+    if (editsQuery.isLoading || historyQuery.isLoading || completedQuery.isLoading || !data.projects.length) return;
+    const legacyProj = (code: string, name: string) => `${code} ${name}`;
+    const legacyItem = (code: string, name: string, rawCode: string, dupIdx: number) =>
+      [code, name, rawCode, dupIdx].join(String.fromCharCode(0));
+    const editPairs: Record<string, string> = {};
+    const completedPairs: Record<string, string> = {};
+    const updatePairs: Record<string, string> = {};
+    for (const p of data.projects) {
+      if (p.id && p.id.trim()) {
+        const oldK = legacyProj(p.code, p.name), newK = `id:${p.id.trim()}`;
+        if (oldK !== newK) { editPairs[oldK] = newK; updatePairs[oldK] = newK; }
+      }
+      for (const it of (p.allItems ?? p.items ?? [])) {
+        if (it.id && it.id.trim()) {
+          const oldK = legacyItem(it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0), newK = `id:${it.id.trim()}`;
+          if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
+        }
+        if (it.blocks?.length) {
+          it.blocks.forEach((b, bi) => {
+            if (b.id && b.id.trim()) {
+              const oldK = legacyItem(it.projectCode, it.projectName, b.code, bi), newK = `id:${b.id.trim()}`;
+              if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
+            }
+          });
+        }
+      }
+    }
+    const hasLegacy =
+      Object.keys(editPairs).some((k) => edits[k] !== undefined) ||
+      Object.keys(completedPairs).some((k) => completedDates[k] !== undefined) ||
+      Object.keys(updatePairs).some((k) => updateHistory[k] !== undefined);
+    remapRanRef.current = true;
+    if (!hasLegacy) { setRemapReady(true); return; }
+    void (async () => {
+      try {
+        const r = await remapKeys({ data: { edits: editPairs, completed: completedPairs, updates: updatePairs } });
+        queryClient.setQueryData(["edits"], r.edits);
+        queryClient.setQueryData(["completedDates"], r.completed);
+        queryClient.setQueryData(["updateHistory"], r.updates);
+      } catch { /* di trú phụ trợ — hỏng không được làm hỏng bảng */ }
+      finally { setRemapReady(true); }
+    })();
+  }, [editsQuery.isLoading, historyQuery.isLoading, completedQuery.isLoading, data.projects, edits, completedDates, updateHistory, queryClient]);
+
+  useEffect(() => {
+    if (!remapReady) return; // chờ di trú khoá xong mới sync (tránh XOÁ nhầm khoá tên cũ)
     if (completedQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {};
     const seenDone = new Set<string>();
@@ -1460,7 +1551,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         queryClient.setQueryData(["completedDates"], r.completed);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [data.projects, completedDates, completedQuery.isLoading, today, queryClient]);
+  }, [remapReady, data.projects, completedDates, completedQuery.isLoading, today, queryClient]);
 
   /* ── ÁP CHỈNH SỬA vào dữ liệu TRƯỚC mọi phép tính (lọc/phân loại/bảng/PDF
      đều tiêu thụ effectiveItems — sửa Deadline sẽ tự tính lại Quá hạn,
@@ -1565,6 +1656,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const buildBlockItem = useCallback((parent: EnrichedItem, b: BlockChild, bi: number): EnrichedItem => {
     const raw: ItemRow = {
       ...(parent as ItemRow),
+      // ID RIÊNG của Block (cột STT dạng "70.1a") — GHI ĐÈ id của TC cha, nếu không sẽ đụng khoá.
+      // b.id undefined (nguồn cũ) → itemKeyOf tự rớt về khoá mã+TCn+dupIdx (vẫn duy nhất).
+      id: b.id,
       rawCode: b.code, dupIdx: bi, desc: b.label,
       pctActual: b.pctActual, pctActualInvalid: false,
       codeCounts: undefined, blocks: undefined, note: "",
@@ -1584,7 +1678,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
 
   const enriched: EnrichedItem[] = useMemo(
     () => data.items.map((raw, i) => enrichItem(raw, effectiveItems[i]))
-      .map((it) => (it.stage === "Thi công lắp đặt" && it.blocks?.length
+      .map((it) => (it.blocks?.length
         ? { ...it, _blockItems: it.blocks.map((b, bi) => buildBlockItem(it, b, bi)) }
         : it)),
     [data.items, effectiveItems, enrichItem, buildBlockItem],
@@ -1619,7 +1713,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   // ── "Cần cập nhật MP": dự án cha có cờ (và đang Show — data.projects đã lọc Show).
   const mpProjectKeys = useMemo(() => {
     const s = new Set<string>();
-    for (const p of data.projects) if (p.needsMpUpdate) s.add(projectKeyOf(p.code, p.name));
+    for (const p of data.projects) if (p.needsMpUpdate) s.add(pkProj(p));
     return s;
   }, [data.projects]);
 
@@ -1687,7 +1781,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       const mk = monthKeyOf(p.deadline);
       if (!mk || mk > curMonthKey) continue;               // chưa tới hạn (tháng sau) → bỏ
       if (!(p.allItems ?? p.items).some(i => i.shown !== false && (i.pctActual ?? 0) < 100)) continue; // xong 100% hoặc ẩn hết → bỏ
-      s.add(projectKeyOf(p.code, p.name));
+      s.add(pkProj(p));
     }
     return s;
   }, [data.projects, curMonthKey]);
@@ -1699,7 +1793,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     for (const p of data.projects) {
       if (p.rank == null) continue;                                    // không thuộc top → bỏ
       if (!(p.allItems ?? p.items).some(i => i.shown !== false)) continue; // ẩn hết → bỏ
-      s.add(projectKeyOf(p.code, p.name));
+      s.add(pkProj(p));
     }
     return s;
   }, [data.projects]);
@@ -1725,7 +1819,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const facetItems = useCallback((excludeMode: "due" | "top") => {
     const q = filters.query.trim().toLowerCase();
     return enriched.filter(i => {
-      const k = projectKeyOf(i.projectCode, i.projectName);
+      const k = pkItem(i);
       if (filters.mpOnly && !mpProjectKeys.has(k)) return false;
       if (excludeMode !== "due" && filters.dueThisMonth && !dueMonthProjectKeys.has(k)) return false;
       if (excludeMode !== "top" && filters.topKey && !topProjectKeys.has(k)) return false;
@@ -1757,9 +1851,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const optionUniverse = useCallback((exclude: "regions" | "groupDAs" | "pes" | "deadlineMonths") => {
     const q = filters.query.trim().toLowerCase();
     return enriched.filter(i => {
-      if (filters.mpOnly && !mpProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.dueThisMonth && !dueMonthProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.topKey && !topProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
+      if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
+      if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) return false;
+      if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
@@ -1827,9 +1921,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     const q = filters.query.trim().toLowerCase();
     // Bật "Hiện tất cả" → thêm việc ĐÃ HOÀN THÀNH vào NGUỒN BẢNG (lọc y hệt). KPI/databar không đổi.
     return (showDone ? enriched.concat(doneEnriched) : enriched).filter(i => {
-      if (filters.mpOnly && !mpProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.dueThisMonth && !dueMonthProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.topKey && !topProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
+      if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
+      if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) return false;
+      if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
@@ -1861,9 +1955,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const panelActive = useMemo(() => {
     const q = filters.query.trim().toLowerCase();
     return enriched.filter(i => {
-      if (filters.mpOnly && !mpProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.dueThisMonth && !dueMonthProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.topKey && !topProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
+      if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
+      if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) return false;
+      if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
@@ -1893,7 +1987,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (filters.alerts.length) return m;
     const q = filters.query.trim().toLowerCase();
     for (const p of data.projects) {
-      if (filters.mpOnly && !mpProjectKeys.has(projectKeyOf(p.code, p.name))) continue;
+      if (filters.mpOnly && !mpProjectKeys.has(pkProj(p))) continue;
       for (const i of p.allItems) {
         if (i.shown === false || (i.pctActual ?? 0) < 100) continue;
         const sid = stageIdOf(i);
@@ -1901,8 +1995,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         if (filters.regions.length && !filters.regions.includes(i.region ?? "")) continue;
         if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) continue;
         if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) continue;
-        if (filters.dueThisMonth && !dueMonthProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) continue;
-        if (filters.topKey && !topProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) continue;
+        if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) continue;
+        if (filters.topKey && !topProjectKeys.has(pkItem(i))) continue;
         if (filters.deadlineMonths.length) {
           const mk = monthKeyOf(i.projectDeadline);
           const dk = i.projectDeadline ? i.projectDeadline.slice(0, 10) : null;
@@ -1927,7 +2021,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (!filters.mpOnly) return [];
     const itemsByProj = new Map<string, EnrichedItem[]>();
     for (const i of tableItems) {
-      const k = projectKeyOf(i.projectCode, i.projectName);
+      const k = pkItem(i);
       const arr = itemsByProj.get(k) ?? [];
       arr.push(i);
       itemsByProj.set(k, arr);
@@ -1935,7 +2029,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     return data.projects
       .filter(p => p.needsMpUpdate)
       .map(p => {
-        const its = itemsByProj.get(projectKeyOf(p.code, p.name)) ?? [];
+        const its = itemsByProj.get(pkProj(p)) ?? [];
         return {
           maCT: p.maCT || p.code,
           name: p.name,
@@ -1968,9 +2062,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (!showDone) return panelActive;
     const q = filters.query.trim().toLowerCase();
     const doneF = doneEnriched.filter(i => {
-      if (filters.mpOnly && !mpProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.dueThisMonth && !dueMonthProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
-      if (filters.topKey && !topProjectKeys.has(projectKeyOf(i.projectCode, i.projectName))) return false;
+      if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
+      if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) return false;
+      if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
@@ -1993,7 +2087,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       // panelActive CỐ Ý bỏ qua lọc Hạng mục (để databar giai đoạn đếm đủ) → ở ĐÂY tự lọc theo
       // filters.stages cho khớp đúng hạng mục đang chọn.
       const flat: GanttRow[] = ganttSource.filter((it) => filters.stages.includes(it._stageId)).map((it) => {
-        const pk = projectKeyOf(it.projectCode, it.projectName);
+        const pk = pkItem(it);
         return {
           key: `${pk} ${it.rawCode} ${it.dupIdx ?? 0}`,
           maCT: it.maCT || it.projectCode,
@@ -2017,7 +2111,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     // thời gian trong Gantt, KHÔNG dựng lại luật lọc riêng.
     const childrenByProject = new Map<string, GanttChild[]>();
     for (const it of ganttSource) {
-      const pk = projectKeyOf(it.projectCode, it.projectName);
+      const pk = pkItem(it);
       let arr = childrenByProject.get(pk);
       if (!arr) { arr = []; childrenByProject.set(pk, arr); }
       const sid = it._stageId as StageOrOther;
@@ -2053,10 +2147,10 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     for (const arr of childrenByProject.values())
       arr.sort((a, b) => stageIdxOf(a.stageAbbr) - stageIdxOf(b.stageAbbr) || (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 
-    const visKeys = new Set(ganttSource.map(i => projectKeyOf(i.projectCode, i.projectName)));
+    const visKeys = new Set(ganttSource.map(i => pkItem(i)));
     const rows: GanttRow[] = [];
     for (const p of data.projects) {
-      const pk = projectKeyOf(p.code, p.name);
+      const pk = pkProj(p);
       if (!visKeys.has(pk)) continue;
       const all = p.allItems ?? p.items;
       const pcts = all.map(it => clampPct(it.pctActual)).filter((v): v is number => v != null);
@@ -2198,7 +2292,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (filters.mpOnly) return [];
     const byKey = new Map<string, DueMonthGroup>();
     for (const it of sortedAlerts) {
-      const key = projectKeyOf(it.projectCode, it.projectName);
+      const key = pkItem(it);
       let g = byKey.get(key);
       if (!g) { const ped = edits[key]; g = { key, maCT: it.maCT || it.projectCode, name: it.projectName, start: it.projectStart ?? null, deadline: it.projectDeadline, pm: it._projectPm || "—", updateDate: it.updateDate ?? null, delivered: !!it.projectDelivered, items: [], note: visibleText(ped?.noteMsgs), action: visibleText(ped?.actionMsgs), noteMsgs: ped?.noteMsgs ?? [], actionMsgs: ped?.actionMsgs ?? [], editedAt: ped?.updatedAt ?? null }; byKey.set(key, g); }
       // Dự phòng: nếu dòng cha KHÔNG có ngày Bắt đầu → lấy ngày bắt đầu SỚM NHẤT của công đoạn con.
@@ -2252,12 +2346,12 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   // (mọi công đoạn đã 100%/ẩn) vì nó vẫn bàn giao trong tháng.
   const dueMonthProjectCount = useMemo(() => {
     const ks = new Set<string>();
-    for (const i of facetItems("due")) { const k = projectKeyOf(i.projectCode, i.projectName); if (dueMonthProjectKeys.has(k)) ks.add(k); }
+    for (const i of facetItems("due")) { const k = pkItem(i); if (dueMonthProjectKeys.has(k)) ks.add(k); }
     return ks.size;
   }, [facetItems, dueMonthProjectKeys]);
   const topProjectCount = useMemo(() => {
     const ks = new Set<string>();
-    for (const i of facetItems("top")) { const k = projectKeyOf(i.projectCode, i.projectName); if (topProjectKeys.has(k)) ks.add(k); }
+    for (const i of facetItems("top")) { const k = pkItem(i); if (topProjectKeys.has(k)) ks.add(k); }
     return ks.size;
   }, [facetItems, topProjectKeys]);
 
@@ -2288,7 +2382,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         const missingDates = active.filter(i => !i.start || !i.deadline).length;
         const missingPic = active.filter(i => { const o = (i.owner ?? "").trim(); return o === "" || o === "—"; }).length;
         return {
-          key: projectKeyOf(p.code, p.name),
+          key: pkProj(p),
           maCT: p.maCT || p.code,
           name: p.name,
           pm: p.pm || "—",
@@ -2319,7 +2413,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (filters.mpOnly) return mpProjectRows.length; // chế độ gộp: đếm dòng dự án
     // ĐẾM THEO MÃ+TÊN: dự án cùng mã CT nhưng khác tên = dự án khác nhau (không gộp theo mã).
     return hasAnyFilter
-      ? new Set(sortedAlerts.map(i => projectKeyOf(i.projectCode, i.projectName))).size
+      ? new Set(sortedAlerts.map(i => pkItem(i))).size
       : activeProjectCount;
   }, [filters.mpOnly, mpProjectRows.length, hasAnyFilter, sortedAlerts, activeProjectCount]);
 
@@ -2454,7 +2548,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           const visibleProjects = filters.mpOnly
             ? Array.from(
                 new Map(sortedAlerts.map(i => [
-                  projectKeyOf(i.projectCode, i.projectName),
+                  pkItem(i),
                   { code: i.projectCode, name: i.projectName },
                 ])).values(),
               )
@@ -2464,7 +2558,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
             return;
           }
           // Đối chiếu 3 nguồn — app/Excel/PDF phải BẰNG nhau.
-          const tableProjectsCount = new Set(sortedAlerts.map(i => projectKeyOf(i.projectCode, i.projectName))).size;
+          const tableProjectsCount = new Set(sortedAlerts.map(i => pkItem(i))).size;
           if (tableProjectsCount !== visibleProjects.length) {
             // eslint-disable-next-line no-console
             console.error("[filter-audit] LỆCH số dự án giữa bảng & Excel",
@@ -2842,14 +2936,18 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
 }
 
 const CHAT_MSG_MAX = 1000;
-type MsgOp = (field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
+// Callback của 1 ô chat (ChatCell/ChatBox): field ("note"/"action") do component CHA gắn sẵn qua
+// closure khi tạo onOp, nên đây chỉ nhận (op, opts). (onMsgOp cấp trên mới cầm đủ key+field+op+opts.)
+type MsgOp = (op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => void | Promise<void>;
 
 /** Ô BẢNG (Vướng mắc / Giải pháp): mỗi message KHÔNG ẩn = 1 BONG BÓNG CHAT vàng nhạt (hiện người
  *  nhập + ngày giờ). `dark` = hàng gộp dự án (nền navy) → giữ kiểu chữ trắng đơn giản (không bong
  *  bóng). `onOp` + `myEmail`/`isAdmin`: tác giả (hoặc admin) SỬA được ngay trên bảng (nút ✎). */
-function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, today }: {
+function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, today }: {
   msgs: ChatMsg[]; dark?: boolean; field?: "note" | "action";
-  myEmail?: string | null; isAdmin?: boolean; onOp?: MsgOp; onOpen?: () => void; today?: string;
+  myEmail?: string | null; isAdmin?: boolean; onOp?: MsgOp; onOpen?: () => void;
+  /** Chỉ ô VƯỚNG MẮC: bấm ↩ để trả lời (mở box Giải pháp cùng dòng, đính trích dẫn). Ai cũng dùng được. */
+  onReply?: (m: ChatMsg) => void; today?: string;
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -2892,13 +2990,22 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, today }: 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span>}
-            {canEdit(m) && (
+            {((field === "note" && onReply) || canEdit(m)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
-                <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); cancelOpen(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>
-                <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); cancelOpen(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>
+                {field === "note" && onReply && (
+                  <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); cancelOpen(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
+                )}
+                {canEdit(m) && <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); cancelOpen(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>}
+                {canEdit(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); cancelOpen(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
               </span>
             )}
           </div>
+          {/* GIẢI PHÁP là câu trả lời cho 1 vướng mắc → hiện trích dẫn "↩ …" để biết trả lời cái nào. */}
+          {m.replyText && (
+            <div className="mb-0.5 flex items-start gap-1 rounded border-l-2 border-teal-400 bg-teal-50/70 px-1.5 py-0.5 text-[9px] leading-tight text-slate-500">
+              <Reply className="mt-px h-2.5 w-2.5 shrink-0 -scale-x-100" /><span className="line-clamp-1">{m.replyText}</span>
+            </div>
+          )}
           <div className="whitespace-pre-line text-[11px] leading-snug text-slate-900"><HiText text={m.text} ranges={m.hi ?? []} field={field} /></div>
         </div>
       ))}
@@ -2909,13 +3016,14 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, today }: 
 
 /** BOX CHAT trong dialog: danh sách message (ai · lúc nào) + soạn tin mới. Ẩn/mở ẩn ai cũng được;
  *  XOÁ chỉ admin; nhấp đúp 1 từ để tô/bỏ tô đỏ (admin). */
-function ChatBox({ msgs, isAdmin, myEmail, field, onOp }: { msgs: ChatMsg[]; isAdmin: boolean; myEmail?: string | null; field: "note" | "action"; onOp: MsgOp }) {
+function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: { msgs: ChatMsg[]; isAdmin: boolean; myEmail?: string | null; field: "note" | "action"; onOp: MsgOp; reply?: { toId: string; text: string }; onClearReply?: () => void }) {
   const [draft, setDraft] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
   const canEdit = (m: ChatMsg) => isAdmin || (!!myEmail && m.author === myEmail);
-  const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX) }); setDraft(""); };
+  // Gửi tin: nếu đang trả lời 1 vướng mắc (reply) thì đính kèm replyTo + trích đoạn để hiện "↩ …".
+  const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX), ...(reply ? { replyTo: reply.toId, replyText: reply.text } : {}) }); setDraft(""); onClearReply?.(); };
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="max-h-[46vh] space-y-2 overflow-auto pr-1">
@@ -2944,9 +3052,16 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp }: { msgs: ChatMsg[]; isA
                   </div>
                 </div>
               ) : (
-                <div className={`whitespace-pre-line text-[13px] leading-relaxed ${m.hidden ? "text-slate-400" : "text-slate-800"}`}>
-                  <HiText text={m.text} ranges={m.hi ?? []} field={field} />
-                </div>
+                <>
+                  {m.replyText && (
+                    <div className="mb-1 flex items-start gap-1 rounded border-l-2 border-teal-400 bg-teal-50/70 px-2 py-1 text-[11px] text-slate-500">
+                      <Reply className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-teal-600" /><span className="line-clamp-2"><b className="text-teal-700">Trả lời:</b> {m.replyText}</span>
+                    </div>
+                  )}
+                  <div className={`whitespace-pre-line text-[13px] leading-relaxed ${m.hidden ? "text-slate-400" : "text-slate-800"}`}>
+                    <HiText text={m.text} ranges={m.hi ?? []} field={field} />
+                  </div>
+                </>
               )}
             </div>
           ))}
@@ -2966,8 +3081,16 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp }: { msgs: ChatMsg[]; isA
               <span className="text-slate-700">Điều 2 thợ tổ B, vào ca 13/07 — HR xác nhận</span></>
           )}
         </div>
+        {/* Đang trả lời 1 vướng mắc → hiện trích dẫn phía trên ô soạn, có × để bỏ. */}
+        {reply && (
+          <div className="mb-2 flex items-start gap-1.5 rounded-md border-l-2 border-teal-400 bg-teal-50 px-2 py-1.5 text-[11px] text-slate-600">
+            <Reply className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-teal-600" />
+            <span className="flex-1"><b className="text-teal-700">Trả lời vướng mắc:</b> <span className="line-clamp-2">{reply.text}</span></span>
+            {onClearReply && <button type="button" title="Bỏ trả lời" onClick={onClearReply} className="shrink-0 text-slate-400 hover:text-slate-700"><X className="h-3 w-3" /></button>}
+          </div>
+        )}
         <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
-          placeholder={`Soạn ${noun} mới…`} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
+          placeholder={reply ? "Soạn giải pháp trả lời…" : `Soạn ${noun} mới…`} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="text-[10px] leading-tight text-slate-400">Gửi rồi KHÔNG thể xoá.</span>
           <button type="button" onClick={send} disabled={!draft.trim()} className="shrink-0 rounded-md bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-40">Gửi</button>
@@ -3013,7 +3136,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
   onSaveEdit: (key: string, patch: EditPatch) => void | Promise<void>;
-  onMsgOp: (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null }) => void | Promise<void>;
+  onMsgOp: (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => void | Promise<void>;
 }) {
   const activeCount =
     filters.depts.length + filters.stages.length + filters.alerts.length
@@ -3133,7 +3256,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   // Hộp CHỈNH SỬA đầu việc (Vướng mắc / PIC / Deadline) — lưu backend dùng chung.
   /** `field` = đang sửa cột nào: "note" (Vướng mắc) hay "action" (Hành động / Cần xử lý).
    *  Hai cột dùng CHUNG dialog này, chỉ khác trường lưu xuống KV. */
-  const [editView, setEditView] = useState<{ title: string; key: string; field: "note" | "action" } | null>(null);
+  const [editView, setEditView] = useState<{ title: string; key: string; field: "note" | "action"; reply?: { toId: string; text: string } } | null>(null);
   // Chỉ mục message theo KHOÁ (đầu việc + Block con + cấp dự án) — box chat đọc LIVE ở đây nên tự
   // cập nhật sau mỗi thao tác (thêm/ẩn/xoá) mà không cần đóng-mở lại dialog.
   const msgIndex = useMemo(() => {
@@ -3174,6 +3297,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   const openGroupEdit = (g: DueMonthGroup, field: "note" | "action" = "note") => {
     setEditView({ title: `${g.maCT} · ${g.name} · ${FIELD_LABEL[field]} (cấp dự án)`, key: g.key, field });
   };
+  /** TRẢ LỜI 1 vướng mắc → mở box GIẢI PHÁP cùng dòng, đính sẵn trích dẫn vướng mắc (replyTo). */
+  const openReply = (key: string, title: string, m: ChatMsg) => {
+    setEditView({ title: `${title} · Giải pháp`, key, field: "action", reply: { toId: m.id, text: m.text.replace(/\s+/g, " ").trim().slice(0, 120) } });
+  };
 
   const handleExportClick = async () => {
     if (exporting) return;
@@ -3213,7 +3340,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     const installFid = it.stage === "Thi công lắp đặt" ? installLinks?.[it.maCT] : undefined;
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId);
     // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
-    const hasBlocks = it.stage === "Thi công lắp đặt" && (it.blocks?.length ?? 0) > 0;
+    const hasBlocks = (it.blocks?.length ?? 0) > 0;
     const blkKey = itemKeyOf(it);
     const isBlkOpen = hasBlocks && expandedTC.has(blkKey);
     return (
@@ -3331,7 +3458,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         </td>
         {/* VƯỚNG MẮC — bong bóng chat. 1 click mở box; admin NHẤP ĐÚP 1 bong bóng = tô/bỏ màu TIN ĐÓ. */}
         <td className="px-2 py-1 align-top text-slate-700">
-          <ChatCell msgs={it._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} today={today} onOp={(op, opts) => onMsgOp(it._key, "note", op, opts)} onOpen={() => openEdit(it, "note")} />
+          <ChatCell msgs={it._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} today={today} onOp={(op, opts) => onMsgOp(it._key, "note", op, opts)} onOpen={() => openEdit(it, "note")} onReply={(m) => openReply(it._key, `${it.maCT || it.projectCode} · ${it._stageLabel}`, m)} />
         </td>
         {/* GIẢI PHÁP — bong bóng chat. */}
         <td className="px-2 py-1 align-top text-slate-700">
@@ -3386,7 +3513,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               : <AlertBadge kind={bit._alert} color={bit._alertColor} />}
           </td>
           <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700">
-            <ChatCell msgs={bit._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} today={today} onOp={(op, opts) => onMsgOp(bit._key, "note", op, opts)} onOpen={() => openEdit(bit, "note")} />
+            <ChatCell msgs={bit._noteMsgs} field="note" myEmail={myEmail} isAdmin={isAdmin} today={today} onOp={(op, opts) => onMsgOp(bit._key, "note", op, opts)} onOpen={() => openEdit(bit, "note")} onReply={(m) => openReply(bit._key, `${bit.maCT || bit.projectCode} · ${bit._stageLabel}`, m)} />
           </td>
           <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700">
             <ChatCell msgs={bit._actionMsgs} field="action" myEmail={myEmail} isAdmin={isAdmin} today={today} onOp={(op, opts) => onMsgOp(bit._key, "action", op, opts)} onOpen={() => openEdit(bit, "action")} />
@@ -3901,6 +4028,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                 myEmail={myEmail}
                 field={editView.field}
                 onOp={(op, opts) => onMsgOp(editView.key, editView.field, op, opts)}
+                reply={editView.reply}
+                onClearReply={() => setEditView((v) => (v ? { ...v, reply: undefined } : v))}
               />
             </div>
           </div>

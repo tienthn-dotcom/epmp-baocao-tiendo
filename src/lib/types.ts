@@ -34,6 +34,9 @@ export type BlockArea = { label: string; pct: number | null };
  *   • kind="plain": chỉ có % (không rõ chi tiết). */
 export type BlockChild = {
   code: string;              // TC1
+  /** ID phân cấp đọc từ cột STT của file (dạng "70.1a"). Ổn định & duy nhất toàn cục —
+   *  dùng làm KHOÁ match vướng mắc/giải pháp thay cho tên. undefined nếu file không có cột STT. */
+  id?: string;
   label: string;             // Block 1 (86 căn) / Block 1 (Lobby + Res…)
   pctActual: number | null;  // % thực tế Block (thang 0..100)
   kind: "tho" | "avg" | "plain";
@@ -43,6 +46,9 @@ export type BlockChild = {
 };
 
 export type ItemRow = {
+  /** ID phân cấp đọc từ cột STT (dạng "70.1"). Ổn định & duy nhất toàn cục → KHOÁ match
+   *  vướng mắc/giải pháp thay cho (mã+tên). undefined nếu nguồn không có cột STT (cache/CSV cũ). */
+  id?: string;
   projectCode: string; // CT26-013
   projectName: string;
   cdt: string;
@@ -102,6 +108,9 @@ export type ItemRow = {
 };
 
 export type ProjectRow = {
+  /** ID dự án đọc từ cột STT (dạng "70"). Đếm tăng vĩnh viễn, KHÔNG lặp lại kể cả khi dự án
+   *  hoàn thành/ẩn → khoá match ổn định cấp dự án. undefined nếu nguồn không có cột STT. */
+  id?: string;
   code: string;
   name: string;
   cdt: string;

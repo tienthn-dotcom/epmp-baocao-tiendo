@@ -430,6 +430,21 @@ function detectTop20Col(headerRow: unknown[]): number {
   return -1;
 }
 
+/** Tìm cột "STT" chứa ID PHÂN CẤP (dự án "70", hạng mục "70.1", dòng con "70.1a"). ID này
+ *  đếm tăng vĩnh viễn, KHÔNG lặp — dùng làm khoá match ổn định. PHẢI phân biệt với cột
+ *  "STT Dự án"/"Top 20" (detectTop20Col) — chỉ nhận header ĐÚNG "STT"/"ID"/"Mã ID" (không kèm
+ *  "dự án"). Trả -1 khi nguồn không có cột này (file/cache cũ vẫn chạy theo khoá tên). */
+function detectIdCol(headerRow: unknown[]): number {
+  if (!headerRow) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = str(headerRow[c]).toLowerCase();
+    if (!h) continue;
+    if (/d[ựu]\s*[áa]n/.test(h)) continue;          // tránh "STT Dự án" (Top-20)
+    if (/^stt$|^id$|^m[ãa]\s*id$/.test(h)) return c;
+  }
+  return -1;
+}
+
 /** Parse rows[][] from the Timeline sheet (header row index 5, data from index 7). */
 export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined): ReportData {
   const projects: ProjectRow[] = [];
@@ -444,6 +459,13 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const groupCol = detectGroupCol(rows[COL.headerIdx] ?? []);
   const top20Col = detectTop20Col(rows[COL.headerIdx] ?? []);
   const updateCol = detectUpdateDateCol(rows[COL.headerIdx] ?? []);
+  const idCol = detectIdCol(rows[COL.headerIdx] ?? []);
+  /** ID phân cấp (cột STT) của dòng hiện tại — "" nếu nguồn không có cột. */
+  const idOf = (r: unknown[]): string | undefined => {
+    if (idCol < 0) return undefined;
+    const v = str(r[idCol]);
+    return v || undefined;
+  };
   let currentRegion = "";
   let currentGroup = "";
   let currentRank: number | undefined = undefined;
@@ -466,9 +488,10 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   // Gom các dòng breakdown "số mã/tổng mã" theo TỪNG dự án (khối cột sau Vướng mắc).
   // Độc lập với dòng giai đoạn — gắn vào item theo NHÃN ở post-pass cuối hàm.
   const bdByProj = new Map<ProjectRow, RawBd[]>();
-  // Gom DÒNG CON "Thi công lắp đặt" (Block 1..5, Mã TC1..TCn) theo dự án → post-pass gắn
-  // vào item giai đoạn "Thi công lắp đặt".
-  const blocksByProj = new Map<ProjectRow, BlockChild[]>();
+  // Gom DÒNG CON kiểu Block (Mã <giai đoạn>+số) theo dự án → post-pass gắn vào item giai đoạn
+  // TƯƠNG ỨNG. Hiện áp cho: "Thi công lắp đặt" (TC1..TCn) và "Triển khai sản xuất" (TKSX1..TKSXn).
+  // Mỗi phần tử kèm `stage` = giai đoạn cha để gắn đúng chỗ ở post-pass.
+  const blocksByProj = new Map<ProjectRow, { stage: StageKey; blk: BlockChild }[]>();
   for (let i = COL.headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
@@ -506,6 +529,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         .trim();
       const dpmLine = ownerLines.find(isDpmLine)?.replace(/^d\s*pm\b[:\s\-.]*/i, "").trim() ?? "";
       const proj: ProjectRow = {
+        id: idOf(r),
         code: rawCode || maCT,
         name: projectName || rawCode || maCT,
         cdt: str(r[COL.G]),
@@ -563,14 +587,20 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     if (!rawCode) continue;
 
-    // ── DÒNG CON "Thi công lắp đặt": Mã dạng TC1..TCn (Block 1..5). KHÔNG phải giai đoạn
-    //    riêng → gom làm con của item "Thi công lắp đặt" cùng dự án (post-pass gắn vào).
-    //    Ý nghĩa % KHÁC nhau theo dự án:
+    // ── DÒNG CON kiểu Block: Mã <giai đoạn>+số. KHÔNG phải giai đoạn riêng → gom làm con của item
+    //    GIAI ĐOẠN CHA cùng dự án (post-pass gắn vào). Hỗ trợ:
+    //     • TC1..TCn  → "Thi công lắp đặt"
+    //     • TKSX1..TKSXn → "Triển khai sản xuất"  (thêm 29/07, xổ y hệt TCLĐ)
+    //    Ý nghĩa % KHÁC nhau theo dự án (tự dò):
     //     • Ô U+1 (khối sau Vướng mắc) là SỐ → GIAO THÔ: U+1..U+3 = đã giao thô (done/total/%),
     //       U+4..U+6 = đã giao tinh (nhãn dòng header: "Bàn giao thô:" / "Bàn giao tinh:").
     //     • Ô U+1 là CHỮ ("Lobby…") → % = TRUNG BÌNH tiến độ các khu: đọc CÔNG THỨC ô % (AVERAGE)
     //       để lấy đúng các khu thành phần (nhãn khu ở cột trái-2 của ô tham chiếu). ──
-    if (current && /^TC\d+$/i.test(rawCode)) {
+    const blockStage: StageKey | null =
+      /^TC\d+$/i.test(rawCode) ? "Thi công lắp đặt"
+      : /^TKSX\d+$/i.test(rawCode) ? "Triển khai sản xuất"
+      : null;
+    if (current && blockStage) {
       const u = COL.U;
       const numericCell = (v: unknown): boolean =>
         typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && /^\s*-?\d+([.,]\d+)?%?\s*$/.test(v);
@@ -581,7 +611,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       if (numericCell(r[u + 1])) {
         const hv = (d: number, t: number, p: number): BlockHandover | undefined =>
           numericCell(r[d]) ? { done: num(r[d]), total: num(r[t]), pct: normPctStrict(num(r[p])).value } : undefined;
-        blk = { code, label, pctActual, kind: "tho", tho: hv(u + 1, u + 2, u + 3), tinh: hv(u + 4, u + 5, u + 6) };
+        blk = { code, id: idOf(r), label, pctActual, kind: "tho", tho: hv(u + 1, u + 2, u + 3), tinh: hv(u + 4, u + 5, u + 6) };
       } else {
         // TRUNG BÌNH khu: đọc công thức ô % (AVERAGE(Yr,ABr,…)); mỗi tham chiếu → 1 khu:
         // giá trị = ô tham chiếu, nhãn = ô CỘT-2 cùng dòng ("Lobby B1:", "Res. B1:"…).
@@ -597,10 +627,10 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
           const pv = normPctStrict(num(rows[rr][c])).value;
           if (lb || pv != null) areas.push({ label: lb || "—", pct: pv });
         }
-        blk = areas.length ? { code, label, pctActual, kind: "avg", areas } : { code, label, pctActual, kind: "plain" };
+        blk = areas.length ? { code, id: idOf(r), label, pctActual, kind: "avg", areas } : { code, id: idOf(r), label, pctActual, kind: "plain" };
       }
       const arr = blocksByProj.get(current) ?? [];
-      arr.push(blk);
+      arr.push({ stage: blockStage, blk });
       blocksByProj.set(current, arr);
       continue;
     }
@@ -655,6 +685,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     dupCounter.set(dupKey, dupIdx + 1);
 
     const row: ItemRow = {
+      id: idOf(r),
       projectCode: current?.code ?? "",
       projectName: current?.name ?? "(không xác định)",
       cdt: current?.cdt ?? str(r[COL.G]),
@@ -730,11 +761,21 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   // POST-PASS: gắn Block con vào item "Thi công lắp đặt" của dự án (ưu tiên item đang shown
   // — chính là item hiện trong bảng; cùng object nên set .blocks áp cho cả items lẫn allItems).
   for (const proj of projects) {
-    const blks = blocksByProj.get(proj);
-    if (!blks?.length) continue;
-    const tc = proj.allItems.find((it) => it.stage === "Thi công lắp đặt" && it.shown)
-            ?? proj.allItems.find((it) => it.stage === "Thi công lắp đặt");
-    if (tc) tc.blocks = blks;
+    const entries = blocksByProj.get(proj);
+    if (!entries?.length) continue;
+    // Gom Block theo GIAI ĐOẠN rồi gắn vào item giai đoạn tương ứng (ưu tiên item đang shown —
+    // cùng object nên set .blocks áp cho cả items lẫn allItems).
+    const byStage = new Map<StageKey, BlockChild[]>();
+    for (const e of entries) {
+      const arr = byStage.get(e.stage) ?? [];
+      arr.push(e.blk);
+      byStage.set(e.stage, arr);
+    }
+    for (const [stage, blks] of byStage) {
+      const host = proj.allItems.find((it) => it.stage === stage && it.shown)
+                ?? proj.allItems.find((it) => it.stage === stage);
+      if (host) host.blocks = blks;
+    }
   }
 
   // Try to extract "Ngày cập nhật" from rows 0..6
