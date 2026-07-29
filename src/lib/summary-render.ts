@@ -51,9 +51,15 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
 
   // ── 1) TOP REGION: honor merge + fill trực tiếp + formatted text + data-bar 3 ô tổng ──
   const bars: Record<string, string> = { "0_3": "#00FFFF", "0_8": "#5884E1", "0_13": "#00FF00" };
-  const region = (r0: number, r1: number, c0: number, c1: number): string => {
+  const region = (r0: number, r1: number, c0: number, c1: number, metric = false): string => {
     let h = `<table class="mtld-top">`;
     for (let r = r0; r <= r1; r++) {
+      // Ở bảng chỉ số: hàng DỮ LIỆU (Hôm trước/Hôm nay/Lũy kế/Còn lại) KHÔNG bê nguyên tô nền
+      // từ file (trước đây file tô vàng cả hàng "Hôm nay" + cột cuối) — thay bằng highlight ĐỘNG:
+      // CHỈ tô vàng ô "Hôm nay" có giá trị ≠ 0 (tức ô vừa thay đổi trong ngày).
+      const rowLabel = String(valAt(r, 0)).toLowerCase();
+      const isDataRow = metric && /hôm|lũy|còn/.test(rowLabel);
+      const isToday = metric && /hôm nay/.test(rowLabel);
       h += "<tr>";
       for (let c = c0; c <= c1; c++) {
         const cov = cover(r, c);
@@ -61,7 +67,9 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
         const cl = cell(r, c); const v = cl && cl.v != null ? cl.v : "";
         let bg: string | null = null, fg = "#111";
         const dl = argb(cl?.s?.fgColor);
-        if (dl && dl !== "#000000") { bg = dl; fg = lum(dl) < 140 ? "#fff" : "#111"; }
+        if (dl && dl !== "#000000" && !isDataRow) { bg = dl; fg = lum(dl) < 140 ? "#fff" : "#111"; }
+        // Highlight ô THAY ĐỔI: hàng "Hôm nay", ô là số khác 0.
+        if (isToday && typeof v === "number" && v !== 0) { bg = "#FFE14D"; fg = "#111"; }
         let span = "";
         if (cov) { const cs = Math.min(cov.e.c, c1) - c + 1, rs = cov.e.r - cov.s.r + 1; if (cs > 1) span += ` colspan="${cs}"`; if (rs > 1) span += ` rowspan="${rs}"`; }
         const bcol = bars[r + "_" + c]; let bar = "";
@@ -72,7 +80,7 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
     }
     return h + "</table>";
   };
-  const metricTable = region(0, 5, 0, 18);
+  const metricTable = region(0, 5, 0, 18, true);
   const speedTable = region(0, 5, 19, 20); // tới B5 thôi — bỏ hàng "HL / Đã giao tinh" (header block lọt vào)
 
   // ── 2) BLOCKS: mỗi block 1 bảng, ô màu ĐỀU, bỏ L01 ──
@@ -80,17 +88,29 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
   for (let r = 0; r <= maxR; r++) {
     if (!/^B\d$/.test(String(valAt(r, 0)).trim())) continue;
     const bname = String(valAt(r, 0)).trim();
-    let colGT = -1, colXD = -1;
-    for (let c = 1; c <= 30; c++) { const t = String(valAt(r, c)).toLowerCase(); if (colGT < 0 && /tinh/.test(t)) colGT = c; if (colXD < 0 && /defect|xo[áa]/.test(t)) colXD = c; }
+    // Nhận diện 3 cột % theo CHỮ header (không phụ thuộc vị trí — file chèn thêm cột vẫn đúng):
+    //   giao thô (mới) → giao tinh → xoá list Defect. giao thô có thể KHÔNG có (file cũ) ⇒ bỏ qua.
+    let colGTho = -1, colGT = -1, colXD = -1;
+    for (let c = 1; c <= 30; c++) {
+      const t = String(valAt(r, c)).toLowerCase();
+      if (colGTho < 0 && /giao\s*th[ôo]/.test(t)) colGTho = c;
+      if (colGT < 0 && /tinh/.test(t)) colGT = c;
+      if (colXD < 0 && /defect|xo[áa]/.test(t)) colXD = c;
+    }
     if (colGT < 0) colGT = colXD; if (colXD < 0) colXD = colGT; if (colGT < 0) continue;
-    const units: number[] = []; for (let c = 1; c <= Math.min(colGT, colXD) - 1; c++) units.push(c);
+    // Cột % ĐẦU TIÊN (giao thô nếu có, else giao tinh) → mọi cột trước nó là ô ĐƠN VỊ (phòng).
+    const firstPct = Math.min(...[colGTho, colGT, colXD].filter((c) => c > 0));
+    const hasTho = colGTho > 0;
+    const units: number[] = []; for (let c = 1; c <= firstPct - 1; c++) units.push(c);
     const dataRows: number[] = [];
     for (let rr = r + 1; rr <= r + 6; rr++) { const lab = String(valAt(rr, 0)).trim(); if (/^L01$/i.test(lab)) continue; if (/^L0[2-6]$/i.test(lab)) dataRows.push(rr); }
-    const findPct = (col: number): number | null => { for (const rr of dataRows) { const v = valAt(rr, col); if (typeof v === "number" && v > 0 && v < 1) return v; } return null; };
-    const gt = findPct(colGT), xd = findPct(colXD);
-    const cg = `<col style="width:34px">` + units.map(() => `<col style="width:24px">`).join("") + `<col style="width:46px"><col style="width:46px">`;
+    const findPct = (col: number): number | null => { if (col < 0) return null; for (const rr of dataRows) { const v = valAt(rr, col); if (typeof v === "number" && v > 0 && v <= 1) return v; } return null; };
+    const gtho = findPct(colGTho), gt = findPct(colGT), xd = findPct(colXD);
+    const nPct = hasTho ? 3 : 2;
+    const cg = `<col style="width:34px">` + units.map(() => `<col style="width:24px">`).join("") + `<col style="width:46px">`.repeat(nPct);
     let t = `<table class="mtld-blk"><colgroup>${cg}</colgroup>`;
-    t += `<tr><td class="mtld-lbl mtld-bn">${esc(bname)}</td>` + units.map((c) => `<td class="mtld-hd">${esc(wAt(r, c))}</td>`).join("") + `<td class="mtld-hd sm">Đã giao tinh</td><td class="mtld-hd sm">Xoá list Defect</td></tr>`;
+    t += `<tr><td class="mtld-lbl mtld-bn">${esc(bname)}</td>` + units.map((c) => `<td class="mtld-hd">${esc(wAt(r, c))}</td>`).join("")
+       + (hasTho ? `<td class="mtld-hd sm">Đã giao thô</td>` : "") + `<td class="mtld-hd sm">Đã giao tinh</td><td class="mtld-hd sm">Xoá list Defect</td></tr>`;
     dataRows.forEach((rr, i) => {
       t += `<tr><td class="mtld-lbl">${esc(String(valAt(rr, 0)))}</td>`;
       for (const c of units) { const [bg, fg, tx] = gridColor(valAt(rr, c)); t += `<td class="mtld-cell" style="background:${bg ?? "transparent"};color:${fg}">${tx}</td>`; }
@@ -98,7 +118,8 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
         const rs = dataRows.length;
         const pctCell = (v: number | null, col: string) => v == null ? `<td rowspan="${rs}" class="mtld-pct"></td>`
           : `<td rowspan="${rs}" class="mtld-pct"><span class="mtld-sb" style="width:${Math.round(v * 100)}%;background:${col}"></span><span class="mtld-st">${Math.round(v * 100)}%</span></td>`;
-        t += pctCell(gt, "#5884E1") + pctCell(xd, "#00FF00");
+        // giao thô = CYAN #00FFFF (khớp data-bar giao thô ở khối TOP + màu ô/legend giao thô).
+        t += (hasTho ? pctCell(gtho, "#00FFFF") : "") + pctCell(gt, "#5884E1") + pctCell(xd, "#00FF00");
       }
       t += "</tr>";
     });

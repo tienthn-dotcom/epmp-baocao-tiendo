@@ -127,6 +127,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.9.5 (28/07/2026): Summary bảng chỉ số — BỎ tô vàng cả hàng "Hôm nay" + cột cuối (bê từ
+ *     file); thay bằng highlight ĐỘNG: chỉ tô vàng ô "Hôm nay" có giá trị ≠ 0 (ô vừa thay đổi).
+ *   v3.9.4 (28/07/2026): Summary — % lắp đặt = 100% (giá trị 1.0) không còn bị bỏ trống; nhận
+ *     v > 0 && v <= 1 (trước là < 1 nên 100% ra ô rỗng). Áp cho cả giao thô/tinh/xoá defect.
+ *   v3.9.3 (28/07/2026): Popup Summary (ma trận lắp đặt) mỗi block THÊM cột "Đã giao thô" (data-bar
+ *     CYAN #00FFFF) đứng TRƯỚC "Đã giao tinh" — đọc từ cột giao thô mới chèn trong file import.
+ *     Nhận diện cột theo CHỮ header nên chèn cột không lệch; file cũ (không có giao thô) vẫn chạy.
  *   v3.9.2 (28/07/2026): Gantt "Tổng thể tiến độ": ô SX (Nhà máy sản xuất) đổi từ NHIỀU Ô VUÔNG
  *     rời từng tuần → MỘT DẢI ĐỎ LIỀN MẠCH (giữ viền đen). Hết cảnh "cắt cắt / line trắng" khi
  *     bật "Hiện tất cả đầu việc". Legend SX chỉnh cùng hình dải.
@@ -238,7 +245,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.9.2";
+const APP_VERSION = "3.9.5";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
