@@ -43,6 +43,10 @@ export type BlockChild = {
   tho?: BlockHandover;       // ĐÃ GIAO THÔ (kind=tho) — done/total = số căn
   tinh?: BlockHandover;      // ĐÃ GIAO TINH (kind=tho)
   areas?: BlockArea[];       // các khu (kind=avg) — nhãn + % từng khu
+  /** Ngày Bắt đầu / Kết thúc RIÊNG của dòng con (đọc từ chính dòng trong file). null = ô trống →
+   *  kế thừa ngày của hạng mục cha. Coi cột ngày của dòng con như DATA TỰ NHẬP (như hạng mục). */
+  start?: string | null;
+  deadline?: string | null;
 };
 
 export type ItemRow = {

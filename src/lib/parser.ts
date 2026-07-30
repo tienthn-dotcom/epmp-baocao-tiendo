@@ -630,6 +630,9 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         }
         blk = areas.length ? { code, id: idOf(r), label, pctActual, kind: "avg", areas } : { code, id: idOf(r), label, pctActual, kind: "plain" };
       }
+      // Ngày RIÊNG của dòng con (data tự nhập trong file). Trống → null → buildBlockItem kế thừa cha.
+      blk.start = toIso(r[COL.O]);
+      blk.deadline = toIso(r[COL.P]);
       const arr = blocksByProj.get(current) ?? [];
       arr.push({ parentId: blockParentId, stage: blockStageFallback, blk });
       blocksByProj.set(current, arr);

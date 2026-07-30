@@ -130,6 +130,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.15.1 (29/07/2026): Dòng con hạng mục lấy NGÀY (Bắt đầu/Kết thúc) RIÊNG từ chính dòng trong
+ *     file (coi cột ngày như data tự nhập) — chỉ kế thừa ngày hạng mục cha khi ô trống.
  *   v3.15.0 (29/07/2026): DÒNG CON hạng mục nhận diện TỔNG QUÁT theo CẤU TRÚC STT ID (dòng con = ID
  *     giai đoạn cha + hậu tố CHỮ: xy.za, xy.zb) → thêm dòng con cho BẤT KỲ giai đoạn nào (VT, SX, TC,
  *     TKSX…) là app TỰ HIỆN, không cần sửa code từng lần. Gắn vào cha theo ID. Nguồn không có cột STT
@@ -305,7 +307,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.15.0";
+const APP_VERSION = "3.15.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1664,15 +1666,19 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   // trách/ngày bắt đầu-kết thúc/dự án…), lấy %/tên riêng của Block, rồi enrich NHƯ item thường —
   // áp edit Vướng mắc/Giải pháp/PIC/Deadline theo KHOÁ RIÊNG của Block (rawCode=TC1..TCn).
   const buildBlockItem = useCallback((parent: EnrichedItem, b: BlockChild, bi: number): EnrichedItem => {
+    // Ngày RIÊNG của dòng con (đọc từ file) ưu tiên; ô trống → kế thừa ngày hạng mục cha.
+    const bStart = b.start ?? parent.start;
+    const bDeadline = b.deadline ?? parent.deadline;
     const raw: ItemRow = {
       ...(parent as ItemRow),
       // ID RIÊNG của Block (cột STT dạng "70.1a") — GHI ĐÈ id của TC cha, nếu không sẽ đụng khoá.
       // b.id undefined (nguồn cũ) → itemKeyOf tự rớt về khoá mã+TCn+dupIdx (vẫn duy nhất).
       id: b.id,
       rawCode: b.code, dupIdx: bi, desc: b.label,
+      start: bStart, deadline: bDeadline,
       pctActual: b.pctActual, pctActualInvalid: false,
       codeCounts: undefined, blocks: undefined, note: "",
-      overdueDays: getDaysOverdue({ deadline: parent.deadline, pctActual: b.pctActual }, today),
+      overdueDays: getDaysOverdue({ deadline: bDeadline, pctActual: b.pctActual }, today),
     };
     const ed = edits[itemKeyOf(raw)];
     const deadline = ed?.deadline ?? raw.deadline;
