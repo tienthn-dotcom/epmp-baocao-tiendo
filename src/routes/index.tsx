@@ -130,6 +130,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.15.0 (29/07/2026): DÒNG CON hạng mục nhận diện TỔNG QUÁT theo CẤU TRÚC STT ID (dòng con = ID
+ *     giai đoạn cha + hậu tố CHỮ: xy.za, xy.zb) → thêm dòng con cho BẤT KỲ giai đoạn nào (VT, SX, TC,
+ *     TKSX…) là app TỰ HIỆN, không cần sửa code từng lần. Gắn vào cha theo ID. Nguồn không có cột STT
+ *     → fallback mã cứng /^(TC|TKSX)\d+$/. (VD: SX của Mini Hotel PQ Public tự xổ SX1..SX5.)
  *   v3.14.0 (29/07/2026): Bảng "Đánh giá tuân thủ cập nhật Master Plan" thêm nút XUẤT PDF (A4 ngang,
  *     đúng như đang xem — theo sort/lọc Vùng hiện tại), dùng chung engine html2canvas với bảng Danh
  *     sách. FIX: onclone của pdf-export xoá mọi phần tử print:hidden ⇒ xoá luôn cả dialog (root có
@@ -301,7 +305,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.14.0";
+const APP_VERSION = "3.15.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */

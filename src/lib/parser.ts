@@ -491,7 +491,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   // Gom DÒNG CON kiểu Block (Mã <giai đoạn>+số) theo dự án → post-pass gắn vào item giai đoạn
   // TƯƠNG ỨNG. Hiện áp cho: "Thi công lắp đặt" (TC1..TCn) và "Triển khai sản xuất" (TKSX1..TKSXn).
   // Mỗi phần tử kèm `stage` = giai đoạn cha để gắn đúng chỗ ở post-pass.
-  const blocksByProj = new Map<ProjectRow, { stage: StageKey; blk: BlockChild }[]>();
+  const blocksByProj = new Map<ProjectRow, { parentId: string | null; stage: StageKey | null; blk: BlockChild }[]>();
   for (let i = COL.headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
@@ -587,20 +587,21 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     if (!rawCode) continue;
 
-    // ── DÒNG CON kiểu Block: Mã <giai đoạn>+số. KHÔNG phải giai đoạn riêng → gom làm con của item
-    //    GIAI ĐOẠN CHA cùng dự án (post-pass gắn vào). Hỗ trợ:
-    //     • TC1..TCn  → "Thi công lắp đặt"
-    //     • TKSX1..TKSXn → "Triển khai sản xuất"  (thêm 29/07, xổ y hệt TCLĐ)
-    //    Ý nghĩa % KHÁC nhau theo dự án (tự dò):
+    // ── DÒNG CON kiểu Block (con của 1 GIAI ĐOẠN): nhận diện theo CẤU TRÚC STT ID — dòng con có ID
+    //    = <ID giai đoạn cha> + HẬU TỐ CHỮ (xy.za, xy.zb…). Nhờ vậy thêm dòng con cho BẤT KỲ giai đoạn
+    //    nào (TC, TKSX, VT, SX…) là app TỰ HIỆN, KHÔNG cần sửa code từng lần. Gắn vào item CHA ở
+    //    post-pass theo ID cha. Nguồn KHÔNG có cột STT (cache/CSV cũ) → fallback mã cứng /^(TC|TKSX)\d+$/,
+    //    gắn theo GIAI ĐOẠN.
+    //    Ý nghĩa % tự dò từ file (không phụ thuộc giai đoạn):
     //     • Ô U+1 (khối sau Vướng mắc) là SỐ → GIAO THÔ: U+1..U+3 = đã giao thô (done/total/%),
-    //       U+4..U+6 = đã giao tinh (nhãn dòng header: "Bàn giao thô:" / "Bàn giao tinh:").
-    //     • Ô U+1 là CHỮ ("Lobby…") → % = TRUNG BÌNH tiến độ các khu: đọc CÔNG THỨC ô % (AVERAGE)
-    //       để lấy đúng các khu thành phần (nhãn khu ở cột trái-2 của ô tham chiếu). ──
-    const blockStage: StageKey | null =
-      /^TC\d+$/i.test(rawCode) ? "Thi công lắp đặt"
-      : /^TKSX\d+$/i.test(rawCode) ? "Triển khai sản xuất"
+    //       U+4..U+6 = đã giao tinh.  • Ô % có công thức AVERAGE → TRUNG BÌNH các khu.  • còn lại → chỉ %.
+    const rowId = idOf(r);
+    // Dòng con = ID kết thúc bằng CHỮ; ID cha = bỏ hậu tố chữ ("70.2a" → "70.2").
+    const blockParentId = rowId && /[a-z]$/i.test(rowId) ? rowId.replace(/[a-z]+$/i, "") : null;
+    const blockStageFallback: StageKey | null = !rowId
+      ? (/^TC\d+$/i.test(rawCode) ? "Thi công lắp đặt" : /^TKSX\d+$/i.test(rawCode) ? "Triển khai sản xuất" : null)
       : null;
-    if (current && blockStage) {
+    if (current && (blockParentId || blockStageFallback)) {
       const u = COL.U;
       const numericCell = (v: unknown): boolean =>
         typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && /^\s*-?\d+([.,]\d+)?%?\s*$/.test(v);
@@ -630,7 +631,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         blk = areas.length ? { code, id: idOf(r), label, pctActual, kind: "avg", areas } : { code, id: idOf(r), label, pctActual, kind: "plain" };
       }
       const arr = blocksByProj.get(current) ?? [];
-      arr.push({ stage: blockStage, blk });
+      arr.push({ parentId: blockParentId, stage: blockStageFallback, blk });
       blocksByProj.set(current, arr);
       continue;
     }
@@ -758,23 +759,18 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     }
   }
 
-  // POST-PASS: gắn Block con vào item "Thi công lắp đặt" của dự án (ưu tiên item đang shown
-  // — chính là item hiện trong bảng; cùng object nên set .blocks áp cho cả items lẫn allItems).
+  // POST-PASS: gắn Block con vào item GIAI ĐOẠN CHA. Ưu tiên gắn theo ID CHA (parentId, vd "70.2")
+  // — chính xác kể cả khi dự án có nhiều item trùng giai đoạn. Không có ID (fallback) → gắn theo
+  // GIAI ĐOẠN. Ưu tiên item đang shown (hiện trong bảng); cùng object nên set .blocks áp cho cả items
+  // lẫn allItems. Giữ THỨ TỰ dòng trong sheet.
   for (const proj of projects) {
     const entries = blocksByProj.get(proj);
     if (!entries?.length) continue;
-    // Gom Block theo GIAI ĐOẠN rồi gắn vào item giai đoạn tương ứng (ưu tiên item đang shown —
-    // cùng object nên set .blocks áp cho cả items lẫn allItems).
-    const byStage = new Map<StageKey, BlockChild[]>();
-    for (const e of entries) {
-      const arr = byStage.get(e.stage) ?? [];
-      arr.push(e.blk);
-      byStage.set(e.stage, arr);
-    }
-    for (const [stage, blks] of byStage) {
-      const host = proj.allItems.find((it) => it.stage === stage && it.shown)
-                ?? proj.allItems.find((it) => it.stage === stage);
-      if (host) host.blocks = blks;
+    for (const { parentId, stage, blk } of entries) {
+      const host = parentId
+        ? (proj.allItems.find((it) => it.id === parentId && it.shown) ?? proj.allItems.find((it) => it.id === parentId))
+        : (stage ? (proj.allItems.find((it) => it.stage === stage && it.shown) ?? proj.allItems.find((it) => it.stage === stage)) : undefined);
+      if (host) (host.blocks ??= []).push(blk);
     }
   }
 
