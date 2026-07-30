@@ -49,6 +49,7 @@ import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
+import { roleOfEmail } from "@/lib/roles";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { parseComplianceFile, pmAverages, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -130,6 +131,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.16.0 (30/07/2026): Comment Vướng mắc/Giải pháp: (1) BADGE chức vụ trước tên — PMO (navy) / BOD
+ *     (gold), map email trong lib/roles.ts (tạm hardcode, sau thay bằng file Excel email+chức vụ);
+ *     (2) ô SỬA tin to hơn (rows 5, min 7rem, vẫn kéo resize được); (3) ví dụ cột Giải pháp gọn còn
+ *     "Cụ thể, rõ việc, rõ người, rõ deadline"; (4) bỏ dòng nhãn xanh "· box chat lưu vết" trong
+ *     dialog (giữ title đen).
  *   v3.15.2 (29/07/2026): Bỏ chỉ báo "+N đã ẩn" / "(N đã ẩn)" ở ô Vướng mắc/Giải pháp (tin ẩn vẫn xem
  *     được khi mở ô) — gọn bảng theo yêu cầu.
  *   v3.15.1 (29/07/2026): Dòng con hạng mục lấy NGÀY (Bắt đầu/Kết thúc) RIÊNG từ chính dòng trong
@@ -309,7 +315,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.15.2";
+const APP_VERSION = "3.16.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2954,6 +2960,19 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
 }
 
 const CHAT_MSG_MAX = 1000;
+
+/** BADGE chức vụ (PMO / BOD) đứng TRƯỚC tên người trong box chat — nhìn ra ai là PMO, ai là BOD.
+ *  PMO = xanh navy; BOD = vàng gold. Không thuộc danh sách → không hiện badge. */
+function RoleBadge({ email }: { email: string }) {
+  const role = roleOfEmail(email);
+  if (!role) return null;
+  const cls = role === "PMO" ? "bg-[#1e3a5f] text-white" : "bg-amber-500 text-slate-900";
+  return (
+    <span className={`inline-block shrink-0 rounded px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide ${cls}`}
+      title={role === "PMO" ? "Bộ phận PMO" : "Ban lãnh đạo (BOD)"}>{role}</span>
+  );
+}
+
 // Callback của 1 ô chat (ChatCell/ChatBox): field ("note"/"action") do component CHA gắn sẵn qua
 // closure khi tạo onOp, nên đây chỉ nhận (op, opts). (onMsgOp cấp trên mới cầm đủ key+field+op+opts.)
 type MsgOp = (op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => void | Promise<void>;
@@ -3005,7 +3024,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           className="rounded-lg rounded-tl-none border border-amber-200 bg-amber-50 px-2 py-1">
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
-            {m.author !== "(cũ)" && <span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span>}
+            {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
             {((field === "note" && onReply) || canEdit(m)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
@@ -3047,6 +3066,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
           : msgs.map((m) => (
             <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-amber-200 bg-amber-50"}`}>
               <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
+                {m.author !== "(cũ)" && <RoleBadge email={m.author} />}
                 <span className="font-semibold text-slate-800">{m.author === "(cũ)" ? "(cũ)" : (m.author || "?").split("@")[0]}</span>
                 <span className="tabular-nums">{fmtMsgTime(m.at)}</span>
                 {m.hidden && <span className="rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600">ĐÃ ẨN</span>}
@@ -3058,8 +3078,8 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
               </div>
               {editId === m.id ? (
                 <div>
-                  <textarea autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
-                    className="w-full resize-y rounded border border-slate-300 px-2 py-1 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
+                  <textarea autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={5}
+                    className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" style={{ minHeight: "7rem" }} />
                   <div className="mt-1 flex items-center justify-end gap-2">
                     <button type="button" onClick={() => setEditId(null)} className="text-[11px] text-slate-500 hover:text-slate-800">Huỷ</button>
                     <button type="button" onClick={() => { const t = editDraft.trim(); if (t && t !== m.text) void onOp("edit", { msgId: m.id, text: t }); setEditId(null); }}
@@ -3090,10 +3110,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
               <span className="text-slate-700">Nhập kho 69/107 mã. NM tăng ca, xong trước 15/07</span><br />
               <span className="text-slate-700">Thiếu 2 thợ lắp đặt. HR bổ sung trong tuần</span></>
           ) : (
-            <>Ghi <b>giải pháp / hành động</b> cho từng vướng mắc, rõ <b>người + mốc</b>. Ví dụ:<br />
-              <span className="text-slate-700">Đã họp CT, chốt duyệt đá 11/07 — PMH theo dõi</span><br />
-              <span className="text-slate-700">NM tăng ca 2 tối, cam kết đủ mã 15/07</span><br />
-              <span className="text-slate-700">Điều 2 thợ tổ B, vào ca 13/07 — HR xác nhận</span></>
+            <>Cụ thể, <b>rõ việc, rõ người, rõ deadline</b>.</>
           )}
         </div>
         {/* Đang trả lời 1 vướng mắc → hiện trích dẫn phía trên ô soạn, có × để bỏ. */}
@@ -4029,9 +4046,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
           <div className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
               <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">
-                  {editView.field === "note" ? "Vướng mắc" : "Giải pháp"} · box chat lưu vết
-                </div>
                 <div className="text-sm font-semibold text-slate-900">{editView.title}</div>
               </div>
               <button onClick={() => setEditView(null)} className="mt-0.5 shrink-0 text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button>
