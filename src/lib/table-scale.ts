@@ -20,8 +20,9 @@ export const TABLE_FONT_RATIO = 11 / 1532;
 /** Giá trị CSS cho cỡ chữ bảng trên màn hình (cqw = 1% bề rộng div bọc). */
 export const TABLE_FONT_CSS = `${(TABLE_FONT_RATIO * 100).toFixed(3)}cqw`;
 
-/** Bề rộng cố định khi chụp PDF — để PDF giống nhau trên mọi màn/trình duyệt. */
-export const PDF_TABLE_WIDTH = 1280;
+/** Bề rộng cố định khi chụp PDF — để PDF giống nhau trên mọi màn/trình duyệt. 1532 = bề rộng "chuẩn"
+ *  ở màn 1920 (chỗ bảng đẹp nhất): cột rộng rãi, chữ 11px không bị bóp/cắt như hồi 1280. */
+export const PDF_TABLE_WIDTH = 1532;
 
 /** Cỡ chữ tương ứng khi chụp PDF. Trước đây ghi cứng 11px cho bảng 1280px — SAI tỉ lệ
  *  (11px là cỡ dành cho bảng 1532px), làm badge rộng hơn cột và tràn trong bản PDF. */

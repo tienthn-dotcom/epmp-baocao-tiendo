@@ -17,8 +17,6 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { PDF_TABLE_WIDTH, PDF_TABLE_FONT_PX } from "./table-scale";
 
-const PAGE_W = 297; // A4 ngang (mm)
-const PAGE_H = 210;
 const MARGIN = 7;
 const GAP = 2.5; // khoảng cách giữa các khối (mm)
 
@@ -28,6 +26,15 @@ async function snap(el: HTMLElement): Promise<HTMLCanvasElement> {
     backgroundColor: "#ffffff",
     logging: false,
     onclone: (doc: Document) => {
+      // ── CHUẨN HOÁ FONT KHI CHỤP (sửa "chữ bị bóp/chèn dấu cách/cắt cột" + để MỌI TRÌNH DUYỆT ra
+      //    giống nhau) ── App dùng "Inter, system-ui" nhưng html2canvas vẽ chữ qua canvas ctx.font,
+      //    mà "system-ui" KHÔNG được canvas phân giải nhất quán (mỗi trình duyệt fallback 1 font khác,
+      //    thường RỘNG hơn → tràn ô → cắt Mã, chèn space vào ngày). Ép về "Segoe UI" (chính là font
+      //    system-ui trên Windows — Chrome/Edge/Cốc Cốc đều có) để ảnh chụp KHỚP màn hình & GIỐNG NHAU
+      //    mọi trình duyệt. tabular-nums cũng dễ giãn khi đổi font → ép normal cho số khỏi lệch.
+      const st = doc.createElement("style");
+      st.textContent = `*{font-family:"Segoe UI",Arial,Helvetica,sans-serif !important;font-variant-numeric:normal !important;letter-spacing:normal !important}`;
+      doc.head.appendChild(st);
       // Bỏ mọi điều khiển vô dụng trên giấy (đã gắn class print:hidden trong JSX)
       doc.querySelectorAll('[class*="print:hidden"]').forEach((n) => n.remove());
       // Header bảng đừng sticky trong ảnh chụp
@@ -52,11 +59,18 @@ export async function exportDashboardPdf(opts: {
   /** Bảng RỘNG tự nhiên (Tổng thể tiến độ): KHÔNG ép về 1280px mà giữ bề rộng thật
    *  rồi thu tỉ lệ cho vừa khổ giấy — nếu ép sẽ bóp méo lưới tuần. */
   wide?: boolean;
+  /** Hướng giấy A4: "landscape" (ngang, mặc định) hoặc "portrait" (DỌC — cho điện thoại / in A4 dọc).
+   *  Dọc dùng CÙNG ảnh chụp bảng, chỉ thu tỉ lệ cho vừa bề rộng dọc (196mm) → chữ nhỏ hơn nhưng
+   *  KHÔNG đè/chồng cột vì thu ĐỀU (mọi cột giữ đúng tỉ lệ như bản ngang). */
+  orientation?: "landscape" | "portrait";
   fileName: string;
 }): Promise<number> {
-  const innerW = PAGE_W - MARGIN * 2;
-  const bottomY = PAGE_H - MARGIN;
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const portrait = opts.orientation === "portrait";
+  const pageW = portrait ? 210 : 297; // A4 (mm)
+  const pageH = portrait ? 297 : 210;
+  const innerW = pageW - MARGIN * 2;
+  const bottomY = pageH - MARGIN;
+  const pdf = new jsPDF({ orientation: portrait ? "portrait" : "landscape", unit: "mm", format: "a4" });
   let y = MARGIN;
 
   // Đợi web-font tải xong TRƯỚC khi chụp: Safari/Firefox hay chụp lúc font chưa sẵn
@@ -126,47 +140,86 @@ export async function exportDashboardPdf(opts: {
   const savedHeights = bodyRows.map(r => r.style.height);
   bodyRows.forEach(r => { r.style.height = ""; });
   void tbl.offsetHeight; // buộc reflow trước khi chụp
+
+  // Chụp RIÊNG phần HEADER (tạm ẩn tbody) → ảnh header SẠCH, KHÔNG dính viền/nền XANH của HÀNG ĐẦU
+  // (dòng "đã bàn giao" có border-emerald + bg xanh ngay dưới header → nếu cắt header từ ảnh bảng sẽ
+  // lẹm vệt xanh vào MỌI header lặp qua trang). Bảng table-fixed + colgroup % nên ẩn tbody vẫn đúng cột.
+  let theadCv: HTMLCanvasElement | null = null;
+  const tbodyEl = tbl.tBodies[0] as HTMLElement | undefined;
+  if (tbl.tHead && tbodyEl) {
+    const prevDisp = tbodyEl.style.display;
+    tbodyEl.style.display = "none";
+    void tbl.offsetHeight;
+    theadCv = await snap(tbl);
+    tbodyEl.style.display = prevDisp;
+    void tbl.offsetHeight;
+  }
+
   const cv = await snap(tbl);
   const pxW = tbl.offsetWidth || 1;
   const k = cv.width / pxW;        // px DOM → px canvas
   const mmPerPx = innerW / pxW;    // px DOM → mm trên giấy
 
+  // Cắt vùng [topPx, topPx+hPx] khỏi ảnh bảng. Dùng floor(top)/ceil(bottom) để LUÔN BAO TRỌN hàng
+  // (không lẹm mất đỉnh/đáy do làm tròn) — hết clip ~1-2px ở hàng đầu mỗi trang.
   const slice = (topPx: number, hPx: number): HTMLCanvasElement => {
+    const srcTop = Math.floor(topPx * k);
+    const srcBot = Math.ceil((topPx + hPx) * k);
     const c = document.createElement("canvas");
     c.width = cv.width;
-    c.height = Math.max(1, Math.round(hPx * k));
+    c.height = Math.max(1, srcBot - srcTop);
     const ctx = c.getContext("2d")!;
-    ctx.drawImage(cv, 0, Math.round(topPx * k), cv.width, c.height, 0, 0, cv.width, c.height);
+    ctx.drawImage(cv, 0, srcTop, cv.width, c.height, 0, 0, cv.width, c.height);
     return c;
   };
 
-  const theadHpx = tbl.tHead?.offsetHeight ?? 0;
-  const theadMm = theadHpx * mmPerPx;
   const rows = bodyRows;
+  // Header vẽ ở đầu mỗi trang: DÙNG ẢNH HEADER SẠCH (theadCv, không xanh) nhưng vẽ ở ĐÚNG chiều cao
+  // rows[0].offsetTop (ranh giới thead/body trong ảnh BẢNG) → khít với body bên dưới, KHÔNG clip đỉnh
+  // hàng đầu, KHÔNG hở. Body vẫn cắt từ cv bắt đầu ở rows[i].offsetTop.
+  const theadHpx = rows.length ? rows[0].offsetTop : (tbl.tHead?.offsetHeight ?? 0);
+  const theadMm = theadHpx * mmPerPx;
+  const drawThead = () => { if (theadCv && theadHpx > 0) { pdf.addImage(theadCv.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN, y, innerW, theadMm); y += theadMm; } };
 
   if (rows.length === 0) {
     const hMm = (cv.height / cv.width) * innerW;
     if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN; }
     draw(cv, hMm);
   } else {
+    // Đệm an toàn (mm) tránh hàng dính SÁT mép dưới do làm tròn → nhìn như bị cắt.
+    const SAFE = 0.6;
     let i = 0;
     while (i < rows.length) {
       const firstMm = rows[i].offsetHeight * mmPerPx;
-      if (y + theadMm + firstMm > bottomY) { pdf.addPage(); y = MARGIN; }
-      // Tiêu đề cột lặp lại ở đầu phần bảng của mỗi trang
-      if (theadHpx > 0) draw(slice(0, theadHpx), theadMm);
-      // Gom tối đa số hàng vừa trang — không cắt đôi hàng
+      // Sang TRANG MỚI nếu header + hàng đầu không vừa chỗ còn lại (và hiện KHÔNG ở đầu trang).
+      if (y > MARGIN + 0.5 && y + theadMm + firstMm > bottomY) { pdf.addPage(); y = MARGIN; }
+      // Tiêu đề cột lặp lại ở đầu phần bảng của mỗi trang (ảnh header RIÊNG, không dính hàng đầu).
+      drawThead();
+      const avail = bottomY - y - SAFE; // chỗ còn cho HÀNG (đã trừ header vừa vẽ).
+      // Gom TỐI ĐA số hàng NGUYÊN vừa trang — KHÔNG cắt đôi bất kỳ hàng nào.
       const startTop = rows[i].offsetTop;
       let j = i;
       let acc = 0;
       while (j < rows.length) {
         const rMm = rows[j].offsetHeight * mmPerPx;
-        if (j > i && y + acc + rMm > bottomY) break;
+        if (j > i && acc + rMm > avail) break;
         acc += rMm;
         j++;
       }
       const endBottom = rows[j - 1].offsetTop + rows[j - 1].offsetHeight;
-      draw(slice(startTop, endBottom - startTop), (endBottom - startTop) * mmPerPx);
+      const groupMm = (endBottom - startTop) * mmPerPx;
+      const img = slice(startTop, endBottom - startTop).toDataURL("image/jpeg", 0.92);
+      if (groupMm > avail) {
+        // MỘT hàng đơn CAO HƠN cả trang (vd dòng dự án nhiều bong bóng vướng mắc) → THU cả hàng cho
+        // VỪA 1 trang (giữ tỉ lệ, căn giữa) — thà nhỏ lại còn hơn cắt ngang giữa hàng.
+        const scale = avail / groupMm;
+        const wMm = innerW * scale;
+        pdf.addImage(img, "JPEG", MARGIN + (innerW - wMm) / 2, y, wMm, avail);
+        y += avail;
+      } else {
+        pdf.addImage(img, "JPEG", MARGIN, y, innerW, groupMm);
+        y += groupMm;
+      }
       i = j;
     }
   }

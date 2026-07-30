@@ -132,6 +132,16 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.18.0 (30/07/2026): XUẤT PDF làm lại: (1) nút gộp DROPDOWN "Xuất PDF ▼" → chọn khổ NGANG / DỌC
+ *     (dọc cho điện thoại / in A4 dọc). (2) Ép font "Segoe UI" khi chụp (html2canvas) → hết bóp chữ /
+ *     chèn dấu cách ngày / cắt cột Mã, và ra GIỐNG NHAU trên Chrome/Edge/Cốc Cốc. (3) Ép bề rộng chụp
+ *     1532px (ổn định mọi màn, không "20 trang khi màn hẹp"; vẫn đúng tỉ lệ cột đã kéo vì colW là %).
+ *     (4) CẮT TRANG chuẩn: KHÔNG cắt ngang hàng (gom hàng nguyên + đệm an toàn; hàng cao hơn 1 trang thì
+ *     thu vừa), header lặp mỗi trang CHỤP RIÊNG (hết vệt XANH của dòng "đã bàn giao" dính vào header),
+ *     cắt bằng floor/ceil (hết clip đỉnh hàng đầu). Bảng tuân thủ: điểm dự án & PM IN ĐẬM, <50 = ĐỎ.
+ *   v3.17.2 (30/07/2026): Chú thích báo cáo tuân thủ dàn 1 HÀNG đều nhau: điểm dự án · điểm PM (phân
+ *     số) · BẢNG ký hiệu (✓/o/✕ có viền) bên phải; whitespace-nowrap hết rớt dòng "−10 điểm", 3 khối
+ *     top-align, justify-between dàn đều.
  *   v3.17.1 (30/07/2026): Báo cáo tuân thủ — chú thích ĐẦY ĐỦ cách tính điểm: điểm dự án (khởi 100đ;
  *     không cập nhật sau 12h T5 −25đ; trễ 22h T4–12h T5 −10đ) + công thức điểm PM (Σ điểm dự án ÷ Σ số
  *     dự án PM quản). Đặt trong headerRef nên hiện cả trên PDF xuất ra.
@@ -327,7 +337,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.17.1";
+const APP_VERSION = "3.18.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2470,9 +2480,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
 
   /** XUẤT PDF = chụp đúng giao diện đang hiển thị (KPI + thẻ giai đoạn + bảng)
    *  và tự dựng file A4 ngang — không qua hộp thoại in, không phụ thuộc máy. */
-  const doPrint = async (_paper: "A4" | "A3") => {
-    void _paper;
-    const tid = toast.loading("Đang tạo PDF từ giao diện…", { position: "bottom-left" });
+  const doPrint = async (orientation: "landscape" | "portrait") => {
+    const isPortrait = orientation === "portrait";
+    const tid = toast.loading(`Đang tạo PDF ${isPortrait ? "khổ DỌC" : "khổ ngang"} từ giao diện…`, { position: "bottom-left" });
     try {
       const { exportDashboardPdf } = await loadSplit(() => import("@/lib/pdf-export"));
       const blocks = [
@@ -2491,11 +2501,15 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         title: document.getElementById("pdf-title"),
         blocks,
         table,
-        wide: isGantt, // Gantt rộng tự nhiên → giữ bề rộng thật, thu tỉ lệ cho vừa giấy
-        fileName: `${isGantt ? "TongTheTienDo" : "BaoCao_TienDo"}_${today.replace(/-/g, "")}.pdf`,
+        // Bảng Danh sách: ÉP bề rộng cố định (PDF_TABLE_WIDTH) → PDF ỔN ĐỊNH trên MỌI màn hình (không
+        // phụ thuộc cửa sổ rộng/hẹp → không bị "20 trang khi màn hẹp"). Vẫn giữ ĐÚNG tỉ lệ cột người
+        // dùng kéo (colW là %). Gantt (isGantt) mới giữ bề rộng thật vì lưới tuần không được bóp méo.
+        wide: isGantt,
+        orientation,
+        fileName: `${isGantt ? "TongTheTienDo" : "BaoCao_TienDo"}_${isPortrait ? "Doc" : "Ngang"}_${today.replace(/-/g, "")}.pdf`,
       });
-      track("export_pdf", `Bảng ${isGantt ? "Tổng thể tiến độ" : "Việc cần xử lý"} · Lọc: ${filterSummary} · ${sortedAlerts.length} đầu việc`.slice(0, 300));
-      toast.success(`Đã tạo PDF (${pages} trang), đúng như giao diện đang xem`);
+      track("export_pdf", `${isPortrait ? "DỌC" : "Ngang"} · Bảng ${isGantt ? "Tổng thể tiến độ" : "Việc cần xử lý"} · Lọc: ${filterSummary} · ${sortedAlerts.length} đầu việc`.slice(0, 300));
+      toast.success(`Đã tạo PDF ${isPortrait ? "khổ dọc" : "khổ ngang"} (${pages} trang), đúng như giao diện đang xem`);
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
@@ -2593,7 +2607,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         completedDates={completedDates}
         onSaveEdit={saveItemEdit}
         onMsgOp={msgOp}
-        onPrint={(paper) => { void doPrint(paper); }}
+        onPrint={(o) => { void doPrint(o); }}
         onExportExcel={async () => {
           // NGUỒN DỰ ÁN = filterResult.projects (CÙNG hàm với bảng & PDF).
           // Riêng khi bật lọc "Cần cập nhật MP": bảng đổi nguồn → lấy dự án từ chính bảng.
@@ -3158,6 +3172,37 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
   );
 }
 
+/** Nút "Xuất PDF" dạng DROPDOWN — bấm xổ ra chọn khổ NGANG / DỌC (gộp 2 nút cho gọn toolbar). */
+function PdfExportMenu({ onPrint }: { onPrint: (o: "landscape" | "portrait") => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const pick = (o: "landscape" | "portrait") => { setOpen(false); onPrint(o); };
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} title="Xuất PDF — chọn khổ ngang hoặc dọc"
+        className="flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700">
+        <Printer className="h-3.5 w-3.5" /> Xuất PDF <span className="text-[8px] leading-none">▼</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+          <button onClick={() => pick("landscape")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
+            <span className="text-slate-400">▭</span> Khổ ngang (A4)
+          </button>
+          <button onClick={() => pick("portrait")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
+            <span className="text-slate-400">▯</span> Khổ dọc (A4 · điện thoại)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
@@ -3190,7 +3235,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   onToggleDone: () => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
-  onPrint: (paper: "A4" | "A3") => void;
+  onPrint: (orientation: "landscape" | "portrait") => void;
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
   onSaveEdit: (key: string, patch: EditPatch) => void | Promise<void>;
@@ -3652,10 +3697,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             className="flex items-center gap-1.5 rounded-md border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
             <FileSpreadsheet className="h-3.5 w-3.5" /> {exporting ? "Đang xuất…" : "Xuất Excel"}
           </button>
-          <button onClick={() => onPrint("A3")}
-            className="flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700">
-            <Printer className="h-3.5 w-3.5" /> Xuất PDF
-          </button>
+          <PdfExportMenu onPrint={onPrint} />
           <button onClick={toggleFullscreen}
             title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
             className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
@@ -5051,17 +5093,9 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
   const [sortDir, setSortDir] = useState<"desc" | "asc">("asc"); // mặc định THẤP → CAO (PM điểm thấp/cần chú ý lên đầu)
   const [vungSel, setVungSel] = useState<string[]>([]);
   const scoreLabel = (s: number | null) => (s == null ? "—" : String(s));
-  // ── MÀU = KPI + NGOẠI LỆ (nguyên tắc data-viz) ───────────────────────────────
-  // Ngưỡng RAG dùng CHUNG cho điểm dự án & điểm PM (chỉnh ở đây để nới/siết): ≥80 xanh · 50–79
-  // vàng · <80... <50 đỏ. Điểm là thông tin QUAN TRỌNG NHẤT nên được tô rõ nhất.
-  const RAG = (s: number | null, kind: "text" | "fill"): string => {
-    if (s == null) return kind === "fill" ? "bg-slate-100 text-slate-400" : "text-slate-300";
-    const t = s >= 80 ? "emerald" : s >= 50 ? "amber" : "red";
-    if (kind === "text") return t === "emerald" ? "text-emerald-600" : t === "amber" ? "text-amber-600" : "text-red-600";
-    return t === "emerald" ? "bg-emerald-500 text-white" : t === "amber" ? "bg-amber-400 text-slate-900" : "bg-red-500 text-white";
-  };
-  const scoreTone = (s: number | null) => RAG(s, "text");   // ĐIỂM DỰ ÁN: chữ RAG (không nền)
-  const pmScoreTone = (s: number | null) => RAG(s, "fill"); // ĐIỂM TB PM: badge RAG (đầu đề nhóm)
+  // ── ĐIỂM (dự án & TB PM): IN ĐẬM cho NỔI BẬT; < 50 (chưa đạt) → ĐỎ, còn lại → ĐEN. Theo mẫu báo
+  //    cáo tuân thủ (bỏ thang xanh/vàng nhiều màu — chỉ đen/đỏ cho gọn, điểm là thông tin chính). ──
+  const scoreTone = (s: number | null) => (s == null ? "text-slate-400" : s < 50 ? "text-red-600" : "text-slate-900");
   // NGÀY CẬP NHẬT: KHÔNG tô nền (bớt sặc sỡ) — chữ trơn, chỉ NHUỐM ĐỎ khi QUÁ CŨ (>21 ngày) như
   // một cờ ngoại lệ. File ghi "dd/mm" → ghép năm của tháng chấm (mon > tháng chấm ⇒ năm trước).
   const tToday = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10));
@@ -5193,27 +5227,37 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                 <span>Tổng dự án: <b className="tabular-nums text-slate-900">{tongDuAn}</b></span>
                 <span>Số dự án không cập nhật tuần này: <b className="tabular-nums text-red-600">{khongCNTuanNay}</b></span>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-[10.5px] text-slate-600">
-                <span className="inline-flex items-center gap-1"><ComplianceMark m="P" /> Đúng hạn</span>
-                <span className="inline-flex items-center gap-1"><ComplianceMark m="o" /> Trễ</span>
-                <span className="inline-flex items-center gap-1"><ComplianceMark m="x" /> Không cập nhật</span>
-                <span className="inline-flex items-center gap-1"><ComplianceMark m={null} /> Chưa có dữ liệu</span>
-              </div>
-              {/* CHÚ THÍCH cách tính điểm — đặt trong headerRef nên hiện cả khi XUẤT PDF. */}
-              <div className="mt-2 grid gap-x-8 gap-y-1.5 text-[10.5px] leading-relaxed text-slate-600 sm:grid-cols-2">
-                <div>
+              {/* Chú thích cách tính điểm + KÝ HIỆU — DÀN 1 HÀNG: điểm dự án · điểm PM · BẢNG chú thích
+                  (bên phải). Đặt trong headerRef nên hiện cả khi XUẤT PDF. */}
+              <div className="mt-2 flex flex-wrap items-stretch justify-between gap-x-6 gap-y-3 text-[10px] leading-relaxed text-slate-600">
+                <div className="flex flex-col">
                   <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ dự án:</div>
-                  <div>(1) Khởi điểm <b className="text-slate-800">100 điểm/tháng</b>.</div>
-                  <div>(2) Không cập nhật (sau 12h thứ 5 hằng tuần): <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
-                  <div>(3) Cập nhật trễ (từ 22h thứ 4 – 12h thứ 5 hằng tuần): <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
+                  <div className="whitespace-nowrap">(1) Khởi điểm <b className="text-slate-800">100 điểm/tháng</b>.</div>
+                  <div className="whitespace-nowrap">(2) Không cập nhật (sau 12h thứ 5 hằng tuần): <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
+                  <div className="whitespace-nowrap">(3) Cập nhật trễ (từ 22h thứ 4 – 12h thứ 5 hằng tuần): <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
                 </div>
-                <div>
+                <div className="flex flex-col">
                   <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ PM:</div>
-                  <div className="mt-0.5">Điểm PM = trung bình cộng điểm tuân thủ các dự án PM quản lý:</div>
-                  <div className="mt-0.5 leading-tight">
-                    <span className="border-b border-slate-400 pb-0.5">Tổng điểm tuân thủ của các dự án PM quản lý</span>
-                    <br />
-                    <span>Tổng số lượng dự án PM quản lý</span>
+                  <div className="flex flex-1 items-center gap-2">
+                    <span className="whitespace-nowrap">Điểm PM =</span>
+                    <span className="inline-flex flex-col text-center leading-snug">
+                      <span className="whitespace-nowrap border-b border-slate-500 px-1 pb-1">Tổng điểm tuân thủ các dự án PM quản lý</span>
+                      <span className="whitespace-nowrap px-1 pt-1">Tổng số lượng dự án PM quản lý</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <div className="mb-1 font-semibold text-slate-700">Chú thích:</div>
+                  <div className="flex flex-1 items-center">
+                    <div className="overflow-hidden rounded-md border border-slate-300">
+                      <table className="border-collapse text-[10px] leading-tight [&_td]:border-slate-200">
+                        <tbody>
+                          <tr><td className="border-b border-r px-2 py-0.5 text-center font-bold text-emerald-500">✓</td><td className="whitespace-nowrap border-b px-2 py-0.5">Cập nhật đúng hạn</td></tr>
+                          <tr><td className="border-b border-r px-2 py-0.5 text-center font-bold text-amber-500">o</td><td className="whitespace-nowrap border-b px-2 py-0.5">Cập nhật trễ</td></tr>
+                          <tr><td className="border-r px-2 py-0.5 text-center font-bold text-red-600">✕</td><td className="whitespace-nowrap px-2 py-0.5">Không cập nhật</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5276,7 +5320,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                     {i === 0 && (
                       <>
                         <td rowSpan={rs.length} className="border-r border-slate-100 px-2 py-1 text-center align-top">
-                          <span className={`inline-flex h-5 min-w-[30px] items-center justify-center rounded px-1 text-[11px] font-bold tabular-nums ${pmScoreTone(pmScore)}`} title="Điểm PM = trung bình cộng điểm các dự án PM quản">{scoreLabel(pmScore)}</span>
+                          <span className={`text-[13px] font-extrabold tabular-nums ${scoreTone(pmScore)}`} title="Điểm PM = trung bình cộng điểm các dự án PM quản">{scoreLabel(pmScore)}</span>
                         </td>
                         <td rowSpan={rs.length} className="border-r border-slate-100 px-2 py-1 align-top font-medium text-slate-800">
                           <span className="line-clamp-2 leading-tight" title={pm}>{pm || "—"}</span>
@@ -5286,7 +5330,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                     <td className="border-r border-slate-100 px-2 py-1 text-center text-slate-600 whitespace-nowrap">{vungOf(r)}</td>
                     <td className="border-r border-slate-100 px-2 py-1 text-slate-700"><div className="line-clamp-1" title={r.name}>{r.name}</div></td>
                     <td className="border-r border-slate-100 px-2 py-1 text-center">
-                      <span className={`text-[12px] font-bold tabular-nums ${scoreTone(r.score)}`} title={r.score == null ? "Chưa có dữ liệu tháng này" : `Điểm tuân thủ = ${r.score} (x${r.countX}·−25, o${r.countO}·−10)`}>{scoreLabel(r.score)}</span>
+                      <span className={`text-[13px] font-extrabold tabular-nums ${scoreTone(r.score)}`} title={r.score == null ? "Chưa có dữ liệu tháng này" : `Điểm tuân thủ = ${r.score} (x${r.countX}·−25, o${r.countO}·−10)`}>{scoreLabel(r.score)}</span>
                     </td>
                     {/* SỐ LẦN KHÔNG CẬP NHẬT + DATA BAR (0 → maxRequired = số lần phải cập nhật tới hôm nay). */}
                     <td className="border-r border-slate-100 px-2 py-1">
