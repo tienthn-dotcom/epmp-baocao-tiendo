@@ -132,6 +132,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.17.1 (30/07/2026): Báo cáo tuân thủ — chú thích ĐẦY ĐỦ cách tính điểm: điểm dự án (khởi 100đ;
+ *     không cập nhật sau 12h T5 −25đ; trễ 22h T4–12h T5 −10đ) + công thức điểm PM (Σ điểm dự án ÷ Σ số
+ *     dự án PM quản). Đặt trong headerRef nên hiện cả trên PDF xuất ra.
  *   v3.17.0 (30/07/2026): (1) PHÂN CẤP NGƯỜI DÙNG (Hệ thống · chỉ admin): gán email → cấp PMO/BOD để
  *     hiện badge trong comment; admin TỰ thêm/gỡ, KHÔNG cần sửa code. Kho KV roles:v1 (edits.functions),
  *     seed DEFAULT_ROLES khi trống; badge đọc động qua RolesCtx. Thêm cấp mới sau: nới ALL_ROLES +
@@ -324,7 +327,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.17.0";
+const APP_VERSION = "3.17.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -5196,9 +5199,26 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                 <span className="inline-flex items-center gap-1"><ComplianceMark m="x" /> Không cập nhật</span>
                 <span className="inline-flex items-center gap-1"><ComplianceMark m={null} /> Chưa có dữ liệu</span>
               </div>
+              {/* CHÚ THÍCH cách tính điểm — đặt trong headerRef nên hiện cả khi XUẤT PDF. */}
+              <div className="mt-2 grid gap-x-8 gap-y-1.5 text-[10.5px] leading-relaxed text-slate-600 sm:grid-cols-2">
+                <div>
+                  <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ dự án:</div>
+                  <div>(1) Khởi điểm <b className="text-slate-800">100 điểm/tháng</b>.</div>
+                  <div>(2) Không cập nhật (sau 12h thứ 5 hằng tuần): <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
+                  <div>(3) Cập nhật trễ (từ 22h thứ 4 – 12h thứ 5 hằng tuần): <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ PM:</div>
+                  <div className="mt-0.5">Điểm PM = trung bình cộng điểm tuân thủ các dự án PM quản lý:</div>
+                  <div className="mt-0.5 leading-tight">
+                    <span className="border-b border-slate-400 pb-0.5">Tổng điểm tuân thủ của các dự án PM quản lý</span>
+                    <br />
+                    <span>Tổng số lượng dự án PM quản lý</span>
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-relaxed text-slate-500">
-              <span><b className="text-slate-700">Điểm dự án (100 đ):</b> Trễ −{SCORING.deduct.late}đ, KHÔNG cập nhật −{SCORING.deduct.missed}đ</span>
               <span className="inline-flex items-center gap-1">
                 <span className="text-slate-400">Xếp theo điểm TB PM:</span>
                 <button onClick={() => setSortDir("desc")} className={`rounded px-1.5 py-0.5 font-semibold ${sortDir === "desc" ? "bg-teal-700 text-white" : "border border-slate-300 text-slate-600 hover:border-teal-500"}`}>Cao → thấp</button>
