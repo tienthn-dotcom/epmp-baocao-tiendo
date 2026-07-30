@@ -130,6 +130,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.15.2 (29/07/2026): Bỏ chỉ báo "+N đã ẩn" / "(N đã ẩn)" ở ô Vướng mắc/Giải pháp (tin ẩn vẫn xem
+ *     được khi mở ô) — gọn bảng theo yêu cầu.
  *   v3.15.1 (29/07/2026): Dòng con hạng mục lấy NGÀY (Bắt đầu/Kết thúc) RIÊNG từ chính dòng trong
  *     file (coi cột ngày như data tự nhập) — chỉ kế thừa ngày hạng mục cha khi ô trống.
  *   v3.15.0 (29/07/2026): DÒNG CON hạng mục nhận diện TỔNG QUÁT theo CẤU TRÚC STT ID (dòng con = ID
@@ -307,7 +309,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.15.1";
+const APP_VERSION = "3.15.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2969,21 +2971,19 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   const [draft, setDraft] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vis = msgs.filter((m) => !m.hidden);
-  const hiddenN = msgs.length - vis.length;
   // 1 click (hoãn 230ms nếu admin để chờ nhấp đúp) → mở box chat. cancelOpen: huỷ khi nhấp đúp.
   const openDelayed = () => { if (!onOpen) return; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => { timer.current = null; onOpen(); }, isAdmin ? 230 : 0); };
   const cancelOpen = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
   // DARK (hàng dự án): giữ nguyên kiểu cũ — chữ trắng đậm, không bong bóng (mở/sửa qua dialog do <td> lo).
   if (dark) {
-    if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+    if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">＋ nhập…</span>;
     return (
       <div className="space-y-1 font-bold leading-snug text-white">
         {vis.map((m) => <div key={m.id} className="whitespace-pre-line"><HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly /></div>)}
-        {hiddenN > 0 && <div className="text-[9px] font-medium text-white/70">+{hiddenN} đã ẩn</div>}
       </div>
     );
   }
-  if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">{hiddenN > 0 ? `(${hiddenN} đã ẩn)` : "＋ nhập…"}</span>;
+  if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">＋ nhập…</span>;
   const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || (!!myEmail && m.author === myEmail));
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
@@ -3025,7 +3025,6 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="whitespace-pre-line text-[11px] leading-snug text-slate-900"><HiText text={m.text} ranges={m.hi ?? []} field={field} /></div>
         </div>
       ))}
-      {hiddenN > 0 && <div className="text-[9px] font-medium text-slate-400">+{hiddenN} đã ẩn</div>}
     </div>
   );
 }
