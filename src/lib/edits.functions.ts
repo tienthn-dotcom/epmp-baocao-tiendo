@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
+import { DEFAULT_ROLES, type UserRole } from "./roles";
 import { SESSION_COOKIE, readCookie, verifySession } from "./auth";
 // LƯU Ý QUAN TRỌNG: file này bị CLIENT import (saveEdits, EditsMap). Mọi hàm đụng server-only
 // ("@tanstack/react-start/server") PHẢI là hàm nội bộ, CHỈ gọi trong thân serverFn handler (thân
@@ -508,4 +509,51 @@ export const remapKeys = createServerFn({ method: "POST" })
     }
     if (umChanged) await writeUpdates(um);
     return { edits: em, completed: cm, updates: um, moved };
+  });
+
+/* ── PHÂN CẤP NGƯỜI DÙNG (badge chức vụ PMO/BOD trong comment) — ADMIN tự quản, KHÔNG cần sửa code ──
+   Kho KV `roles:v1` = { [email]: "PMO" | "BOD" }. Đọc CÔNG KHAI (mọi người cần để render badge);
+   GHI chỉ ADMIN. KV TRỐNG → seed từ DEFAULT_ROLES ở lần ghi đầu (từ đó KV là nguồn sự thật). */
+const ROLES_KEY = "roles:v1";
+const DEV_ROLES_FILE = ".data/pmo-roles.json";
+export type UserRoleMap = Record<string, UserRole>;
+
+async function readRoles(): Promise<UserRoleMap> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(ROLES_KEY); return raw ? (JSON.parse(raw) as UserRoleMap) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_ROLES_FILE, "utf8")) as UserRoleMap; }
+  catch { return {}; }
+}
+async function writeRoles(map: UserRoleMap): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(ROLES_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_ROLES_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+/** Đọc bảng phân cấp (email → cấp). CÔNG KHAI — client cần để hiện badge cho mọi người. */
+export const fetchUserRoles = createServerFn({ method: "GET" }).handler(async () => {
+  return { roles: await readRoles() };
+});
+
+/** Đặt/gỡ cấp cho 1 email — CHỈ ADMIN. role=null → gỡ khỏi bảng (về "users"). */
+export const saveUserRole = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      email: z.string().email().max(200),
+      role: z.enum(["PMO", "BOD"]).nullable(),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin mới được phân cấp người dùng.");
+    const cur = await readRoles();
+    // KV trống → seed DEFAULT_ROLES rồi mới áp thay đổi (giữ nguyên các badge sẵn có).
+    const map: UserRoleMap = Object.keys(cur).length ? cur : { ...DEFAULT_ROLES };
+    const email = normEmail(data.email);
+    if (!email) throw new Error("Email không hợp lệ.");
+    if (data.role) map[email] = data.role; else delete map[email];
+    await writeRoles(map);
+    return { roles: map };
   });

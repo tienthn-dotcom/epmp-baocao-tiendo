@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,6 +20,7 @@ import {
   Search,
   Settings,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 
@@ -46,10 +47,10 @@ import { parseCsvText, parseXlsxBuffer } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
+import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, fetchUserRoles, saveUserRole, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
-import { roleOfEmail } from "@/lib/roles";
+import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { parseComplianceFile, pmAverages, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -131,6 +132,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.17.0 (30/07/2026): (1) PHÂN CẤP NGƯỜI DÙNG (Hệ thống · chỉ admin): gán email → cấp PMO/BOD để
+ *     hiện badge trong comment; admin TỰ thêm/gỡ, KHÔNG cần sửa code. Kho KV roles:v1 (edits.functions),
+ *     seed DEFAULT_ROLES khi trống; badge đọc động qua RolesCtx. Thêm cấp mới sau: nới ALL_ROLES +
+ *     ROLE_META (lib/roles.ts). (2) Nhật ký giám sát: sửa bộ lọc — "Hôm nay" theo NỬA ĐÊM địa phương
+ *     (hết lọt ngày hôm trước do trước dùng 24h trượt); lọc ĐA LỚP (Ngày∧Người∧Thao tác∧Tìm) enforce
+ *     ở client.
+ *   v3.16.1 (30/07/2026): Ví dụ "Cụ thể, rõ việc, rõ người, rõ deadline" áp cho CẢ Vướng mắc lẫn Giải
+ *     pháp (trước chỉ Giải pháp). Badge BOD đổi sang ĐỎ chữ VÀNG (#C00000 / #FFD700).
  *   v3.16.0 (30/07/2026): Comment Vướng mắc/Giải pháp: (1) BADGE chức vụ trước tên — PMO (navy) / BOD
  *     (gold), map email trong lib/roles.ts (tạm hardcode, sau thay bằng file Excel email+chức vụ);
  *     (2) ô SỬA tin to hơn (rows 5, min 7rem, vẫn kéo resize được); (3) ví dụ cột Giải pháp gọn còn
@@ -315,7 +324,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.16.0";
+const APP_VERSION = "3.17.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2491,9 +2500,24 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     }
   };
 
+  // ── PHÂN CẤP: bảng email→cấp (KV) cấp qua RolesCtx cho RoleBadge. Rỗng → DEFAULT_ROLES. ──
+  const rolesQuery = useQuery({
+    queryKey: ["userRoles"],
+    queryFn: async (): Promise<Record<string, UserRole>> => (await fetchUserRoles()).roles ?? {},
+    staleTime: 60_000,
+  });
+  const roleMap = useMemo(() => {
+    const kv = rolesQuery.data ?? {};
+    return Object.keys(kv).length ? kv : DEFAULT_ROLES;
+  }, [rolesQuery.data]);
+  const [showRoles, setShowRoles] = useState(false);
+
   return (
+    <RolesCtx.Provider value={roleMap}>
     <div className="flex flex-col gap-2 print:min-h-0" style={{ minHeight: "calc(100vh - 130px)" }}>
 
+      {showRoles && <RoleManagerDialog roleMap={roleMap} onClose={() => setShowRoles(false)}
+        onSaved={(m) => queryClient.setQueryData(["userRoles"], m)} />}
       {showCompliance && <ComplianceDialog
         data={complianceFileQuery.data}
         loading={complianceFileQuery.isLoading}
@@ -2514,6 +2538,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           onOpenCompliance={() => { setShowCompliance(true); track("open_compliance"); }}
           isAdmin={me.isAdmin}
           onOpenActivity={() => { setShowActivity(true); track("open_activity"); }}
+          onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
         />
       </HeaderSlot>
 
@@ -2611,6 +2636,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
 
       {/* Xuất PDF = chụp đúng giao diện (pdf-export.ts) — không dùng hộp thoại in. */}
     </div>
+    </RolesCtx.Provider>
   );
 }
 
@@ -2961,15 +2987,19 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
 
 const CHAT_MSG_MAX = 1000;
 
-/** BADGE chức vụ (PMO / BOD) đứng TRƯỚC tên người trong box chat — nhìn ra ai là PMO, ai là BOD.
- *  PMO = xanh navy; BOD = vàng gold. Không thuộc danh sách → không hiện badge. */
+/** Bảng phân cấp email→cấp (KV, seed DEFAULT_ROLES) cấp qua context → RoleBadge (nằm sâu trong
+ *  ChatCell/ChatBox) đọc ĐỘNG, không phải truyền prop qua nhiều lớp; admin đổi là badge tự cập nhật. */
+const RolesCtx = createContext<Record<string, UserRole>>(DEFAULT_ROLES);
+
+/** BADGE cấp bậc đứng TRƯỚC tên người trong box chat — nhìn ra ai PMO, ai BOD (đọc bảng phân cấp
+ *  động từ RolesCtx). Email chưa được phân cấp → không hiện badge. */
 function RoleBadge({ email }: { email: string }) {
-  const role = roleOfEmail(email);
+  const role = roleOf(useContext(RolesCtx), email);
   if (!role) return null;
-  const cls = role === "PMO" ? "bg-[#1e3a5f] text-white" : "bg-amber-500 text-slate-900";
+  const meta = ROLE_META[role];
   return (
-    <span className={`inline-block shrink-0 rounded px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide ${cls}`}
-      title={role === "PMO" ? "Bộ phận PMO" : "Ban lãnh đạo (BOD)"}>{role}</span>
+    <span className={`inline-block shrink-0 rounded px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide ${meta.badge}`}
+      title={meta.label}>{meta.short}</span>
   );
 }
 
@@ -3104,14 +3134,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
       <div className="border-t border-slate-100 pt-2">
         {/* VÍ DỤ MINH HOẠ cách viết (giữ lại như dialog cũ) — theo cột: Vướng mắc / Giải pháp. */}
         <div className="mb-2 rounded-md bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
-          {field === "note" ? (
-            <>Viết NGẮN GỌN — mỗi tin 1 vấn đề CẤP BÁCH, nêu rõ <b>ai cần làm gì, trước khi nào</b>. Ví dụ:<br />
-              <span className="text-slate-700">CT chưa duyệt tiến độ đá. PMH chốt trước 12/07</span><br />
-              <span className="text-slate-700">Nhập kho 69/107 mã. NM tăng ca, xong trước 15/07</span><br />
-              <span className="text-slate-700">Thiếu 2 thợ lắp đặt. HR bổ sung trong tuần</span></>
-          ) : (
-            <>Cụ thể, <b>rõ việc, rõ người, rõ deadline</b>.</>
-          )}
+          Cụ thể, <b>rõ việc, rõ người, rõ deadline</b>.
         </div>
         {/* Đang trả lời 1 vướng mắc → hiện trích dẫn phía trên ô soạn, có × để bỏ. */}
         {reply && (
@@ -4597,12 +4620,13 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
  *  Đánh giá tuân thủ (theo tháng) + Nhật ký giám sát (chỉ admin). Thêm tính năng sau chỉ
  *  cần push thêm 1 item vào mảng. Không có mục nào khả dụng → không hiện nút (menu rỗng vô nghĩa).
  *  Vẫn giữ TÍN HIỆU: có dự án chưa cập nhật đúng hạn → chấm đỏ trên nút dù đang thu gọn. */
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles }: {
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
   isAdmin: boolean;
   onOpenActivity: () => void;
+  onOpenRoles: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -4618,6 +4642,7 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   const items: { icon: ReactNode; label: string; badge?: number; onClick: () => void }[] = [];
   if (showCompliance) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-slate-500" />, label: "Đánh giá tuân thủ", badge: complianceBadge, onClick: onOpenCompliance });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
+  if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
   if (items.length === 0) return null;
 
   const flag = showCompliance && complianceBadge > 0; // tín hiệu cần chú ý
@@ -4723,6 +4748,91 @@ type _RN = ReactNode;
  * Chỉ admin (liemnt1 / tienthn) mở được nút này; quyền đọc còn được kiểm LẠI ở
  * server (activity.functions.ts) nên không thể gọi tắt API để lấy dữ liệu.
  * ==================================================================== */
+/* ====================================================================
+ * PHÂN CẤP NGƯỜI DÙNG (admin) — gán email → cấp (PMO/BOD) để hiện badge trong comment.
+ * Kho KV `roles:v1` (edits.functions.ts); ghi chỉ admin (kiểm lại ở server). Admin tự thêm/gỡ,
+ * KHÔNG cần sửa code. Sau thêm cấp mới chỉ cần nới ALL_ROLES + ROLE_META trong lib/roles.ts.
+ * ==================================================================== */
+function RoleManagerDialog({ roleMap, onClose, onSaved }: {
+  roleMap: Record<string, UserRole>; onClose: () => void; onSaved: (m: Record<string, UserRole>) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<UserRole>(ALL_ROLES[0]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async (mail: string, r: UserRole | null) => {
+    const e = mail.trim().toLowerCase();
+    if (!e) return;
+    setBusy(true); setErr(null);
+    try {
+      const res = await saveUserRole({ data: { email: e, role: r, devAs: devAs() } });
+      onSaved(res.roles);
+      if (r) setEmail("");
+    } catch (ex) { setErr((ex as Error).message || "Lưu thất bại."); }
+    finally { setBusy(false); }
+  };
+
+  // Gom email theo cấp để liệt kê.
+  const byRole = ALL_ROLES.map((r) => ({
+    role: r,
+    emails: Object.entries(roleMap).filter(([, v]) => v === r).map(([e]) => e).sort(),
+  }));
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Hệ thống · chỉ admin</div>
+            <div className="text-sm font-bold text-slate-900">PHÂN CẤP NGƯỜI DÙNG</div>
+            <div className="mt-0.5 text-[11px] text-slate-600">Gán email vào cấp để hiện badge trong comment. Email không có trong danh sách = “users” (không badge).</div>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100">Đóng ✕</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-1.5 text-[11px] font-semibold text-slate-600">Thêm / đổi cấp</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@aacorporation.com"
+                onKeyDown={(e) => { if (e.key === "Enter" && email.trim()) void save(email, role); }}
+                className="min-w-[210px] flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-[12px] focus:border-teal-600 focus:outline-none" />
+              <select value={role} onChange={(e) => setRole(e.target.value as UserRole)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[12px]">
+                {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_META[r].short} — {ROLE_META[r].label}</option>)}
+              </select>
+              <button type="button" disabled={busy || !email.trim()} onClick={() => void save(email, role)}
+                className="rounded-md bg-teal-700 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">Lưu</button>
+            </div>
+            {err && <div className="mt-1.5 text-[11px] font-medium text-red-600">{err}</div>}
+          </div>
+          {byRole.map(({ role: r, emails }) => (
+            <div key={r} className="mb-3">
+              <div className="mb-1 flex items-center gap-2">
+                <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${ROLE_META[r].badge}`}>{ROLE_META[r].short}</span>
+                <span className="text-[11px] text-slate-500">{ROLE_META[r].label} · {emails.length}</span>
+              </div>
+              {emails.length === 0 ? <div className="pl-1 text-[11px] text-slate-400">— chưa có ai —</div> : (
+                <ul className="space-y-1">
+                  {emails.map((e) => (
+                    <li key={e} className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-2 py-1 text-[12px]">
+                      <span className="text-slate-700">{e}</span>
+                      <button type="button" disabled={busy} title="Gỡ cấp (về users)" onClick={() => void save(e, null)}
+                        className="shrink-0 text-slate-400 hover:text-red-600 disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [users, setUsers] = useState<string[]>([]);
@@ -4733,10 +4843,19 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  // Mốc "kể từ" theo NỬA ĐÊM ĐỊA PHƯƠNG (không phải 24h trượt): "Hôm nay" = từ 00:00 hôm nay;
+  // "7/30 ngày" = 7/30 ngày dương lịch TÍNH CẢ hôm nay. Sửa lỗi "Hôm nay" lọt sang ngày hôm trước.
+  const sinceMs = useMemo(() => {
+    if (days <= 0) return null;
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    return d.getTime() - (days - 1) * 86_400_000;
+  }, [days]);
+
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const since = days > 0 ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
+      // Tải RỘNG theo mốc (server lọc thô để giảm dữ liệu); LỌC CHÍNH XÁC lại ở client bên dưới.
+      const since = sinceMs != null ? new Date(sinceMs).toISOString() : null;
       const r = await fetchActivityLog({ data: { email: who || null, since, limit: 1000, devAs: devAs() } });
       if (!r.ok) { setErr("Bạn không có quyền xem nhật ký này."); setRows([]); setUsers([]); return; }
       setRows(r.rows); setUsers(r.users);
@@ -4745,7 +4864,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
     } finally {
       setLoading(false);
     }
-  }, [who, days]);
+  }, [who, sinceMs]);
   useEffect(() => { void load(); }, [load]);
 
   const fmtTs = (iso: string) => {
@@ -4775,12 +4894,16 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   }, [rows]);
   const filtered = useMemo(() => {
     const nq = norm(q.trim());
+    const w = who.trim().toLowerCase();
+    // LỌC ĐA LỚP: mọi điều kiện phải THOẢ ĐỒNG THỜI (AND) — Ngày ∧ Người ∧ Thao tác ∧ Tìm kiếm.
     return rows.filter((r) => {
+      if (sinceMs != null) { const t = new Date(r.ts).getTime(); if (isNaN(t) || t < sinceMs) return false; }
+      if (w && (r.email || "").toLowerCase() !== w) return false;
       if (actionF && r.action !== actionF) return false;
-      if (!nq) return true;
-      return norm(`${r.email} ${actionLabel(r.action)} ${r.detail || ""}`).includes(nq);
+      if (nq && !norm(`${r.email} ${actionLabel(r.action)} ${r.detail || ""}`).includes(nq)) return false;
+      return true;
     });
-  }, [rows, q, actionF]);
+  }, [rows, q, actionF, who, sinceMs]);
 
   if (typeof document === "undefined") return null;
   return createPortal(
