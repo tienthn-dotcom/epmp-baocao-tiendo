@@ -43,7 +43,7 @@ import { AppShell } from "@/lib/app-shell";
 
 
 import { toast } from "sonner";
-import { parseCsvText, parseXlsxBuffer } from "@/lib/parser";
+import { parseCsvText, parseXlsxBuffer, noteMentionsMpUpdate } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
@@ -132,6 +132,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.19.0 (31/07/2026): BỘ LỌC "Cần cập nhật MP" quét thêm nguồn thứ 2 = VƯỚNG MẮC CẤP DỰ ÁN
+ *     nhập trong app (box chat, message CHƯA ẩn): nếu có cụm "trình BOD phê duyệt (Bitrix)" ⇒ tự đưa
+ *     dự án vào nhóm Cần cập nhật MP (luật parser noteMentionsMpUpdate rule D: bod + duyệt + bitrix,
+ *     chịu biến thể chữ). Gom về 1 nguồn sự thật `mpInfo` (union cờ file p.needsMpUpdate + quét chat)
+ *     dùng CHUNG cho bảng phẳng lẫn bảng gộp → danh sách không lệch.
  *   v3.18.0 (30/07/2026): XUẤT PDF làm lại: (1) nút gộp DROPDOWN "Xuất PDF ▼" → chọn khổ NGANG / DỌC
  *     (dọc cho điện thoại / in A4 dọc). (2) Ép font "Segoe UI" khi chụp (html2canvas) → hết bóp chữ /
  *     chèn dấu cách ngày / cắt cột Mã, và ra GIỐNG NHAU trên Chrome/Edge/Cốc Cốc. (3) Ép bề rộng chụp
@@ -337,7 +342,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.18.0";
+const APP_VERSION = "3.19.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1756,12 +1761,23 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     setFilters(f => ({ ...f, alerts: toggleIn(f.alerts, k) }));
   };
 
-  // ── "Cần cập nhật MP": dự án cha có cờ (và đang Show — data.projects đã lọc Show).
-  const mpProjectKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const p of data.projects) if (p.needsMpUpdate) s.add(pkProj(p));
-    return s;
-  }, [data.projects]);
+  // ── "Cần cập nhật MP": dự án vào nhóm này từ 2 NGUỒN, gộp lại (union):
+  //    (1) cờ p.needsMpUpdate — parser đọc từ FILE (cột "Cần cập nhật MP" / vướng mắc dòng cha).
+  //    (2) VƯỚNG MẮC CẤP DỰ ÁN nhập TRỰC TIẾP trong app (box chat) khớp luật noteMentionsMpUpdate
+  //        — đặc biệt cụm "trình BOD phê duyệt (Bitrix)". CHỈ tính message CHƯA ẩn (ẩn = đã xử lý,
+  //        không còn cần cập nhật). visibleText đã lọc message ẩn giúp.
+  //    mpInfo: khoá dự án → LÝ DO, để BẢNG PHẲNG lẫn BẢNG GỘP dùng CHUNG một danh sách (không lệch).
+  const mpInfo = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of data.projects) {
+      const key = pkProj(p);
+      const appNote = visibleText(edits[key]?.noteMsgs).trim();
+      if (p.needsMpUpdate) m.set(key, p.mpReason || appNote);
+      else if (appNote && noteMentionsMpUpdate(appNote)) m.set(key, appNote);
+    }
+    return m;
+  }, [data.projects, edits, pkProj]);
+  const mpProjectKeys = useMemo(() => new Set(mpInfo.keys()), [mpInfo]);
 
   /* ────────────────────────────────────────────────────────────────
    * HÀM LỌC TRUNG TÂM — getFilteredProjects (src/lib/filter.ts).
@@ -2073,16 +2089,17 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       itemsByProj.set(k, arr);
     }
     return data.projects
-      .filter(p => p.needsMpUpdate)
+      .filter(p => mpProjectKeys.has(pkProj(p)))
       .map(p => {
-        const its = itemsByProj.get(pkProj(p)) ?? [];
+        const key = pkProj(p);
+        const its = itemsByProj.get(key) ?? [];
         return {
           maCT: p.maCT || p.code,
           name: p.name,
           start: p.start,
           deadline: p.deadline,
           pm: p.pm,
-          reason: p.mpReason || "",
+          reason: mpInfo.get(key) || p.mpReason || "",
           active: its.length,
           alerts: its.filter(i => i._alert !== "none").length,
         };
@@ -2096,7 +2113,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         return hasCtx ? r.active > 0 : true;
       })
       .sort((a, b) => (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
-  }, [filters, data.projects, tableItems]);
+  }, [filters, data.projects, tableItems, mpProjectKeys, mpInfo]);
 
   // ── DỮ LIỆU BIỂU ĐỒ "TỔNG THỂ TIẾN ĐỘ" (Gantt lưới tuần) — 1 dòng/dự án ──
   //    Ăn theo bộ lọc đang bật (qua panelActive: vùng/bộ phận/tháng/tìm kiếm/MP/

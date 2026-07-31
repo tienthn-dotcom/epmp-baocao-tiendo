@@ -345,6 +345,13 @@ export function noteMentionsMpUpdate(note: string): boolean {
   if (/cap nhat/.test(n) && (/^pmo\b/.test(n) || /trinh bod|bod phe duyet|trinh master plan/.test(n))) return true;
   // C. Cờ trống "CẦN CẬP NHẬT" đứng một mình trên dòng dự án.
   if (/^can cap nhat[.!]?$/.test(n)) return true;
+  // D. "Trình BOD phê duyệt (Bitrix)" — quy trình PMO đẩy Master Plan lên Bitrix cho BOD
+  //    phê duyệt. Chốt 31/07/2026: vướng mắc cấp dự án có cụm này ⇒ dự án CẦN CẬP NHẬT MP,
+  //    KỂ CẢ khi không có chữ "cập nhật" (rule A/B đòi "cập nhật" nên bỏ sót ca này).
+  //    "bitrix" là từ rất hiếm → làm MỎ NEO chống dính nhầm; kèm "bod" + "duyệt" để chắc
+  //    đúng ngữ cảnh trình duyệt. Chịu được biến thể chữ ("trình BOD duyệt (bitrix)",
+  //    "đã trình BOD phê duyệt trên Bitrix"…) vì chỉ đòi 3 từ khoá, không đòi thứ tự.
+  if (/\bbod\b/.test(n) && /duyet/.test(n) && /bitrix/.test(n)) return true;
   return false;
 }
 
