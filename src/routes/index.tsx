@@ -133,6 +133,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.24.0 (31/07/2026): Thêm nhận diện hạng mục: mã "SD" → "Shop Drawing" (id nội bộ "SHOP" vì
+ *     "SD" đã bị chiếm cho Triển khai sản xuất/TKSX); trước đây SD rơi vào "Khác". Mã "PS" → "Phát
+ *     sinh" vốn đã có sẵn. SHOP xử như "Khác" (ngoài 7 giai đoạn, VẪN xét cảnh báo — khác PS miễn trừ).
  *   v3.23.0 (31/07/2026): XUẤT EXCEL "Y HỆT BẢNG/PDF": bỏ format matrix cũ, dùng exportTableXlsx
  *     (excel-export.ts) — CÙNG 11 cột bảng gộp (Ngày update…Giải pháp), dòng DỰ ÁN (nền navy, ngày
  *     kết thúc đỏ nếu quá hạn) + dòng CÔNG ĐOẠN con (outline ẩn sẵn, xổ +/−), ô Tình trạng tô màu
@@ -369,7 +372,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.23.0";
+const APP_VERSION = "3.24.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -459,9 +462,10 @@ const DEPT_ORDER: string[] = ["QS", "SCM", "NM", "PM", OTHER_LABEL];
 const STAGE_ABBR: Record<StageId, string> = {
   TK: "TK", MA: "MA", BG: "BG", VT: "VT", SD: "TKSX", SX: "SX", TC: "TC",
 };
-function stageAbbrOf(sid: StageId | "MB" | "PS" | "OTHER"): string {
+function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   if (sid === "MB") return "MB";
   if (sid === "PS") return "PS";
+  if (sid === "SHOP") return "SD";
   if (sid === "OTHER") return "Khác";
   return STAGE_ABBR[sid];
 }
@@ -469,7 +473,7 @@ function stageAbbrOf(sid: StageId | "MB" | "PS" | "OTHER"): string {
 /** Hiển thị "Nhân sự phụ trách" theo QUY ƯỚC từng giai đoạn.
  *  Tên lấy ĐÚNG từ ô sheet (bỏ tiền tố cũ) — KHÔNG tự điền tên PM/người khác.
  *  Không có tên trong ô → chỉ hiện tiền tố (TK thì để trống). */
-function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "OTHER"): string {
+function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   const bare = (owner || "").replace(/^\s*(pm|scm|qs|nm|sd|tđt|tdt|nhà\s*máy)\b[\s\-–—:.&]*/i, "").trim();
   switch (sid) {
     case "TK": return bare;                                  // chỉ tên (vd "Sun Group"); trống → ""
@@ -489,15 +493,17 @@ function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "OTHER"): st
 }
 
 
-function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "OTHER" {
+function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "SHOP" | "OTHER" {
   const c = it.rawCode.trim().toUpperCase();
-  // "Triển khai sản xuất" CHỈ tính mã TKSX. Mã "SD" (Shop drawing / SD/P) là việc
-  // khác — KHÔNG gộp vào giai đoạn này (rơi xuống "Khác"). Theo quy ước PMO hiện hành.
+  // "Triển khai sản xuất" CHỈ tính mã TKSX (KHÔNG lẫn với mã "SD"). Phải kiểm TKSX TRƯỚC
+  // /^SD/ để "TKSX…" không bị bắt nhầm — nhưng TKSX bắt đầu bằng "TK" nên vốn khác "SD".
   if (/^TKSX/.test(c)) return "SD";
   if (/^TK/.test(c)) return "TK";
   if (/^MA|^DM/.test(c)) return "MA";
   if (/^BG/.test(c)) return "BG";
   if (/^VT/.test(c)) return "VT";
+  // "SD" = Shop Drawing — hạng mục riêng (chốt 31/07/2026), KHÔNG còn gộp vào "Khác".
+  if (/^SD/.test(c)) return "SHOP";
   if (/^SX/.test(c)) return "SX";
   if (/^TC/.test(c)) return "TC";
   if (/^MB/.test(c)) return "MB";
@@ -506,9 +512,10 @@ function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "OTHER" {
   if (/^PS/.test(c)) return "PS";
   return "OTHER";
 }
-function stageLabelOf(sid: StageId | "MB" | "PS" | "OTHER"): string {
+function stageLabelOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   if (sid === "MB") return "Bàn giao mặt bằng";
   if (sid === "PS") return "Phát sinh";
+  if (sid === "SHOP") return "Shop Drawing";
   if (sid === "OTHER") return "Khác";
   return STAGE_META[sid].label;
 }
@@ -519,11 +526,11 @@ const STAGE_DISPLAY: Record<string, ReactNode> = {
   "Thi công lắp đặt":    <>Thi công<br />lắp đặt</>,
   "LOA, Tạm ứng":        <>LOA,<br />Tạm ứng</>,
 };
-function stageDisplayLabel(sid: StageId | "MB" | "PS" | "OTHER"): ReactNode {
+function stageDisplayLabel(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): ReactNode {
   return STAGE_DISPLAY[stageLabelOf(sid)] ?? stageLabelOf(sid);
 }
-function deptOf(sid: StageId | "MB" | "PS" | "OTHER"): string {
-  if (sid === "MB" || sid === "PS" || sid === "OTHER") return OTHER_LABEL;
+function deptOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
+  if (sid === "MB" || sid === "PS" || sid === "SHOP" || sid === "OTHER") return OTHER_LABEL;
   return STAGE_META[sid].dept;
 }
 
@@ -532,9 +539,9 @@ function deptOf(sid: StageId | "MB" | "PS" | "OTHER"): string {
 const PIC_PREFIX_BY_STAGE: Record<StageId, string> = {
   TK: "PM", MA: "SCM", BG: "QS", VT: "SCM", SD: "PM", SX: "NM", TC: "PM",
 };
-function normalizePicByStage(raw: string, sid: StageId | "MB" | "PS" | "OTHER"): string {
+function normalizePicByStage(raw: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   const src = (raw || "").trim();
-  if (sid === "MB" || sid === "PS" || sid === "OTHER") return src;
+  if (sid === "MB" || sid === "PS" || sid === "SHOP" || sid === "OTHER") return src;
   const prefix = PIC_PREFIX_BY_STAGE[sid];
   if (!src) return prefix;
   // Nếu có "-" → coi phần trước "-" đầu là tiền tố cũ, thay bằng đúng.
@@ -1174,7 +1181,7 @@ function Field({ label, unit, value, min, max, onChange }: {
  * ====================================================================== */
 
 type EnrichedItem = ItemRow & {
-  _stageId: StageId | "MB" | "PS" | "OTHER";
+  _stageId: StageId | "MB" | "PS" | "SHOP" | "OTHER";
   _stageLabel: string;
   _stageDisplay: ReactNode;
   _dept: string;
@@ -1329,7 +1336,7 @@ const fmtMsgTime = (iso: string): string => {
 type HiRange = [number, number];
 type EditPatch = { pic?: string | null; deadline?: string | null };
 
-type StageOrOther = StageId | "MB" | "PS" | "OTHER";
+type StageOrOther = StageId | "MB" | "PS" | "SHOP" | "OTHER";
 type AlertK2 = Exclude<AlertKind, "none">;
 
 type Filters = {
