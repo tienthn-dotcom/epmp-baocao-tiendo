@@ -131,6 +131,9 @@ export type ProjectRow = {
   needsMpUpdate?: boolean;
   /** Nội dung ghi chú/ô đã kích hoạt cờ needsMpUpdate — hiển thị làm "lý do". */
   mpReason?: string;
+  /** Vướng mắc CẤP DỰ ÁN thô (cột U dòng cha) — bộ lọc "Cần cập nhật MP" quét cụm
+   *  "trình BOD phê duyệt (Bitrix)" trực tiếp trên đây. Optional (snapshot cũ chưa có). */
+  projectNote?: string;
   /** Cụm dự án — cột "Group DA" trên dòng dự án cha. Dùng cho bộ lọc "Cụm dự án". */
   groupDA?: string;
   /** Ngày update (ISO) — cột "Ngày update" trên dòng dự án cha trong Master Plan. */

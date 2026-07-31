@@ -43,7 +43,7 @@ import { AppShell } from "@/lib/app-shell";
 
 
 import { toast } from "sonner";
-import { parseCsvText, parseXlsxBuffer, noteMentionsMpUpdate } from "@/lib/parser";
+import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
@@ -132,6 +132,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.20.0 (31/07/2026): Bộ lọc "Cần cập nhật MP" — 2 sửa: (A) HIỂN THỊ y hệt bảng gộp mặc định
+ *     (gộp theo dự án, nền navy/emerald, xổ ra công đoạn) thay vì bảng gộp 1-dòng-1-dự-án riêng;
+ *     CHỈ khác cột "Tình trạng" → thay ma trận 7 giai đoạn bằng 1 badge "CẬP NHẬT MP" (đỏ nếu ≥3
+ *     hạng mục đang làm, vàng nếu ít hơn). (B) QUÉT ĐÚNG: dấu hiệu DUY NHẤT = vướng mắc cấp dự án
+ *     có cụm "trình BOD phê duyệt (Bitrix)" (parser noteSaysTrinhBodBitrix: đòi cụm liền "trình BOD
+ *     (phê) duyệt" + "bitrix"). BỎ gộp cờ cột "Cần cập nhật MP" của file + các ghi chú "cập nhật MP"
+ *     chung chung (trước lọc phình 19 thay vì 14, lọt 43 ĐTM). Quét cả file (projectNote cột U) lẫn
+ *     box chat app. mpInfo là nguồn sự thật chung cho bảng phẳng lẫn bảng gộp.
  *   v3.19.0 (31/07/2026): BỘ LỌC "Cần cập nhật MP" quét thêm nguồn thứ 2 = VƯỚNG MẮC CẤP DỰ ÁN
  *     nhập trong app (box chat, message CHƯA ẩn): nếu có cụm "trình BOD phê duyệt (Bitrix)" ⇒ tự đưa
  *     dự án vào nhóm Cần cập nhật MP (luật parser noteMentionsMpUpdate rule D: bod + duyệt + bitrix,
@@ -342,7 +350,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.19.0";
+const APP_VERSION = "3.20.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1761,19 +1769,21 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     setFilters(f => ({ ...f, alerts: toggleIn(f.alerts, k) }));
   };
 
-  // ── "Cần cập nhật MP": dự án vào nhóm này từ 2 NGUỒN, gộp lại (union):
-  //    (1) cờ p.needsMpUpdate — parser đọc từ FILE (cột "Cần cập nhật MP" / vướng mắc dòng cha).
-  //    (2) VƯỚNG MẮC CẤP DỰ ÁN nhập TRỰC TIẾP trong app (box chat) khớp luật noteMentionsMpUpdate
-  //        — đặc biệt cụm "trình BOD phê duyệt (Bitrix)". CHỈ tính message CHƯA ẩn (ẩn = đã xử lý,
-  //        không còn cần cập nhật). visibleText đã lọc message ẩn giúp.
-  //    mpInfo: khoá dự án → LÝ DO, để BẢNG PHẲNG lẫn BẢNG GỘP dùng CHUNG một danh sách (không lệch).
+  // ── "Cần cập nhật MP": DẤU HIỆU DUY NHẤT = vướng mắc CẤP DỰ ÁN có cụm
+  //    "trình BOD phê duyệt (Bitrix)". KHÔNG dùng cờ cột "Cần cập nhật MP" của file, KHÔNG
+  //    dùng các ghi chú "cập nhật MP" chung chung (trước đây gộp cả 2 làm lọc phình sai — vd
+  //    43 ĐTM lọt vào dù không có câu này). Quét 2 nguồn vướng mắc dự án, khớp thì vào:
+  //      · projectNote — vướng mắc cột U dòng cha trong FILE (đúng cái người dùng Ctrl+F).
+  //      · box chat app (noteMsgs, chỉ message CHƯA ẩn — ẩn = đã xử lý).
+  //    mpInfo: khoá dự án → LÝ DO, để BẢNG PHẲNG lẫn BẢNG GỘP dùng CHUNG một danh sách.
   const mpInfo = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of data.projects) {
       const key = pkProj(p);
+      const fileNote = p.projectNote ?? "";
       const appNote = visibleText(edits[key]?.noteMsgs).trim();
-      if (p.needsMpUpdate) m.set(key, p.mpReason || appNote);
-      else if (appNote && noteMentionsMpUpdate(appNote)) m.set(key, appNote);
+      if (noteSaysTrinhBodBitrix(fileNote) || (appNote && noteSaysTrinhBodBitrix(appNote)))
+        m.set(key, appNote || fileNote);
     }
     return m;
   }, [data.projects, edits, pkProj]);
@@ -2352,7 +2362,6 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
      (Bàn giao, Tên) và việc con vẫn theo (giai đoạn, ngày bắt đầu). Màn hình không đổi,
      chỉ khác là giờ bấm cột mới có tác dụng. */
   const dueMonthGroups = useMemo<DueMonthGroup[]>(() => {
-    if (filters.mpOnly) return [];
     const byKey = new Map<string, DueMonthGroup>();
     for (const it of sortedAlerts) {
       const key = pkItem(it);
@@ -2601,7 +2610,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         items={sortedAlerts}
         mpMode={filters.mpOnly}
         mpProjectRows={mpProjectRows}
-        groupMode={!filters.mpOnly && filters.stages.length === 0}
+        groupMode={filters.stages.length === 0}
         groups={dueMonthGroups}
         totalAlertsCount={alerts.length}
         deadlineMonthOptions={deadlineMonthOptions}
@@ -3815,53 +3824,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
               ))}
             </tr>
           </thead>
-          {/* rows-equal = ép mọi hàng cao bằng nhau (styles.css). Không áp cho chế độ
-              gộp "Cần cập nhật MP" vì badge CẬP NHẬT MP cần hàng cao hơn. */}
-          <tbody ref={tbodyRef} className={mpMode ? undefined : "rows-equal"}>
-            {mpMode ? (
-              /* ── Chế độ "Cần cập nhật MP": GỘP — mỗi dự án 1 dòng, không hiện công đoạn ── */
-              mpProjectRows.length === 0 ? (
-                <tr><td colSpan={headerCols.length} className="px-3 py-8 text-center text-slate-500">Không có dự án nào được đánh dấu "Cần cập nhật MP".</td></tr>
-              ) : mpProjectRows.map((p, idx) => (
-                <tr key={`${p.maCT}-${p.name}-${idx}`}
-                    className={`border-b border-slate-100 align-middle ${idx % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-blue-50/40`}>
-                  {/* Ngày update — giữ đủ số ô cho khớp colgroup (13 cột). */}
-                  <td className="border-r border-slate-100 px-1 py-1 text-center text-slate-400">—</td>
-                  <td className="border-r border-slate-100 px-1 py-1 text-slate-700 leading-tight">
-                    {p.maCT
-                      ? p.maCT.split(",").map((s, i) => <div key={i} className="whitespace-nowrap">{s.trim()}</div>)
-                      : "—"}
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-1">
-                    <div className="font-semibold text-slate-800 leading-tight">{p.name}</div>
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-center tabular-nums text-slate-700 whitespace-nowrap">{fmtDateVN2(p.deadline)}</td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-center text-slate-400">—</td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-slate-700 leading-tight" style={{ wordBreak: "break-word" }}>
-                    <div className="line-clamp-2">PM - {p.pm}</div>
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-center tabular-nums text-slate-700 whitespace-nowrap">{fmtDateVN2(p.start)}</td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-center tabular-nums text-slate-700 whitespace-nowrap">{fmtDateVN2(p.deadline)}</td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-center text-slate-400">—</td>
-                  <td className="border-r border-slate-100 px-2 py-1 text-left tabular-nums whitespace-nowrap text-slate-700">
-                    {p.active} hạng mục
-                  </td>
-                  <td className="border-r border-slate-100 px-1 py-1 text-center">
-                    {/* ≥3 hạng mục đang làm → ĐỎ (nặng); dưới 3 → VÀNG */}
-                    <span className={`inline-flex items-center justify-center rounded-md font-bold uppercase leading-[1.05] text-center ${
-                            p.active >= 3 ? "bg-red-500 text-white" : "bg-amber-400 text-slate-900"}`}
-                          style={{ fontSize: "0.82em", width: "7.6em", height: "3.8em", padding: "0.15em 0.4em" }}
-                          title={p.active >= 3 ? `${p.active} hạng mục đang làm (≥3): mức nặng` : `${p.active} hạng mục đang làm`}>
-                      CẬP NHẬT<br />MP
-                    </span>
-                  </td>
-                  {/* Vướng mắc + Hành động: chế độ gộp MP không hiện nội dung 2 cột này
-                      (giữ đủ số ô cho khớp colgroup). */}
-                  <td className="border-r border-slate-100 px-2 py-1 text-center text-slate-400">—</td>
-                  <td className="px-2 py-1 text-center text-slate-400">—</td>
-                </tr>
-              ))
-            ) : groupMode ? (
+          {/* rows-equal = ép mọi hàng cao bằng nhau (styles.css). */}
+          <tbody ref={tbodyRef} className="rows-equal">
+            {groupMode ? (
               groups.length === 0 ? (
                 <tr><td colSpan={headerCols.length} className="px-3 py-8 text-center text-slate-500">Không có dự án nào khớp bộ lọc hiện tại.</td></tr>
               ) : groups.flatMap((g, gi) => {
@@ -3957,8 +3922,23 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                         không, nên ở 1280px lưới tràn khỏi ô 51px và đè lên cột bên cạnh.
                         Đổi sang em ⇒ lưới co giãn cùng bảng, tỉ lệ không đổi ở mọi bề rộng. */}
                     <td colSpan={3} className="px-2 py-1">
-                      {/* Lưới 7 giai đoạn LẤP ĐẦY ô (7 track bằng nhau) → luôn vừa khít bề rộng
-                          span dù thu cột ngày (không tràn), vẫn thẳng hàng giữa các dự án. */}
+                      {mpMode ? (
+                        /* ── Lọc "Cần cập nhật MP": FORM y hệt bảng gộp mặc định, chỉ KHÁC cột
+                            Tình trạng — thay ma trận 7 giai đoạn bằng 1 badge "CẬP NHẬT MP".
+                            Tông: ≥3 hạng mục đang làm → ĐỎ (nặng); dưới 3 → VÀNG (như cũ). */
+                        <div className="flex items-center justify-center" style={{ height: "1.82em" }}>
+                          <span className={`inline-flex items-center justify-center rounded font-bold uppercase leading-none ${
+                                  g.items.length >= 3 ? "bg-red-500 text-white" : "bg-amber-400 text-slate-900"}`}
+                                style={{ fontSize: "0.77em", padding: "0.35em 1.1em" }}
+                                title={g.items.length >= 3
+                                  ? `${g.items.length} hạng mục đang làm (≥3): mức nặng`
+                                  : `${g.items.length} hạng mục đang làm`}>
+                            CẬP NHẬT MP
+                          </span>
+                        </div>
+                      ) : (
+                      /* Lưới 7 giai đoạn LẤP ĐẦY ô (7 track bằng nhau) → luôn vừa khít bề rộng
+                          span dù thu cột ngày (không tràn), vẫn thẳng hàng giữa các dự án. */
                       <div className="grid w-full" style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "0.36em" }}>
                         {STAGE_ORDER.map(sid => {
                           const a = stageAlert.get(sid);
@@ -3979,6 +3959,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                           );
                         })}
                       </div>
+                      )}
                     </td>
                     {/* Vướng mắc CẤP DỰ ÁN — nhập được ngay trong chế độ gộp (khoá = projectKey,
                         tách riêng khỏi ghi chú từng công đoạn). stopPropagation để không sổ nhóm. */}

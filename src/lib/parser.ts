@@ -345,14 +345,21 @@ export function noteMentionsMpUpdate(note: string): boolean {
   if (/cap nhat/.test(n) && (/^pmo\b/.test(n) || /trinh bod|bod phe duyet|trinh master plan/.test(n))) return true;
   // C. Cờ trống "CẦN CẬP NHẬT" đứng một mình trên dòng dự án.
   if (/^can cap nhat[.!]?$/.test(n)) return true;
-  // D. "Trình BOD phê duyệt (Bitrix)" — quy trình PMO đẩy Master Plan lên Bitrix cho BOD
-  //    phê duyệt. Chốt 31/07/2026: vướng mắc cấp dự án có cụm này ⇒ dự án CẦN CẬP NHẬT MP,
-  //    KỂ CẢ khi không có chữ "cập nhật" (rule A/B đòi "cập nhật" nên bỏ sót ca này).
-  //    "bitrix" là từ rất hiếm → làm MỎ NEO chống dính nhầm; kèm "bod" + "duyệt" để chắc
-  //    đúng ngữ cảnh trình duyệt. Chịu được biến thể chữ ("trình BOD duyệt (bitrix)",
-  //    "đã trình BOD phê duyệt trên Bitrix"…) vì chỉ đòi 3 từ khoá, không đòi thứ tự.
-  if (/\bbod\b/.test(n) && /duyet/.test(n) && /bitrix/.test(n)) return true;
   return false;
+}
+
+/** Nhận diện RIÊNG cụm "trình BOD phê duyệt (Bitrix)" — DẤU HIỆU DUY NHẤT để đưa dự án vào
+ *  bộ lọc "Cần cập nhật MP" (PMO chốt 31/07/2026: quét vướng mắc CẤP DỰ ÁN có cụm này).
+ *
+ *  CỐ TÌNH RẤT ĐẶC HIỆU (khác noteMentionsMpUpdate vốn rộng, bắt mọi "cập nhật MP"):
+ *  BẮT BUỘC có cụm liền "trình BOD (phê) duyệt" VÀ từ "bitrix". Vì sao chặt vậy: nếu chỉ
+ *  đòi bod+duyệt+bitrix rời rạc, hoặc dùng luật "cập nhật MP" chung, sẽ dính các dự án chỉ
+ *  điền CỘT "Cần cập nhật MP" hay ghi chú khác (vd 43 ĐTM) → lọc phình ra sai. Cho phép
+ *  biến thể: thiếu "phê" ("trình BOD duyệt (Bitrix)"), "(Bitrix)"/"trên Bitrix"/"qua Bitrix". */
+export function noteSaysTrinhBodBitrix(note: string): boolean {
+  if (!note) return false;
+  const n = stripDiacritics(note).replace(/\s+/g, " ").trim().toLowerCase();
+  return /trinh bod (phe )?duyet/.test(n) && /bitrix/.test(n);
 }
 
 /** Nhận diện dự án ĐÃ BÀN GIAO XONG từ ô "Vướng mắc / Cần xử lý" trên DÒNG DỰ ÁN CHA.
@@ -556,6 +563,9 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         mpReason: noteMentionsMpUpdate(str(r[COL.U]))
           ? noteStr(r[COL.U])
           : (mpCol >= 0 ? str(r[mpCol]) : ""),
+        // Vướng mắc CẤP DỰ ÁN thô (cột U dòng cha) — để bộ lọc "Cần cập nhật MP" quét
+        // trực tiếp cụm "trình BOD phê duyệt (Bitrix)" đúng như người dùng Ctrl+F trên file.
+        projectNote: noteStr(r[COL.U]),
         groupDA: groupCol >= 0 ? str(r[groupCol]) : "",
         rank: top20Col >= 0 ? (intCast(r[top20Col]) ?? undefined) : undefined,
         // "Ngày update" chỉ có trên dòng dự án CHA → mọi đầu việc con kế thừa (bên dưới).
