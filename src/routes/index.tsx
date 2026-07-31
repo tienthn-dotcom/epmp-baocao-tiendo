@@ -44,6 +44,7 @@ import { AppShell } from "@/lib/app-shell";
 
 import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
+import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
@@ -132,6 +133,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.23.0 (31/07/2026): XUẤT EXCEL "Y HỆT BẢNG/PDF": bỏ format matrix cũ, dùng exportTableXlsx
+ *     (excel-export.ts) — CÙNG 11 cột bảng gộp (Ngày update…Giải pháp), dòng DỰ ÁN (nền navy, ngày
+ *     kết thúc đỏ nếu quá hạn) + dòng CÔNG ĐOẠN con (outline ẩn sẵn, xổ +/−), ô Tình trạng tô màu
+ *     đỏ/vàng/xanh + text (Trễ tiến độ/Cần cắt đầu việc/Cần tập trung/Đã hoàn thành). Khác PDF ở chỗ
+ *     là Ô THẬT (lọc/sort/sửa trong Excel). Dựng từ chính dueMonthGroups (cùng nguồn bảng).
  *   v3.22.0 (31/07/2026): XUẤT PDF sửa TẬN GỐC lỗi cắt trang (ngang + dọc dùng CHUNG logic): ĐO ranh
  *     giới hàng NGAY TRONG CLONE html2canvas (đúng toạ độ ảnh) thay vì DOM sống — vì clone đổi font
  *     (Segoe UI) + gỡ control nên chiều cao hàng khác DOM sống (Inter), đo DOM sống → cắt LỆCH → header
@@ -363,7 +369,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.22.0";
+const APP_VERSION = "3.23.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -2648,42 +2654,64 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         onMsgOp={msgOp}
         onPrint={(o) => { void doPrint(o); }}
         onExportExcel={async () => {
-          // NGUỒN DỰ ÁN = filterResult.projects (CÙNG hàm với bảng & PDF).
-          // Riêng khi bật lọc "Cần cập nhật MP": bảng đổi nguồn → lấy dự án từ chính bảng.
-          const visibleProjects = filters.mpOnly
-            ? Array.from(
-                new Map(sortedAlerts.map(i => [
-                  pkItem(i),
-                  { code: i.projectCode, name: i.projectName },
-                ])).values(),
-              )
-            : filterResult.projects.map(p => ({ code: p.code, name: p.name }));
-          if (visibleProjects.length === 0) {
-            toast.error("Không có dữ liệu để xuất");
-            return;
+          // XUẤT EXCEL "Y HỆT BẢNG/PDF": cùng cột + dòng gộp dự án (xổ công đoạn con) + màu trạng thái,
+          // nhưng là Ô THẬT (lọc/sort/sửa trong Excel). Dựng từ CHÍNH `dueMonthGroups` (nguồn bảng gộp).
+          if (dueMonthGroups.length === 0) { toast.error("Không có dữ liệu để xuất"); return; }
+          const clean = (s?: string | null) => (s ?? "").replace(/\s*\n+\s*/g, ", ").trim();
+          const ALERT_TXT: Record<string, string> = { late: "Trễ tiến độ", trim: "Cần cắt đầu việc", focus: "Cần tập trung" };
+          const itemStatus = (it: EnrichedItem): { text: string; color: XlsxStatusColor } => {
+            const done = !!completedDates[itemKeyOf(it)] || (it.pctActual != null && Math.round(it.pctActual) >= 100);
+            if (done) return { text: "Đã hoàn thành", color: "GREEN" };
+            if (it._alert && it._alert !== "none") return { text: ALERT_TXT[it._alert] ?? "", color: it._alertColor === "red" ? "RED" : "AMBER" };
+            return { text: "", color: null };
+          };
+          const cols = [
+            { label: "Ngày update", width: 12, align: "center" as const },
+            { label: "Mã", width: 15, align: "left" as const },
+            { label: "Tên dự án / Hạng mục", width: 42, wrap: true, align: "left" as const },
+            { label: "Người phụ trách chính", width: 22, wrap: true, align: "left" as const },
+            { label: "Ngày bắt đầu", width: 12, align: "center" as const },
+            { label: "Ngày kết thúc", width: 12, align: "center" as const },
+            { label: "% thực tế", width: 9, align: "center" as const },
+            { label: "Quá hạn", width: 9, align: "center" as const },
+            { label: "Tình trạng", width: 15, align: "center" as const },
+            { label: "Vướng mắc", width: 48, wrap: true, align: "left" as const },
+            { label: "Giải pháp", width: 48, wrap: true, align: "left" as const },
+          ];
+          const rows: XlsxTableRow[] = [];
+          for (const g of dueMonthGroups) {
+            const groupLate = !g.delivered && !!g.deadline && g.deadline.slice(0, 10) < today;
+            rows.push({
+              kind: "group", delivered: !!g.delivered, late: groupLate,
+              statusColor: g.delivered ? "GREEN" : null,
+              cells: [
+                fmtDateVN2(g.updateDate), g.maCT || "", g.name || "", clean(g.pm),
+                fmtDateVN2(g.start), fmtDateVN2(g.deadline), "", "",
+                g.delivered ? "Đã bàn giao" : "", visibleText(g.noteMsgs), visibleText(g.actionMsgs),
+              ],
+            });
+            for (const it of g.items) {
+              const st = itemStatus(it);
+              const doneOn = completedDates[itemKeyOf(it)];
+              rows.push({
+                kind: "item", statusColor: st.color,
+                cells: [
+                  "", stageAbbrOf(it._stageId), it._stageLabel || "",
+                  clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId)),
+                  fmtDateVN2(it.start), doneOn ? fmtDateVN2(doneOn) : fmtDateVN2(it.deadline),
+                  it.pctActual != null ? `${Math.round(it.pctActual)}%` : "",
+                  it.overdueDays ? `${it.overdueDays} ngày` : "",
+                  st.text, visibleText(it._noteMsgs), visibleText(it._actionMsgs),
+                ],
+              });
+            }
           }
-          // Đối chiếu 3 nguồn — app/Excel/PDF phải BẰNG nhau.
-          const tableProjectsCount = new Set(sortedAlerts.map(i => pkItem(i))).size;
-          if (tableProjectsCount !== visibleProjects.length) {
-            // eslint-disable-next-line no-console
-            console.error("[filter-audit] LỆCH số dự án giữa bảng & Excel",
-              { table: tableProjectsCount, excel: visibleProjects.length });
-          }
-          const { exportMatrixXlsx } = await loadSplit(() => import("@/lib/excel-export"));
-          await exportMatrixXlsx({
-            projects: data.projects,
-            visibleProjects,
-            allItems: data.items,
-            todayIso: today,
-            gapThreshold: thresholds.gapThreshold,
-            overdueThreshold: thresholds.overdueThreshold,
-            filterSummary,
-            updatedAt: data.updatedAt,
-          });
-          // NHẬT KÝ GIÁM SÁT: ghi rõ NGƯỜI TẢI đã LỌC GÌ + tải về NỘI DUNG gì (số dự án/đầu việc
-          // + danh sách mã) — để biết ai lấy thông tin nào ra khỏi ePMP.
-          track("export_excel", `Lọc: ${filterSummary} · ${visibleProjects.length} dự án, ${sortedAlerts.length} đầu việc · mã: ${visibleProjects.slice(0, 25).map(p => p.code).join(", ")}${visibleProjects.length > 25 ? " …" : ""}`.slice(0, 300));
-          toast.success(`Đã xuất ${sortedAlerts.length} đầu việc (${visibleProjects.length} dự án)`);
+          const { exportTableXlsx } = await loadSplit(() => import("@/lib/excel-export"));
+          await exportTableXlsx({ columns: cols, statusColIndex: 8, finishColIndex: 5, rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
+          const projCount = dueMonthGroups.length;
+          const itemCount = rows.length - projCount;
+          track("export_excel", `Lọc: ${filterSummary} · ${projCount} dự án, ${itemCount} đầu việc`.slice(0, 300));
+          toast.success(`Đã xuất ${projCount} dự án (${itemCount} đầu việc)`);
         }}
       />
 

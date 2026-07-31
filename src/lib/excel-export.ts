@@ -562,3 +562,120 @@ export async function exportMatrixXlsx(opts: ExportOptions): Promise<void> {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+ *  XUẤT EXCEL "Y HỆT BẢNG / PDF" — cùng cột, cùng dòng (gộp dự án + xổ công đoạn con), cùng màu
+ *  trạng thái. Khác PDF ở chỗ đây là Ô THẬT (lọc/sort/sửa trong Excel được), không phải ảnh chụp.
+ *  Nhận DỮ LIỆU ĐÃ DỰNG SẴN từ index.tsx (nơi có đủ helper) để module này không phụ thuộc kiểu nội bộ.
+ * ═════════════════════════════════════════════════════════════════════════════════════ */
+export type XlsxStatusColor = "RED" | "AMBER" | "GREEN" | null;
+export type XlsxTableRow = {
+  kind: "group" | "item";
+  /** Giá trị từng cột, ĐÚNG thứ tự columns. */
+  cells: string[];
+  /** Màu ô "Tình trạng". */
+  statusColor?: XlsxStatusColor;
+  /** Dòng dự án đã bàn giao → tô XANH LÁ (như bảng). */
+  delivered?: boolean;
+  /** Dòng dự án quá hạn bàn giao → cột ngày kết thúc ĐỎ (như badge trên bảng). */
+  late?: boolean;
+};
+
+const STATUS_FILL: Record<"RED" | "AMBER" | "GREEN", { bg: string; fg: string }> = {
+  RED:   { bg: "FFEF4444", fg: "FFFFFFFF" },
+  AMBER: { bg: "FFF59E0B", fg: "FF1B1B1B" },
+  GREEN: { bg: "FF059669", fg: "FFFFFFFF" },
+};
+
+export async function exportTableXlsx(opts: {
+  columns: { label: string; width: number; wrap?: boolean; align?: "left" | "center" }[];
+  /** Chỉ số (0-based) cột "Tình trạng" để tô màu ô đó. */
+  statusColIndex: number;
+  /** Cột ngày kết thúc (0-based) để tô ĐỎ khi dự án quá hạn. -1 nếu không có. */
+  finishColIndex: number;
+  rows: XlsxTableRow[];
+  todayIso: string;
+  filterSummary: string;
+  updatedAt?: string;
+}): Promise<void> {
+  const ExcelJS = ((await import("exceljs")) as any).default ?? (await import("exceljs"));
+  const wb: ExcelJSType.Workbook = new ExcelJS.Workbook();
+  wb.creator = "PMO Master Plan";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet("Báo cáo", {
+    views: [{ state: "frozen", ySplit: 3 }],
+    properties: { outlineLevelRow: 1, defaultRowHeight: 16 } as any,
+  });
+  (ws.properties as any).outlineProperties = { summaryBelow: false, summaryRight: false };
+
+  const N = opts.columns.length;
+  ws.columns = opts.columns.map((c) => ({ width: c.width }));
+
+  // Dòng 1: tiêu đề — dòng 2: phạm vi lọc — dòng 3: header cột (đóng băng).
+  const titleRow = ws.addRow([`Báo cáo tiến độ Master Plan — tính đến ${fmtVN(opts.todayIso)}${opts.updatedAt ? ` · Dữ liệu cập nhật ${fmtVN(opts.updatedAt)}` : ""}`]);
+  ws.mergeCells(1, 1, 1, N);
+  titleRow.getCell(1).font = { name: "Arial", bold: true, size: 13, color: { argb: "FFFFFFFF" } };
+  titleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF16202E" } };
+  titleRow.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+  titleRow.height = 22;
+
+  const critRow = ws.addRow([`Phạm vi: ${opts.filterSummary || "Tất cả"}`]);
+  ws.mergeCells(2, 1, 2, N);
+  critRow.getCell(1).font = { name: "Arial", italic: true, size: 10, color: { argb: "FF5B6B7E" } };
+  critRow.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+  critRow.height = 16;
+
+  const headerRow = ws.addRow(opts.columns.map((c) => c.label));
+  headerRow.height = 26;
+  headerRow.eachCell((cell, col) => {
+    cell.font = { name: "Arial", bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+    cell.alignment = { horizontal: opts.columns[col - 1]?.align === "left" ? "left" : "center", vertical: "middle", wrapText: true };
+    cell.border = { bottom: { style: "thin", color: { argb: "FF334155" } } };
+  });
+
+  const thin = { style: "thin" as const, color: { argb: "FFE2E8F0" } };
+  for (const r of opts.rows) {
+    const row = ws.addRow(r.cells);
+    const isGroup = r.kind === "group";
+    row.outlineLevel = isGroup ? 0 : 1;
+    if (!isGroup) row.hidden = true; // công đoạn con thu lại mặc định (mở nhóm để xem)
+    row.height = isGroup ? 20 : 18;
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      const cidx = col - 1;
+      const c = opts.columns[cidx];
+      cell.font = { name: "Arial", size: 9.5, bold: isGroup, color: { argb: isGroup ? "FFFFFFFF" : "FF1B1B1B" } };
+      cell.alignment = { horizontal: c?.align === "left" ? "left" : "center", vertical: "middle", wrapText: !!c?.wrap };
+      cell.border = { bottom: thin, right: thin };
+      if (isGroup) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r.delivered ? "FF059669" : "FF334155" } };
+      }
+      // Ô ngày kết thúc dự án quá hạn → nền đỏ chữ trắng (như badge đỏ trên bảng).
+      if (isGroup && r.late && cidx === opts.finishColIndex) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEF4444" } };
+        cell.font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+      }
+      // Ô "Tình trạng" — tô theo màu trạng thái (đỏ/vàng/xanh) như badge.
+      if (cidx === opts.statusColIndex && r.statusColor) {
+        const sc = STATUS_FILL[r.statusColor];
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: sc.bg } };
+        cell.font = { name: "Arial", size: 9.5, bold: true, color: { argb: sc.fg } };
+      }
+    });
+  }
+
+  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: N } };
+
+  const buf = await wb.xlsx.writeBuffer();
+  const dStr = opts.todayIso.replace(/-/g, "");
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `BaoCao_TienDo_${dStr}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
