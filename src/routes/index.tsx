@@ -132,6 +132,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.21.0 (31/07/2026): PHÂN QUYỀN box chat Vướng mắc/Giải pháp: cấp PMO giờ ẨN/mở ẩn được comment
+ *     của NGƯỜI KHÁC (trước chỉ tác giả/admin). Tách canHide (tác giả/admin/PMO) khỏi canEdit (tác
+ *     giả/admin) ở ChatCell + ChatBox; server chốt quyền `callerIsPmo` (đọc roles:v1, seed DEFAULT_ROLES)
+ *     trong nhánh hide/unhide. SỬA text vẫn chỉ tác giả/admin, XOÁ vẫn chỉ admin.
  *   v3.20.1 (31/07/2026): Bộ lọc "Cần cập nhật MP": cột Tình trạng dùng CHUNG lưới badge màu giai
  *     đoạn (SX/TC/VT/TKSX/MA/BG…) y hệt bảng mặc định — BỎ badge chữ "CẬP NHẬT MP" (thừa, mọi dòng
  *     giống nhau). Giờ bảng lọc MP giống hệt bảng mặc định, chỉ khác tập dự án được lọc.
@@ -353,7 +357,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.20.1";
+const APP_VERSION = "3.21.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3065,6 +3069,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const vis = msgs.filter((m) => !m.hidden);
   // 1 click (hoãn 230ms nếu admin để chờ nhấp đúp) → mở box chat. cancelOpen: huỷ khi nhấp đúp.
   const openDelayed = () => { if (!onOpen) return; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => { timer.current = null; onOpen(); }, isAdmin ? 230 : 0); };
@@ -3080,6 +3085,8 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   }
   if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">＋ nhập…</span>;
   const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || (!!myEmail && m.author === myEmail));
+  // ẨN/mở ẩn: TÁC GIẢ, ADMIN, hoặc PMO (PMO được ẩn comment người khác — chốt 31/07). SỬA text vẫn chỉ tác giả/admin.
+  const canHide = (m: ChatMsg) => !!onOp && (!!isAdmin || isPmo || (!!myEmail && m.author === myEmail));
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
       {vis.map((m) => editId === m.id ? (
@@ -3101,13 +3108,13 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {((field === "note" && onReply) || canEdit(m)) && (
+            {((field === "note" && onReply) || canHide(m)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
                   <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); cancelOpen(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
                 )}
                 {canEdit(m) && <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); cancelOpen(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>}
-                {canEdit(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); cancelOpen(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
+                {canHide(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); cancelOpen(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
               </span>
             )}
           </div>
@@ -3131,7 +3138,10 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
+  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const canEdit = (m: ChatMsg) => isAdmin || (!!myEmail && m.author === myEmail);
+  // ẨN/mở ẩn: TÁC GIẢ, ADMIN, hoặc PMO (được ẩn comment người khác). Sửa/xoá vẫn giữ quyền cũ.
+  const canHide = (m: ChatMsg) => isAdmin || isPmo || (!!myEmail && m.author === myEmail);
   // Gửi tin: nếu đang trả lời 1 vướng mắc (reply) thì đính kèm replyTo + trích đoạn để hiện "↩ …".
   const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX), ...(reply ? { replyTo: reply.toId, replyText: reply.text } : {}) }); setDraft(""); onClearReply?.(); };
   return (
@@ -3148,7 +3158,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
                 {m.hidden && <span className="rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600">ĐÃ ẨN</span>}
                 <span className="ml-auto flex items-center gap-2">
                   {canEdit(m) && editId !== m.id && <button type="button" onClick={() => { setEditId(m.id); setEditDraft(m.text); }} className="font-medium text-teal-700 hover:underline">Sửa</button>}
-                  {canEdit(m) && <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>}
+                  {canHide(m) && <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>}
                   {isAdmin && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
                 </span>
               </div>

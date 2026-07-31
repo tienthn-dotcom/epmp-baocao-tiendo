@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
-import { DEFAULT_ROLES, type UserRole } from "./roles";
+import { DEFAULT_ROLES, roleOf, type UserRole } from "./roles";
 import { SESSION_COOKIE, readCookie, verifySession } from "./auth";
 // LƯU Ý QUAN TRỌNG: file này bị CLIENT import (saveEdits, EditsMap). Mọi hàm đụng server-only
 // ("@tanstack/react-start/server") PHẢI là hàm nội bộ, CHỈ gọi trong thân serverFn handler (thân
@@ -40,6 +40,15 @@ async function callerEmail(devAs?: string | null): Promise<string | null> {
 /** Người gọi có phải ADMIN không (chốt quyền TÔ ĐỎ ở server). Dùng DEFAULT_ADMINS (2 tài khoản). */
 async function callerIsAdmin(devAs?: string | null): Promise<boolean> {
   return isAdminEmail(await callerEmail(devAs), DEFAULT_ADMINS);
+}
+/** Người gọi có cấp PMO không — được quyền ẨN/mở ẩn comment NGƯỜI KHÁC trong box chat (chốt 31/07).
+ *  Tra kho roles:v1; KV trống → dùng DEFAULT_ROLES (khớp cách client render badge & phân cấp). */
+async function callerIsPmo(devAs?: string | null): Promise<boolean> {
+  const email = await callerEmail(devAs);
+  if (!email) return false;
+  const cur = await readRoles();
+  const map = Object.keys(cur).length ? cur : DEFAULT_ROLES;
+  return roleOf(map, email) === "PMO";
 }
 
 /**
@@ -261,7 +270,7 @@ export const saveEdits = createServerFn({ method: "POST" })
 
 /** BOX CHAT Vướng mắc / Giải pháp — thao tác theo TỪNG message (lưu vết ai · khi nào):
  *   add    : ai cũng thêm được; author = email phiên đăng nhập.
- *   hide   : ẩn khỏi bảng (= đã giải quyết) — ai cũng được; unhide = mở lại.
+ *   hide   : ẩn khỏi bảng (= đã giải quyết) — TÁC GIẢ / ADMIN / PMO (PMO ẩn được tin người khác); unhide = mở lại.
  *   delete : CHỈ ADMIN — xoá hẳn (user KHÔNG có quyền, chỉ ẩn).
  *   edit   : sửa TEXT 1 message — CHỈ tác giả (email khớp) HOẶC admin.
  *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của 1 message.
@@ -303,11 +312,13 @@ export const editMessages = createServerFn({ method: "POST" })
         if (allowed && text) { m.text = text; m.editedAt = now; if (m.hi?.length) m.hi = [[0, text.length]]; }
       }
     } else if (data.op === "hide" || data.op === "unhide") {
-      // CHỐT QUYỀN: chỉ TÁC GIẢ (email khớp) hoặc admin mới ẩn/mở ẩn tin — không đụng tin người khác.
+      // CHỐT QUYỀN: TÁC GIẢ (email khớp), ADMIN, hoặc PMO mới ẩn/mở ẩn tin. PMO được ẩn tin NGƯỜI
+      // KHÁC (chốt 31/07) — nhưng KHÔNG sửa text (edit vẫn chỉ tác giả/admin) và KHÔNG xoá (admin).
       const m = list.find((x) => x.id === data.msgId);
       if (m) {
         const email = await callerEmail(data.devAs);
-        if ((email && email === m.author) || (await callerIsAdmin(data.devAs))) m.hidden = data.op === "hide";
+        const allowed = (email && email === m.author) || (await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs));
+        if (allowed) m.hidden = data.op === "hide";
       }
     } else if (data.op === "delete") {
       // CHỐT QUYỀN Ở SERVER: user thường KHÔNG xoá được (bỏ qua lặng lẽ, UI cũng ẩn nút).
