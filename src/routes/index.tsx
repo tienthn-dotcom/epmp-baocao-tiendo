@@ -132,6 +132,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.20.1 (31/07/2026): Bộ lọc "Cần cập nhật MP": cột Tình trạng dùng CHUNG lưới badge màu giai
+ *     đoạn (SX/TC/VT/TKSX/MA/BG…) y hệt bảng mặc định — BỎ badge chữ "CẬP NHẬT MP" (thừa, mọi dòng
+ *     giống nhau). Giờ bảng lọc MP giống hệt bảng mặc định, chỉ khác tập dự án được lọc.
  *   v3.20.0 (31/07/2026): Bộ lọc "Cần cập nhật MP" — 2 sửa: (A) HIỂN THỊ y hệt bảng gộp mặc định
  *     (gộp theo dự án, nền navy/emerald, xổ ra công đoạn) thay vì bảng gộp 1-dòng-1-dự-án riêng;
  *     CHỈ khác cột "Tình trạng" → thay ma trận 7 giai đoạn bằng 1 badge "CẬP NHẬT MP" (đỏ nếu ≥3
@@ -350,7 +353,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.20.0";
+const APP_VERSION = "3.20.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3922,23 +3925,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                         không, nên ở 1280px lưới tràn khỏi ô 51px và đè lên cột bên cạnh.
                         Đổi sang em ⇒ lưới co giãn cùng bảng, tỉ lệ không đổi ở mọi bề rộng. */}
                     <td colSpan={3} className="px-2 py-1">
-                      {mpMode ? (
-                        /* ── Lọc "Cần cập nhật MP": FORM y hệt bảng gộp mặc định, chỉ KHÁC cột
-                            Tình trạng — thay ma trận 7 giai đoạn bằng 1 badge "CẬP NHẬT MP".
-                            Tông: ≥3 hạng mục đang làm → ĐỎ (nặng); dưới 3 → VÀNG (như cũ). */
-                        <div className="flex items-center justify-center" style={{ height: "1.82em" }}>
-                          <span className={`inline-flex items-center justify-center rounded font-bold uppercase leading-none ${
-                                  g.items.length >= 3 ? "bg-red-500 text-white" : "bg-amber-400 text-slate-900"}`}
-                                style={{ fontSize: "0.77em", padding: "0.35em 1.1em" }}
-                                title={g.items.length >= 3
-                                  ? `${g.items.length} hạng mục đang làm (≥3): mức nặng`
-                                  : `${g.items.length} hạng mục đang làm`}>
-                            CẬP NHẬT MP
-                          </span>
-                        </div>
-                      ) : (
-                      /* Lưới 7 giai đoạn LẤP ĐẦY ô (7 track bằng nhau) → luôn vừa khít bề rộng
-                          span dù thu cột ngày (không tràn), vẫn thẳng hàng giữa các dự án. */
+                      {/* Lưới 7 giai đoạn LẤP ĐẦY ô (7 track bằng nhau) → luôn vừa khít bề rộng
+                          span dù thu cột ngày (không tràn), vẫn thẳng hàng giữa các dự án.
+                          Bộ lọc "Cần cập nhật MP" DÙNG CHUNG lưới này (badge màu giai đoạn), y hệt
+                          bảng mặc định — KHÔNG hiện badge chữ "CẬP NHẬT MP" nữa. */}
                       <div className="grid w-full" style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "0.36em" }}>
                         {STAGE_ORDER.map(sid => {
                           const a = stageAlert.get(sid);
@@ -3959,7 +3949,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                           );
                         })}
                       </div>
-                      )}
                     </td>
                     {/* Vướng mắc CẤP DỰ ÁN — nhập được ngay trong chế độ gộp (khoá = projectKey,
                         tách riêng khỏi ghi chú từng công đoạn). stopPropagation để không sổ nhóm. */}
