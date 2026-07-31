@@ -132,6 +132,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.22.0 (31/07/2026): XUẤT PDF sửa TẬN GỐC lỗi cắt trang (ngang + dọc dùng CHUNG logic): ĐO ranh
+ *     giới hàng NGAY TRONG CLONE html2canvas (đúng toạ độ ảnh) thay vì DOM sống — vì clone đổi font
+ *     (Segoe UI) + gỡ control nên chiều cao hàng khác DOM sống (Inter), đo DOM sống → cắt LỆCH → header
+ *     đè đỉnh hàng + hàng bị cắt ngang qua trang. Nay: header KHÔNG đè, "qua trang thì qua HẾT hàng"
+ *     (không cắt đôi), header lặp cắt trên ĐÚNG mép hàng đầu → hết vệt xanh. Bỏ chụp thead riêng
+ *     (slice từ cùng 1 ảnh, mốc chung → không hở/chồng). Có fallback đo DOM sống nếu clone chưa layout.
  *   v3.21.0 (31/07/2026): PHÂN QUYỀN box chat Vướng mắc/Giải pháp: cấp PMO giờ ẨN/mở ẩn được comment
  *     của NGƯỜI KHÁC (trước chỉ tác giả/admin). Tách canHide (tác giả/admin/PMO) khỏi canEdit (tác
  *     giả/admin) ở ChatCell + ChatBox; server chốt quyền `callerIsPmo` (đọc roles:v1, seed DEFAULT_ROLES)
@@ -357,7 +363,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.21.0";
+const APP_VERSION = "3.22.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
