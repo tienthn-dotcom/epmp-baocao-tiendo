@@ -133,6 +133,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.25.0 (31/07/2026): Mở rộng quyền PMO trong box chat: PMO giờ SỬA + ẨN + XOÁ được comment NGƯỜI
+ *     KHÁC (ngang admin ở 3 thao tác này; trước v3.21 chỉ ẩn). ChatCell/ChatBox: canEdit=canHide gồm PMO,
+ *     nút Xoá theo canDelete=admin||PMO. Server editMessages: nhánh edit + delete + hide đều thêm callerIsPmo.
  *   v3.24.0 (31/07/2026): Thêm nhận diện hạng mục: mã "SD" → "Shop Drawing" (id nội bộ "SHOP" vì
  *     "SD" đã bị chiếm cho Triển khai sản xuất/TKSX); trước đây SD rơi vào "Khác". Mã "PS" → "Phát
  *     sinh" vốn đã có sẵn. SHOP xử như "Khác" (ngoài 7 giai đoạn, VẪN xét cảnh báo — khác PS miễn trừ).
@@ -372,7 +375,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.24.0";
+const APP_VERSION = "3.25.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3125,9 +3128,9 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
     );
   }
   if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">＋ nhập…</span>;
-  const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || (!!myEmail && m.author === myEmail));
-  // ẨN/mở ẩn: TÁC GIẢ, ADMIN, hoặc PMO (PMO được ẩn comment người khác — chốt 31/07). SỬA text vẫn chỉ tác giả/admin.
-  const canHide = (m: ChatMsg) => !!onOp && (!!isAdmin || isPmo || (!!myEmail && m.author === myEmail));
+  // TÁC GIẢ, ADMIN, hoặc PMO đều SỬA/ẨN/XOÁ được comment người khác (chốt 31/07). PMO ngang admin ở 3 thao tác này.
+  const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || isPmo || (!!myEmail && m.author === myEmail));
+  const canHide = canEdit;
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
       {vis.map((m) => editId === m.id ? (
@@ -3180,9 +3183,10 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
   const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
-  const canEdit = (m: ChatMsg) => isAdmin || (!!myEmail && m.author === myEmail);
-  // ẨN/mở ẩn: TÁC GIẢ, ADMIN, hoặc PMO (được ẩn comment người khác). Sửa/xoá vẫn giữ quyền cũ.
-  const canHide = (m: ChatMsg) => isAdmin || isPmo || (!!myEmail && m.author === myEmail);
+  // TÁC GIẢ / ADMIN / PMO đều SỬA + ẨN + XOÁ được comment người khác (PMO ngang admin ở 3 thao tác này).
+  const canEdit = (m: ChatMsg) => isAdmin || isPmo || (!!myEmail && m.author === myEmail);
+  const canHide = canEdit;
+  const canDelete = isAdmin || isPmo;
   // Gửi tin: nếu đang trả lời 1 vướng mắc (reply) thì đính kèm replyTo + trích đoạn để hiện "↩ …".
   const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX), ...(reply ? { replyTo: reply.toId, replyText: reply.text } : {}) }); setDraft(""); onClearReply?.(); };
   return (
@@ -3200,7 +3204,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
                 <span className="ml-auto flex items-center gap-2">
                   {canEdit(m) && editId !== m.id && <button type="button" onClick={() => { setEditId(m.id); setEditDraft(m.text); }} className="font-medium text-teal-700 hover:underline">Sửa</button>}
                   {canHide(m) && <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>}
-                  {isAdmin && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
+                  {canDelete && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
                 </span>
               </div>
               {editId === m.id ? (

@@ -270,9 +270,9 @@ export const saveEdits = createServerFn({ method: "POST" })
 
 /** BOX CHAT Vướng mắc / Giải pháp — thao tác theo TỪNG message (lưu vết ai · khi nào):
  *   add    : ai cũng thêm được; author = email phiên đăng nhập.
- *   hide   : ẩn khỏi bảng (= đã giải quyết) — TÁC GIẢ / ADMIN / PMO (PMO ẩn được tin người khác); unhide = mở lại.
- *   delete : CHỈ ADMIN — xoá hẳn (user KHÔNG có quyền, chỉ ẩn).
- *   edit   : sửa TEXT 1 message — CHỈ tác giả (email khớp) HOẶC admin.
+ *   hide   : ẩn khỏi bảng (= đã giải quyết) — TÁC GIẢ / ADMIN / PMO (PMO thao tác được tin người khác); unhide = mở lại.
+ *   delete : ADMIN hoặc PMO — xoá hẳn (user thường KHÔNG có quyền, chỉ ẩn).
+ *   edit   : sửa TEXT 1 message — tác giả (email khớp), ADMIN, hoặc PMO.
  *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của 1 message.
  *   hiall  : CHỈ ADMIN — tô CẢ Ô (mọi message KHÔNG ẩn tô full); unhiall = bỏ tô cả ô. */
 export const editMessages = createServerFn({ method: "POST" })
@@ -303,11 +303,11 @@ export const editMessages = createServerFn({ method: "POST" })
         : {};
       if (text) list.push({ id: genId(), text, author: (await callerEmail(data.devAs)) ?? "?", at: now, hidden: false, ...rep });
     } else if (data.op === "edit") {
-      // Sửa text: CHỈ tác giả (email khớp) hoặc admin. Text mới rỗng → bỏ qua (dùng ẩn/xoá).
+      // Sửa text: tác giả (email khớp), ADMIN, hoặc PMO. Text mới rỗng → bỏ qua (dùng ẩn/xoá).
       const m = list.find((x) => x.id === data.msgId);
       if (m) {
         const email = await callerEmail(data.devAs);
-        const allowed = (email && email === m.author) || (await callerIsAdmin(data.devAs));
+        const allowed = (email && email === m.author) || (await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs));
         const text = (data.text ?? "").trim();
         if (allowed && text) { m.text = text; m.editedAt = now; if (m.hi?.length) m.hi = [[0, text.length]]; }
       }
@@ -321,8 +321,8 @@ export const editMessages = createServerFn({ method: "POST" })
         if (allowed) m.hidden = data.op === "hide";
       }
     } else if (data.op === "delete") {
-      // CHỐT QUYỀN Ở SERVER: user thường KHÔNG xoá được (bỏ qua lặng lẽ, UI cũng ẩn nút).
-      if (await callerIsAdmin(data.devAs)) {
+      // CHỐT QUYỀN Ở SERVER: chỉ ADMIN hoặc PMO xoá hẳn (user thường bỏ qua lặng lẽ, UI cũng ẩn nút).
+      if ((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))) {
         const i = list.findIndex((x) => x.id === data.msgId);
         if (i >= 0) list.splice(i, 1);
       }
