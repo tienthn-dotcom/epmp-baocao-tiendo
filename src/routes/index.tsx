@@ -134,6 +134,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.31.0 (31/07/2026): Tên PM ở công đoạn TC + TKSX LUÔN lấy từ NGƯỜI PHỤ TRÁCH CẤP DỰ ÁN (trên
+ *     xuống), KHÔNG đọc từ ô công đoạn. Fix bug: ô TKSX nhập "SD - Tuấn Khanh" trước ra "PM - Tuấn
+ *     Khanh" (sai) → nay "PM - {PM dự án}, SD - Tuấn Khanh". picByStageConv thêm tham số projectPm
+ *     (truyền it._projectPm/bit._projectPm ở 6 chỗ gọi); ô TKSX giờ = người SD.
  *   v3.30.2 (31/07/2026): Nhóm cảnh báo "Bám sát kế hoạch" đổi từ <20% thành ≤20% (mốc 20% nay thuộc
  *     nhóm này): filter.ts gapLevel `g > FOCUS_GAP_MIN ? 2 : 3` (bậc 2 = >20–40); dialog nhãn "≤ 20%"
  *     + nhóm giữa "> 20 – 40%"; chú thích "lệch X điểm" chỉ khi gap > 20.
@@ -403,7 +407,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.30.2";
+const APP_VERSION = "3.31.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -502,22 +506,24 @@ function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
 }
 
 /** Hiển thị "Nhân sự phụ trách" theo QUY ƯỚC từng giai đoạn.
- *  Tên lấy ĐÚNG từ ô sheet (bỏ tiền tố cũ) — KHÔNG tự điền tên PM/người khác.
- *  Không có tên trong ô → chỉ hiện tiền tố (TK thì để trống). */
-function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
+ *  Tên các vai trò QS/SCM lấy từ ô công đoạn (bỏ tiền tố cũ). Riêng vai trò PM (TC + TKSX): tên PM
+ *  LUÔN lấy từ NGƯỜI PHỤ TRÁCH CẤP DỰ ÁN (projectPm — "lấy từ trên xuống"), KHÔNG đọc từ ô công đoạn.
+ *  Nhờ vậy ô TKSX nhập "SD - Tuấn Khanh" sẽ ra "PM - {PM dự án}, SD - Tuấn Khanh" (không còn hiểu
+ *  nhầm Tuấn Khanh là PM). Chốt 31/07/2026. */
+function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER", projectPm = ""): string {
   const bare = (owner || "").replace(/^\s*(pm|scm|qs|nm|sd|tđt|tdt|nhà\s*máy)\b[\s\-–—:.&]*/i, "").trim();
+  const pm = (projectPm || "").trim();                       // tên PM = người phụ trách CẤP DỰ ÁN (trên xuống)
   switch (sid) {
     case "TK": return bare;                                  // chỉ tên (vd "Sun Group"); trống → ""
     case "BG": return bare ? `QS - ${bare}` : "QS";
     case "MA": return bare ? `SCM - ${bare}` : "SCM";
     case "VT": return "PM & NM";                             // cố định, không tên
     case "SX": return "NM";                                  // cố định, không tên
-    case "TC": return bare ? `PM - ${bare}` : "PM";
-    case "SD": {                                             // TKSX: PM - Tên, SD - Tên
-      const parts = bare.split(",").map(s => s.trim()).filter(Boolean);
-      if (parts.length >= 2) return `PM - ${parts[0]}, SD - ${parts.slice(1).join(", ")}`;
-      if (parts.length === 1) return `PM - ${parts[0]}`;
-      return "PM, SD";
+    case "TC": return pm ? `PM - ${pm}` : "PM";              // PM lấy từ dự án, KHÔNG từ ô
+    case "SD": {                                             // TKSX: PM lấy từ dự án; ô = người SD
+      const pmPart = pm ? `PM - ${pm}` : "PM";
+      const sdPart = bare ? `SD - ${bare}` : "SD";
+      return `${pmPart}, ${sdPart}`;
     }
     default: return bare;                                    // MB / PS / Khác
   }
@@ -2322,7 +2328,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           updateDate: it.updateDate ?? null,
           maCT: it.maCT || it.projectCode,
           name: it.projectName,
-          pm: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId),
+          pm: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm),
           start: it.start, end: it.deadline,
           pct: clampPct(it.pctActual),
           sxStart: null, sxEnd: null,
@@ -2350,7 +2356,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         key: `${pk} ${bit.rawCode} ${bit.dupIdx ?? 0}`,
         stageAbbr: bit.rawCode,
         stageLabel: bit.desc,
-        pic: bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId),
+        pic: bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId, bit._projectPm),
         start: bit.start, end: bit.deadline,
         color: bit._alertColor,
         overdue: bit.overdueDays ?? 0,
@@ -2365,7 +2371,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         // Người phụ trách công đoạn = ĐÚNG chuỗi bảng Danh sách hiển thị (picByStageConv),
         // KHÔNG dùng _pic thô: hai bên phải là MỘT thông tin cho cùng đầu việc, chỉ khác nhãn
         // cột. (Trước đây _pic thô → ô trống thì Gantt hiện tên PM, Danh sách hiện vai trò → lệch.)
-        pic: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId),
+        pic: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm),
         start: it.start, end: it.deadline,
         color: it._alertColor,
         overdue: it.overdueDays ?? 0,
@@ -2846,7 +2852,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
                 kind: "item", statusColor: st.color,
                 cells: [
                   "", stageAbbrOf(it._stageId), it._stageLabel || "",
-                  clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId)),
+                  clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm)),
                   fmtDateVN2(it.start), doneOn ? fmtDateVN2(doneOn) : fmtDateVN2(it.deadline),
                   it.pctActual != null ? `${Math.round(it.pctActual)}%` : "",
                   it.overdueDays ? `${it.overdueDays} ngày` : "",
@@ -3671,7 +3677,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     })();
     // "Thi công lắp đặt" đã hyperlink file Summary → bấm chữ mở popup ma trận lắp đặt.
     const installFid = it.stage === "Thi công lắp đặt" ? installLinks?.[it.maCT] : undefined;
-    const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId);
+    const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
     // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
     const hasBlocks = (it.blocks?.length ?? 0) > 0;
     const blkKey = itemKeyOf(it);
@@ -3817,7 +3823,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         const b = it.blocks![bi];
         const bActual = bit.pctActual != null ? Math.round(bit.pctActual) : null;
         const bOverdue = bit.overdueDays || 0;
-        const bPic = bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId);
+        const bPic = bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId, bit._projectPm);
         return (
         <tr key={`blk-${blkKey}-${bi}`} className="border-b border-slate-100 bg-teal-50/30 align-middle hover:bg-teal-50/60">
           <td className="border-r border-slate-100 px-1 py-0.5 text-center">
