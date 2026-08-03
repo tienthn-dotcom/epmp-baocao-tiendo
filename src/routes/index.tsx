@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Check,
   ClipboardCheck,
   EyeOff,
   FileSpreadsheet,
@@ -134,6 +133,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.33.2 (31/07/2026): Badge "Đã hoàn thành" (xanh) BỎ icon tick, chỉ giữ chữ. Gỡ import Check thừa.
  *   v3.33.1 (31/07/2026): Sửa chính tả tên bộ phận "Projects Planning" → "Project Planning" (header
  *     index.tsx + footer trang đăng nhập auth-pages.ts).
  *   v3.33.0 (31/07/2026): TKSX — ô công đoạn nhập TIỀN TỐ KHÁC (vd "PC - Tên", "SHD - Tên") thì KHÔNG
@@ -420,7 +420,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.33.1";
+const APP_VERSION = "3.33.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3831,7 +3831,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         </td>
         <td className="border-r border-slate-100 px-1 py-1 text-center">
           {actual != null && actual >= 100
-            ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
+            ? <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Đã hoàn thành</span>
             : <AlertBadge kind={kind} color={it._alertColor} />}
         </td>
         {/* VƯỚNG MẮC — bong bóng chat. 1 click mở box; admin NHẤP ĐÚP 1 bong bóng = tô/bỏ màu TIN ĐÓ. */}
@@ -3887,7 +3887,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
           </td>
           <td className="border-r border-slate-100 px-1 py-0.5 text-center">
             {bActual != null && bActual >= 100
-              ? <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700"><Check className="h-3 w-3" strokeWidth={3} />Đã hoàn thành</span>
+              ? <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Đã hoàn thành</span>
               : <AlertBadge kind={bit._alert} color={bit._alertColor} />}
           </td>
           <td className="px-2 py-0.5 align-top text-[0.9em] text-slate-700">
