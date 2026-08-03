@@ -134,6 +134,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.33.0 (31/07/2026): TKSX — ô công đoạn nhập TIỀN TỐ KHÁC (vd "PC - Tên", "SHD - Tên") thì KHÔNG
+ *     nhét vào "SD - …" nữa; hiện "PM - {PM dự án}, SD, PC - Tên" (SD trống + giữ nguyên tiền tố khác).
+ *     picByStageConv case SD: regex bắt "CODE - tên"; CODE=SD → "SD - tên"; CODE khác → "SD, CODE - tên";
+ *     không tiền tố dạng đó → dùng `bare` (bỏ tiền tố quen đứng một mình, vd ô chỉ "PM" → "SD").
  *   v3.32.0 (31/07/2026): NHẬT KÝ GIÁM SÁT — bộ lọc PHÂN LỚP (cascading): dropdown "Người" chỉ liệt kê
  *     tài khoản CÓ hoạt động trong CỬA SỔ NGÀY đang chọn (vd "Hôm nay" → chỉ người active hôm nay);
  *     dropdown "Thao tác" cũng lọc theo Người/Tìm. Cách làm: load tải MỌI người trong cửa sổ ngày
@@ -414,7 +418,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.32.0";
+const APP_VERSION = "3.33.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -528,10 +532,23 @@ function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OT
     case "VT": return "PM & NM";                             // cố định, không tên
     case "SX": return "NM";                                  // cố định, không tên
     case "TC": return pm ? `PM - ${pm}` : "PM";              // PM lấy từ dự án, KHÔNG từ ô
-    case "SD": {                                             // TKSX: PM lấy từ dự án; ô = người SD
+    case "SD": {                                             // TKSX: PM lấy từ dự án; ô = người SD (hoặc vai trò khác)
       const pmPart = pm ? `PM - ${pm}` : "PM";
-      const sdPart = bare ? `SD - ${bare}` : "SD";
-      return `${pmPart}, ${sdPart}`;
+      const raw = (owner || "").trim();
+      // Ô có TIỀN TỐ VAI TRÒ dạng "CODE - tên" (CODE = 2–4 chữ, vd SD/PC/NM…)?
+      const m = raw.match(/^([\p{L}]{2,4})\s*[-–—:]\s*(.*)$/u);
+      if (m) {
+        const code = m[1].toUpperCase().replace(/Đ/g, "D");
+        const name = m[2].trim();
+        // Tiền tố ĐÚNG là SD → gộp: "SD - tên".
+        if (code === "SD") return `${pmPart}, ${name ? `SD - ${name}` : "SD"}`;
+        // Tiền tố KHÁC (vd PC — không phải SD) → GIỮ SD trống, hiện nguyên "CODE - tên" sau đó:
+        //   "PM - tên, SD, PC - tên" (không nhét PC vào dưới SD).
+        return `${pmPart}, SD${name ? `, ${m[1].trim()} - ${name}` : ""}`;
+      }
+      // Không có tiền tố dạng "CODE - tên" → coi cả ô là tên SD, nhưng vẫn BỎ tiền tố quen đứng một
+      // mình (vd ô chỉ ghi "PM"/"SD" không tên → bare rỗng → hiện "SD", không ra "SD - PM").
+      return `${pmPart}, ${bare ? `SD - ${bare}` : "SD"}`;
     }
     default: return bare;                                    // MB / PS / Khác
   }
