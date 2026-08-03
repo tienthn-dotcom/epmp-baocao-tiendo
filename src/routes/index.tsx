@@ -133,6 +133,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.28.0 (31/07/2026): ẨN DÒNG cũng áp cho bảng "Tổng thể tiến độ" (Gantt): nút ẩn (rê chuột)/bỏ ẩn
+ *     ở dòng HẠNG MỤC — dòng con (khi xổ) + chế độ lọc hạng mục. onHideRow đổi chữ ký (key,label,hide)
+ *     dùng CHUNG Danh sách + Gantt; GanttRow/GanttChild mang hideKey+hidden; GanttView nhận isAdmin/
+ *     showHidden/onHideRow. Dòng dự án (gộp) KHÔNG ẩn (không phải 1 hạng mục). Chung kho hidden:v1.
  *   v3.27.0 (31/07/2026): Bảng "Tổng thể tiến độ" (Gantt) thêm cột "Ngày update" TRƯỚC cột Mã (chip
  *     màu y hệt bảng Việc cần xử lý). GanttRow.updateDate (2 builder flat+dự án); LC thêm cột sticky
  *     đầu, numCol dịch +1, cột đậm i===2, dòng con để trống ô ngày.
@@ -384,7 +388,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.27.0";
+const APP_VERSION = "3.28.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1301,6 +1305,9 @@ type GanttChild = {
   overdue: number;
   actual: number | null;     // % thực tế của công đoạn (cho phần xanh lá)
   actualEnd?: string | null; // ngày kết thúc THỰC TẾ (lần đầu 100%) — gạch ngang `end`, thêm dòng mới
+  /** Khoá ẩn (itemKeyOf) + cờ đang-ẩn — để ẩn/bỏ ẩn ngay trên dòng con Gantt (đồng bộ bảng Danh sách). */
+  hideKey: string;
+  hidden?: boolean;
   /** Block con (Thi công lắp đặt) — chỉ tác vụ TC có. Có = hiện ▶ dropdown trong Gantt, bấm mới xổ. */
   blocks?: GanttChild[];
 };
@@ -1325,6 +1332,9 @@ type GanttRow = {
   stageAbbr?: string;
   /** Ngày kết thúc THỰC TẾ (lần đầu 100%) — gạch ngang `end`, thêm dòng mới (chế độ lọc hạng mục). */
   actualEnd?: string | null;
+  /** Khoá ẩn (itemKeyOf) + cờ đang-ẩn — CHỈ dòng cấp HẠNG MỤC (chế độ lọc hạng mục) mới có, để ẩn/bỏ ẩn. */
+  hideKey?: string;
+  hidden?: boolean;
 };
 
 /** Khoá định danh ỔN ĐỊNH cho một đầu việc (map ghi chú/chỉnh sửa nhập tay trong KV).
@@ -1537,8 +1547,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
 
   /** ẨN / BỎ ẨN 1 DÒNG (admin) — cập nhật lạc quan cache rồi ghi server (server chốt quyền admin).
    *  Khoá = itemKeyOf. Ghi vết vào Nhật ký giám sát để biết ai ẩn/bỏ ẩn hạng mục nào. */
-  const onHideRow = useCallback((it: EnrichedItem, hide: boolean) => {
-    const key = it._key;
+  const onHideRow = useCallback((key: string, label: string, hide: boolean) => {
     const prev = queryClient.getQueryData<HiddenRows>(["hiddenRows"]) ?? {};
     const next: HiddenRows = { ...prev };
     if (hide) next[key] = { at: new Date().toISOString(), by: me.email ?? "?" };
@@ -1548,8 +1557,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       try {
         const r = await setHiddenRow({ data: { key, hide, devAs: devAs() } });
         queryClient.setQueryData(["hiddenRows"], r.hidden);
-        const ctx = `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`;
-        track(hide ? "hide_row" : "unhide_row", ctx.slice(0, 290));
+        track(hide ? "hide_row" : "unhide_row", label.slice(0, 290));
       } catch (e) {
         queryClient.setQueryData(["hiddenRows"], prev); // rollback nếu server từ chối
         toast.error(`${hide ? "Ẩn" : "Bỏ ẩn"} dòng thất bại: ${(e as Error).message}`);
@@ -2266,6 +2274,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           children: [],
           stageAbbr: stageAbbrOf(it._stageId as StageOrOther),
           actualEnd: completedDates[itemKeyOf(it)] ?? null,
+          hideKey: itemKeyOf(it), hidden: !!it._hidden,
         };
       });
       flat.sort((a, b) => (a.end ?? "9999").localeCompare(b.end ?? "9999") || a.name.localeCompare(b.name, "vi"));
@@ -2290,6 +2299,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         overdue: bit.overdueDays ?? 0,
         actual: clampPct(bit.pctActual),
         actualEnd: completedDates[itemKeyOf(bit)] ?? null,
+        hideKey: itemKeyOf(bit), hidden: !!bit._hidden,
       }));
       arr.push({
         key: `${pk} ${it.rawCode} ${it.dupIdx ?? 0}`,
@@ -2304,6 +2314,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         overdue: it.overdueDays ?? 0,
         actual: clampPct(it.pctActual),
         actualEnd: completedDates[itemKeyOf(it)] ?? null,
+        hideKey: itemKeyOf(it), hidden: !!it._hidden,
         blocks: blockKids.length ? blockKids : undefined,
       });
     }
@@ -3389,7 +3400,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   showHidden: boolean;
   onToggleShowHidden: () => void;
   hiddenCount: number;
-  onHideRow: (it: EnrichedItem, hide: boolean) => void;
+  onHideRow: (key: string, label: string, hide: boolean) => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
   onPrint: (orientation: "landscape" | "portrait") => void;
@@ -3614,13 +3625,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
           {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} />}
           {isAdmin && (it._hidden ? (
             <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
-              onClick={(e) => { e.stopPropagation(); onHideRow(it, false); }}
+              onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, false); }}
               className="mx-auto flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100 print:hidden">
               <RotateCcw className="h-3 w-3" /> Bỏ ẩn
             </button>
           ) : (
             <button type="button" title="Ẩn dòng này khỏi báo cáo (hạng mục trong khuôn khổ, không cần raise)"
-              onClick={(e) => { e.stopPropagation(); onHideRow(it, true); }}
+              onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, true); }}
               className="mx-auto flex h-4 w-4 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 print:hidden">
               <EyeOff className="h-3 w-3" />
             </button>
@@ -3933,7 +3944,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
       </div>
 
       {viewMode === "gantt" ? (
-        <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} />
+        <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} isAdmin={isAdmin} showHidden={showHidden} onHideRow={onHideRow} />
       ) : (
       <div className="relative min-h-0 flex-1 rounded-md border border-slate-200"
            style={{ containerType: "inline-size" }}>
@@ -4355,7 +4366,7 @@ function AlertBadge({ kind, color }: { kind: AlertKind; color: AlertColor }) {
  *    • Viền trái đỏ = tuần chứa hôm nay. Nền hổ phách = quá hạn.
  * ====================================================================== */
 const GANTT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void }) {
+function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, isAdmin = false, showHidden = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; isAdmin?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
   const DAY = 86400000;
   // Dropdown Block (Thi công lắp đặt) trong Gantt: tác vụ TC nào đang xổ các Block con.
   const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
@@ -4473,6 +4484,25 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   // Xổ/thu tác vụ con — state do FlatTablePanel giữ (để NÚT trên toolbar điều khiển được),
   // truyền xuống qua props. Bấm dự án để xổ.
   const toggle = (k: string) => { const n = new Set(expanded); n.has(k) ? n.delete(k) : n.add(k); setExpanded(n); };
+
+  // Nút ẨN (rê chuột) / BỎ ẨN cho 1 dòng HẠNG MỤC — chỉ admin, print:hidden (không lọt PDF).
+  // Đồng bộ với bảng Danh sách: cùng onHideRow(key,label,hide) → cùng kho `hidden:v1`.
+  const hideBtn = (hideKey: string | undefined, hidden: boolean, label: string): ReactNode => {
+    if (!isAdmin || !onHideRow || !hideKey) return null;
+    return hidden ? (
+      <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
+        onClick={(e) => { e.stopPropagation(); onHideRow(hideKey, label, false); }}
+        className="flex items-center gap-0.5 rounded px-0.5 text-[8px] font-semibold text-amber-700 hover:bg-amber-100 print:hidden">
+        <RotateCcw className="h-2.5 w-2.5" />ẩn
+      </button>
+    ) : (
+      <button type="button" title="Ẩn dòng này khỏi báo cáo (hạng mục trong khuôn khổ, không cần raise)"
+        onClick={(e) => { e.stopPropagation(); onHideRow(hideKey, label, true); }}
+        className="flex h-3.5 w-3.5 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 print:hidden">
+        <EyeOff className="h-2.5 w-2.5" />
+      </button>
+    );
+  };
 
   // QUY VỀ TUẦN (như PMP): MỌI thanh NHẢY THEO Ô TUẦN. Start = cột tuần bắt đầu; end LẤP FULL
   // đến HẾT cột tuần kết thúc. Vd task kết thúc giữa tuần → thanh vẫn kéo hết ô tuần đó.
@@ -4609,7 +4639,10 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
             const hasKids = !flatStages && showChildTasks && r.children.length > 0;
             const isOpen = expanded.has(r.key);
             const vals: ReactNode[] = [
-              <UpdateChip date={r.updateDate} today={today} />,
+              <div className="flex items-center justify-center gap-0.5">
+                <UpdateChip date={r.updateDate} today={today} />
+                {r.hideKey && hideBtn(r.hideKey, !!r.hidden, `${r.maCT} ${r.name} · ${r.stageAbbr ?? ""}`)}
+              </div>,
               flatStages
                 ? <div className="line-clamp-2 pl-1 text-[10px] font-bold leading-tight" title={r.stageAbbr}>{r.stageAbbr}</div>
                 : <div className="flex items-start gap-1">
@@ -4629,7 +4662,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
             ];
             return (
               <Fragment key={r.key}>
-              <tr className={`hover:bg-teal-50/40 ${hasKids ? "cursor-pointer" : ""}`} onClick={hasKids ? () => toggle(r.key) : undefined}>
+              <tr className={`group hover:bg-teal-50/40 ${r.hidden ? "opacity-60 hover:opacity-100" : ""} ${hasKids ? "cursor-pointer" : ""}`} onClick={hasKids ? () => toggle(r.key) : undefined}>
                 {LC.map((c, i) => (
                   <td key={i}
                       className={`border-b border-r border-slate-100 px-1.5 py-0.5 leading-tight align-middle ${alCls(c.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""} ${i === 2 ? "font-semibold text-slate-900" : "text-slate-900"}`}
@@ -4671,7 +4704,8 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                   const hasBlk = !!c.blocks?.length;
                   const blkOpen = openBlocks.has(c.key);
                   const cVals: ReactNode[] = [
-                    null, // ô "Ngày update" của dòng con để TRỐNG (ngày thuộc dự án — giống bảng Danh sách)
+                    // ô "Ngày update" của dòng con: ngày thuộc dự án nên để trống, tận dụng chỗ này đặt nút ẩn/bỏ ẩn.
+                    hideBtn(c.hideKey, !!c.hidden, `${r.maCT} ${r.name} · ${c.stageAbbr} — ${c.stageLabel}`),
                     <div className="flex items-center gap-1 text-[10px] font-bold text-slate-900" style={{ paddingLeft: isBlock ? 16 : 4 }}>
                       {hasBlk && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); toggleBlocks(c.key); }}
@@ -4691,7 +4725,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                     c.overdue > 0 ? <b className="text-red-600">{c.overdue}</b> : "0",
                   ];
                   return (
-                    <tr key={c.key} className="hover:bg-teal-50/40">
+                    <tr key={c.key} className={`group hover:bg-teal-50/40 ${c.hidden ? "opacity-60 hover:opacity-100" : ""}`}>
                       {LC.map((col, i) => (
                         <td key={i}
                             className={`border-b border-r border-slate-100 px-1.5 py-0.5 text-[10px] leading-tight align-middle text-slate-900 ${alCls(col.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""}`}
