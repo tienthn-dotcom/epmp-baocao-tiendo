@@ -126,10 +126,11 @@ const ALERT_MATRIX: Record<DeadlineBucket, Record<string, AlertVerdict>> = {
   },
 };
 
-/** Bậc % lệch: 1 = ≥ngưỡng trễ · 2 = dải tập trung · 3 = dưới dải. */
+/** Bậc % lệch: 1 = ≥ngưỡng trễ · 2 = dải tập trung (> FOCUS_GAP_MIN) · 3 = "bám sát" (≤ FOCUS_GAP_MIN).
+ *  Chốt 31/07/2026: mốc FOCUS_GAP_MIN (20%) thuộc BẬC 3 (≤20% = bám sát kế hoạch), không phải bậc 2. */
 export function gapLevel(gap: number | null, gapThreshold: number): 1 | 2 | 3 {
   const g = gap ?? 0;
-  return g >= gapThreshold ? 1 : g >= FOCUS_GAP_MIN ? 2 : 3;
+  return g >= gapThreshold ? 1 : g > FOCUS_GAP_MIN ? 2 : 3;
 }
 /** Bậc quá hạn: A = ≥14 · B = 1..13 · C = 0. */
 export function overdueLevel(overdue: number): "A" | "B" | "C" {

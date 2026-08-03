@@ -134,6 +134,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.30.2 (31/07/2026): Nhóm cảnh báo "Bám sát kế hoạch" đổi từ <20% thành ≤20% (mốc 20% nay thuộc
+ *     nhóm này): filter.ts gapLevel `g > FOCUS_GAP_MIN ? 2 : 3` (bậc 2 = >20–40); dialog nhãn "≤ 20%"
+ *     + nhóm giữa "> 20 – 40%"; chú thích "lệch X điểm" chỉ khi gap > 20.
  *   v3.30.1 (31/07/2026): Dời nút "Trình chiếu TV" từ toolbar VÀO dropdown "Hệ thống" (ReportsMenu),
  *     hiện cho MỌI người (không riêng admin), có nhãn ĐANG BẬT khi active. tvMode chuyển lên DashboardBody.
  *   v3.30.0 (31/07/2026): NÚT "TRÌNH CHIẾU TV" — fullscreen CẢ app (requestFullscreen như F11) + BỎ
@@ -400,7 +403,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.30.1";
+const APP_VERSION = "3.30.2";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -681,7 +684,7 @@ function classifyAlert(it: ItemRow, planDyn: number | null, th: Thresholds): {
     // Ma trận có nhiều ca focus → nói ĐÚNG dấu hiệu nào kích hoạt, không ghi cứng
     // cả hai (1C thì quá hạn = 0, 3B thì lệch ngoài dải, 3C thì chỉ do sắp bàn giao).
     const parts: string[] = [];
-    if (bothValid && gap >= FOCUS_MIN) parts.push(`lệch ${Math.round(gap)} điểm`);
+    if (bothValid && gap > FOCUS_MIN) parts.push(`lệch ${Math.round(gap)} điểm`);
     if (overdue > 0) parts.push(`quá hạn ${overdue} ngày`);
     if (!parts.length && sapBanGiao) parts.push(sapBanGiao);
     else if (sapBanGiao) parts.push(sapBanGiao);
@@ -5620,8 +5623,8 @@ function AlertCriteriaDialog({ gapThreshold, onClose }: { gapThreshold: number; 
   // Giá trị ĐẠI DIỆN của từng bậc — chỉ dùng để tra ma trận, không hiển thị ra.
   const HANG = [
     { nhan: `≥ ${gapThreshold}%`, mo: "Chậm nghiêm trọng", gap: gapThreshold + 10 },
-    { nhan: `${FOCUS_MIN} – ${gapThreshold}%`, mo: "Chậm đáng kể", gap: (FOCUS_MIN + gapThreshold) / 2 },
-    { nhan: `< ${FOCUS_MIN}%`, mo: "Bám sát kế hoạch", gap: FOCUS_MIN / 2 },
+    { nhan: `> ${FOCUS_MIN} – ${gapThreshold}%`, mo: "Chậm đáng kể", gap: (FOCUS_MIN + gapThreshold) / 2 },
+    { nhan: `≤ ${FOCUS_MIN}%`, mo: "Bám sát kế hoạch", gap: FOCUS_MIN / 2 },
   ];
   const COT = [
     { nhan: `≥ ${OD_DAYS} ngày`, od: OD_DAYS + 6 },
