@@ -134,6 +134,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.31.1 (31/07/2026): Tên PM (TC/TKSX) lấy TÊN ĐẦU TIÊN của người phụ trách dự án (pmFirstOf) —
+ *     tên sau dấu "/" là DPM, bỏ. VD "Nguyễn Văn Cừ / Thanh Bình" → "PM - Nguyễn Văn Cừ".
  *   v3.31.0 (31/07/2026): Tên PM ở công đoạn TC + TKSX LUÔN lấy từ NGƯỜI PHỤ TRÁCH CẤP DỰ ÁN (trên
  *     xuống), KHÔNG đọc từ ô công đoạn. Fix bug: ô TKSX nhập "SD - Tuấn Khanh" trước ra "PM - Tuấn
  *     Khanh" (sai) → nay "PM - {PM dự án}, SD - Tuấn Khanh". picByStageConv thêm tham số projectPm
@@ -407,7 +409,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.31.0";
+const APP_VERSION = "3.31.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -512,7 +514,8 @@ function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
  *  nhầm Tuấn Khanh là PM). Chốt 31/07/2026. */
 function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER", projectPm = ""): string {
   const bare = (owner || "").replace(/^\s*(pm|scm|qs|nm|sd|tđt|tdt|nhà\s*máy)\b[\s\-–—:.&]*/i, "").trim();
-  const pm = (projectPm || "").trim();                       // tên PM = người phụ trách CẤP DỰ ÁN (trên xuống)
+  // tên PM = người phụ trách CẤP DỰ ÁN, LẤY TÊN ĐẦU TIÊN (tên sau dấu "/" là DPM, không phải PM).
+  const pm = pmFirstOf(projectPm);
   switch (sid) {
     case "TK": return bare;                                  // chỉ tên (vd "Sun Group"); trống → ""
     case "BG": return bare ? `QS - ${bare}` : "QS";
