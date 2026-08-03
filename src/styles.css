@@ -521,3 +521,17 @@ section:fullscreen {
 #pdf-table thead th,
 #pdf-table tbody td { font-size: 1.1em; }
 #pdf-table tbody tr:not([data-group-header="1"]) td { color: #000; }
+
+/* ──────────────────────────────────────────────────────────────
+ * CHẾ ĐỘ TRÌNH CHIẾU TV (nút "Trình chiếu TV" thêm class .tv-mode vào <body>):
+ * BỎ giới hạn bề rộng 1600px của <main> → bảng + KPI lấp ĐẦY màn hình lớn (4K TV 55").
+ * Vì cỡ chữ bảng tính theo `cqw` (% bề rộng), lấp đầy màn ⇒ chữ tự PHÓNG theo tỉ lệ
+ * (màn 4K ~3800px → chữ ~27px, gấp ~2.4× so với khi bị cap 1600px) mà KHÔNG tràn ô —
+ * do mọi thứ bên trong bảng đã co giãn đồng bộ (cột %, nội dung em). An toàn tuyệt đối.
+ * Kèm nút này là fullscreen cả app (requestFullscreen) cho giống F11.
+ * ────────────────────────────────────────────────────────────── */
+body.tv-mode main {
+  max-width: none !important;
+  padding-left: 1.5rem !important;
+  padding-right: 1.5rem !important;
+}

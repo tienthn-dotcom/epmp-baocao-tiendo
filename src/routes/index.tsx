@@ -19,6 +19,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  Tv,
   Upload,
   Users,
   X,
@@ -133,6 +134,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.30.0 (31/07/2026): NÚT "TRÌNH CHIẾU TV" — fullscreen CẢ app (requestFullscreen như F11) + BỎ
+ *     giới hạn 1600px cho <main> (class .tv-mode trên body, CSS ở styles.css) → bảng lấp đầy màn TV
+ *     4K/55" ⇒ cỡ chữ (cqw) tự phóng theo tỉ lệ (~11px→~27px trên 4K) mà KHÔNG tràn ô (thiết kế co
+ *     giãn tỉ lệ). NHỚ trạng thái qua localStorage `pmo-tv-mode` để mở lại trên TV vẫn to. Khác nút
+ *     "Toàn màn hình" (chỉ fullscreen table). Đã đo: 2400px→16.3px, không tràn ngang/ô.
  *   v3.29.0 (31/07/2026): BỘ LỌC "PM" — lọc theo Người phụ trách chính CẤP DỰ ÁN, lấy TÊN ĐẦU TIÊN
  *     (pmFirstOf: tách "/"","xuống dòng). Áp cho CẢ bảng Danh sách LẪN Gantt (chung pipeline lọc).
  *     Filters.pms + pmOptions (bỏ "—") + 6 khối lọc + filterSummary/hasAnyFilter/activeCount. Khối
@@ -392,7 +398,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.29.0";
+const APP_VERSION = "3.30.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -3463,6 +3469,24 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     if (document.fullscreenElement) void document.exitFullscreen();
     else void el.requestFullscreen?.();
   };
+  // ── CHẾ ĐỘ TRÌNH CHIẾU TV ── fullscreen CẢ app (như F11) + set tỉ lệ lấp đầy màn hình LỚN: thêm
+  //    class .tv-mode vào <body> (styles.css bỏ giới hạn 1600px của <main>) → bảng phủ hết bề rộng
+  //    TV → cỡ chữ (cqw) tự phóng theo tỉ lệ, không tràn ô. NHỚ trạng thái để mở lại trên TV vẫn to.
+  const [tvMode, setTvMode] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("pmo-tv-mode") === "1") setTvMode(true); } catch { /* */ } }, []);
+  useEffect(() => {
+    document.body.classList.toggle("tv-mode", tvMode);
+    return () => document.body.classList.remove("tv-mode");
+  }, [tvMode]);
+  const toggleTvMode = () => {
+    const next = !tvMode;
+    setTvMode(next);
+    try { localStorage.setItem("pmo-tv-mode", next ? "1" : "0"); } catch { /* */ }
+    try {
+      if (next) void document.documentElement.requestFullscreen?.();
+      else if (document.fullscreenElement) void document.exitFullscreen?.();
+    } catch { /* trình duyệt chặn fullscreen — tỉ lệ to vẫn áp qua class */ }
+  };
   // ── ĐỘ RỘNG CỘT KÉO CHỈNH ĐƯỢC + ĐẶT LẠI ──────────────────────────────────────
   // Kéo mép PHẢI mỗi tiêu đề để chỉnh rộng; phần chênh bù từ cột KẾ BÊN (giữ tổng 100%).
   // Lưu localStorage riêng từng trình duyệt; nút "Đặt lại cột" xoá lưu → về mặc định.
@@ -3917,6 +3941,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
             className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
             {isFs ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />} {isFs ? "Thu nhỏ" : "Toàn màn hình"}
+          </button>
+          <button onClick={toggleTvMode}
+            title={'Trình chiếu TV: phóng toàn app lấp đầy màn hình lớn (4K / TV 55") + fullscreen như F11. Nhớ trạng thái cho lần mở sau.'}
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold ${tvMode ? "border-violet-500 bg-violet-50 text-violet-800" : "border-slate-300 bg-white text-slate-700 hover:border-violet-500 hover:text-violet-700"}`}>
+            <Tv className="h-3.5 w-3.5" /> {tvMode ? "Đang trình chiếu TV" : "Trình chiếu TV"}
           </button>
           {/* "Đánh giá tuân thủ" + "Nhật ký giám sát" là TÍNH NĂNG HỆ THỐNG → không nằm cạnh
               bảng nữa, đã chuyển lên góc header (menu "⋯ Hệ thống"). Xem <ReportsMenu> render
