@@ -48,7 +48,7 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, fetchUserRoles, saveUserRole, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates } from "@/lib/edits.functions";
+import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates, type HiddenRows } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
@@ -133,6 +133,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.26.0 (31/07/2026): ẨN DÒNG THỦ CÔNG (admin) — hạng mục "trong khuôn khổ, không đáng raise" ẩn
+ *     khỏi báo cáo (bảng + KPI + PDF + Excel cho MỌI người). Rê chuột dòng item → nút mắt-gạch (admin,
+ *     print:hidden) ẩn dòng; toolbar hiện "Dòng đã ẩn (N)" → bật soi lại (làm mờ + nút Bỏ ẩn). Kho KV
+ *     `hidden:v1` (edits.functions: fetchHiddenRows/setHiddenRow, chốt quyền ADMIN); lọc ở tầng `enriched`
+ *     (tách enrichedAll cho effect đồng bộ để không xoá nhầm); ghi vết hide_row/unhide_row vào Nhật ký.
+ *     LƯU Ý: ẩn HẾT item của 1 dự án → dự án biến khỏi bảng (không còn gì để hiện) — đúng thiết kế.
  *   v3.25.0 (31/07/2026): Mở rộng quyền PMO trong box chat: PMO giờ SỬA + ẨN + XOÁ được comment NGƯỜI
  *     KHÁC (ngang admin ở 3 thao tác này; trước v3.21 chỉ ẩn). ChatCell/ChatBox: canEdit=canHide gồm PMO,
  *     nút Xoá theo canDelete=admin||PMO. Server editMessages: nhánh edit + delete + hide đều thêm callerIsPmo.
@@ -375,7 +381,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.25.0";
+const APP_VERSION = "3.26.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1197,6 +1203,9 @@ type EnrichedItem = ItemRow & {
   _alertColor: AlertColor;
   _sevScore: number;
   _sevLabel: string;
+  /** = true khi dòng đang bị ẩn thủ công VÀ admin đang bật "Hiện dòng đã ẩn" (để làm mờ + nút bỏ ẩn).
+   *  Ở chế độ thường (không bật) dòng ẩn bị LOẠI hẳn nên trường này không xuất hiện. */
+  _hidden?: boolean;
   /** "Giải pháp" — TEXT rút gọn = ghép các message KHÔNG ẩn (để lọc/xuất Excel/PDF). */
   _action: string;
   /** BOX CHAT — MỌI message (kể cả ẩn) của Vướng mắc / Giải pháp. Bảng chỉ hiện message KHÔNG ẩn;
@@ -1522,6 +1531,28 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     }
   };
 
+  /** ẨN / BỎ ẨN 1 DÒNG (admin) — cập nhật lạc quan cache rồi ghi server (server chốt quyền admin).
+   *  Khoá = itemKeyOf. Ghi vết vào Nhật ký giám sát để biết ai ẩn/bỏ ẩn hạng mục nào. */
+  const onHideRow = useCallback((it: EnrichedItem, hide: boolean) => {
+    const key = it._key;
+    const prev = queryClient.getQueryData<HiddenRows>(["hiddenRows"]) ?? {};
+    const next: HiddenRows = { ...prev };
+    if (hide) next[key] = { at: new Date().toISOString(), by: me.email ?? "?" };
+    else delete next[key];
+    queryClient.setQueryData(["hiddenRows"], next);   // lạc quan: bảng phản hồi tức thì
+    void (async () => {
+      try {
+        const r = await setHiddenRow({ data: { key, hide, devAs: devAs() } });
+        queryClient.setQueryData(["hiddenRows"], r.hidden);
+        const ctx = `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`;
+        track(hide ? "hide_row" : "unhide_row", ctx.slice(0, 290));
+      } catch (e) {
+        queryClient.setQueryData(["hiddenRows"], prev); // rollback nếu server từ chối
+        toast.error(`${hide ? "Ẩn" : "Bỏ ẩn"} dòng thất bại: ${(e as Error).message}`);
+      }
+    })();
+  }, [queryClient, me.email, devAs, track]);
+
   /* ── LỊCH SỬ NGÀY CẬP NHẬT (cho BÁO CÁO TUÂN THỦ) ──
      Sheet chỉ giữ LẦN CẬP NHẬT GẦN NHẤT của mỗi dự án → app phải tự tích luỹ, nếu
      không sẽ không bao giờ biết tuần trước PM có cập nhật hay không. */
@@ -1564,6 +1595,17 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     staleTime: 60_000,
   });
   const completedDates: CompletedDates = useMemo(() => completedQuery.data ?? {}, [completedQuery.data]);
+
+  // ── DÒNG ẨN THỦ CÔNG (admin) — khoá itemKeyOf → {at,by}. Loại khỏi bảng/KPI/PDF/Excel cho MỌI người;
+  //    admin bật "Hiện dòng đã ẩn" để soi + bỏ ẩn. Xem fetchHiddenRows/setHiddenRow (server chốt quyền).
+  const hiddenQuery = useQuery({
+    queryKey: ["hiddenRows"],
+    queryFn: async (): Promise<HiddenRows> => (await fetchHiddenRows()).hidden ?? {},
+    staleTime: 60_000,
+  });
+  const hiddenMap: HiddenRows = useMemo(() => hiddenQuery.data ?? {}, [hiddenQuery.data]);
+  const hiddenKeys = useMemo(() => new Set(Object.keys(hiddenMap)), [hiddenMap]);
+  const [showHidden, setShowHidden] = useState(false);
 
   /* ── DI TRÚ KHOÁ 1 LẦN: (mã+tên) đời cũ → ID (cột STT) ──
      Dữ liệu vướng mắc/giải pháp/ngày kết thúc/lịch sử update ĐÃ LƯU theo khoá tên cũ. App nay khoá
@@ -1764,13 +1806,25 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     return enrichItem(raw, edited);
   }, [edits, today, enrichItem]);
 
-  const enriched: EnrichedItem[] = useMemo(
+  // NGUỒN ĐẦY ĐỦ (kể cả dòng đã ẩn) — các effect quản khoá (completed/updates) KHÔNG được dùng bản
+  // đã lọc kẻo tưởng dòng ẩn là "mồ côi" rồi xoá nhầm dữ liệu. Chúng dùng data.projects nên đã an toàn,
+  // nhưng vẫn tách rõ để về sau ai đọc cũng hiểu ranh giới.
+  const enrichedAll: EnrichedItem[] = useMemo(
     () => data.items.map((raw, i) => enrichItem(raw, effectiveItems[i]))
       .map((it) => (it.blocks?.length
         ? { ...it, _blockItems: it.blocks.map((b, bi) => buildBlockItem(it, b, bi)) }
         : it)),
     [data.items, effectiveItems, enrichItem, buildBlockItem],
   );
+  // NGUỒN HIỂN THỊ: mặc định LOẠI dòng đã ẩn khỏi MỌI nơi (bảng/KPI/databar/PDF/Excel). Admin bật
+  // "Hiện dòng đã ẩn" → đưa lại vào kèm cờ _hidden để làm mờ + cho bỏ ẩn (KPI khi đó cũng gồm lại,
+  // giữ "số liệu khớp bảng"). Không có dòng ẩn nào → trả nguyên bản (không tốn map).
+  const enriched: EnrichedItem[] = useMemo(() => {
+    if (hiddenKeys.size === 0) return enrichedAll;
+    return showHidden
+      ? enrichedAll.map((it) => (hiddenKeys.has(it._key) ? { ...it, _hidden: true } : it))
+      : enrichedAll.filter((it) => !hiddenKeys.has(it._key));
+  }, [enrichedAll, hiddenKeys, showHidden]);
   // Việc ĐÃ HOÀN THÀNH (pct ≥ 100, còn Show) — CHỈ dựng khi bật "Hiện tất cả đầu việc". Enrich y
   // hệt việc đang làm. KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng.
   const [showDone, setShowDone] = useState(false);
@@ -1780,14 +1834,18 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     for (const p of data.projects) for (const raw of (p.allItems ?? [])) {
       if (raw.shown === false) continue;
       if (!(raw.pctActual != null && raw.pctActual >= 100)) continue; // enriched đã có việc <100%
-      const ed = edits[itemKeyOf(raw)];
+      const k = itemKeyOf(raw);
+      const isHidden = hiddenKeys.has(k);
+      if (isHidden && !showHidden) continue; // dòng đã ẩn: loại khỏi cả nhóm việc đã hoàn thành
+      const ed = edits[k];
       const deadline = ed?.deadline ?? raw.deadline;
       const eff: ItemRow = { ...raw, note: ed?.note ?? "", owner: ed?.pic ?? raw.owner, deadline,
         overdueDays: ed?.deadline ? getDaysOverdue({ deadline, pctActual: raw.pctActual }, today) : raw.overdueDays };
-      out.push(enrichItem(raw, eff));
+      const en = enrichItem(raw, eff);
+      out.push(isHidden ? { ...en, _hidden: true } : en);
     }
     return out;
-  }, [showDone, data.projects, edits, today, enrichItem]);
+  }, [showDone, data.projects, edits, today, enrichItem, hiddenKeys, showHidden]);
 
   const alerts = useMemo(() => enriched.filter(i => i._alert !== "none") as (EnrichedItem & { _alert: AlertK })[], [enriched]);
   const suspectCount = enriched.reduce((acc, i) => acc + (i.pctPlanInvalid ? 1 : 0) + (i.pctActualInvalid ? 1 : 0), 0);
@@ -2659,6 +2717,10 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         onSort={toggleSort}
         showDone={showDone}
         onToggleDone={() => setShowDone(v => !v)}
+        showHidden={showHidden}
+        onToggleShowHidden={() => setShowHidden(v => !v)}
+        hiddenCount={hiddenKeys.size}
+        onHideRow={onHideRow}
         completedDates={completedDates}
         onSaveEdit={saveItemEdit}
         onMsgOp={msgOp}
@@ -3287,7 +3349,7 @@ function PdfExportMenu({ onPrint }: { onPrint: (o: "landscape" | "portrait") => 
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -3317,6 +3379,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   /** Bật/tắt "Hiện tất cả đầu việc" (kể cả đã hoàn thành). */
   showDone: boolean;
   onToggleDone: () => void;
+  /** DÒNG ẨN THỦ CÔNG (admin): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang ẩn;
+   *  onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin thấy nút; server vẫn chốt quyền. */
+  showHidden: boolean;
+  onToggleShowHidden: () => void;
+  hiddenCount: number;
+  onHideRow: (it: EnrichedItem, hide: boolean) => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
   onPrint: (orientation: "landscape" | "portrait") => void;
@@ -3532,14 +3600,26 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     const isBlkOpen = hasBlocks && expandedTC.has(blkKey);
     return (
       <Fragment key={`${it.projectCode}-${it.rawCode}-${idx}`}>
-      <tr className={`border-b border-slate-100 align-middle ${idx % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-teal-50/40`}>
-        {/* Ngày update — chip nhỏ, thang màu xanh→đỏ theo độ cũ.
-            Ngày này thuộc về DỰ ÁN (mọi đầu việc con dùng chung), nên khi có hàng dự án
-            tổng thì chỉ hiện ở đó — lặp lại y hệt ở từng dòng con chỉ gây nhiễu.
-            Bảng phẳng (lọc Giai đoạn / Cần cập nhật MP) KHÔNG có hàng tổng ⇒ vẫn phải
-            hiện ở dòng con, không thì cột trống trơn. */}
+      <tr className={`group border-b border-slate-100 align-middle ${it._hidden ? "bg-amber-50/60 opacity-60 hover:opacity-100" : (idx % 2 ? "bg-slate-50/40" : "bg-white")} hover:bg-teal-50/40`}
+          title={it._hidden ? "Dòng đã ẩn thủ công — bấm 'Bỏ ẩn' để đưa lại vào báo cáo" : undefined}>
+        {/* Ngày update — chip nhỏ, thang màu xanh→đỏ theo độ cũ (bảng phẳng). Ô này cũng là chỗ đặt
+            nút ẨN (hiện khi rê chuột, chỉ admin) / BỎ ẨN (khi đang soi dòng ẩn) — print:hidden nên
+            KHÔNG lọt vào PDF/Excel. */}
         <td className="border-r border-slate-100 px-1 py-1 text-center">
-          {!groupMode && <UpdateChip date={it.updateDate} today={today} />}
+          {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} />}
+          {isAdmin && (it._hidden ? (
+            <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
+              onClick={(e) => { e.stopPropagation(); onHideRow(it, false); }}
+              className="mx-auto flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100 print:hidden">
+              <RotateCcw className="h-3 w-3" /> Bỏ ẩn
+            </button>
+          ) : (
+            <button type="button" title="Ẩn dòng này khỏi báo cáo (hạng mục trong khuôn khổ, không cần raise)"
+              onClick={(e) => { e.stopPropagation(); onHideRow(it, true); }}
+              className="mx-auto flex h-4 w-4 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 print:hidden">
+              <EyeOff className="h-3 w-3" />
+            </button>
+          ))}
         </td>
         {/* Cột "Mã": bảng NHÓM → dòng con hiện MÃ VIẾT TẮT hạng mục (dữ liệu cột Hạng mục cũ);
             bảng thường/lọc → hiện Mã CT. Mã gộp "CT25-040, 038…" kẹp 2 dòng cho hàng đều. */}
@@ -3743,6 +3823,14 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
             {showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc"}
           </button>
+          {/* DÒNG ĐÃ ẨN (admin) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
+          {isAdmin && hiddenCount > 0 && (
+            <button type="button" onClick={onToggleShowHidden}
+              title="Xem lại các hạng mục đã ẩn thủ công (để bỏ ẩn)"
+              className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showHidden ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-300 bg-white text-slate-600 hover:border-amber-400"}`}>
+              {showHidden ? `✓ Đang soi ${hiddenCount} dòng ẩn` : `Dòng đã ẩn (${hiddenCount})`}
+            </button>
+          )}
           {/* NÚT "MỞ TẤT CẢ" — cùng vị trí, cùng size cho cả 2 chế độ:
               · Danh sách → xổ nhóm dự án.
               · Gantt     → xổ tác vụ con (đưa từ hàng legend Gantt lên đây, đổi tên gọn). */}

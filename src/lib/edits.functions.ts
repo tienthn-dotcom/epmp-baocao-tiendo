@@ -568,3 +568,48 @@ export const saveUserRole = createServerFn({ method: "POST" })
     await writeRoles(map);
     return { roles: map };
   });
+
+/* ── ẨN DÒNG THỦ CÔNG (admin) — kho KV `hidden:v1` = { [itemKey]: { at, by } } ──
+   Admin ẩn các hạng mục "nằm trong khuôn khổ, không đáng raise" khỏi báo cáo (bảng + KPI + PDF +
+   Excel cho MỌI người); bỏ ẩn được. Khoá = itemKeyOf (ID cột STT, ổn định). Đọc CÔNG KHAI (client
+   cần để loại khỏi hiển thị); GHI chỉ ADMIN. Lưu ai/khi để có vết. */
+const HIDDEN_KEY = "hidden:v1";
+const DEV_HIDDEN_FILE = ".data/pmo-hidden.json";
+export type HiddenRows = Record<string, { at: string; by: string }>;
+
+async function readHidden(): Promise<HiddenRows> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(HIDDEN_KEY); return raw ? (JSON.parse(raw) as HiddenRows) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_HIDDEN_FILE, "utf8")) as HiddenRows; }
+  catch { return {}; }
+}
+async function writeHidden(map: HiddenRows): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(HIDDEN_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_HIDDEN_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+/** Đọc danh sách dòng đã ẩn (khoá item → ai ẩn, khi nào). CÔNG KHAI — client cần để loại khỏi bảng/KPI. */
+export const fetchHiddenRows = createServerFn({ method: "GET" }).handler(async () => {
+  return { hidden: await readHidden() };
+});
+
+/** Ẩn / bỏ ẩn 1 dòng — CHỈ ADMIN. hide=true để ẩn, false để bỏ ẩn. */
+export const setHiddenRow = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      key: z.string().min(1).max(600),
+      hide: z.boolean(),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin mới được ẩn / bỏ ẩn dòng.");
+    const map = await readHidden();
+    if (data.hide) map[data.key] = { at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
+    else delete map[data.key];
+    await writeHidden(map);
+    return { hidden: map };
+  });
