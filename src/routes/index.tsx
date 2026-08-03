@@ -134,6 +134,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.32.0 (31/07/2026): NHẬT KÝ GIÁM SÁT — bộ lọc PHÂN LỚP (cascading): dropdown "Người" chỉ liệt kê
+ *     tài khoản CÓ hoạt động trong CỬA SỔ NGÀY đang chọn (vd "Hôm nay" → chỉ người active hôm nay);
+ *     dropdown "Thao tác" cũng lọc theo Người/Tìm. Cách làm: load tải MỌI người trong cửa sổ ngày
+ *     (email:null, lọc Người ở CLIENT); whoOpts/actionOpts dựng kiểu optionUniverse (trừ chính filter,
+ *     giữ giá trị đang chọn). Bỏ state `users` (server). limit 1000→2000.
  *   v3.31.1 (31/07/2026): Tên PM (TC/TKSX) lấy TÊN ĐẦU TIÊN của người phụ trách dự án (pmFirstOf) —
  *     tên sau dấu "/" là DPM, bỏ. VD "Nguyễn Văn Cừ / Thanh Bình" → "PM - Nguyễn Văn Cừ".
  *   v3.31.0 (31/07/2026): Tên PM ở công đoạn TC + TKSX LUÔN lấy từ NGƯỜI PHỤ TRÁCH CẤP DỰ ÁN (trên
@@ -409,7 +414,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.31.1";
+const APP_VERSION = "3.32.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -5138,8 +5143,7 @@ function RoleManagerDialog({ roleMap, onClose, onSaved }: {
 
 function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<ActivityRow[]>([]);
-  const [users, setUsers] = useState<string[]>([]);
-  const [who, setWho] = useState<string>("");    // "" = tất cả mọi người
+  const [who, setWho] = useState<string>("");    // "" = tất cả mọi người (lọc ở CLIENT để dropdown phân lớp)
   const [days, setDays] = useState<number>(7);     // 0 = toàn bộ
   const [q, setQ] = useState<string>("");          // ô tìm kiếm tự do (client-side)
   const [actionF, setActionF] = useState<string>(""); // "" = mọi loại thao tác
@@ -5157,17 +5161,19 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      // Tải RỘNG theo mốc (server lọc thô để giảm dữ liệu); LỌC CHÍNH XÁC lại ở client bên dưới.
+      // Tải RỘNG theo CỬA SỔ NGÀY cho MỌI người (KHÔNG lọc theo người ở server) → client mới đủ dữ
+      // liệu để dựng dropdown "Người" PHÂN LỚP (chỉ tài khoản có hoạt động trong cửa sổ đang chọn).
+      // Lọc theo Người/Thao tác/Tìm đều làm ở client bên dưới.
       const since = sinceMs != null ? new Date(sinceMs).toISOString() : null;
-      const r = await fetchActivityLog({ data: { email: who || null, since, limit: 1000, devAs: devAs() } });
-      if (!r.ok) { setErr("Bạn không có quyền xem nhật ký này."); setRows([]); setUsers([]); return; }
-      setRows(r.rows); setUsers(r.users);
+      const r = await fetchActivityLog({ data: { email: null, since, limit: 2000, devAs: devAs() } });
+      if (!r.ok) { setErr("Bạn không có quyền xem nhật ký này."); setRows([]); return; }
+      setRows(r.rows);
     } catch (e) {
       setErr((e as Error).message || "Không tải được nhật ký.");
     } finally {
       setLoading(false);
     }
-  }, [who, sinceMs]);
+  }, [sinceMs]);
   useEffect(() => { void load(); }, [load]);
 
   const fmtTs = (iso: string) => {
@@ -5190,11 +5196,36 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   // LỌC / TÌM KIẾM phía client trên tập đã tải (server đã lọc theo Người + khoảng thời gian).
   // Bỏ dấu tiếng Việt để gõ "tien" vẫn ra "Tiên"; quét cả tài khoản, nhãn thao tác lẫn chi tiết.
   const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
+  // ── OPTIONS PHÂN LỚP (cascading) — "vũ trụ" = rows đã lọc CỬA SỔ NGÀY, áp nốt các lọc KHÁC (trừ
+  //    chính filter đang dựng options). Vd chọn "Hôm nay" → dropdown Người chỉ liệt kê tài khoản CÓ
+  //    hoạt động hôm nay. Luôn GIỮ giá trị đang chọn để select không nhảy giá trị lạ. ──
+  const passSearch = useCallback((r: ActivityRow, nq: string) =>
+    !nq || norm(`${r.email} ${actionLabel(r.action)} ${r.detail || ""}`).includes(nq), []);
+
+  const whoOpts = useMemo(() => {
+    const nq = norm(q.trim());
+    const s = new Set<string>();
+    if (who) s.add(who);                                        // giữ người đang chọn
+    for (const r of rows) {
+      if (actionF && r.action !== actionF) continue;            // áp lọc Thao tác (trừ Người)
+      if (!passSearch(r, nq)) continue;
+      if (r.email) s.add(r.email);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "vi"));
+  }, [rows, actionF, q, who, passSearch]);
+
   const actionOpts = useMemo(() => {
-    const seen = new Set<string>();
-    for (const r of rows) seen.add(r.action);
-    return [...seen];
-  }, [rows]);
+    const nq = norm(q.trim());
+    const w = who.trim().toLowerCase();
+    const s = new Set<string>();
+    if (actionF) s.add(actionF);                                // giữ thao tác đang chọn
+    for (const r of rows) {
+      if (w && (r.email || "").toLowerCase() !== w) continue;   // áp lọc Người (trừ Thao tác)
+      if (!passSearch(r, nq)) continue;
+      s.add(r.action);
+    }
+    return [...s];
+  }, [rows, who, q, actionF, passSearch]);
   const filtered = useMemo(() => {
     const nq = norm(q.trim());
     const w = who.trim().toLowerCase();
@@ -5229,8 +5260,8 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
             <span className="text-[11px] font-medium text-slate-500">Người:</span>
             <select value={who} onChange={(e) => setWho(e.target.value)}
               className="max-w-[220px] rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700">
-              <option value="">Tất cả ({users.length})</option>
-              {users.map((u) => <option key={u} value={u}>{u}</option>)}
+              <option value="">Tất cả ({whoOpts.length})</option>
+              {whoOpts.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-1">
