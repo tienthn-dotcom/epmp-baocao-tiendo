@@ -24,7 +24,7 @@ const SHELL = (title: string, accent: string, body: string) => `<!doctype html>
 <body><div class="card"><div class="bar"></div><div class="in">
   <div class="eyebrow">ePMP · Projects Master Plan</div>
   ${body}
-  <div class="foot">PMO · Bộ phận Projects Planning — AA Corporation</div>
+  <div class="foot">PMO · Bộ phận Project Planning — AA Corporation</div>
 </div></div></body></html>`;
 
 /** Email hợp lệ với Google nhưng KHÔNG nằm trong danh sách được cấp quyền. */

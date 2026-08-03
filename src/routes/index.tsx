@@ -134,6 +134,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.33.1 (31/07/2026): Sửa chính tả tên bộ phận "Projects Planning" → "Project Planning" (header
+ *     index.tsx + footer trang đăng nhập auth-pages.ts).
  *   v3.33.0 (31/07/2026): TKSX — ô công đoạn nhập TIỀN TỐ KHÁC (vd "PC - Tên", "SHD - Tên") thì KHÔNG
  *     nhét vào "SD - …" nữa; hiện "PM - {PM dự án}, SD, PC - Tên" (SD trống + giữ nguyên tiền tố khác).
  *     picByStageConv case SD: regex bắt "CODE - tên"; CODE=SD → "SD - tên"; CODE khác → "SD, CODE - tên";
@@ -418,7 +420,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.33.0";
+const APP_VERSION = "3.33.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -986,7 +988,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, onOpenSettings,
               Project Master Plan
             </div>
             <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-teal-700 sm:text-[10px]">
-              PMO · Bộ phận Projects Planning
+              PMO · Bộ phận Project Planning
             </div>
           </div>
         </div>
