@@ -133,6 +133,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.29.0 (31/07/2026): BỘ LỌC "PM" — lọc theo Người phụ trách chính CẤP DỰ ÁN, lấy TÊN ĐẦU TIÊN
+ *     (pmFirstOf: tách "/"","xuống dòng). Áp cho CẢ bảng Danh sách LẪN Gantt (chung pipeline lọc).
+ *     Filters.pms + pmOptions (bỏ "—") + 6 khối lọc + filterSummary/hasAnyFilter/activeCount. Khối
+ *     đếm dự-án-hoàn-thành dùng p.pm (raw ItemRow không có _projectPm).
  *   v3.28.0 (31/07/2026): ẨN DÒNG cũng áp cho bảng "Tổng thể tiến độ" (Gantt): nút ẩn (rê chuột)/bỏ ẩn
  *     ở dòng HẠNG MỤC — dòng con (khi xổ) + chế độ lọc hạng mục. onHideRow đổi chữ ký (key,label,hide)
  *     dùng CHUNG Danh sách + Gantt; GanttRow/GanttChild mang hideKey+hidden; GanttView nhận isAdmin/
@@ -388,7 +392,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.28.0";
+const APP_VERSION = "3.29.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1376,6 +1380,9 @@ type Filters = {
   regions: string[];
   /** Lọc theo Cụm dự án (cột "Group DA" trong nguồn) — value = mã cụm (PQs/NPHH/…). */
   groupDAs: string[];
+  /** Lọc theo PM — Người phụ trách chính CẤP DỰ ÁN, lấy TÊN ĐẦU TIÊN (nếu ô nhiều người ngăn bởi
+   *  "/" hoặc ","). value = tên đầu tiên đã chuẩn hoá (xem pmFirstOf). Áp cho cả bảng lẫn Gantt. */
+  pms: string[];
   /** Lọc theo PES — value ∈ {PES1,PES2,PES3,PES4}, ánh xạ theo dải số Top-20. */
   pes: string[];
   query: string;
@@ -1390,7 +1397,11 @@ type Filters = {
   topKey: boolean;
 };
 
-const EMPTY_FILTERS: Filters = { depts: [], stages: [], alerts: [], deadlineMonths: [], regions: [], groupDAs: [], pes: [], query: "", mpOnly: false, dueThisMonth: false, topKey: false };
+const EMPTY_FILTERS: Filters = { depts: [], stages: [], alerts: [], deadlineMonths: [], regions: [], groupDAs: [], pms: [], pes: [], query: "", mpOnly: false, dueThisMonth: false, topKey: false };
+
+/** TÊN ĐẦU TIÊN của Người phụ trách chính cấp dự án (ô có thể ghi nhiều người ngăn bởi "/", ",",
+ *  xuống dòng) → dùng làm value bộ lọc PM. Trống → "". */
+const pmFirstOf = (pm: string | null | undefined): string => (pm || "").split(/[/,\n]/)[0].trim();
 
 /** Nhóm (PES) theo dải số Top-20 → tên người phụ trách. Bộ lọc tên = "PES", HIỂN THỊ theo TÊN
  *  (Ms./Mr. + tên — đảo lại cách hiện số 1..4 của v3.5.2): Mai Lê, Công Hoàng, Xuân Tân, Phúc Thành. */
@@ -1999,6 +2010,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
+      if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
       if (filters.deadlineMonths.length) {
         const mk = monthKeyOf(i.projectDeadline);
@@ -2019,7 +2031,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
      "Vũ trụ" = enriched đã áp MỌI filter đang bật TRỪ chính filter đang dựng options
      (để vẫn chọn được nhiều giá trị của cùng 1 nhóm). Tính trên TOÀN BỘ đầu việc đang
      chạy — đúng bằng bảng đang hiện (bảng nay hiện cả việc chưa có cảnh báo). */
-  const optionUniverse = useCallback((exclude: "regions" | "groupDAs" | "pes" | "deadlineMonths") => {
+  const optionUniverse = useCallback((exclude: "regions" | "groupDAs" | "pms" | "pes" | "deadlineMonths") => {
     const q = filters.query.trim().toLowerCase();
     return enriched.filter(i => {
       if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
@@ -2030,6 +2042,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (exclude !== "regions" && filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (exclude !== "groupDAs" && filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
+      if (exclude !== "pms" && filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (exclude !== "pes" && filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
       if (exclude !== "deadlineMonths" && filters.deadlineMonths.length) {
         const mk = monthKeyOf(i.projectDeadline);
@@ -2058,6 +2071,13 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     for (const i of optionUniverse("groupDAs")) if (i.groupDA) s.add(i.groupDA);
     return [...s].sort((a, b) => a.localeCompare(b, "vi")).map(g => ({ v: g, l: g }));
   }, [optionUniverse, filters.groupDAs]);
+
+  /** Danh sách PM — TÊN ĐẦU TIÊN của Người phụ trách chính cấp dự án, chỉ PM còn dự án trong bảng. */
+  const pmOptions = useMemo(() => {
+    const s = new Set<string>(filters.pms);
+    for (const i of optionUniverse("pms")) { const nm = pmFirstOf(i._projectPm); if (nm && nm !== "—") s.add(nm); }
+    return [...s].sort((a, b) => a.localeCompare(b, "vi")).map(p => ({ v: p, l: p }));
+  }, [optionUniverse, filters.pms]);
 
   /** Danh sách PES — chỉ PES (người) còn dự án trong bảng; giữ thứ tự + tên chuẩn. */
   const pesOptions = useMemo(() => {
@@ -2099,6 +2119,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
+      if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (filters.deadlineMonths.length) {
@@ -2132,6 +2153,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
+      if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (filters.deadlineMonths.length) {
@@ -2165,6 +2187,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         if (filters.depts.length && !filters.depts.includes(deptOf(sid))) continue;
         if (filters.regions.length && !filters.regions.includes(i.region ?? "")) continue;
         if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) continue;
+        if (filters.pms.length && !filters.pms.includes(pmFirstOf(p.pm))) continue;
         if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) continue;
         if (filters.dueThisMonth && !dueMonthProjectKeys.has(pkItem(i))) continue;
         if (filters.topKey && !topProjectKeys.has(pkItem(i))) continue;
@@ -2240,6 +2263,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
+      if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (filters.deadlineMonths.length) {
@@ -2500,6 +2524,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     if (filters.deadlineMonths.length) parts.push(`Mốc bàn giao: ${filters.deadlineMonths.map(monthLabelOf).join(", ")}`);
     if (filters.regions.length) parts.push(`Vùng: ${filters.regions.join(", ")}`);
     if (filters.groupDAs.length) parts.push(`Cụm dự án: ${filters.groupDAs.join(", ")}`);
+    if (filters.pms.length) parts.push(`PM: ${filters.pms.join(", ")}`);
     if (filters.pes.length) parts.push(`PES: ${filters.pes.map(id => PES_RANGES.find(a => a.id === id)?.name ?? id).join(", ")}`);
     if (filters.mpOnly) parts.push("Cần cập nhật MP");
     if (filters.dueThisMonth) parts.push("Bàn giao tháng này");
@@ -2576,7 +2601,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const hasAnyFilter =
     filters.depts.length > 0 || filters.stages.length > 0 || filters.alerts.length > 0 ||
     filters.deadlineMonths.length > 0 || filters.regions.length > 0 || filters.groupDAs.length > 0 ||
-    filters.pes.length > 0 || filters.query.trim() !== "" || filters.mpOnly ||
+    filters.pms.length > 0 || filters.pes.length > 0 || filters.query.trim() !== "" || filters.mpOnly ||
     filters.dueThisMonth || filters.topKey;
   // Dự án HIỆN HÀNH = có ≥1 dòng con ĐANG SHOW. Dự án mà mọi dòng con đều Hide
   // (để tạm chờ ẩn / đã dừng / đã xong) KHÔNG tính vào tổng.
@@ -2719,6 +2744,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         deadlineMonthOptions={deadlineMonthOptions}
         regionOptions={regionOptions}
         groupDAOptions={groupDAOptions}
+        pmOptions={pmOptions}
         pesOptions={pesOptions}
         showGanttChildTasks={ff.ganttChildTasks}
         ganttRows={ganttRows}
@@ -3365,7 +3391,7 @@ function PdfExportMenu({ onPrint }: { onPrint: (o: "landscape" | "portrait") => 
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -3377,6 +3403,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   deadlineMonthOptions: { v: string; l: string }[];
   regionOptions: { v: string; l: string }[];
   groupDAOptions: { v: string; l: string }[];
+  pmOptions: { v: string; l: string }[];
   pesOptions: { v: string; l: string }[];
   /** Cờ tính năng — ẩn/hiện tác vụ con Gantt theo bản LIVE/DEV (xem lib/flags.ts). */
   showGanttChildTasks: boolean;
@@ -3411,7 +3438,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
 }) {
   const activeCount =
     filters.depts.length + filters.stages.length + filters.alerts.length
-    + filters.deadlineMonths.length + filters.regions.length + filters.groupDAs.length + filters.pes.length
+    + filters.deadlineMonths.length + filters.regions.length + filters.groupDAs.length + filters.pms.length + filters.pes.length
     + (filters.query.trim() ? 1 : 0)
     + (filters.mpOnly ? 1 : 0) + (filters.dueThisMonth ? 1 : 0) + (filters.topKey ? 1 : 0);
   const [exporting, setExporting] = useState(false);
@@ -3897,7 +3924,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         </div>
       </div>
 
-      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[1fr_auto_auto_auto_auto_auto]">
+      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[1fr_auto_auto_auto_auto_auto_auto]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input value={filters.query} onChange={e => setFilters(f => ({ ...f, query: e.target.value }))}
@@ -3906,6 +3933,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         </div>
         {/* Bộ lọc "Bộ phận", "Hạng mục", "Nhóm cảnh báo" đã bỏ khỏi thanh lọc:
             lọc theo hạng mục = bấm thẻ giai đoạn ở trên; lọc theo cảnh báo = bấm thẻ KPI ở trên. */}
+        <MultiSelect
+          label="PM"
+          selected={filters.pms}
+          options={pmOptions}
+          onToggle={v => setFilters(f => ({ ...f, pms: toggleIn(f.pms, v) }))}
+          onClear={() => setFilters(f => ({ ...f, pms: [] }))}
+        />
         <MultiSelect
           label="PES"
           selected={filters.pes}
