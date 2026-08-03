@@ -133,6 +133,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.27.0 (31/07/2026): Bảng "Tổng thể tiến độ" (Gantt) thêm cột "Ngày update" TRƯỚC cột Mã (chip
+ *     màu y hệt bảng Việc cần xử lý). GanttRow.updateDate (2 builder flat+dự án); LC thêm cột sticky
+ *     đầu, numCol dịch +1, cột đậm i===2, dòng con để trống ô ngày.
  *   v3.26.0 (31/07/2026): ẨN DÒNG THỦ CÔNG (admin) — hạng mục "trong khuôn khổ, không đáng raise" ẩn
  *     khỏi báo cáo (bảng + KPI + PDF + Excel cho MỌI người). Rê chuột dòng item → nút mắt-gạch (admin,
  *     print:hidden) ẩn dòng; toolbar hiện "Dòng đã ẩn (N)" → bật soi lại (làm mờ + nút Bỏ ẩn). Kho KV
@@ -381,7 +384,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.26.0";
+const APP_VERSION = "3.27.0";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1304,6 +1307,7 @@ type GanttChild = {
 
 type GanttRow = {
   key: string;
+  updateDate: string | null; // Ngày cập nhật gần nhất (chip màu, giống bảng Việc cần xử lý)
   maCT: string;
   name: string;
   pm: string;
@@ -2250,6 +2254,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         const pk = pkItem(it);
         return {
           key: `${pk} ${it.rawCode} ${it.dupIdx ?? 0}`,
+          updateDate: it.updateDate ?? null,
           maCT: it.maCT || it.projectCode,
           name: it.projectName,
           pm: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId),
@@ -2320,7 +2325,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         ? Math.max(0, getDaysOverdue({ deadline: p.deadline, pctActual: pct }, today) ?? 0)
         : 0;
       rows.push({
-        key: pk, maCT: p.maCT || p.code, name: p.name, pm: p.pm,
+        key: pk, updateDate: p.updateDate ?? null, maCT: p.maCT || p.code, name: p.name, pm: p.pm,
         start: p.start, end: p.deadline, pct,
         sxStart: sx?.start ?? null, sxEnd: sx?.deadline ?? null,
         overdue, note: edits[pk]?.note || p.mpReason || "",
@@ -4422,6 +4427,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   const pct = (x: number) => `${(x * 100).toFixed(4)}%`;
   // Cột trái (đóng băng 2 cột đầu Mã/Mô tả để giữ định danh khi cuộn ngang).
   const LC = [
+    { w: 56, label: "Ngày update", al: "center" as const, sticky: true },
     { w: 88, label: "Mã", al: "left" as const, sticky: true },
     { w: 264, label: "Tên dự án / Hạng mục", al: "left" as const, sticky: true },
     { w: 108, label: "Người phụ trách", al: "left" as const, sticky: false },
@@ -4462,7 +4468,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   const ROW_H = 34; // chiều cao cố định cho MỌI hàng → đồng bộ tuyệt đối
   const hCls = "border-b border-r border-slate-500/40 px-1.5 py-1 font-semibold text-slate-100";
   const alCls = (a: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
-  const numCol = new Set([3, 4, 5, 6]); // Bắt đầu / Kết thúc / % TT / Quá hạn
+  const numCol = new Set([4, 5, 6, 7]); // Bắt đầu / Kết thúc / % TT / Quá hạn (đã dịch +1 vì thêm cột Ngày update)
 
   // Xổ/thu tác vụ con — state do FlatTablePanel giữ (để NÚT trên toolbar điều khiển được),
   // truyền xuống qua props. Bấm dự án để xổ.
@@ -4603,6 +4609,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
             const hasKids = !flatStages && showChildTasks && r.children.length > 0;
             const isOpen = expanded.has(r.key);
             const vals: ReactNode[] = [
+              <UpdateChip date={r.updateDate} today={today} />,
               flatStages
                 ? <div className="line-clamp-2 pl-1 text-[10px] font-bold leading-tight" title={r.stageAbbr}>{r.stageAbbr}</div>
                 : <div className="flex items-start gap-1">
@@ -4625,7 +4632,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
               <tr className={`hover:bg-teal-50/40 ${hasKids ? "cursor-pointer" : ""}`} onClick={hasKids ? () => toggle(r.key) : undefined}>
                 {LC.map((c, i) => (
                   <td key={i}
-                      className={`border-b border-r border-slate-100 px-1.5 py-0.5 leading-tight align-middle ${alCls(c.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""} ${i === 1 ? "font-semibold text-slate-900" : "text-slate-900"}`}
+                      className={`border-b border-r border-slate-100 px-1.5 py-0.5 leading-tight align-middle ${alCls(c.al)} ${numCol.has(i) ? "tabular-nums whitespace-nowrap" : ""} ${i === 2 ? "font-semibold text-slate-900" : "text-slate-900"}`}
                       style={{ position: c.sticky ? "sticky" : undefined, left: c.sticky ? off[i] : undefined, zIndex: c.sticky ? 12 : undefined, background: bg, height: ROW_H, maxWidth: c.w,
                                borderLeft: (od && i === 0) ? `3px solid ${GC.overdueEdge}` : undefined }}>
                     {vals[i]}
@@ -4664,6 +4671,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                   const hasBlk = !!c.blocks?.length;
                   const blkOpen = openBlocks.has(c.key);
                   const cVals: ReactNode[] = [
+                    null, // ô "Ngày update" của dòng con để TRỐNG (ngày thuộc dự án — giống bảng Danh sách)
                     <div className="flex items-center gap-1 text-[10px] font-bold text-slate-900" style={{ paddingLeft: isBlock ? 16 : 4 }}>
                       {hasBlk && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); toggleBlocks(c.key); }}
