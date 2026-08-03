@@ -134,6 +134,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.30.1 (31/07/2026): Dời nút "Trình chiếu TV" từ toolbar VÀO dropdown "Hệ thống" (ReportsMenu),
+ *     hiện cho MỌI người (không riêng admin), có nhãn ĐANG BẬT khi active. tvMode chuyển lên DashboardBody.
  *   v3.30.0 (31/07/2026): NÚT "TRÌNH CHIẾU TV" — fullscreen CẢ app (requestFullscreen như F11) + BỎ
  *     giới hạn 1600px cho <main> (class .tv-mode trên body, CSS ở styles.css) → bảng lấp đầy màn TV
  *     4K/55" ⇒ cỡ chữ (cqw) tự phóng theo tỉ lệ (~11px→~27px trên 4K) mà KHÔNG tràn ô (thiết kế co
@@ -398,7 +400,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.30.0";
+const APP_VERSION = "3.30.1";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -1636,6 +1638,28 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const hiddenKeys = useMemo(() => new Set(Object.keys(hiddenMap)), [hiddenMap]);
   const [showHidden, setShowHidden] = useState(false);
 
+  // ── CHẾ ĐỘ TRÌNH CHIẾU TV ── fullscreen CẢ app (như F11) + lấp đầy màn hình LỚN: thêm class
+  //    .tv-mode vào <body> (styles.css bỏ giới hạn 1600px của <main>) → bảng phủ hết bề rộng TV →
+  //    cỡ chữ (cqw) tự phóng theo tỉ lệ, không tràn ô. NHỚ trạng thái để mở lại trên TV vẫn to.
+  //    Nút bật/tắt nằm trong dropdown "Hệ thống" (ReportsMenu).
+  const [tvMode, setTvMode] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("pmo-tv-mode") === "1") setTvMode(true); } catch { /* */ } }, []);
+  useEffect(() => {
+    document.body.classList.toggle("tv-mode", tvMode);
+    return () => document.body.classList.remove("tv-mode");
+  }, [tvMode]);
+  const toggleTvMode = useCallback(() => {
+    setTvMode((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("pmo-tv-mode", next ? "1" : "0"); } catch { /* */ }
+      try {
+        if (next) void document.documentElement.requestFullscreen?.();
+        else if (document.fullscreenElement) void document.exitFullscreen?.();
+      } catch { /* trình duyệt chặn fullscreen — tỉ lệ to vẫn áp qua class */ }
+      return next;
+    });
+  }, []);
+
   /* ── DI TRÚ KHOÁ 1 LẦN: (mã+tên) đời cũ → ID (cột STT) ──
      Dữ liệu vướng mắc/giải pháp/ngày kết thúc/lịch sử update ĐÃ LƯU theo khoá tên cũ. App nay khoá
      theo ID → phải dời sang khoá ID kẻo "mồ côi". CHỈ gọi khi CÒN phát hiện khoá tên cũ trong dữ
@@ -2716,6 +2740,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           isAdmin={me.isAdmin}
           onOpenActivity={() => { setShowActivity(true); track("open_activity"); }}
           onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
+          tvMode={tvMode}
+          onToggleTv={toggleTvMode}
         />
       </HeaderSlot>
 
@@ -3469,24 +3495,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
     if (document.fullscreenElement) void document.exitFullscreen();
     else void el.requestFullscreen?.();
   };
-  // ── CHẾ ĐỘ TRÌNH CHIẾU TV ── fullscreen CẢ app (như F11) + set tỉ lệ lấp đầy màn hình LỚN: thêm
-  //    class .tv-mode vào <body> (styles.css bỏ giới hạn 1600px của <main>) → bảng phủ hết bề rộng
-  //    TV → cỡ chữ (cqw) tự phóng theo tỉ lệ, không tràn ô. NHỚ trạng thái để mở lại trên TV vẫn to.
-  const [tvMode, setTvMode] = useState(false);
-  useEffect(() => { try { if (localStorage.getItem("pmo-tv-mode") === "1") setTvMode(true); } catch { /* */ } }, []);
-  useEffect(() => {
-    document.body.classList.toggle("tv-mode", tvMode);
-    return () => document.body.classList.remove("tv-mode");
-  }, [tvMode]);
-  const toggleTvMode = () => {
-    const next = !tvMode;
-    setTvMode(next);
-    try { localStorage.setItem("pmo-tv-mode", next ? "1" : "0"); } catch { /* */ }
-    try {
-      if (next) void document.documentElement.requestFullscreen?.();
-      else if (document.fullscreenElement) void document.exitFullscreen?.();
-    } catch { /* trình duyệt chặn fullscreen — tỉ lệ to vẫn áp qua class */ }
-  };
   // ── ĐỘ RỘNG CỘT KÉO CHỈNH ĐƯỢC + ĐẶT LẠI ──────────────────────────────────────
   // Kéo mép PHẢI mỗi tiêu đề để chỉnh rộng; phần chênh bù từ cột KẾ BÊN (giữ tổng 100%).
   // Lưu localStorage riêng từng trình duyệt; nút "Đặt lại cột" xoá lưu → về mặc định.
@@ -3941,11 +3949,6 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
             title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
             className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
             {isFs ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />} {isFs ? "Thu nhỏ" : "Toàn màn hình"}
-          </button>
-          <button onClick={toggleTvMode}
-            title={'Trình chiếu TV: phóng toàn app lấp đầy màn hình lớn (4K / TV 55") + fullscreen như F11. Nhớ trạng thái cho lần mở sau.'}
-            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold ${tvMode ? "border-violet-500 bg-violet-50 text-violet-800" : "border-slate-300 bg-white text-slate-700 hover:border-violet-500 hover:text-violet-700"}`}>
-            <Tv className="h-3.5 w-3.5" /> {tvMode ? "Đang trình chiếu TV" : "Trình chiếu TV"}
           </button>
           {/* "Đánh giá tuân thủ" + "Nhật ký giám sát" là TÍNH NĂNG HỆ THỐNG → không nằm cạnh
               bảng nữa, đã chuyển lên góc header (menu "⋯ Hệ thống"). Xem <ReportsMenu> render
@@ -4900,13 +4903,16 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
  *  Đánh giá tuân thủ (theo tháng) + Nhật ký giám sát (chỉ admin). Thêm tính năng sau chỉ
  *  cần push thêm 1 item vào mảng. Không có mục nào khả dụng → không hiện nút (menu rỗng vô nghĩa).
  *  Vẫn giữ TÍN HIỆU: có dự án chưa cập nhật đúng hạn → chấm đỏ trên nút dù đang thu gọn. */
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, tvMode, onToggleTv }: {
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
   isAdmin: boolean;
   onOpenActivity: () => void;
   onOpenRoles: () => void;
+  /** Chế độ Trình chiếu TV (fullscreen cả app + lấp đầy màn hình lớn) — bật/tắt ngay trong menu. */
+  tvMode: boolean;
+  onToggleTv: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -4919,10 +4925,12 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const items: { icon: ReactNode; label: string; badge?: number; onClick: () => void }[] = [];
+  const items: { icon: ReactNode; label: string; badge?: number; active?: boolean; onClick: () => void }[] = [];
   if (showCompliance) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-slate-500" />, label: "Đánh giá tuân thủ", badge: complianceBadge, onClick: onOpenCompliance });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
+  // Trình chiếu TV — CHO MỌI NGƯỜI (không riêng admin): fullscreen cả app + phóng lấp đầy màn TV.
+  items.push({ icon: <Tv className="h-4 w-4 text-violet-600" />, label: tvMode ? "Tắt trình chiếu TV" : "Trình chiếu TV", active: tvMode, onClick: onToggleTv });
   if (items.length === 0) return null;
 
   const flag = showCompliance && complianceBadge > 0; // tín hiệu cần chú ý
@@ -4930,7 +4938,7 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   return (
     <div ref={ref} className="relative print:hidden">
       <button type="button" onClick={() => setOpen(o => !o)}
-        title="Tính năng hệ thống: đánh giá tuân thủ, nhật ký giám sát"
+        title="Tính năng hệ thống: đánh giá tuân thủ, nhật ký giám sát, trình chiếu TV"
         className={`relative flex h-7 items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-semibold hover:border-teal-500 ${open ? "border-teal-500 text-teal-700" : "border-slate-300 text-slate-700"}`}>
         <MoreHorizontal className="h-3.5 w-3.5" /> Hệ thống
         {flag && !open && (
@@ -4946,9 +4954,12 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
           </div>
           {items.map((it, i) => (
             <button key={i} onClick={() => { setOpen(false); it.onClick(); }}
-              className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-50">
+              className={`flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-[12px] font-medium hover:bg-slate-50 ${it.active ? "text-violet-800" : "text-slate-700"}`}>
               {it.icon}
               <span className="flex-1">{it.label}</span>
+              {it.active && (
+                <span className="inline-flex items-center rounded-full bg-violet-100 px-1.5 text-[9px] font-bold text-violet-700">ĐANG BẬT</span>
+              )}
               {it.badge != null && it.badge > 0 && (
                 <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
                       title={`${it.badge} dự án chưa cập nhật đúng hạn tuần này`}>{it.badge}</span>
