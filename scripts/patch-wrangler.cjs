@@ -29,6 +29,13 @@ const cfg = JSON.parse(fs.readFileSync(WRANGLER, "utf8"));
 // tên repo (tienthn-dotcom-epmp-baocao-tiendo) → deploy NHẦM sang worker mới, URL live cũ không cập
 // nhật. Ghim cứng để mọi deploy luôn trúng đúng worker/URL đang chạy.
 cfg.name = "baocao-tiendo-pmo";
+// GỠ cờ nodejs_compat: từ 2026-08-04 Cloudflare đặt nó làm MẶC ĐỊNH và TỪ CHỐI khi khai báo tường
+// minh (lỗi validation 10021). Nitro vẫn tự thêm cờ này → phải lọc bỏ trước khi deploy. nodejs_compat
+// vẫn hoạt động (mặc định), nên gỡ khai báo KHÔNG ảnh hưởng runtime.
+if (Array.isArray(cfg.compatibility_flags)) {
+  cfg.compatibility_flags = cfg.compatibility_flags.filter((f) => f !== "nodejs_compat");
+  if (cfg.compatibility_flags.length === 0) delete cfg.compatibility_flags;
+}
 cfg.kv_namespaces = [KV_BINDING];
 cfg.vars = { ...(cfg.vars ?? {}), ...VARS };
 // Chỉ gắn D1 khi đã có database_id — tránh deploy hỏng vì binding trỏ vào id rỗng.
