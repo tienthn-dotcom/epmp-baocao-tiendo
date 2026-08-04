@@ -135,6 +135,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.35.2 (04/08/2026): Data bar cột "Số lần không cập nhật" (ComplianceDialog) đổi bg-red-300→
+ *     bg-blue-300, text-red-700→text-blue-700 (sếp không dùng đỏ).
  *   v3.35.1 (04/08/2026): Đổi thứ tự sort "Tình trạng" sang GOM THEO MÀU — late 7 · trim đỏ 6 ·
  *     focus đỏ 5 · trim vàng 4 · focus vàng 3 · none 1 · done 0 (tất cả ĐỎ trước tất cả VÀNG).
  *   v3.35.0 (04/08/2026): Sort cột "Tình trạng" (SortKey "alert") xếp theo rank nghiêm trọng 7 mức —
@@ -440,6 +442,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.35.2", date: "04/08/2026", items: [
+    "Bảng Đánh giá tuân thủ: data bar cột “Số lần không cập nhật” đổi từ đỏ sang xanh dương.",
+  ] },
   { v: "3.35.1", date: "04/08/2026", items: [
     "Sắp xếp cột “Tình trạng” gom theo màu: Trễ tiến độ → Cắt đầu việc (đỏ) → Cần tập trung (đỏ) → Cắt đầu việc (vàng) → Cần tập trung (vàng) → Không vấn đề → Đã hoàn thành.",
   ] },
@@ -5747,9 +5752,9 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                     <td className="border-r border-slate-100 px-2 py-1">
                       <div className="relative mx-auto flex h-4 max-w-[64px] items-center overflow-hidden rounded" title={`${r.countX}/${maxRequired} lần phải cập nhật tính đến hôm nay`}>
                         {maxRequired > 0 && r.countX > 0 && (
-                          <div className="absolute inset-y-0 left-0 rounded bg-red-300" style={{ width: `${Math.min(100, r.countX / maxRequired * 100)}%` }} />
+                          <div className="absolute inset-y-0 left-0 rounded bg-blue-300" style={{ width: `${Math.min(100, r.countX / maxRequired * 100)}%` }} />
                         )}
-                        <span className="relative z-[1] mx-auto tabular-nums font-semibold text-red-700">{r.countX > 0 ? r.countX : <span className="font-normal text-slate-400">0</span>}</span>
+                        <span className="relative z-[1] mx-auto tabular-nums font-semibold text-blue-700">{r.countX > 0 ? r.countX : <span className="font-normal text-slate-400">0</span>}</span>
                       </div>
                     </td>
                     {/* CẬP NHẬT GẦN NHẤT + COLOR SCALE xanh lá (gần) → đỏ (xa). */}
