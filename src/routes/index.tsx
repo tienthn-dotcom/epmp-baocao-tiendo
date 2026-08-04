@@ -135,6 +135,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.35.1 (04/08/2026): Đổi thứ tự sort "Tình trạng" sang GOM THEO MÀU — late 7 · trim đỏ 6 ·
+ *     focus đỏ 5 · trim vàng 4 · focus vàng 3 · none 1 · done 0 (tất cả ĐỎ trước tất cả VÀNG).
  *   v3.35.0 (04/08/2026): Sort cột "Tình trạng" (SortKey "alert") xếp theo rank nghiêm trọng 7 mức —
  *     late 7 · trim đỏ 6/vàng 5 · focus đỏ 4/vàng 3 · none 1 · done 0. XÉT mốc ≥100% (done) TRƯỚC khi
  *     tra _alert để bám ĐÚNG badge "Đã hoàn thành" (badge xanh ưu tiên hơn _alert ở renderRow). Đỏ/vàng
@@ -438,6 +440,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.35.1", date: "04/08/2026", items: [
+    "Sắp xếp cột “Tình trạng” gom theo màu: Trễ tiến độ → Cắt đầu việc (đỏ) → Cần tập trung (đỏ) → Cắt đầu việc (vàng) → Cần tập trung (vàng) → Không vấn đề → Đã hoàn thành.",
+  ] },
   { v: "3.35.0", date: "04/08/2026", items: [
     "Sắp xếp cột “Tình trạng” nay theo đúng mức nghiêm trọng: Trễ tiến độ → Cắt đầu việc (đỏ → vàng) → Cần tập trung (đỏ → vàng) → Không vấn đề → Đã hoàn thành; bấm lần 2 đảo chiều.",
   ] },
@@ -2586,18 +2591,18 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         case "actualPct":       return it.pctActual ?? null;
         case "overdue":         return it.overdueDays ?? 0;
         case "alert": {
-          // Xếp theo MỨC NGHIÊM TRỌNG giảm dần. Bấm cột lần đầu = desc (giá trị cao trước) ⇒
-          //   Trễ tiến độ → Cắt đầu việc (đỏ) → Cắt đầu việc (vàng) → Cần tập trung (đỏ) →
-          //   Cần tập trung (vàng) → Không vấn đề → Đã hoàn thành;  bấm lần 2 = asc = chiều ngược.
-          // "Trễ tiến độ" luôn đỏ nên là 1 mức; "Cắt đầu việc" & "Cần tập trung" tách đỏ > vàng.
+          // Xếp theo MỨC NGHIÊM TRỌNG giảm dần, GOM THEO MÀU (đỏ trước vàng). Bấm cột lần đầu =
+          // desc (giá trị cao trước) ⇒ Trễ tiến độ → Cắt đầu việc (đỏ) → Cần tập trung (đỏ) →
+          //   Cắt đầu việc (vàng) → Cần tập trung (vàng) → Không vấn đề → Đã hoàn thành;
+          //   bấm lần 2 = asc = chiều ngược. "Trễ tiến độ" luôn đỏ nên là 1 mức trên cùng.
           // "Đã hoàn thành" (≥100%) xuống CUỐI — bám theo ĐÚNG badge hiển thị (badge xanh ưu tiên
           // hơn _alert ở renderRow), nên xét mốc 100% TRƯỚC khi tra _alert.
           const done = it.pctActual != null && Math.round(it.pctActual) >= 100;
           if (done) return 0;
           const red = it._alertColor === "red";
           if (it._alert === "late") return 7;
-          if (it._alert === "trim") return red ? 6 : 5;
-          if (it._alert === "focus") return red ? 4 : 3;
+          if (it._alert === "trim") return red ? 6 : 4;
+          if (it._alert === "focus") return red ? 5 : 3;
           return 1; // không vấn đề (chưa hoàn thành)
         }
         case "note":            return (it.note || "").trim().toLowerCase();
