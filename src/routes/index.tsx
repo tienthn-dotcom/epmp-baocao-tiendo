@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.34.1 (04/08/2026): Dòng "SD" (Shop Drawing) xếp NGAY TRƯỚC "TKSX". Thêm STAGE_ABBR_ORDER +
+ *     stageRankByAbbr (theo VIẾT TẮT: TK,BG,MA,VT,SD,TKSX,SX,TC) dùng cho sort "list" (bảng) + sort
+ *     dòng con Gantt (thay STAGE_ORDER.indexOf theo internal id — vốn để SHOP=90 & TKSX rớt cuối ở Gantt).
  *   v3.34.0 (04/08/2026): Bấm badge phiên bản (header) → dialog "CÓ GÌ MỚI" liệt kê CHANGELOG theo bản
  *     (ChangelogDialog + mảng CHANGELOG user-facing; APP_VERSION = CHANGELOG[0].v).
  *   v3.33.3 (31/07/2026): Gantt — băng đỏ "Tuần hiện hành" phủ luôn viền dưới mỗi hàng (bottom:-1 thay
@@ -431,6 +434,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.34.1", date: "04/08/2026", items: [
+    "Dòng “SD” (Shop Drawing) nay xếp NGAY TRƯỚC dòng “TKSX” (cả bảng lẫn biểu đồ Tổng thể tiến độ).",
+  ] },
   { v: "3.34.0", date: "04/08/2026", items: [
     "Bấm vào số phiên bản (góc trên phải) để xem “Có gì mới” — nhật ký thay đổi theo từng bản.",
   ] },
@@ -577,6 +583,15 @@ function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   if (sid === "SHOP") return "SD";
   if (sid === "OTHER") return "Khác";
   return STAGE_ABBR[sid];
+}
+
+/** THỨ TỰ SẮP XẾP hàng theo VIẾT TẮT hạng mục. Khác STAGE_ORDER (internal id, dùng cho 7 thẻ giai
+ *  đoạn): ở đây "SD" (Shop Drawing) đứng NGAY TRƯỚC "TKSX" (chốt 04/08/2026), và TKSX xếp đúng chỗ
+ *  (STAGE_ORDER dùng id "SD"=TKSX nên sort theo abbr "TKSX" từng bị rớt xuống cuối). Mã lạ → 90 (cuối). */
+const STAGE_ABBR_ORDER: string[] = ["TK", "BG", "MA", "VT", "SD", "TKSX", "SX", "TC"];
+function stageRankByAbbr(abbr: string): number {
+  const i = STAGE_ABBR_ORDER.indexOf(abbr);
+  return i < 0 ? 90 : i;
 }
 
 /** Hiển thị "Nhân sự phụ trách" theo QUY ƯỚC từng giai đoạn.
@@ -2474,7 +2489,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       });
     }
     // Trong mỗi dự án: sắp theo thứ tự giai đoạn (TK→…→TC), rồi theo ngày bắt đầu.
-    const stageIdxOf = (ab: string) => { const i = STAGE_ORDER.indexOf(ab as StageId); return i < 0 ? 90 : i; };
+    const stageIdxOf = (ab: string) => stageRankByAbbr(ab);
     for (const arr of childrenByProject.values())
       arr.sort((a, b) => stageIdxOf(a.stageAbbr) - stageIdxOf(b.stageAbbr) || (a.start ?? "9999").localeCompare(b.start ?? "9999"));
 
@@ -2549,9 +2564,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     const getVal = (it: EnrichedItem, key: SortKey): number | string | null => {
       switch (key) {
         case "list": {
-          // Sắp xếp Hạng mục theo ĐÚNG thứ tự giai đoạn (không theo abc).
-          const gi = STAGE_ORDER.indexOf(it._stageId as StageId);
-          return gi >= 0 ? gi : 90;
+          // Sắp xếp Hạng mục theo ĐÚNG thứ tự giai đoạn (không theo abc). Dùng thứ tự theo VIẾT TẮT
+          // để "SD" (Shop Drawing) đứng TRƯỚC "TKSX".
+          return stageRankByAbbr(stageAbbrOf(it._stageId));
         }
         case "updateDate":      return dKey(it.updateDate);
         case "maCT":            return it.maCT || "";
