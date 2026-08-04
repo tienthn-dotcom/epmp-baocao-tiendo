@@ -10,11 +10,16 @@
  *    1. crUpdateTitle : D3 → "BÁO CÁO TUÂN THỦ CẬP NHẬT MASTER PLAN THÁNG MM/YYYY" (tháng hiện tại).
  *    2. crSyncProjects: dự án có trong AutoData mà CHƯA có trong bảng (khớp theo TÊN) → thêm dòng
  *                       cuối bảng (điền Location/Tên/PM; C,D,H set công thức để tự chạy).
- *    3. crMarkWeek    : quét theo lịch, tick cột tuần hiện tại:
+ *    3. crManageColumns: cột tuần = các THỨ 4 của THÁNG HIỆN TẠI. Thiếu cột nào thì đổi nhãn cột
+ *                       trống cùng tháng (vd cột Thứ 3 04/08 → Thứ 4 05/08) hoặc chèn cột mới.
+ *                       ẨN mọi cột tuần KHÔNG thuộc tháng hiện tại; HIỆN các cột Thứ 4 tháng này.
+ *    4. crUpdateScores: cột I = ĐẾM "x" (lũy kế không cập nhật trong tháng); cột J = ĐIỂM
+ *                       = MAX(0, 100 − 25·(số x) − 10·(số o)) — công thức trên dải Thứ 4 tháng này.
+ *    5. crMarkWeek    : quét theo lịch, tick cột tuần hiện tại:
  *         · Thứ 4 (>=21h): ngày cập nhật == HÔM NAY → "✓", còn lại → "x".
  *         · Thứ 5 (<12h) : ngày cập nhật == T4 tuần này → "✓"; == HÔM NAY(T5) → "o"; còn lại → "x";
  *                          rồi KHOÁ cột (ScriptProperties) — không sửa lại nữa.
- *       (Cột tuần này = cột K..Z có ngày rơi trong tuần Thứ2–CN chứa hôm nay. Không tạo cột mới.)
+ *       (Cột tuần này = cột có ngày Thứ 4 rơi trong tuần Thứ2–CN chứa hôm nay.)
  *
  *  AN TOÀN: để DRY_RUN = true → chỉ GHI LOG "sẽ làm gì", KHÔNG đụng file. Chạy thử, xem
  *  Execution log đúng ý rồi đổi DRY_RUN = false để chạy thật.
@@ -43,7 +48,9 @@ function runComplianceReport() {
 
   crUpdateTitle_(sh);
   crSyncProjects_(ss, sh);
-  crMarkWeek_(ss, sh);
+  var range = crManageColumns_(ss, sh);   // {first,last} cột Thứ 4 tháng này
+  crUpdateScores_(sh, range);             // cột I (đếm x) + J (điểm 100−25x−10o)
+  crMarkWeek_(ss, sh, range);
   Logger.log(DRY_RUN ? '*** DRY_RUN: chưa ghi gì. Đổi DRY_RUN=false để chạy thật. ***' : 'Đã chạy thật xong.');
 }
 
@@ -107,8 +114,82 @@ function crSyncProjects_(ss, sh) {
   });
 }
 
-/* ── 3) TICK ✔/o/x cột tuần hiện tại ── */
-function crMarkWeek_(ss, sh) {
+/* ── 3) QUẢN CỘT: cột tuần = các Thứ 4 tháng này; ẩn tháng khác. Trả {first,last} (cột index). ── */
+function crManageColumns_(ss, sh) {
+  var tz = ss.getSpreadsheetTimeZone();
+  var now = new Date();
+  var curMonth = Utilities.formatDate(now, tz, 'yyyy-MM');
+  var y = parseInt(Utilities.formatDate(now, tz, 'yyyy'), 10);
+  var m = parseInt(Utilities.formatDate(now, tz, 'MM'), 10);
+  var weds = crWedsOfMonth_(y, m, tz);                 // ['2026-08-05','2026-08-12',...]
+
+  var header = sh.getRange(HEADER_ROW, 1, 1, sh.getLastColumn()).getValues()[0];
+  var weekCols = [];
+  for (var c = WEEK_COL_START - 1; c < header.length; c++) {
+    if (header[c] instanceof Date) weekCols.push({ col: c + 1, date: crIso_(header[c], tz) });
+  }
+  var haveDate = {}; weekCols.forEach(function (w) { haveDate[w.date] = w.col; });
+  // Cột cùng tháng nhưng KHÔNG phải Thứ 4 cần dùng, lại đang trống → tái dùng (đổi nhãn).
+  var reusable = weekCols.filter(function (w) {
+    return w.date.slice(0, 7) === curMonth && weds.indexOf(w.date) < 0 && crColEmpty_(sh, w.col);
+  });
+  var lastWeekCol = weekCols.length ? weekCols[weekCols.length - 1].col : (WEEK_COL_START - 1);
+
+  weds.forEach(function (wd) {
+    if (haveDate[wd]) return;
+    if (reusable.length) {
+      var r = reusable.shift();
+      Logger.log('Cột: đổi nhãn #' + r.col + ' ' + r.date + ' → ' + wd);
+      if (!DRY_RUN) sh.getRange(HEADER_ROW, r.col).setValue(crParseIso_(wd));
+      haveDate[wd] = r.col;
+    } else {
+      Logger.log('Cột: TẠO cột mới ' + wd + ' (sau cột #' + lastWeekCol + ')');
+      if (!DRY_RUN) {
+        sh.insertColumnAfter(lastWeekCol);
+        sh.getRange(HEADER_ROW, lastWeekCol).copyTo(sh.getRange(HEADER_ROW, lastWeekCol + 1), { formatOnly: true });
+        sh.getRange(HEADER_ROW, lastWeekCol + 1).setValue(crParseIso_(wd));
+      }
+      lastWeekCol++;
+      haveDate[wd] = lastWeekCol;
+    }
+  });
+
+  // Ẩn/hiện. (Dry-run chỉ log.)
+  if (DRY_RUN) {
+    var hide = weekCols.filter(function (w) { return w.date.slice(0, 7) !== curMonth; }).map(function (w) { return w.date; });
+    Logger.log('Cột: sẽ ẨN tháng khác (' + hide.length + '): ' + hide.join(', '));
+    Logger.log('Cột: sẽ HIỆN Thứ 4 tháng ' + curMonth + ': ' + weds.join(', '));
+  } else {
+    var h2 = sh.getRange(HEADER_ROW, 1, 1, sh.getLastColumn()).getValues()[0];
+    for (var c2 = WEEK_COL_START - 1; c2 < h2.length; c2++) {
+      if (!(h2[c2] instanceof Date)) continue;
+      if (weds.indexOf(crIso_(h2[c2], tz)) >= 0) sh.showColumns(c2 + 1);
+      else sh.hideColumns(c2 + 1);
+    }
+  }
+
+  // Dải cột Thứ 4 tháng này (liền kề) → cho chấm điểm & tick.
+  var cols = weds.map(function (wd) { return haveDate[wd]; }).filter(function (x) { return x; }).sort(function (a, b) { return a - b; });
+  return cols.length ? { first: cols[0], last: cols[cols.length - 1], cols: cols } : null;
+}
+
+/* ── 4) CỘT I (lũy kế x) + J (điểm 100−25x−10o) bằng CÔNG THỨC, phạm vi = Thứ 4 tháng này ── */
+function crUpdateScores_(sh, range) {
+  if (!range) { Logger.log('Điểm: chưa có cột tháng này — bỏ qua.'); return; }
+  var lastRow = crLastDataRow_(sh);
+  if (lastRow < DATA_START_ROW) return;
+  var a1 = crColA1_(range.first) + '{r}:' + crColA1_(range.last) + '{r}';
+  Logger.log('Điểm: cột I=đếm "x", J=100−25x−10o trên dải ' + crColA1_(range.first) + '..' + crColA1_(range.last) + ' cho ' + (lastRow - DATA_START_ROW + 1) + ' dòng.');
+  if (DRY_RUN) return;
+  for (var r = DATA_START_ROW; r <= lastRow; r++) {
+    var rng = crColA1_(range.first) + r + ':' + crColA1_(range.last) + r;
+    sh.getRange(r, 9).setFormula('=COUNTIF(' + rng + ',"x")');                               // I = Lũy kế không cập nhật
+    sh.getRange(r, 10).setFormula('=MAX(0,100-25*COUNTIF(' + rng + ',"x")-10*COUNTIF(' + rng + ',"o"))'); // J = Điểm
+  }
+}
+
+/* ── 5) TICK ✔/o/x cột tuần hiện tại ── */
+function crMarkWeek_(ss, sh, range) {
   var tz = ss.getSpreadsheetTimeZone();
   var now = new Date();
   var dow = parseInt(Utilities.formatDate(now, tz, 'u'), 10);   // 1=T2 … 3=T4, 4=T5 … 7=CN
@@ -174,3 +255,22 @@ function crNorm_(v) {
   return String(v == null ? '' : v).toLowerCase().replace(/[\r\n]+/g, ' ').replace(/[.]/g, '').replace(/\s+/g, ' ').trim();
 }
 function crIso_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
+/** Danh sách các Thứ 4 (yyyy-MM-dd) trong tháng m/y. */
+function crWedsOfMonth_(y, m, tz) {
+  var out = [], d = new Date(y, m - 1, 1);
+  while (d.getMonth() === m - 1) {
+    if (d.getDay() === 3) out.push(Utilities.formatDate(d, tz, 'yyyy-MM-dd')); // 3 = Thứ 4
+    d = new Date(d.getTime() + 86400000);
+  }
+  return out;
+}
+function crParseIso_(iso) { var p = iso.split('-'); return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10)); }
+/** Cột (index) có trống ở mọi dòng dữ liệu không? */
+function crColEmpty_(sh, col) {
+  var lastRow = crLastDataRow_(sh);
+  if (lastRow < DATA_START_ROW) return true;
+  var vals = sh.getRange(DATA_START_ROW, col, lastRow - DATA_START_ROW + 1, 1).getValues();
+  return vals.every(function (r) { return String(r[0]).trim() === ''; });
+}
+/** Index cột (1-based) → chữ cái A1 (1→A, 27→AA…). */
+function crColA1_(n) { var s = ''; while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
