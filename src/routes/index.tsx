@@ -133,6 +133,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   v3.33.3 (31/07/2026): Gantt — băng đỏ "Tuần hiện hành" phủ luôn viền dưới mỗi hàng (bottom:-1 thay
+ *     height:h) → hết vạch trắng ngang cắt qua băng đỏ khi hiện nhiều hàng (bấm "hiện việc đã xong").
  *   v3.33.2 (31/07/2026): Badge "Đã hoàn thành" (xanh) BỎ icon tick, chỉ giữ chữ. Gỡ import Check thừa.
  *   v3.33.1 (31/07/2026): Sửa chính tả tên bộ phận "Projects Planning" → "Project Planning" (header
  *     index.tsx + footer trang đăng nhập auth-pages.ts).
@@ -420,7 +422,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.33.2";
+const APP_VERSION = "3.33.3";
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -4634,7 +4636,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
       {/* NGÀY HIỆN HÀNH = CỘT TUẦN chứa hôm nay: tô ĐỎ NHẠT cả ô (băng #fca5a5, dưới thanh).
           BỎ vạch đỏ mảnh (#dc2626) theo yêu cầu — CHỈ giữ băng. */}
       {weekInWindow && (
-        <div title="Tuần hiện hành" style={{ position: "absolute", top: 0, height: h, left: pct(colX(todayCol)), width: pct(colW), background: "#fca5a5", zIndex: 1 }} />
+        <div title="Tuần hiện hành" style={{ position: "absolute", top: 0, bottom: -1, left: pct(colX(todayCol)), width: pct(colW), background: "#fca5a5", zIndex: 1 }} />
       )}
     </>
   );
