@@ -133,6 +133,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  thay đổi lớn/không tương thích tăng MAJOR. Hiển thị ở header để đối chiếu khi
  *  cần quay lại bản cũ.
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
+ *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
+ *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.34.0 (04/08/2026): Bấm badge phiên bản (header) → dialog "CÓ GÌ MỚI" liệt kê CHANGELOG theo bản
+ *     (ChangelogDialog + mảng CHANGELOG user-facing; APP_VERSION = CHANGELOG[0].v).
  *   v3.33.3 (31/07/2026): Gantt — băng đỏ "Tuần hiện hành" phủ luôn viền dưới mỗi hàng (bottom:-1 thay
  *     height:h) → hết vạch trắng ngang cắt qua băng đỏ khi hiện nhiều hàng (bấm "hiện việc đã xong").
  *   v3.33.2 (31/07/2026): Badge "Đã hoàn thành" (xanh) BỎ icon tick, chỉ giữ chữ. Gỡ import Check thừa.
@@ -422,7 +426,62 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     bề rộng cột + tên dự án gói 2–3 dòng như PMP; chỉ bấm ĐÚNG ô Vướng mắc/Giải pháp
  *     mới sửa (bỏ click nhầm ở ô Nhân sự/Deadline).
  *   v3.0.0 (≤22/07/2026): mốc trước khi bắt đầu ghi changelog. */
-const APP_VERSION = "3.33.3";
+/** LOG THAY ĐỔI cho NGƯỜI DÙNG — bấm badge phiên bản (góc header) để xem. Mỗi lần deploy THÊM 1 mục
+ *  ở ĐẦU mảng (viết ngắn gọn, dễ hiểu, KHÔNG kỹ thuật). `APP_VERSION` tự lấy phiên bản mới nhất từ
+ *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
+type ChangelogEntry = { v: string; date: string; items: string[] };
+const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.34.0", date: "04/08/2026", items: [
+    "Bấm vào số phiên bản (góc trên phải) để xem “Có gì mới” — nhật ký thay đổi theo từng bản.",
+  ] },
+  { v: "3.33.3", date: "04/08/2026", items: [
+    "Biểu đồ Tổng thể tiến độ: hết vạch trắng cắt ngang băng đỏ “tuần hiện hành” khi bật hiện việc đã xong.",
+  ] },
+  { v: "3.33.2", date: "31/07/2026", items: [
+    "Badge “Đã hoàn thành” bỏ dấu tick cho gọn.",
+  ] },
+  { v: "3.33.0", date: "31/07/2026", items: [
+    "TKSX: ô phụ trách nhập tiền tố khác (PC, SHD…) nay hiển thị đúng, không nhét nhầm vào “SD -”.",
+  ] },
+  { v: "3.32.0", date: "31/07/2026", items: [
+    "Nhật ký giám sát: bộ lọc phân lớp — chọn “Hôm nay” chỉ hiện các tài khoản có hoạt động hôm nay.",
+  ] },
+  { v: "3.31.0", date: "31/07/2026", items: [
+    "Tên PM ở công đoạn tự lấy từ người phụ trách CẤP DỰ ÁN (tên đầu tiên); sửa lỗi hiện nhầm người SD thành PM.",
+  ] },
+  { v: "3.30.0", date: "31/07/2026", items: [
+    "Thêm nút “Trình chiếu TV” (menu Hệ thống): phóng to lấp đầy màn hình TV lớn khi họp — nhớ trạng thái.",
+    "Nhóm cảnh báo “Bám sát kế hoạch” đổi từ < 20% thành ≤ 20%.",
+  ] },
+  { v: "3.29.0", date: "31/07/2026", items: [
+    "Thêm bộ lọc “PM” (theo người phụ trách chính cấp dự án) cho cả bảng lẫn Tổng thể tiến độ.",
+  ] },
+  { v: "3.28.0", date: "31/07/2026", items: [
+    "Chức năng ẩn dòng thủ công áp cho cả biểu đồ Tổng thể tiến độ.",
+  ] },
+  { v: "3.27.0", date: "31/07/2026", items: [
+    "Biểu đồ Tổng thể tiến độ thêm cột “Ngày update” (trước cột Mã).",
+  ] },
+  { v: "3.26.0", date: "31/07/2026", items: [
+    "Admin ẩn được dòng hạng mục “không đáng nêu” khỏi báo cáo; nút “Dòng đã ẩn” để soi lại & bỏ ẩn.",
+  ] },
+  { v: "3.25.0", date: "31/07/2026", items: [
+    "PMO được sửa / ẩn / xoá bình luận của người khác trong cột Vướng mắc & Giải pháp.",
+  ] },
+  { v: "3.24.0", date: "31/07/2026", items: [
+    "Nhận diện mã “SD” là hạng mục “Shop Drawing”.",
+  ] },
+  { v: "3.23.0", date: "31/07/2026", items: [
+    "Xuất Excel giống hệt bảng/PDF nhưng là ô THẬT (lọc / sắp xếp / sửa ngay trong Excel).",
+  ] },
+  { v: "3.22.0", date: "31/07/2026", items: [
+    "Sửa tận gốc lỗi cắt ngang bảng khi xuất PDF (cả khổ ngang lẫn dọc).",
+  ] },
+  { v: "3.19.0", date: "31/07/2026", items: [
+    "Bộ lọc “Cần cập nhật MP” tự nhận dự án có vướng mắc “trình BOD phê duyệt (Bitrix)”.",
+  ] },
+];
+const APP_VERSION = CHANGELOG[0].v;
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
@@ -970,6 +1029,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, onOpenSettings,
   gapThreshold: number;
 }) {
   const [tieuChiOpen, setTieuChiOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   // 3 vùng: trái (logo ePMP + tên báo cáo) · giữa (logo AA) · phải (nguồn + nút).
   // Grid [1fr auto 1fr] giữ logo AA CHÍNH GIỮA; màn hẹp → xếp dọc (autofit).
   // KHÔNG sticky: lăn xuống header app cuộn đi, chỉ header BẢNG dính lại.
@@ -1006,13 +1066,16 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, onOpenSettings,
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> Tiêu chí cảnh báo
           </button>
           {tieuChiOpen && <AlertCriteriaDialog gapThreshold={gapThreshold} onClose={() => setTieuChiOpen(false)} />}
+          {changelogOpen && <ChangelogDialog onClose={() => setChangelogOpen(false)} />}
           {/* CHỖ CẮM tính năng hệ thống (đánh giá tuân thủ, nhật ký giám sát). Nội dung do
               DashboardBody bơm vào qua <HeaderSlot> (portal) — đặt ở đây vì Header không cầm
               được dữ liệu báo cáo/quyền admin; xem chú thích ở DashboardBody. */}
           <div id="pmo-system-slot" className="flex items-center print:hidden" />
           <FreshnessBadge mode={dataMode} freshAt={freshAt} source={source} />
           <div className="flex items-center gap-2 md:justify-end print:hidden">
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold tracking-normal text-slate-900" title="Phiên bản sản phẩm">v{APP_VERSION}</span>
+            <button type="button" onClick={() => setChangelogOpen(true)}
+              title="Bấm xem có gì mới trong các phiên bản"
+              className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold tracking-normal text-slate-900 hover:bg-slate-200">v{APP_VERSION}</button>
             <button onClick={onRefresh} disabled={loading} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Làm mới
             </button>
@@ -5667,6 +5730,43 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
         </div>
       </div>
     </div>
+  );
+}
+
+/** DIALOG "CÓ GÌ MỚI" — bấm badge phiên bản để mở; liệt kê CHANGELOG theo từng bản (mới nhất trên). */
+function ChangelogDialog({ onClose }: { onClose: () => void }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b-2 border-teal-400 px-5 py-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Nhật ký cập nhật</div>
+            <div className="text-sm font-bold text-slate-900">CÓ GÌ MỚI</div>
+            <div className="mt-0.5 text-[11px] text-slate-600">Các thay đổi theo từng phiên bản (mới nhất ở trên).</div>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100">Đóng ✕</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          <ol className="space-y-3">
+            {CHANGELOG.map((e, i) => (
+              <li key={e.v} className="border-l-2 border-slate-200 pl-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${i === 0 ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-700"}`}>v{e.v}</span>
+                  {i === 0 && <span className="rounded bg-teal-50 px-1.5 py-0.5 text-[9px] font-bold text-teal-700">MỚI NHẤT</span>}
+                  <span className="text-[10.5px] text-slate-400">{e.date}</span>
+                </div>
+                <ul className="list-disc space-y-0.5 pl-4 text-[12px] leading-snug text-slate-700">
+                  {e.items.map((it, k) => <li key={k}>{it}</li>)}
+                </ul>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-3 border-t border-slate-100 pt-2 text-[10.5px] text-slate-400">Các phiên bản cũ hơn không liệt kê ở đây.</div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
