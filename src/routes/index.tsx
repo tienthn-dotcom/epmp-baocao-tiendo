@@ -444,6 +444,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.35.4", date: "05/08/2026", items: [
+    "Đổi tên cột “Vướng mắc” thành “Vướng mắc / Cần xử lý” (bảng, bảng gộp, xuất PDF/Excel).",
+  ] },
   { v: "3.35.3", date: "04/08/2026", items: [
     "Bảng Đánh giá tuân thủ: data bar “Số lần không cập nhật” đo theo TỔNG số tuần trong tháng (tháng 4 tuần → 1 lần chiếm 1/4 ô), không còn lấp đầy ô.",
   ] },
@@ -2970,7 +2973,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
             { label: "% thực tế", width: 9, align: "center" as const },
             { label: "Quá hạn", width: 9, align: "center" as const },
             { label: "Tình trạng", width: 15, align: "center" as const },
-            { label: "Vướng mắc", width: 48, wrap: true, align: "left" as const },
+            { label: "Vướng mắc / Cần xử lý", width: 48, wrap: true, align: "left" as const },
             { label: "Giải pháp", width: 48, wrap: true, align: "left" as const },
           ];
           const rows: XlsxTableRow[] = [];
@@ -3243,7 +3246,7 @@ const HEADER_COLS: { k: SortKey; align: "left" | "center" | "right"; label: Reac
   { k: "actualPct",       align: "center", label: <>%<br />thực tế</> },
   { k: "overdue",         align: "center", label: <>Quá<br />hạn</> },
   { k: "alert",           align: "center", label: "Tình trạng" },
-  { k: "note",            align: "left",   label: "Vướng mắc" },
+  { k: "note",            align: "left",   label: "Vướng mắc / Cần xử lý" },
   { k: "action",          align: "left",   label: "Giải pháp" },
 ];
 
@@ -3261,7 +3264,7 @@ const HEADER_COLS_GROUP: { k: SortKey; align: "left" | "center" | "right"; label
   { k: "actualPct",       align: "center", label: <>%<br />thực tế</> },
   { k: "overdue",         align: "center", label: <>Quá<br />hạn</> },
   { k: "alert",           align: "center", label: "Tình trạng" },
-  { k: "note",            align: "left",   label: "Vướng mắc" },
+  { k: "note",            align: "left",   label: "Vướng mắc / Cần xử lý" },
   { k: "action",          align: "left",   label: "Giải pháp" },
 ];
 
