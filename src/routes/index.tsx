@@ -135,6 +135,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.35.3 (04/08/2026): Data bar "Số lần không cập nhật" (ComplianceDialog) đổi mẫu số maxRequired
+ *     từ "số tuần ≤ hôm nay" sang data.weeks.length (TỔNG tuần trong tháng) → count/tổng-tuần.
  *   v3.35.2 (04/08/2026): Data bar cột "Số lần không cập nhật" (ComplianceDialog) đổi bg-red-300→
  *     bg-blue-300, text-red-700→text-blue-700 (sếp không dùng đỏ).
  *   v3.35.1 (04/08/2026): Đổi thứ tự sort "Tình trạng" sang GOM THEO MÀU — late 7 · trim đỏ 6 ·
@@ -442,6 +444,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.35.3", date: "04/08/2026", items: [
+    "Bảng Đánh giá tuân thủ: data bar “Số lần không cập nhật” đo theo TỔNG số tuần trong tháng (tháng 4 tuần → 1 lần chiếm 1/4 ô), không còn lấp đầy ô.",
+  ] },
   { v: "3.35.2", date: "04/08/2026", items: [
     "Bảng Đánh giá tuân thủ: data bar cột “Số lần không cập nhật” đổi từ đỏ sang xanh dương.",
   ] },
@@ -5544,14 +5549,9 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
     for (let j = 0; j < data.weeks.length; j++) { const t = toTs(data.weeks[j]); if (t != null && t >= tToday) return j; }
     return data.weeks.length - 1;
   }, [data, tToday, repYear, repMon]);
-  // SỐ LẦN PHẢI CẬP NHẬT tính đến HÔM NAY = số cột tuần (tháng chấm) có ngày ≤ hôm nay → MAX cho
-  // data bar "số lần không cập nhật" (bar = countX / maxRequired).
-  const maxRequired = useMemo(() => {
-    if (!data) return 0;
-    let n = 0;
-    for (const w of data.weeks) { const m = w.match(/^(\d{1,2})\/(\d{1,2})$/); if (m && Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]) <= tToday) n++; }
-    return n;
-  }, [data, tToday, repYear, repMon]);
+  // MAX cho data bar "số lần không cập nhật" = TỔNG số tuần trong THÁNG (không phải số tuần đã
+  // trôi qua) → tháng có 4 tuần thì count 1 chỉ chiếm 1/4 ô (theo yêu cầu hiển thị của PMO).
+  const maxRequired = useMemo(() => (data ? data.weeks.length : 0), [data]);
   const vungOptions = useMemo(() => {
     const s = new Set<string>();
     for (const r of data?.rows ?? []) { const v = regionByName.get(normProjName(r.name)); if (v) s.add(v); }
