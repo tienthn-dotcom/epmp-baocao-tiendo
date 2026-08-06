@@ -470,6 +470,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.40.0", date: "05/08/2026", items: [
+    "Popup “Thi công lắp đặt” thêm nút “↻ Làm mới”: vừa sửa sheet nguồn là bấm để tải bản mới nhất NGAY (không chờ mốc 17:30). Bình thường vẫn nhanh nhờ cache.",
+  ] },
   { v: "3.39.1", date: "05/08/2026", items: [
     "PDF y hệt: file .xlsx (không nhận gid) nay tự lùi về hiện PDF nguyên file (trang đầu = sheet đầu), thay vì lỗi.",
   ] },
@@ -3369,10 +3372,12 @@ function PicNames({ text }: { text: string }) {
  *  (chỉ khi mở popup) để không phình bundle chính. */
 function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => void }) {
   const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
+  const [refreshN, setRefreshN] = useState(0);   // bấm "Làm mới" → tăng → lấy bản LIVE (bỏ cache)
+  const force = refreshN > 0;
   const q = useQuery({
-    queryKey: ["summary-file", fid, gid ?? ""],
-    queryFn: () => getSummaryFile({ data: { fileId: fid, gid: gid || undefined } }),
-    staleTime: 5 * 60 * 1000,
+    queryKey: ["summary-file", fid, gid ?? "", refreshN],
+    queryFn: () => getSummaryFile({ data: { fileId: fid, gid: gid || undefined, force: force || undefined } }),
+    staleTime: force ? 0 : 5 * 60 * 1000,
     retry: 1,
   });
   const [render, setRender] = useState<{ html: string; css: string } | null>(null);
@@ -3406,7 +3411,7 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
           // TAB LẠ (chưa đồng bộ form) → CHỤP Y HỆT bằng PDF của Google (có CHART + màu điều kiện).
           // PDF lỗi (vd file .xlsx không nhận gid) → lùi về đổ HTML từ ô dữ liệu.
           try {
-            const p = await getSheetPdf({ data: { fileId: fid, gid: gid || undefined } });
+            const p = await getSheetPdf({ data: { fileId: fid, gid: gid || undefined, force: force || undefined } });
             if (off) return;
             setPdf(p.b64);
           } catch {
@@ -3430,7 +3435,11 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
             <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Ma trận lắp đặt</div>
             <div className="text-sm font-semibold text-slate-900">Tiến độ bàn giao — Summary</div>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => { setRender(null); setPdf(null); setParseErr(null); setRefreshN((n) => n + 1); }}
+              className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50" title="Bỏ cache, tải bản mới nhất từ sheet ngay">↻ Làm mới</button>
+            <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {loading && <div className="p-10 text-center text-sm text-slate-500">Đang tải…</div>}
