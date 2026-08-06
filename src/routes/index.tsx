@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.38.0 (05/08/2026): SummaryDialog dispatch 3 nhánh theo tên tab: /public summary/→cột;
+ *     /summary/→heatmap; CÒN LẠI→sheet-dump.ts sheetToHtml (đổ nguyên sheet: value .w + fill tĩnh +
+ *     merge, bám vùng nội dung thật, cap 200×80). Cho tab chưa đồng bộ form xem nhanh như ảnh chụp.
  *   v3.37.0 (05/08/2026): VIẾT LẠI summaryToHtml BÁM CẤU TRÚC (chạy mọi biến thể heatmap). Ô lưới =
  *     MÃ SỐ; màu do conditional-formatting (SheetJS đọc không ra) → dựng bảng MÃ→MÀU từ LEGEND (ô "Màu"
  *     có fill tĩnh; mã theo cột "Nhập/Mã" nếu có else thứ tự). Block nhận qua hàng có "01"&"02" (nhãn
@@ -464,6 +467,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.38.0", date: "05/08/2026", items: [
+    "Popup “Thi công lắp đặt”: hyperlink tới tab tên KHÁC (không phải Summary/Public Summary) sẽ ĐỔ NGUYÊN sheet lên (giá trị + màu) — xem nhanh mọi báo cáo chưa đồng bộ form, khỏi cần chuẩn hoá trước.",
+  ] },
   { v: "3.37.0", date: "05/08/2026", items: [
     "Heatmap ma trận bàn giao nay tô đúng cho MỌI dự án (block A/B/C/D hay B1..Bn, số tầng/căn bất kỳ, chú thích khác nhau) — tự đọc bảng màu từ legend của từng file thay vì cố định theo Mini Hotel.",
   ] },
@@ -3373,18 +3379,22 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const wb = XLSX.read(bytes.buffer, { type: "array", cellStyles: true });
-        // CHỌN RENDERER THEO TÊN SHEET: "Public Summary" → biểu đồ cột; còn lại ("Summary") → heatmap.
+        // CHỌN RENDERER THEO TÊN SHEET: "Public Summary" → biểu đồ cột; chứa "Summary" → heatmap;
+        // TÊN KHÁC (tab chưa đồng bộ form) → ĐỔ NGUYÊN sheet lên (như chụp màn hình).
         const name = wb.SheetNames.find((n) => /public\s*summary/i.test(n))
-          ?? wb.SheetNames.find((n) => /^summary$/i.test(n)) ?? wb.SheetNames[0];
+          ?? wb.SheetNames.find((n) => /summary/i.test(n)) ?? wb.SheetNames[0];
         const sh = name ? wb.Sheets[name] : undefined;
         if (off) return;
         if (!sh) { setParseErr("File không có sheet dữ liệu."); return; }
         if (/public\s*summary/i.test(name)) {
           const pub = await import("@/lib/public-summary-render");
           setRender({ html: pub.publicSummaryToHtml(sh), css: pub.PUBLIC_SUMMARY_CSS });
-        } else {
+        } else if (/summary/i.test(name)) {
           const mod = await import("@/lib/summary-render");
           setRender({ html: mod.summaryToHtml(sh), css: mod.SUMMARY_CSS });
+        } else {
+          const dump = await import("@/lib/sheet-dump");
+          setRender({ html: dump.sheetToHtml(sh), css: dump.SHEET_DUMP_CSS });
         }
       } catch (e) { if (!off) setParseErr((e as Error).message); }
     })();
