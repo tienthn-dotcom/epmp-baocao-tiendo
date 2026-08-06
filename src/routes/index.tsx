@@ -135,6 +135,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.36.1 (05/08/2026): Fix ĐỤNG KHOÁ link matrix — mtld-links dò cột STT, gắn link theo TỪNG DÒNG
+ *     `map["id:"+STT]` (fallback maCT); renderRow tra `installLinks["id:"+it.id] ?? [maCT]` → 1 dự án
+ *     nhiều matrix (phòng/Public) không đè nhau. dvn (public-summary-render) đổi serial Excel + ISO →
+ *     dd/mm/yyyy (client parse không bật cellDates nên ô ngày ra số serial).
  *   v3.36.0 (05/08/2026): Popup "Thi công lắp đặt" hỗ trợ DẠNG THỨ 2. mtld-links bắt thêm `gid` từ
  *     hyperlink → mã hoá "fileId|gid"; getSummaryFile nhận gid → tải `export?xlsx&gid=` (ĐÚNG 1 tab,
  *     ~23KB, khỏi tách extractSummaryXlsx) cache theo fileId:gid. SummaryDialog đọc TÊN sheet: "Public
@@ -449,6 +453,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.36.1", date: "05/08/2026", items: [
+    "Sửa: 1 dự án có NHIỀU matrix lắp đặt (phòng + Public…) không còn đè link nhau — mỗi ô giữ link riêng. Ngày trong biểu đồ Public đổi về dd/mm/yyyy.",
+  ] },
   { v: "3.36.0", date: "05/08/2026", items: [
     "Popup “Thi công lắp đặt” nhận dạng thứ 2: hyperlink trỏ tab “Public Summary” sẽ hiện BẢNG + BIỂU ĐỒ CỘT (khu Public, đường kế hoạch), phân biệt với dạng ma trận phòng theo tên tab.",
   ] },
@@ -3839,7 +3846,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         Math.abs(actual - s.avgPct) >= 3 && Math.abs(actual - s.pooledPct) >= 3;
     })();
     // "Thi công lắp đặt" đã hyperlink file Summary → bấm chữ mở popup ma trận lắp đặt.
-    const installFid = it.stage === "Thi công lắp đặt" ? installLinks?.[it.maCT] : undefined;
+    // Link matrix gắn theo TỪNG DÒNG (khoá "id:"+STT) → 1 dự án nhiều matrix (phòng/Public) không đụng;
+    // không khớp id (file cũ) → lùi về khoá mã dự án (maCT).
+    const installFid = it.stage === "Thi công lắp đặt"
+      ? ((it.id ? installLinks?.["id:" + it.id] : undefined) ?? installLinks?.[it.maCT])
+      : undefined;
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
     // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
     const hasBlocks = (it.blocks?.length ?? 0) > 0;

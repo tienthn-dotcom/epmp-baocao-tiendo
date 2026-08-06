@@ -26,6 +26,14 @@ export function readInstallLinks(buf: ArrayBuffer): Record<string, string> {
     const rng = XLSX.utils.decode_range(sh["!ref"]);
     const ec = XLSX.utils.encode_cell;
     const map: Record<string, string> = {};
+    // Cột STT (ID phân cấp, KHÔNG lặp) → gắn link theo TỪNG DÒNG: 1 dự án có NHIỀU matrix
+    // (phòng / Public / …) không đụng nhau. File không có STT → lùi về khoá theo mã dự án (maCT).
+    let sttCol = -1;
+    for (let r = rng.s.r; r <= Math.min(rng.s.r + 14, rng.e.r) && sttCol < 0; r++)
+      for (let c = rng.s.c; c <= rng.e.c; c++) {
+        const h = String((sh[ec({ r, c })] as XLSX.CellObject | undefined)?.v ?? "").trim().toLowerCase();
+        if (/^stt$|^id$|^mã\s*id$/.test(h) && !/d[ựu]\s*[áa]n/.test(h)) { sttCol = c; break; }
+      }
     let curMaCT = "";
     for (let r = rng.s.r; r <= rng.e.r; r++) {
       for (let c = rng.s.c; c <= Math.min(rng.s.c + 12, rng.e.c); c++) {
@@ -39,7 +47,12 @@ export function readInstallLinks(buf: ArrayBuffer): Record<string, string> {
           const fid = idFromUrl(target);
           const gid = gidFromUrl(target);
           // Mã hoá "fileId|gid" (kèm gid nếu hyperlink trỏ đúng 1 tab) → client tách ra ở SummaryDialog.
-          if (curMaCT && fid) map[curMaCT] = gid ? fid + "|" + gid : fid;
+          if (fid) {
+            const link = gid ? fid + "|" + gid : fid;
+            const rowId = sttCol >= 0 ? String((sh[ec({ r, c: sttCol })] as XLSX.CellObject | undefined)?.v ?? "").trim() : "";
+            if (rowId) map["id:" + rowId] = link;   // khoá theo DÒNG (ưu tiên) → nhiều link/1 dự án không đụng
+            if (curMaCT) map[curMaCT] = link;         // fallback theo dự án (file cũ không có STT)
+          }
         }
       }
     }

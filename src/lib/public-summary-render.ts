@@ -28,7 +28,16 @@ const pctS = (f: number | null) => (f == null ? "—" : (f >= 0 ? "+" : "") + Ma
 const pct2 = (f: number | null) => (f == null ? "—" : (f * 100).toFixed(2).replace(".", ",") + "%");
 const dvn = (v: unknown): string => {
   if (v instanceof Date && !isNaN(v.getTime())) return `${String(v.getDate()).padStart(2, "0")}/${String(v.getMonth() + 1).padStart(2, "0")}/${v.getFullYear()}`;
-  return S(v);
+  // Client parse KHÔNG bật cellDates → ô ngày ra SỐ SERIAL Excel → tự đổi về dd/mm/yyyy
+  // (epoch 1899-12-30 để khớp bug năm 1900 của Excel; dùng UTC tránh lệch múi giờ).
+  if (typeof v === "number" && v > 1000 && v < 90000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  }
+  const s = S(v);
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);   // chuỗi ISO → dd/mm/yyyy
+  if (m) return `${m[3].padStart(2, "0")}/${m[2].padStart(2, "0")}/${m[1]}`;
+  return s;
 };
 
 type Row = { stt: string; khu: string; start: string; deadline: string; plan: number | null; actual: number | null; diff: number | null; warn: string; prev: number | null; today: number | null; ok: boolean };
