@@ -15,9 +15,9 @@
  *                       ẨN mọi cột tuần KHÔNG thuộc tháng hiện tại; HIỆN các cột Thứ 4 tháng này.
  *    4. crUpdateScores: cột I = ĐẾM "x" (lũy kế không cập nhật trong tháng); cột J = ĐIỂM
  *                       = MAX(0, 100 − 25·(số x) − 10·(số o)) — công thức trên dải Thứ 4 tháng này.
- *    5. crMarkWeek    : quét theo lịch, tick cột tuần hiện tại:
- *         · Thứ 4 (>=21h): ngày cập nhật == HÔM NAY → "✓", còn lại → "x".
- *         · Thứ 5 (<12h) : ngày cập nhật == T4 tuần này → "✓"; == HÔM NAY(T5) → "o"; còn lại → "x";
+ *    5. crMarkWeek    : quét theo lịch (trigger Thứ 4 21h + Thứ 5 12h), tick cột tuần hiện tại:
+ *         · Thứ 4 (~21h): ngày cập nhật == HÔM NAY → "✓", còn lại → "x".
+ *         · Thứ 5 (~12h): ngày cập nhật == T4 tuần này → "✓"; == HÔM NAY(T5) → "o"; còn lại → "x";
  *                          rồi KHOÁ cột (ScriptProperties) — không sửa lại nữa.
  *       (Cột tuần này = cột có ngày Thứ 4 rơi trong tuần Thứ2–CN chứa hôm nay.)
  *
@@ -54,13 +54,17 @@ function runComplianceReport() {
   Logger.log(DRY_RUN ? '*** DRY_RUN: chưa ghi gì. Đổi DRY_RUN=false để chạy thật. ***' : 'Đã chạy thật xong.');
 }
 
-/** Đặt lịch chạy mỗi giờ. Chạy 1 lần. */
+/** Đặt lịch: Thứ 4 ~21h (quét đúng hạn) + Thứ 5 ~12h (chốt & khoá). Chạy 1 lần.
+ *  (Apps Script atHour(h) bắn trong khung [h:00, h+1:00) → khớp cửa sổ ở crMarkWeek_.) */
 function createComplianceTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'runComplianceReport') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('runComplianceReport').timeBased().everyHours(1).create();
-  Logger.log('Đã đặt lịch runComplianceReport mỗi giờ.');
+  ScriptApp.newTrigger('runComplianceReport').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(21).create();   // quét Thứ 4 ~21h
+  ScriptApp.newTrigger('runComplianceReport').timeBased()
+    .onWeekDay(ScriptApp.WeekDay.THURSDAY).atHour(12).create();    // chốt Thứ 5 ~12h
+  Logger.log('Đã đặt lịch: Thứ 4 ~21h + Thứ 5 ~12h.');
 }
 
 /* ── 1) TIÊU ĐỀ theo tháng ── */
@@ -194,9 +198,9 @@ function crMarkWeek_(ss, sh, range) {
   var now = new Date();
   var dow = parseInt(Utilities.formatDate(now, tz, 'u'), 10);   // 1=T2 … 3=T4, 4=T5 … 7=CN
   var hour = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
-  var isWed = (dow === 3 && hour >= 21);
-  var isThu = (dow === 4 && hour < 12);
-  if (!isWed && !isThu) { Logger.log('Ngoài khung quét (T4≥21h hoặc T5<12h) — bỏ tick. Nay dow=' + dow + ' h=' + hour); return; }
+  var isWed = (dow === 3 && hour >= 21);               // khớp trigger Thứ 4 21h (fire 21:00–22:00)
+  var isThu = (dow === 4 && hour >= 12 && hour < 14);  // khớp trigger Thứ 5 12h (fire 12:00–13:00)
+  if (!isWed && !isThu) { Logger.log('Ngoài khung quét (T4 21h / T5 12h) — bỏ tick. Nay dow=' + dow + ' h=' + hour); return; }
 
   // Ngày Thứ2, Thứ4, Thứ5 của TUẦN NÀY (yyyy-MM-dd).
   var mon = new Date(now.getTime() - (dow - 1) * 86400000);
