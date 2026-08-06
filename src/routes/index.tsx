@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.36.2 (05/08/2026): refreshAndStore fallback — gid-export lỗi (HTTP 400: file .xlsx-in-Drive
+ *     không nhận `&gid=`) → tải NGUYÊN file (không gid) + extractSummaryXlsx("Summary"). File native
+ *     (1le0, 2 tab) gid vẫn chạy. Fix popup heatmap "HTTP 400" ở dự án dạng phòng.
  *   v3.36.1 (05/08/2026): Fix ĐỤNG KHOÁ link matrix — mtld-links dò cột STT, gắn link theo TỪNG DÒNG
  *     `map["id:"+STT]` (fallback maCT); renderRow tra `installLinks["id:"+it.id] ?? [maCT]` → 1 dự án
  *     nhiều matrix (phòng/Public) không đè nhau. dvn (public-summary-render) đổi serial Excel + ISO →
@@ -453,6 +456,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.36.2", date: "05/08/2026", items: [
+    "Sửa lỗi popup ma trận “HTTP 400”: khi tải theo tab lỗi, tự lùi về tải nguyên file — heatmap dạng phòng hiện lại bình thường.",
+  ] },
   { v: "3.36.1", date: "05/08/2026", items: [
     "Sửa: 1 dự án có NHIỀU matrix lắp đặt (phòng + Public…) không còn đè link nhau — mỗi ô giữ link riêng. Ngày trong biểu đồ Public đổi về dd/mm/yyyy.",
   ] },

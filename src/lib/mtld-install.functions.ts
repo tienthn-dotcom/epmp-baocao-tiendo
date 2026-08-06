@@ -115,9 +115,18 @@ async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
 
 /** Fetch Drive → (gid: đúng 1 tab, khỏi tách · không gid: tách sheet "Summary") → b64 → cache. Trả b64. */
 async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string): Promise<string> {
-  const raw = await fetchXlsxById(fileId, gid);
+  let raw: ArrayBuffer, effGid = gid;
+  try {
+    raw = await fetchXlsxById(fileId, gid);
+  } catch (e) {
+    if (!gid) throw e;
+    // gid-export lỗi (vd HTTP 400: gid không khớp/không tồn tại trong file) → LÙI về tải NGUYÊN file
+    // (không gid) rồi tách sheet "Summary" — đúng hành vi cũ cho dạng phòng, không để popup chết.
+    raw = await fetchXlsxById(fileId);
+    effGid = undefined;
+  }
   let bytes: Uint8Array;
-  if (gid) {
+  if (effGid) {
     // export?gid=… đã trả ĐÚNG 1 tab (~23KB) → gửi nguyên, KHÔNG cần tách (nhẹ nhất).
     bytes = new Uint8Array(raw);
   } else {
