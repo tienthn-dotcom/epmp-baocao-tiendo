@@ -46,7 +46,7 @@ import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
 import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
-import { getSummaryFile, recordSummaryFiles } from "@/lib/mtld-install.functions";
+import { getSummaryFile, getSheetPdf, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates, type HiddenRows } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.39.0 (05/08/2026): Nhánh "tab lạ" đổi từ HTML-dump sang PDF Y HỆT: getSheetPdf (mtld-install)
+ *     fetch `export?format=pdf&gid=` (Google render đủ chart + CF), cache `spdf:fid:gid` ghim ngày;
+ *     SummaryDialog hiện `<iframe data:application/pdf>`. PDF lỗi (xlsx không nhận gid) → fallback sheetToHtml.
  *   v3.38.0 (05/08/2026): SummaryDialog dispatch 3 nhánh theo tên tab: /public summary/→cột;
  *     /summary/→heatmap; CÒN LẠI→sheet-dump.ts sheetToHtml (đổ nguyên sheet: value .w + fill tĩnh +
  *     merge, bám vùng nội dung thật, cap 200×80). Cho tab chưa đồng bộ form xem nhanh như ảnh chụp.
@@ -467,6 +470,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.39.0", date: "05/08/2026", items: [
+    "Popup “Thi công lắp đặt”: tab tên KHÁC (không phải Summary/Public Summary) nay hiện BẢN PDF y hệt màn hình sheet — CÓ cả biểu đồ và màu tô điều kiện (Google render). Lỗi PDF thì mới đổ bảng HTML.",
+  ] },
   { v: "3.38.0", date: "05/08/2026", items: [
     "Popup “Thi công lắp đặt”: hyperlink tới tab tên KHÁC (không phải Summary/Public Summary) sẽ ĐỔ NGUYÊN sheet lên (giá trị + màu) — xem nhanh mọi báo cáo chưa đồng bộ form, khỏi cần chuẩn hoá trước.",
   ] },
@@ -3367,6 +3373,7 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
     retry: 1,
   });
   const [render, setRender] = useState<{ html: string; css: string } | null>(null);
+  const [pdfB64, setPdf] = useState<string | null>(null);
   const [parseErr, setParseErr] = useState<string | null>(null);
   useEffect(() => {
     const b64 = q.data?.b64;
@@ -3393,15 +3400,24 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
           const mod = await import("@/lib/summary-render");
           setRender({ html: mod.summaryToHtml(sh), css: mod.SUMMARY_CSS });
         } else {
-          const dump = await import("@/lib/sheet-dump");
-          setRender({ html: dump.sheetToHtml(sh), css: dump.SHEET_DUMP_CSS });
+          // TAB LẠ (chưa đồng bộ form) → CHỤP Y HỆT bằng PDF của Google (có CHART + màu điều kiện).
+          // PDF lỗi (vd file .xlsx không nhận gid) → lùi về đổ HTML từ ô dữ liệu.
+          try {
+            const p = await getSheetPdf({ data: { fileId: fid, gid: gid || undefined } });
+            if (off) return;
+            setPdf(p.b64);
+          } catch {
+            const dump = await import("@/lib/sheet-dump");
+            if (off) return;
+            setRender({ html: dump.sheetToHtml(sh), css: dump.SHEET_DUMP_CSS });
+          }
         }
       } catch (e) { if (!off) setParseErr((e as Error).message); }
     })();
     return () => { off = true; };
   }, [q.data]);
 
-  const loading = q.isPending || (!!q.data && !render && !parseErr);
+  const loading = q.isPending || (!!q.data && !render && !parseErr && !pdfB64);
   const err = q.isError ? (q.error as Error).message : parseErr;
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
@@ -3414,8 +3430,9 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          {loading && <div className="p-10 text-center text-sm text-slate-500">Đang tải ma trận Summary…</div>}
+          {loading && <div className="p-10 text-center text-sm text-slate-500">Đang tải…</div>}
           {err && <div className="p-10 text-center text-sm text-red-600">Lỗi: {err}</div>}
+          {pdfB64 && <iframe title="Bản gốc sheet" src={`data:application/pdf;base64,${pdfB64}`} className="h-[80vh] w-full border-0" />}
           {render && <><style dangerouslySetInnerHTML={{ __html: render.css }} /><div dangerouslySetInnerHTML={{ __html: render.html }} /></>}
         </div>
       </div>
