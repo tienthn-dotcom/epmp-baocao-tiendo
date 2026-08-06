@@ -10,6 +10,11 @@ const idFromUrl = (u: string): string | null => {
   const m = String(u).match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : null;
 };
+/** gid (mã tab) trong hyperlink — để tải ĐÚNG tab (Summary vs Public Summary). null nếu không có. */
+const gidFromUrl = (u: string): string | null => {
+  const m = String(u).match(/[#?&]gid=(\d+)/);
+  return m ? m[1] : null;
+};
 
 /** Buffer xlsx (đã tải cho dữ liệu chính) → map { maCT → fileId } của ô "Thi công lắp đặt" có
  *  hyperlink. Chỉ đọc sheet "Timeline". An toàn: lỗi thì trả {} (không chặn app). */
@@ -32,7 +37,9 @@ export function readInstallLinks(buf: ArrayBuffer): Record<string, string> {
         const target = cl?.l?.Target;
         if (target && /spreadsheets\/d\//.test(target) && /thi\s*công\s*lắp/i.test(String(cl?.v ?? ""))) {
           const fid = idFromUrl(target);
-          if (curMaCT && fid) map[curMaCT] = fid;
+          const gid = gidFromUrl(target);
+          // Mã hoá "fileId|gid" (kèm gid nếu hyperlink trỏ đúng 1 tab) → client tách ra ở SummaryDialog.
+          if (curMaCT && fid) map[curMaCT] = gid ? fid + "|" + gid : fid;
         }
       }
     }

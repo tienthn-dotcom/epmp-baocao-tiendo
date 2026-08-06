@@ -13,8 +13,9 @@ const idFromUrl = (u: string): string | null => {
   return m ? m[1] : null;
 };
 
-async function fetchXlsxById(id: string): Promise<ArrayBuffer> {
-  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx&_ts=${Date.now()}`;
+async function fetchXlsxById(id: string, gid?: string): Promise<ArrayBuffer> {
+  const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx${g}&_ts=${Date.now()}`;
   const r = await fetch(url, {
     redirect: "follow", cache: "no-store",
     headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)", Accept: "*/*", "Cache-Control": "no-cache, no-store" },
@@ -112,21 +113,29 @@ async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
   return null;
 }
 
-/** Fetch Drive → tách sheet Summary → b64 → ghi cache {b64, ts}. Trả b64. */
-async function refreshAndStore(fileId: string, kv: KVLike | null, cacheKey: string): Promise<string> {
-  const raw = await fetchXlsxById(fileId);
+/** Fetch Drive → (gid: đúng 1 tab, khỏi tách · không gid: tách sheet "Summary") → b64 → cache. Trả b64. */
+async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string): Promise<string> {
+  const raw = await fetchXlsxById(fileId, gid);
   let bytes: Uint8Array;
-  try { bytes = extractSummaryXlsx(raw); }          // ~170KB
-  catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
+  if (gid) {
+    // export?gid=… đã trả ĐÚNG 1 tab (~23KB) → gửi nguyên, KHÔNG cần tách (nhẹ nhất).
+    bytes = new Uint8Array(raw);
+  } else {
+    try { bytes = extractSummaryXlsx(raw); }          // ~170KB
+    catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
+  }
   const b64 = toB64(bytes);
   if (kv) {
     try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi thì bỏ qua */ }
-    // Ghi fileId vào REGISTRY (sfile:index) — worker cron sáng đọc list này để warm SẴN mọi file.
-    try {
-      const idxRaw = await kv.get(SFILE_INDEX_KEY);
-      const arr: string[] = idxRaw ? (JSON.parse(idxRaw) as string[]) : [];
-      if (!arr.includes(fileId)) { arr.push(fileId); await kv.put(SFILE_INDEX_KEY, JSON.stringify(arr)); }
-    } catch { /* registry hỏng không ảnh hưởng tải Summary */ }
+    // Ghi fileId vào REGISTRY (sfile:index) để worker cron warm SẴN — CHỈ cho dạng "Summary" (không gid);
+    // dạng theo gid (Public…) chưa warm qua cron (vẫn nhanh nhờ file 23KB + cache), tránh phá warmer.
+    if (!gid) {
+      try {
+        const idxRaw = await kv.get(SFILE_INDEX_KEY);
+        const arr: string[] = idxRaw ? (JSON.parse(idxRaw) as string[]) : [];
+        if (!arr.includes(fileId)) { arr.push(fileId); await kv.put(SFILE_INDEX_KEY, JSON.stringify(arr)); }
+      } catch { /* registry hỏng không ảnh hưởng tải Summary */ }
+    }
   }
   return b64;
 }
@@ -152,10 +161,10 @@ export const recordSummaryFiles = createServerFn({ method: "POST" })
  *  KHÔNG parse trên Worker (parse xlsx 2MB làm OOM → Error 1102). Việc parse + render ở CLIENT.
  *  Cache GHIM THEO NGÀY + tự làm mới nền (xem khối chú thích trên). `force` = lấy LIVE ngay. */
 export const getSummaryFile = createServerFn({ method: "POST" })
-  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), force: z.boolean().optional() }).parse(input))
+  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), force: z.boolean().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
     const kv = await getKv();
-    const cacheKey = `sfile:${data.fileId}`;
+    const cacheKey = data.gid ? `sfile:${data.fileId}:${data.gid}` : `sfile:${data.fileId}`;
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
@@ -163,13 +172,13 @@ export const getSummaryFile = createServerFn({ method: "POST" })
         try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } }
         catch { /* cache đời cũ (b64 thô) → coi như ts=0 để refresh nền 1 lần */ }
         if (ts < lastRefreshBoundary(Date.now())) {          // cũ hơn mốc quét hôm nay → làm mới ở NỀN
-          const job = refreshAndStore(data.fileId, kv, cacheKey).catch(() => { /* nền, lỗi kệ */ });
+          const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey).catch(() => { /* nền, lỗi kệ */ });
           const wu = await getWaitUntil();
           if (wu) wu(job);
         }
         return { b64, cached: true };                        // LUÔN trả cache tức thì
       }
     }
-    const b64 = await refreshAndStore(data.fileId, kv, cacheKey);
+    const b64 = await refreshAndStore(data.fileId, data.gid, kv, cacheKey);
     return { b64, cached: false };
   });

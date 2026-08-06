@@ -135,6 +135,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.36.0 (05/08/2026): Popup "Thi công lắp đặt" hỗ trợ DẠNG THỨ 2. mtld-links bắt thêm `gid` từ
+ *     hyperlink → mã hoá "fileId|gid"; getSummaryFile nhận gid → tải `export?xlsx&gid=` (ĐÚNG 1 tab,
+ *     ~23KB, khỏi tách extractSummaryXlsx) cache theo fileId:gid. SummaryDialog đọc TÊN sheet: "Public
+ *     Summary" → publicSummaryToHtml (bảng + biểu đồ cột SVG, đường KH lấy cột "Kế hoạch/KH raw" điền
+ *     nhiều số nhất); còn lại → summaryToHtml (heatmap, KHÔNG đổi). recordSummaryFiles bỏ "fileId|gid".
  *   v3.35.3 (04/08/2026): Data bar "Số lần không cập nhật" (ComplianceDialog) đổi mẫu số maxRequired
  *     từ "số tuần ≤ hôm nay" sang data.weeks.length (TỔNG tuần trong tháng) → count/tổng-tuần.
  *   v3.35.2 (04/08/2026): Data bar cột "Số lần không cập nhật" (ComplianceDialog) đổi bg-red-300→
@@ -444,6 +449,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.36.0", date: "05/08/2026", items: [
+    "Popup “Thi công lắp đặt” nhận dạng thứ 2: hyperlink trỏ tab “Public Summary” sẽ hiện BẢNG + BIỂU ĐỒ CỘT (khu Public, đường kế hoạch), phân biệt với dạng ma trận phòng theo tên tab.",
+  ] },
   { v: "3.35.4", date: "05/08/2026", items: [
     "Đổi tên cột “Vướng mắc” thành “Vướng mắc / Cần xử lý” (bảng, bảng gộp, xuất PDF/Excel).",
   ] },
@@ -1604,7 +1612,9 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   const installLinks = data.installLinks ?? {};
   // Gửi TOÀN BỘ fileId Summary vào registry (KV sfile:index) → worker cron sáng warm sẵn mọi dự án.
   useEffect(() => {
-    const ids = [...new Set(Object.values(installLinks).filter(Boolean))];
+    // Chỉ warm dạng "Summary" (fileId thuần). Dạng theo gid ("fileId|gid" = Public…) bỏ qua warmer
+    // (vẫn nhanh nhờ file 23KB + cache) — tránh gửi ký tự "|" làm hỏng validate fileId.
+    const ids = [...new Set(Object.values(installLinks).filter((v) => v && !v.includes("|")))];
     if (ids.length) void recordSummaryFiles({ data: { fileIds: ids } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(Object.values(installLinks).sort())]);
@@ -3316,9 +3326,10 @@ function PicNames({ text }: { text: string }) {
  *  thừa tài nguyên, tránh Error 1102 do parse xlsx 2MB trên Worker). XLSX + renderer nạp ĐỘNG
  *  (chỉ khi mở popup) để không phình bundle chính. */
 function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => void }) {
+  const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
   const q = useQuery({
-    queryKey: ["summary-file", fileId],
-    queryFn: () => getSummaryFile({ data: { fileId } }),
+    queryKey: ["summary-file", fid, gid ?? ""],
+    queryFn: () => getSummaryFile({ data: { fileId: fid, gid: gid || undefined } }),
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
@@ -3330,15 +3341,24 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
     let off = false;
     (async () => {
       try {
-        const [XLSX, mod] = await Promise.all([import("xlsx"), import("@/lib/summary-render")]);
+        const XLSX = await import("xlsx");
         const bin = atob(b64);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const wb = XLSX.read(bytes.buffer, { type: "array", cellStyles: true, sheets: ["Summary"] });
-        const sh = wb.Sheets["Summary"];
+        const wb = XLSX.read(bytes.buffer, { type: "array", cellStyles: true });
+        // CHỌN RENDERER THEO TÊN SHEET: "Public Summary" → biểu đồ cột; còn lại ("Summary") → heatmap.
+        const name = wb.SheetNames.find((n) => /public\s*summary/i.test(n))
+          ?? wb.SheetNames.find((n) => /^summary$/i.test(n)) ?? wb.SheetNames[0];
+        const sh = name ? wb.Sheets[name] : undefined;
         if (off) return;
-        if (!sh) { setParseErr('File không có sheet "Summary".'); return; }
-        setRender({ html: mod.summaryToHtml(sh), css: mod.SUMMARY_CSS });
+        if (!sh) { setParseErr("File không có sheet dữ liệu."); return; }
+        if (/public\s*summary/i.test(name)) {
+          const pub = await import("@/lib/public-summary-render");
+          setRender({ html: pub.publicSummaryToHtml(sh), css: pub.PUBLIC_SUMMARY_CSS });
+        } else {
+          const mod = await import("@/lib/summary-render");
+          setRender({ html: mod.summaryToHtml(sh), css: mod.SUMMARY_CSS });
+        }
       } catch (e) { if (!off) setParseErr((e as Error).message); }
     })();
     return () => { off = true; };
