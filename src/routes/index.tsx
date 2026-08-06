@@ -135,6 +135,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.37.0 (05/08/2026): VIẾT LẠI summaryToHtml BÁM CẤU TRÚC (chạy mọi biến thể heatmap). Ô lưới =
+ *     MÃ SỐ; màu do conditional-formatting (SheetJS đọc không ra) → dựng bảng MÃ→MÀU từ LEGEND (ô "Màu"
+ *     có fill tĩnh; mã theo cột "Nhập/Mã" nếu có else thứ tự). Block nhận qua hàng có "01"&"02" (nhãn
+ *     A/B/C/D hay B1..Bn); cột đơn vị=số/HL, cột %=chữ (Mặt bằng/giao thô…); dòng dữ liệu lấy hết tới
+ *     block kế; X=xám, trống=trắng. Verify 2 file thật (Nam Phương A/B/C/D 5 mã, Mini B1-B5 7 mã).
  *   v3.36.3 (05/08/2026): Mốc làm mới cache Summary đổi 08:00 → 17:30 VN. mtld-install.functions:
  *     REFRESH_HOUR_VN=17 + REFRESH_MIN_VN=30 (lastRefreshBoundary +REFRESH_MIN_VN*60_000). Cron warmer
  *     warmer/wrangler.toml "0 1 * * *" → "30 10 * * *" (10:30 UTC = 17:30 VN). 2 mốc PHẢI khớp nhau.
@@ -459,6 +464,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.37.0", date: "05/08/2026", items: [
+    "Heatmap ma trận bàn giao nay tô đúng cho MỌI dự án (block A/B/C/D hay B1..Bn, số tầng/căn bất kỳ, chú thích khác nhau) — tự đọc bảng màu từ legend của từng file thay vì cố định theo Mini Hotel.",
+  ] },
   { v: "3.36.3", date: "05/08/2026", items: [
     "Ma trận lắp đặt: chốt giờ làm mới dữ liệu 1 lần/ngày lúc 17:30 (trước là 08:00) — cả ngày bấm vào là hiện tức thì, không phải chờ tải.",
   ] },
