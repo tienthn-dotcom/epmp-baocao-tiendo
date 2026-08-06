@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.36.3 (05/08/2026): Mốc làm mới cache Summary đổi 08:00 → 17:30 VN. mtld-install.functions:
+ *     REFRESH_HOUR_VN=17 + REFRESH_MIN_VN=30 (lastRefreshBoundary +REFRESH_MIN_VN*60_000). Cron warmer
+ *     warmer/wrangler.toml "0 1 * * *" → "30 10 * * *" (10:30 UTC = 17:30 VN). 2 mốc PHẢI khớp nhau.
  *   v3.36.2 (05/08/2026): refreshAndStore fallback — gid-export lỗi (HTTP 400: file .xlsx-in-Drive
  *     không nhận `&gid=`) → tải NGUYÊN file (không gid) + extractSummaryXlsx("Summary"). File native
  *     (1le0, 2 tab) gid vẫn chạy. Fix popup heatmap "HTTP 400" ở dự án dạng phòng.
@@ -456,6 +459,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.36.3", date: "05/08/2026", items: [
+    "Ma trận lắp đặt: chốt giờ làm mới dữ liệu 1 lần/ngày lúc 17:30 (trước là 08:00) — cả ngày bấm vào là hiện tức thì, không phải chờ tải.",
+  ] },
   { v: "3.36.2", date: "05/08/2026", items: [
     "Sửa lỗi popup ma trận “HTTP 400”: khi tải theo tab lỗi, tự lùi về tải nguyên file — heatmap dạng phòng hiện lại bình thường.",
   ] },

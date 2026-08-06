@@ -1,4 +1,4 @@
-// ── WORKER PHỤ "WARMER" — quét mỗi sáng 08:00 giờ VN (cron "0 1 * * *" = 01:00 UTC).
+// ── WORKER PHỤ "WARMER" — quét mỗi ngày 17:30 giờ VN (cron "30 10 * * *" = 10:30 UTC).
 // Đọc registry fileId (KV sfile:index do app chính ghi mỗi lần mở Summary), fetch từng file
 // Google Sheet → TÁCH riêng sheet "Summary" (fflate, nhẹ) → ghi cache KV sfile:<id> = {b64, ts}.
 // Nhờ vậy báo cáo ma trận lắp đặt SẴN SÀNG mỗi sáng dù KHÔNG ai mở app; app chính đọc thẳng cache
@@ -77,7 +77,7 @@ async function warmAll(env) {
 }
 
 export default {
-  // Cron 08:00 VN — warm sẵn mọi file trong registry.
+  // Cron 17:30 VN — warm sẵn mọi file trong registry.
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(warmAll(env));
   },
