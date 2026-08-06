@@ -470,6 +470,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.39.1", date: "05/08/2026", items: [
+    "PDF y hệt: file .xlsx (không nhận gid) nay tự lùi về hiện PDF nguyên file (trang đầu = sheet đầu), thay vì lỗi.",
+  ] },
   { v: "3.39.0", date: "05/08/2026", items: [
     "Popup “Thi công lắp đặt”: tab tên KHÁC (không phải Summary/Public Summary) nay hiện BẢN PDF y hệt màn hình sheet — CÓ cả biểu đồ và màu tô điều kiện (Google render). Lỗi PDF thì mới đổ bảng HTML.",
   ] },

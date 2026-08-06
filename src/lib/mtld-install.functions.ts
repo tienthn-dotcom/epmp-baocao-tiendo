@@ -195,7 +195,7 @@ export const getSummaryFile = createServerFn({ method: "POST" })
 
 /** TẢI 1 sheet dưới dạng PDF do GOOGLE render (Y HỆT màn hình: có CHART + màu điều kiện + format).
  *  Dùng cho tab "lạ" (không phải Summary/Public Summary) — client hiện thẳng PDF. Cache ghim theo ngày. */
-async function fetchSheetPdf(id: string, gid?: string): Promise<string> {
+async function fetchPdfOnce(id: string, gid?: string): Promise<string> {
   const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
   const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}&portrait=false&size=A4&fitw=true&gridlines=true&sheetnames=false&printtitle=false&_ts=${Date.now()}`;
   const r = await fetch(url, { redirect: "follow", cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)", Accept: "application/pdf,*/*", "Cache-Control": "no-cache, no-store" } });
@@ -203,6 +203,11 @@ async function fetchSheetPdf(id: string, gid?: string): Promise<string> {
   const bytes = new Uint8Array(await r.arrayBuffer());
   if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50) throw new Error("Google trả về không phải PDF — sheet chưa cho truy cập công khai.");
   return toB64(bytes);
+}
+/** Native + gid → PDF ĐÚNG tab. File .xlsx không nhận gid → LÙI về PDF NGUYÊN file (trang đầu = sheet đầu). */
+async function fetchSheetPdf(id: string, gid?: string): Promise<string> {
+  try { return await fetchPdfOnce(id, gid); }
+  catch (e) { if (gid) return await fetchPdfOnce(id); throw e; }
 }
 
 export const getSheetPdf = createServerFn({ method: "POST" })
