@@ -135,6 +135,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.43.0 (07/08/2026): ID CỨNG (chống lệch khoá khi STT bị đánh lại). parser: detectHidCol (header
+ *     "IDCUNG"/"KEY") → ProjectRow.hid + ItemRow.projHid (kế thừa currentHid). itemKeyOf ưu tiên
+ *     `h:<projHid>:<rawCode>:<dupIdx>` → id:STT → composite. projectKeyOf(+hid) → `h:<hid>`; pkProj/pkItem
+ *     truyền hid (phải KHỚP nhau cho lọc). Effect di trú thêm LỚP 2: id:STT→h:hid (dự án + công đoạn +
+ *     block) qua remapKeys (no-overwrite). Nguồn CHƯA có cột → hid undefined → lùi STT (an toàn, không
+ *     đổi hành vi). Apps Script scripts/stamp-hard-id.gs tự cấp P0001… cho dòng dự án (cột cuối, tĩnh).
  *   v3.42.0 (07/08/2026): (1) ComplianceDialog: KHỐI IN RIÊNG (printHeaderRef+printTableRef) dựng theo
  *     mẫu master (cột Ngày CN·Điểm PM·Người PT·Tên·Lũy kế·Điểm DA·tuần, có legend, BỎ Vùng); ẩn bằng
  *     position:fixed top:100vh; doExportPdf chụp khối này thay tableRef/headerRef (màn hình giữ nguyên).
@@ -483,6 +489,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.43.0", date: "07/08/2026", items: [
+    "Chống vướng mắc “nhảy” dự án khi đánh lại STT: app đọc thêm cột “IDCUNG” (mã dự án vĩnh viễn) làm khoá bền — STT đổi thế nào cũng không lệch. Chưa có cột thì vẫn chạy như cũ (theo STT). Có Apps Script tự đóng dấu ID cứng (scripts/stamp-hard-id.gs) + tự di trú dữ liệu cũ 1 lần.",
+  ] },
   { v: "3.42.0", date: "07/08/2026", items: [
     "Xuất PDF báo cáo tuân thủ nay dựng ĐÚNG MẪU MASTER (thứ tự cột: Ngày cập nhật · Điểm PM · Người phụ trách · Tên dự án · Lũy kế · Điểm dự án · các tuần; có ô chú thích ✓/o/x; bỏ cột Vùng). Bảng trên màn hình giữ nguyên như cũ.",
     "Dời cảnh báo chất lượng dữ liệu (STT trùng/trống…) từ đầu trang VÀO menu “Hệ thống” → mục “Cảnh báo dữ liệu” (chỉ PMO/admin thấy), gọn màn hình chính.",
@@ -1571,10 +1580,13 @@ type GanttRow = {
  *  sync đổi %/mô tả/ngày → ghi chú vẫn dính đúng dòng. Đổi định dạng khoá này sẽ reset
  *  các ghi chú cũ MỘT LẦN (KV cũ dùng khoá 6-trường). */
 const itemKeyOf = (it: ItemRow) =>
-  it.id && it.id.trim()
-    // ID phân cấp (cột STT) duy nhất toàn cục → khoá thẳng theo ID, KHÔNG lệ thuộc tên/mã/thứ tự.
+  it.projHid && it.projHid.trim()
+    // ƯU TIÊN: ID CỨNG dự án + mã công đoạn (+dupIdx) → khoá BỀN nhất; STT đổi/đánh lại mặc kệ.
+    ? `h:${it.projHid.trim()}:${(it.rawCode || "").toUpperCase()}:${it.dupIdx ?? 0}`
+    : it.id && it.id.trim()
+    // Kế: ID phân cấp (cột STT) — bền theo thứ tự nhưng ĐỔI khi đánh lại STT.
     ? `id:${it.id.trim()}`
-    // Fallback (nguồn không có cột STT — cache/CSV/demo cũ): khoá theo mã+tên+giai đoạn+dupIdx.
+    // Fallback (nguồn không có STT — cache/CSV/demo cũ): khoá theo mã+tên+giai đoạn+dupIdx.
     : [it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0].join(String.fromCharCode(0));
 
 /** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
@@ -1748,10 +1760,10 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   /** Khoá dự án (KV vướng mắc/giải pháp cấp dự án + các set lọc) — ƯU TIÊN ID dự án cho ổn định.
    *  pkProj: từ ProjectRow (có sẵn id). pkItem: từ ItemRow (suy id qua projIdByName). Mọi điểm dùng
    *  khoá dự án ĐỀU đi qua 2 helper này để id-based nhất quán (build set & query set khớp nhau). */
-  const pkProj = useCallback((p: { code: string; name: string; id?: string }) => projectKeyOf(p.code, p.name, p.id), []);
+  const pkProj = useCallback((p: { code: string; name: string; id?: string; hid?: string }) => projectKeyOf(p.code, p.name, p.id, p.hid), []);
   const pkItem = useCallback(
-    (i: { projectCode: string; projectName: string }) =>
-      projectKeyOf(i.projectCode, i.projectName, projIdByName.get(`${i.projectCode} ${i.projectName}`)),
+    (i: { projectCode: string; projectName: string; projHid?: string }) =>
+      projectKeyOf(i.projectCode, i.projectName, projIdByName.get(`${i.projectCode} ${i.projectName}`), i.projHid),
     [projIdByName],
   );
 
@@ -1933,15 +1945,30 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         const oldK = legacyProj(p.code, p.name), newK = `id:${p.id.trim()}`;
         if (oldK !== newK) { editPairs[oldK] = newK; updatePairs[oldK] = newK; }
       }
+      // LỚP 2: STT → ID CỨNG (cấp dự án) — chỉ khi nguồn ĐÃ có cột IDCUNG.
+      if (p.hid && p.hid.trim() && p.id && p.id.trim()) {
+        const oldK = `id:${p.id.trim()}`, newK = pkProj(p);
+        if (oldK !== newK) { editPairs[oldK] = newK; updatePairs[oldK] = newK; }
+      }
       for (const it of (p.allItems ?? p.items ?? [])) {
         if (it.id && it.id.trim()) {
           const oldK = legacyItem(it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0), newK = `id:${it.id.trim()}`;
+          if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
+        }
+        // LỚP 2: STT → ID CỨNG (cấp công đoạn).
+        if (it.projHid && it.projHid.trim() && it.id && it.id.trim()) {
+          const oldK = `id:${it.id.trim()}`, newK = itemKeyOf(it);
           if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
         }
         if (it.blocks?.length) {
           it.blocks.forEach((b, bi) => {
             if (b.id && b.id.trim()) {
               const oldK = legacyItem(it.projectCode, it.projectName, b.code, bi), newK = `id:${b.id.trim()}`;
+              if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
+            }
+            // LỚP 2 (block): STT → ID CỨNG.
+            if (p.hid && p.hid.trim() && b.id && b.id.trim()) {
+              const oldK = `id:${b.id.trim()}`, newK = `h:${p.hid.trim()}:${(b.code || "").toUpperCase()}:${bi}`;
               if (oldK !== newK) { editPairs[oldK] = newK; completedPairs[oldK] = newK; }
             }
           });
@@ -1963,7 +1990,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       } catch { /* di trú phụ trợ — hỏng không được làm hỏng bảng */ }
       finally { setRemapReady(true); }
     })();
-  }, [editsQuery.isLoading, historyQuery.isLoading, completedQuery.isLoading, data.projects, edits, completedDates, updateHistory, queryClient]);
+  }, [editsQuery.isLoading, historyQuery.isLoading, completedQuery.isLoading, data.projects, edits, completedDates, updateHistory, queryClient, pkProj]);
 
   useEffect(() => {
     if (!remapReady) return; // chờ di trú khoá xong mới sync (tránh XOÁ nhầm khoá tên cũ)

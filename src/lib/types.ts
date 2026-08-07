@@ -53,6 +53,9 @@ export type ItemRow = {
   /** ID phân cấp đọc từ cột STT (dạng "70.1"). Ổn định & duy nhất toàn cục → KHOÁ match
    *  vướng mắc/giải pháp thay cho (mã+tên). undefined nếu nguồn không có cột STT (cache/CSV cũ). */
   id?: string;
+  /** ID CỨNG của DỰ ÁN cha (cột "IDCUNG", vd "P0025") — KHOÁ BỀN nhất: STT đổi mặc kệ, ID cứng không
+   *  đổi. Kế thừa từ dòng dự án. Khoá vướng mắc = h:<projHid>:<rawCode>. undefined nếu nguồn chưa có cột. */
+  projHid?: string;
   projectCode: string; // CT26-013
   projectName: string;
   cdt: string;
@@ -115,6 +118,9 @@ export type ProjectRow = {
   /** ID dự án đọc từ cột STT (dạng "70"). Đếm tăng vĩnh viễn, KHÔNG lặp lại kể cả khi dự án
    *  hoàn thành/ẩn → khoá match ổn định cấp dự án. undefined nếu nguồn không có cột STT. */
   id?: string;
+  /** ID CỨNG (cột "IDCUNG", vd "P0025") — mã VĨNH VIỄN gán 1 lần cho dự án, KHÔNG đổi khi STT bị đánh
+   *  lại. Khoá bền nhất cho vướng mắc (h:<hid> cấp dự án; h:<hid>:<rawCode> cấp công đoạn). */
+  hid?: string;
   code: string;
   name: string;
   cdt: string;

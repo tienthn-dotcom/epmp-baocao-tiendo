@@ -459,6 +459,18 @@ function detectIdCol(headerRow: unknown[]): number {
   return -1;
 }
 
+/** Tìm cột "IDCUNG" (ID CỨNG) — mã dự án VĨNH VIỄN, không đổi khi STT bị đánh lại. Nhận header
+ *  "idcung"/"id cung"/"id cứng"/"key" (bỏ dấu để so). Trả -1 nếu nguồn chưa thêm cột (app tự lùi về STT). */
+function detectHidCol(headerRow: unknown[]): number {
+  if (!headerRow) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = stripDiacritics(str(headerRow[c]).toLowerCase()).replace(/\s+/g, "");
+    if (!h) continue;
+    if (/^idcung$|^key$|^makey$|^idkey$/.test(h)) return c;
+  }
+  return -1;
+}
+
 /** Parse rows[][] from the Timeline sheet (header row index 5, data from index 7). */
 export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined): ReportData {
   const projects: ProjectRow[] = [];
@@ -474,12 +486,20 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const top20Col = detectTop20Col(rows[COL.headerIdx] ?? []);
   const updateCol = detectUpdateDateCol(rows[COL.headerIdx] ?? []);
   const idCol = detectIdCol(rows[COL.headerIdx] ?? []);
+  const hidCol = detectHidCol(rows[COL.headerIdx] ?? []);
   /** ID phân cấp (cột STT) của dòng hiện tại — "" nếu nguồn không có cột. */
   const idOf = (r: unknown[]): string | undefined => {
     if (idCol < 0) return undefined;
     const v = str(r[idCol]);
     return v || undefined;
   };
+  /** ID CỨNG (cột IDCUNG) của dòng — chỉ dòng DỰ ÁN mới điền; dòng con kế thừa qua currentHid. */
+  const hidOf = (r: unknown[]): string | undefined => {
+    if (hidCol < 0) return undefined;
+    const v = str(r[hidCol]);
+    return v || undefined;
+  };
+  let currentHid: string | undefined = undefined;
   let currentRegion = "";
   let currentGroup = "";
   let currentRank: number | undefined = undefined;
@@ -522,6 +542,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       if (!isShown(showCell)) {
         current = null;
         currentHidden = true;
+        currentHid = undefined;
         continue;
       }
       // PM = dòng đầu của ô "Người phụ trách chính" trên dòng dự án.
@@ -542,8 +563,10 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         .replace(/^pm\b[:\s\-.]*/i, "")
         .trim();
       const dpmLine = ownerLines.find(isDpmLine)?.replace(/^d\s*pm\b[:\s\-.]*/i, "").trim() ?? "";
+      currentHid = hidOf(r);
       const proj: ProjectRow = {
         id: idOf(r),
+        hid: currentHid,
         code: rawCode || maCT,
         name: projectName || rawCode || maCT,
         cdt: str(r[COL.G]),
@@ -707,6 +730,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     const row: ItemRow = {
       id: idOf(r),
+      projHid: currentHid,
       projectCode: current?.code ?? "",
       projectName: current?.name ?? "(không xác định)",
       cdt: current?.cdt ?? str(r[COL.G]),
