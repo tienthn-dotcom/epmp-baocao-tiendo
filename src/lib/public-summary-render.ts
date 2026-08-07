@@ -2,10 +2,10 @@
  * RENDER sheet "Public Summary" → HTML (bảng + biểu đồ cột) cho popup "Thi công lắp đặt".
  * Thuần (browser + node). KHÁC dạng phòng (summary-render = heatmap); app tự chọn theo TÊN sheet.
  *
- * Nguồn (dò cột theo TIÊU ĐỀ, layout đổi vẫn bắt đúng):
+ * Nguồn (dò cột theo TIÊU ĐỀ — đảo cột trong file KHÔNG hỏng, vẫn bắt đúng theo tên header):
  *   Tiêu đề = A1 · "Ngày báo cáo" = ô cạnh nhãn. Header = dòng có "Các khu" + "% ... thực tế".
- *   Cột: STT · Các khu · Ngày bắt đầu · Ngày bàn giao · % dự kiến(G) · % thực tế(H) ·
- *        Chênh lệch(I) · Cảnh báo(J) · % xong hôm trước(K) · % tăng thêm trong ngày(L).
+ *   THỨ TỰ CỘT HIỂN THỊ (theo mẫu mới của nguồn): STT · Các khu · Ngày bắt đầu · Ngày bàn giao ·
+ *        % xong hôm trước · % thực tế · % tăng thêm trong ngày · Cảnh báo trễ tiến độ · Chênh lệch.
  * Biểu đồ: thanh xanh = K (lũy kế hôm trước); chóp = L (tăng trong ngày, xanh nếu ĐẠT/đỏ nếu CHẬM);
  *   đường đỏ nét đứt = G (kế hoạch). Trục 0–100%.
  */
@@ -96,18 +96,21 @@ export function publicSummaryToHtml(sh: XLSX.WorkSheet): string {
     });
   }
 
-  // 4) BẢNG (9 cột như báo cáo)
+  // 4) BẢNG (9 cột) — THỨ TỰ CỘT theo mẫu mới của nguồn:
+  //    STT · Các khu · Ngày bắt đầu · Ngày bàn giao · % xong hôm trước · % thực tế ·
+  //    % tăng thêm trong ngày · Cảnh báo trễ tiến độ · Chênh lệch so với kế hoạch.
   const th = (t: string) => `<th>${esc(t)}</th>`;
-  const head = `<tr>${th("STT")}${th("Các khu PUBLIC")}${th("Ngày bắt đầu")}${th("Ngày bàn giao")}${th("% thực tế")}${th("Chênh lệch")}${th("Cảnh báo trễ tiến độ")}${th("% xong hôm trước")}${th("% tăng thêm trong ngày")}</tr>`;
+  const head = `<tr>${th("STT")}${th("Các khu PUBLIC")}${th("Ngày bắt đầu")}${th("Ngày bàn giao")}${th("% xong hôm trước")}${th("% thực tế")}${th("% tăng thêm trong ngày")}${th("Cảnh báo trễ tiến độ")}${th("Chênh lệch")}</tr>`;
   const body = rows.map((x) => {
     const warnCls = x.ok ? "ps-ok" : /chậm|báo động/i.test(x.warn) ? "ps-late" : "";
     const diffCls = (x.diff ?? 0) < 0 ? "ps-neg" : "ps-pos";
     return `<tr>
       <td class="ps-c">${esc(x.stt)}</td><td class="ps-l">${esc(x.khu)}</td>
       <td class="ps-c">${esc(x.start)}</td><td class="ps-c">${esc(x.deadline)}</td>
-      <td class="ps-c ps-b">${pctI(x.actual)}</td><td class="ps-c ${diffCls}">${pctS(x.diff)}</td>
+      <td class="ps-c ps-blue">${pctI(x.prev)}</td><td class="ps-c ps-b">${pctI(x.actual)}</td>
+      <td class="ps-c ${(x.today ?? 0) > 0 ? "ps-hl" : ""}">${pct2(x.today)}</td>
       <td class="ps-c ${warnCls}">${esc(x.warn || "—")}</td>
-      <td class="ps-c ps-blue">${pctI(x.prev)}</td><td class="ps-c ${(x.today ?? 0) > 0 ? "ps-hl" : ""}">${pct2(x.today)}</td>
+      <td class="ps-c ${diffCls}">${pctS(x.diff)}</td>
     </tr>`;
   }).join("");
   const table = `<table class="ps-tb"><thead>${head}</thead><tbody>${body}</tbody></table>`;

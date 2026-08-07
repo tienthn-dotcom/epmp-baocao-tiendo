@@ -135,6 +135,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.48.0 (07/08/2026): publicSummaryToHtml đổi THỨ TỰ cột render (head+body) theo mẫu mới: prev ·
+ *     actual · today · warn · diff (trước: actual · diff · warn · prev · today). Cột vẫn dò theo TÊN
+ *     (find regex) nên đảo cột nguồn không lệch data; chỉ đổi thứ tự XUẤT. Verify data 3 dòng đầu khớp.
  *   v3.47.0 (07/08/2026): Heatmap ĐỌC MÀU THẬT từ conditional-formatting. NEW cf-colors.ts readCodeColors
  *     (unzip fflate → sheet XML <cfRule operator=equal>+formula→dxfId → styles <dxfs> fill; khoá ""=ô
  *     trống). summaryToHtml(sh, cfColors?) ưu tiên cfColors (blank→cfColors[""], mã→cfColors[mã]) thay vì
@@ -505,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.48.0", date: "07/08/2026", items: [
+    "Bảng Public Summary (popup) đổi thứ tự cột khớp mẫu mới của nguồn: % xong hôm trước · % thực tế · % tăng thêm trong ngày · Cảnh báo trễ tiến độ · Chênh lệch. Số liệu y nguyên (đọc theo tên cột nên đảo cột trong file không lệch data).",
+  ] },
   { v: "3.47.0", date: "07/08/2026", items: [
     "Sửa heatmap ma trận lắp đặt tô SAI màu (mất xanh lá, lệch cả bảng): giờ đọc ĐÚNG màu điều kiện (conditional-formatting) từ chính file — mã ô → màu chuẩn xác, thay vì đoán theo thứ tự chú thích (vốn lệch). Xanh lá “Xoá list Defect” đã hiện lại đúng.",
   ] },
