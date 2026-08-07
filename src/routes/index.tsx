@@ -135,6 +135,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.47.0 (07/08/2026): Heatmap ĐỌC MÀU THẬT từ conditional-formatting. NEW cf-colors.ts readCodeColors
+ *     (unzip fflate → sheet XML <cfRule operator=equal>+formula→dxfId → styles <dxfs> fill; khoá ""=ô
+ *     trống). summaryToHtml(sh, cfColors?) ưu tiên cfColors (blank→cfColors[""], mã→cfColors[mã]) thay vì
+ *     đoán theo thứ tự legend (mã lưới KHÔNG khớp: blank=Chưa BG, 1=thi công, 5=Xoá Defect XANH). CF rỗng
+ *     → lùi legend cũ. Verify file Mini Hotel: mã5→#00FF00 (82 ô xanh), mọi màu khớp. SummaryDialog truyền
+ *     readCodeColors(bytes,name). PublicSummary/tab lạ không đổi.
  *   v3.46.0 (07/08/2026): installFid BỎ fallback maCT khi có STT (`it.id ? installLinks["id:"+it.id] :
  *     installLinks[it.maCT]`) — dự án chung mã không có link riêng hết mở NHẦM ma trận. Audit main table:
  *     mọi cột đọc per-row (it.*); chỉ PM (pmOfItem) + install link (id:STT) là lookup, đã sửa cả 2.
@@ -499,6 +505,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.47.0", date: "07/08/2026", items: [
+    "Sửa heatmap ma trận lắp đặt tô SAI màu (mất xanh lá, lệch cả bảng): giờ đọc ĐÚNG màu điều kiện (conditional-formatting) từ chính file — mã ô → màu chuẩn xác, thay vì đoán theo thứ tự chú thích (vốn lệch). Xanh lá “Xoá list Defect” đã hiện lại đúng.",
+  ] },
   { v: "3.46.0", date: "07/08/2026", items: [
     "Sửa hyperlink ma trận lắp đặt “nhảy” sang dự án khác: dự án dùng chung mã CT mà KHÔNG có link riêng (vd Mini Hotel B6-B9) không còn mở nhầm ma trận của bản kia — chỉ mở khi chính dòng đó có hyperlink (khoá theo STT, bỏ rớt về mã chung).",
   ] },
@@ -3513,7 +3522,9 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
           setRender({ html: pub.publicSummaryToHtml(sh), css: pub.PUBLIC_SUMMARY_CSS });
         } else if (/summary/i.test(name)) {
           const mod = await import("@/lib/summary-render");
-          setRender({ html: mod.summaryToHtml(sh), css: mod.SUMMARY_CSS });
+          // Đọc màu THẬT từ conditional-formatting (SheetJS không đọc CF) → tô lưới đúng thay vì đoán.
+          const cf = await import("@/lib/cf-colors");
+          setRender({ html: mod.summaryToHtml(sh, cf.readCodeColors(bytes, name)), css: mod.SUMMARY_CSS });
         } else {
           // TAB LẠ (chưa đồng bộ form) → CHỤP Y HỆT bằng PDF của Google (có CHART + màu điều kiện).
           // PDF lỗi (vd file .xlsx không nhận gid) → lùi về đổ HTML từ ô dữ liệu.

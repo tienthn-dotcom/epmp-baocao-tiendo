@@ -22,7 +22,10 @@ function argbColor(rgb: string | undefined): string | null {
   return "#" + h.toUpperCase();
 }
 
-export function summaryToHtml(sh: XLSX.WorkSheet): string {
+/** cfColors = bản đồ "mã ô → màu" ĐỌC TỪ conditional-formatting (cf-colors.ts) — CHÍNH XÁC. Nếu có
+ *  (≥1 mã) thì DÙNG NÓ để tô lưới thay vì đoán theo thứ tự legend (mã lưới thường KHÔNG khớp thứ tự
+ *  legend). Khoá "" = màu ô "trống/khoảng trắng". Không truyền / rỗng → lùi về đoán legend như cũ. */
+export function summaryToHtml(sh: XLSX.WorkSheet, cfColors?: Record<string, string>): string {
   const ec = XLSX.utils.encode_cell;
   const ref = sh["!ref"]; if (!ref) return `<div class="mtld-empty">Sheet rỗng.</div>`;
   const range = XLSX.utils.decode_range(ref);
@@ -60,12 +63,29 @@ export function summaryToHtml(sh: XLSX.WorkSheet): string {
     }
   }
   const legCol = cMau >= 0 ? Math.max(0, cCode >= 0 ? cCode : cMau) : nC + 1;
+  const hasCF = !!cfColors && Object.keys(cfColors).length > 0;
+  const tone = (bg: string): [string, string, string] => [bg, lum(bg) < 140 ? "#fff" : "#111", ""];
   const gridColorOf = (v: unknown): [string | null, string, string] => {
+    const raw = v == null ? "" : String(v);
     const s = S(v).toUpperCase();
+    if (hasCF) {
+      // ƯU TIÊN màu THẬT từ conditional-formatting.
+      if (s === "") {
+        // ô chỉ có KHOẢNG TRẮNG (raw không rỗng nhưng trim ra rỗng) = trạng thái "trống" của CF
+        // (thường Chưa bàn giao). Ô RỖNG hoàn toàn → trắng.
+        const bg = raw !== "" && raw.trim() === "" ? cfColors![""] : undefined;
+        return bg ? tone(bg) : [null, "#111", ""];
+      }
+      if (s === "X") return ["#D8D8D8", "#777", ""];
+      const bg = cfColors![s];
+      if (bg) return tone(bg);
+      return [null, "#111", esc(s)];                          // mã lạ → hiện chữ
+    }
+    // (KHÔNG có CF) → đoán theo thứ tự legend như cũ.
     if (!s) return [null, "#111", ""];                        // trống → trắng
     if (s === "X") return ["#D8D8D8", "#777", ""];            // không áp dụng → xám
     const bg = codeColor[s];
-    if (bg) return [bg, lum(bg) < 140 ? "#fff" : "#111", ""]; // mã có trong legend → màu
+    if (bg) return tone(bg);                                  // mã có trong legend → màu
     return [null, "#111", esc(s)];                            // mã lạ → hiện chữ
   };
 
