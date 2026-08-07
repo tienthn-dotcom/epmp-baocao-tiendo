@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 
-import type { BlockChild, CodeCount, ItemRow, ProjectRow, ReportData } from "@/lib/types";
+import type { BlockChild, CodeCount, DataQuality, ItemRow, ProjectRow, ReportData } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -135,6 +135,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.41.0 (07/08/2026): (1) ComplianceDialog doExportPdf nhận orientation; PdfExportMenu tái dùng
+ *     (thêm disabled/busy/tone/portraitHint) → bảng tuân thủ xuất khổ DỌC (wide=true) ~½ số trang so
+ *     ngang (verify data thật: ngang 5 trang → dọc 2 trang). (2) parser.ts thêm 2 check STT: sttDup
+ *     (≥2 dòng cùng "id:<STT>" → Vướng mắc nhảy/đè mất) + sttBlank (idCol>=0 mà trống → khoá rớt về
+ *     tên → mồ côi); gom id từ projects+allItems+blocks. DataQualityBanner (index.tsx) hiện MỌI check
+ *     ≠ ok ở đầu báo cáo (trước đây quality.checks tính mà KHÔNG hiển thị). STT file hiện tại: SẠCH.
  *   v3.39.0 (05/08/2026): Nhánh "tab lạ" đổi từ HTML-dump sang PDF Y HỆT: getSheetPdf (mtld-install)
  *     fetch `export?format=pdf&gid=` (Google render đủ chart + CF), cache `spdf:fid:gid` ghim ngày;
  *     SummaryDialog hiện `<iframe data:application/pdf>`. PDF lỗi (xlsx không nhận gid) → fallback sheetToHtml.
@@ -470,6 +476,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.41.0", date: "07/08/2026", items: [
+    "Xuất PDF bảng Đánh giá tuân thủ nay chọn được khổ DỌC (A4) — gói gọn còn ~một nửa số trang so với khổ ngang (đỡ lê thê khi in/gửi).",
+    "Cổng kiểm soát dữ liệu: cảnh báo NGAY khi file có STT (ID) TRÙNG hoặc TRỐNG — đây là nguyên nhân Vướng mắc/Giải pháp bị “nhảy” sang dòng khác hoặc mất; hiện dải cảnh báo ở đầu báo cáo (bấm xem chi tiết dòng nào).",
+  ] },
   { v: "3.40.0", date: "05/08/2026", items: [
     "Popup “Thi công lắp đặt” thêm nút “↻ Làm mới”: vừa sửa sheet nguồn là bấm để tải bản mới nhất NGAY (không chờ mốc 17:30). Bình thường vẫn nhanh nhờ cache.",
   ] },
@@ -1633,6 +1643,45 @@ function monthLabelOf(key: string): string {
 
 function toggleIn<T>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
+}
+
+/** Dải CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU — hiện các mục KHÔNG "ok" của cổng kiểm soát (parser.quality).
+ *  Trọng tâm: STT trùng/trống (khoá lưu Vướng mắc/Giải pháp) — nguyên nhân tin "nhảy sai"/"mất".
+ *  Không in ra PDF; thu gọn 1 dòng, bấm để bung chi tiết. */
+function DataQualityBanner({ quality }: { quality?: DataQuality }) {
+  const [open, setOpen] = useState(false);
+  const bad = (quality?.checks ?? []).filter((c) => c.level !== "ok");
+  if (!bad.length) return null;
+  const hasErr = bad.some((c) => c.level === "error");
+  const sttBad = bad.filter((c) => c.id === "sttDup" || c.id === "sttBlank");
+  const tone = hasErr
+    ? "border-rose-300 bg-rose-50 text-rose-800"
+    : sttBad.length
+      ? "border-amber-400 bg-amber-50 text-amber-900"
+      : "border-amber-300 bg-amber-50 text-amber-800";
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-[12px] print:hidden ${tone}`}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left font-semibold">
+        <span aria-hidden>{hasErr ? "⛔" : "⚠️"}</span>
+        <span className="flex-1">
+          {sttBad.length
+            ? `Cảnh báo dữ liệu: ${sttBad.map((c) => c.label).join(" · ")}`
+            : `${bad.length} cảnh báo chất lượng dữ liệu đầu vào`}
+        </span>
+        <span className="text-[11px] font-medium opacity-70">{open ? "Thu gọn ▲" : "Chi tiết ▼"}</span>
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1.5 border-t border-current/20 pt-2">
+          {bad.map((c) => (
+            <li key={c.id} className="leading-snug">
+              <span className="font-semibold">{c.level === "error" ? "⛔ " : "• "}{c.label}</span>
+              {c.detail && <span className="opacity-80"> — {c.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thresholds }) {
@@ -2952,6 +3001,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         />
       </HeaderSlot>
 
+      <DataQualityBanner quality={data.quality} />
+
       <OverviewStrip
         projectCount={tableProjectCount}
         lateCount={printLateCount}
@@ -3630,8 +3681,11 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
   );
 }
 
-/** Nút "Xuất PDF" dạng DROPDOWN — bấm xổ ra chọn khổ NGANG / DỌC (gộp 2 nút cho gọn toolbar). */
-function PdfExportMenu({ onPrint }: { onPrint: (o: "landscape" | "portrait") => void }) {
+/** Nút "Xuất PDF" dạng DROPDOWN — bấm xổ ra chọn khổ NGANG / DỌC (gộp 2 nút cho gọn toolbar).
+ *  `busy` = đang xuất (hiện spinner), `disabled` = chưa có dữ liệu để xuất. `tone` = màu nút.
+ *  `portraitHint` = phụ đề dòng "Khổ dọc" (vd bảng rộng: dọc gói gọn nhiều dòng/trang → ÍT TRANG hơn). */
+function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-slate-900 hover:bg-slate-700", portraitHint = "điện thoại" }:
+  { onPrint: (o: "landscape" | "portrait") => void; disabled?: boolean; busy?: boolean; tone?: string; portraitHint?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -3643,17 +3697,17 @@ function PdfExportMenu({ onPrint }: { onPrint: (o: "landscape" | "portrait") => 
   const pick = (o: "landscape" | "portrait") => { setOpen(false); onPrint(o); };
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((o) => !o)} title="Xuất PDF — chọn khổ ngang hoặc dọc"
-        className="flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700">
-        <Printer className="h-3.5 w-3.5" /> Xuất PDF <span className="text-[8px] leading-none">▼</span>
+      <button onClick={() => setOpen((o) => !o)} disabled={disabled || busy} title="Xuất PDF — chọn khổ ngang hoặc dọc"
+        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40 ${tone}`}>
+        {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Xuất PDF <span className="text-[8px] leading-none">▼</span>
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+          <button onClick={() => pick("portrait")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
+            <span className="text-slate-400">▯</span> Khổ dọc (A4 · {portraitHint})
+          </button>
           <button onClick={() => pick("landscape")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
             <span className="text-slate-400">▭</span> Khổ ngang (A4)
-          </button>
-          <button onClick={() => pick("portrait")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
-            <span className="text-slate-400">▯</span> Khổ dọc (A4 · điện thoại)
           </button>
         </div>
       )}
@@ -5692,7 +5746,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
   const tableRef = useRef<HTMLTableElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const doExportPdf = async () => {
+  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait") => {
     if (exporting || !tableRef.current) return;
     setExporting(true);
     const tid = toast.loading("Đang tạo PDF bảng tuân thủ…", { position: "bottom-left" });
@@ -5710,6 +5764,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
         blocks: headerRef.current ? [headerRef.current] : [],
         table: tableRef.current,
         wide: true,
+        orientation,
         fileName: `DanhGiaTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`,
       });
       track("export_pdf", `Đánh giá tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${tongDuAn} dự án`.slice(0, 300));
@@ -5784,11 +5839,12 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 print:hidden">
-            <button onClick={() => void doExportPdf()} disabled={exporting || loading || !!error || !data || !byPm.length}
-              title="Xuất bảng tuân thủ ra PDF (A4 ngang, đúng như đang xem)"
-              className="flex items-center gap-1.5 rounded-md bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">
-              {exporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Xuất PDF
-            </button>
+            <PdfExportMenu
+              onPrint={(o) => void doExportPdf(o)}
+              disabled={loading || !!error || !data || !byPm.length}
+              busy={exporting}
+              tone="bg-teal-700 hover:bg-teal-800"
+              portraitHint="gọn trang" />
             <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
           </div>
         </div>

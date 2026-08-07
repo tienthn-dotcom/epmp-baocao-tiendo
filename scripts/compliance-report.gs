@@ -16,9 +16,11 @@
  *    4. crUpdateScores: cột I = ĐẾM "x" (lũy kế không cập nhật trong tháng); cột J = ĐIỂM
  *                       = MAX(0, 100 − 25·(số x) − 10·(số o)) — công thức trên dải Thứ 4 tháng này.
  *    5. crMarkWeek    : quét theo lịch (trigger Thứ 4 21h + Thứ 5 12h), tick cột tuần hiện tại:
- *         · Thứ 4 (~21h): ngày cập nhật == HÔM NAY → "✓", còn lại → "x".
- *         · Thứ 5 (~12h): ngày cập nhật == T4 tuần này → "✓"; == HÔM NAY(T5) → "o"; còn lại → "x";
- *                          rồi KHOÁ cột (ScriptProperties) — không sửa lại nữa.
+ *         · Thứ 4 (~21h): ẢNH CHỤP — ngày cập nhật == T4 → "✓" (đúng hạn), còn lại → "x".
+ *         · Thứ 5 (~12h): CHỐT — GIỮ "✓" của tối T4; ai còn "x" mà giờ ĐÃ có ngày cập nhật
+ *                          (== T4 sau 21h HOẶC == T5) → "o" (TRỄ); còn lại giữ "x"; rồi KHOÁ cột.
+ *           (Mấu chốt: "✓" CHỈ do lần quét 21h T4 tạo ra — vì ô ngày chỉ có NGÀY, không có GIỜ,
+ *            cập nhật SAU 21h T4 nhìn ngày vẫn = T4 nên phải dựa ảnh chụp T4 để biết trễ → "o".)
  *       (Cột tuần này = cột có ngày Thứ 4 rơi trong tuần Thứ2–CN chứa hôm nay.)
  *
  *  AN TOÀN: để DRY_RUN = true → chỉ GHI LOG "sẽ làm gì", KHÔNG đụng file. Chạy thử, xem
@@ -227,21 +229,32 @@ function crMarkWeek_(ss, sh, range) {
   if (lastRow < DATA_START_ROW) { Logger.log('Bảng trống.'); return; }
   var n = lastRow - DATA_START_ROW + 1;
   var dates = sh.getRange(DATA_START_ROW, C_DATE, n, 1).getValues();  // ngày cập nhật (đã VLOOKUP)
+  var prev  = sh.getRange(DATA_START_ROW, col, n, 1).getValues();     // ✓/x đã chấm tối T4 (để GIỮ đúng hạn)
   var out = [], cnt = { '✓': 0, o: 0, x: 0 };
+  var missT4 = 0;
   for (var i = 0; i < n; i++) {
     var d = dates[i][0];
     var ds = (d instanceof Date) ? crIso_(d, tz) : String(d || '').slice(0, 10);
+    var onTime = (ds === wed || (ONTIME_LE_WED && ds && ds <= wed && ds >= monIso));
     var mark;
     if (isWed) {
-      mark = (ds === wed || (ONTIME_LE_WED && ds && ds <= wed && ds >= monIso)) ? '✓' : 'x';
-    } else { // isThu — chốt & khoá
-      if (ds === wed || (ONTIME_LE_WED && ds && ds <= wed && ds >= monIso)) mark = '✓';
-      else if (ds === thu) mark = 'o';
-      else mark = 'x';
+      // Ảnh chụp lúc 21h T4: đã cập nhật (ngày = T4) → ✓ đúng hạn; chưa → x.
+      mark = onTime ? '✓' : 'x';
+    } else { // isThu — CHỐT & KHOÁ: giữ ✓ của T4, chỉ nâng x→o cho ai VỪA cập nhật (trễ)
+      var cur = String(prev[i][0] || '').trim();
+      if (cur === '✓') {
+        mark = '✓';                               // đã đúng hạn từ tối T4 → GIỮ NGUYÊN
+      } else if (ds === wed || ds === thu) {
+        mark = 'o';                               // cập nhật TRỄ: sau 21h T4 (ngày=T4) hoặc sang T5
+        if (cur === '') missT4++;                 // ô trống = tối T4 chưa quét được (trigger lỡ)
+      } else {
+        mark = 'x';                               // vẫn CHƯA cập nhật
+      }
     }
     cnt[mark]++;
     out.push([mark]);
   }
+  if (missT4) Logger.log('LƯU Ý: ' + missT4 + ' dòng đang TRỐNG lúc T5 (trigger 21h T4 có thể chưa chạy) → tạm tính "o".');
   Logger.log('Tick cột ' + colDate + ' (' + (isWed ? 'T4' : 'T5-chốt') + '): ✓=' + cnt['✓'] + ' o=' + cnt.o + ' x=' + cnt.x);
   if (DRY_RUN) return;
   sh.getRange(DATA_START_ROW, col, n, 1).setValues(out);

@@ -827,6 +827,29 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const suspectPct = items.reduce(
     (a, i) => a + (i.pctPlanInvalid ? 1 : 0) + (i.pctActualInvalid ? 1 : 0), 0);
   const orphanItems = items.filter((i) => !i.projectCode).length;
+
+  // ── TOÀN VẸN STT (ID) — khoá lưu Vướng mắc/Giải pháp = "id:<STT>" (index.tsx itemKeyOf/projectKeyOf).
+  //    · TRÙNG: ≥2 dòng cùng 1 STT → chung 1 ô lưu → Vướng mắc "nhảy" sang dòng khác + đè MẤT nhau.
+  //    · TRỐNG (khi file CÓ cột STT): dòng rớt về khoá-theo-tên → đổi khoá giữa các lần sync → tin
+  //      "mồ côi" = MẤT. Cả hai đều ÂM THẦM (không báo lỗi) → phải bắt ở cổng dữ liệu. Chỉ soi khi
+  //      idCol>=0 (file/cache cũ không có cột STT thì bỏ qua, khỏi báo nhầm). */
+  let sttDupCount = 0, sttBlankCount = 0;
+  const sttDupSamples: string[] = [];
+  if (idCol >= 0) {
+    const seen = new Map<string, number>();
+    const bump = (raw: string | undefined) => {
+      const v = (raw ?? "").trim();
+      if (!v) { sttBlankCount++; return; }
+      seen.set(v, (seen.get(v) ?? 0) + 1);
+    };
+    for (const p of activeProjects) {
+      bump(p.id);
+      for (const it of p.allItems) bump(it.id);
+    }
+    for (const arr of blocksByProj.values()) for (const b of arr) bump(b.blk.id);
+    for (const [id, n] of seen) if (n > 1) { sttDupCount += n; if (sttDupSamples.length < 8) sttDupSamples.push(`${id}×${n}`); }
+  }
+
   const checks: DataQualityCheck[] = [];
   const add = (id: string, bad: boolean, level: "warn" | "error", label: string, detail?: string) =>
     checks.push({ id, level: bad ? level : "ok", label, detail: bad ? detail : undefined });
@@ -859,6 +882,16 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       ? "Mọi đầu việc đều thuộc một dự án"
       : `${orphanItems} đầu việc KHÔNG gắn được với dự án nào`,
     "Có dòng công việc đứng trước dòng dự án cha — kiểm tra thứ tự dòng trong file.");
+  add("sttDup", sttDupCount > 0, "warn",
+    sttDupCount === 0
+      ? "Mọi STT (ID) là duy nhất — khoá lưu Vướng mắc/Giải pháp an toàn"
+      : `${sttDupCount} dòng TRÙNG STT (ID) — Vướng mắc có thể nhảy sang dòng khác hoặc bị đè mất`,
+    `STT bị trùng: ${sttDupSamples.join(", ")}. Mỗi dòng (dự án/hạng mục/dòng con) phải có STT RIÊNG ở cột "STT".`);
+  add("sttBlank", sttBlankCount > 0, "warn",
+    sttBlankCount === 0
+      ? "Mọi dòng đều có STT (ID)"
+      : `${sttBlankCount} dòng THIẾU STT (ID) — dễ mất/nhảy Vướng mắc khi đồng bộ`,
+    "Điền STT cho mọi dòng để khoá lưu ổn định (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).");
 
   const quality: DataQuality = {
     level: checks.some((c) => c.level === "error") ? "error"
