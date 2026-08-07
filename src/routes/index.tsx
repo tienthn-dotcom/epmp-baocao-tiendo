@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 
-import type { BlockChild, CodeCount, DataQuality, ItemRow, ProjectRow, ReportData } from "@/lib/types";
+import type { BlockChild, CodeCount, DataQualityCheck, ItemRow, ProjectRow, ReportData } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -135,6 +135,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.42.0 (07/08/2026): (1) ComplianceDialog: KHỐI IN RIÊNG (printHeaderRef+printTableRef) dựng theo
+ *     mẫu master (cột Ngày CN·Điểm PM·Người PT·Tên·Lũy kế·Điểm DA·tuần, có legend, BỎ Vùng); ẩn bằng
+ *     position:fixed top:100vh; doExportPdf chụp khối này thay tableRef/headerRef (màn hình giữ nguyên).
+ *     BUG ĐÃ SỬA: khối in nằm trong modal print:hidden → applyExportClone xoá khỏi clone → "unexpected
+ *     EOF"; khôi phục vòng gỡ print:hidden ở tổ tiên trước khi chụp (đã bỏ nhầm khi refactor). (2) Dời
+ *     DataQualityBanner → DataQualityDialog mở từ ReportsMenu mục "Cảnh báo dữ liệu" (gated PMO/admin qua
+ *     canSeeSystem = isAdmin||roleOf==PMO; badge amber = số check≠ok); bỏ banner ở đầu báo cáo.
  *   v3.41.0 (07/08/2026): (1) ComplianceDialog doExportPdf nhận orientation; PdfExportMenu tái dùng
  *     (thêm disabled/busy/tone/portraitHint) → bảng tuân thủ xuất khổ DỌC (wide=true) ~½ số trang so
  *     ngang (verify data thật: ngang 5 trang → dọc 2 trang). (2) parser.ts thêm 2 check STT: sttDup
@@ -476,6 +483,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.42.0", date: "07/08/2026", items: [
+    "Xuất PDF báo cáo tuân thủ nay dựng ĐÚNG MẪU MASTER (thứ tự cột: Ngày cập nhật · Điểm PM · Người phụ trách · Tên dự án · Lũy kế · Điểm dự án · các tuần; có ô chú thích ✓/o/x; bỏ cột Vùng). Bảng trên màn hình giữ nguyên như cũ.",
+    "Dời cảnh báo chất lượng dữ liệu (STT trùng/trống…) từ đầu trang VÀO menu “Hệ thống” → mục “Cảnh báo dữ liệu” (chỉ PMO/admin thấy), gọn màn hình chính.",
+  ] },
   { v: "3.41.0", date: "07/08/2026", items: [
     "Xuất PDF bảng Đánh giá tuân thủ nay chọn được khổ DỌC (A4) — gói gọn còn ~một nửa số trang so với khổ ngang (đỡ lê thê khi in/gửi).",
     "Cổng kiểm soát dữ liệu: cảnh báo NGAY khi file có STT (ID) TRÙNG hoặc TRỐNG — đây là nguyên nhân Vướng mắc/Giải pháp bị “nhảy” sang dòng khác hoặc mất; hiện dải cảnh báo ở đầu báo cáo (bấm xem chi tiết dòng nào).",
@@ -1645,42 +1656,40 @@ function toggleIn<T>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
 }
 
-/** Dải CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU — hiện các mục KHÔNG "ok" của cổng kiểm soát (parser.quality).
- *  Trọng tâm: STT trùng/trống (khoá lưu Vướng mắc/Giải pháp) — nguyên nhân tin "nhảy sai"/"mất".
- *  Không in ra PDF; thu gọn 1 dòng, bấm để bung chi tiết. */
-function DataQualityBanner({ quality }: { quality?: DataQuality }) {
-  const [open, setOpen] = useState(false);
-  const bad = (quality?.checks ?? []).filter((c) => c.level !== "ok");
-  if (!bad.length) return null;
-  const hasErr = bad.some((c) => c.level === "error");
-  const sttBad = bad.filter((c) => c.id === "sttDup" || c.id === "sttBlank");
-  const tone = hasErr
-    ? "border-rose-300 bg-rose-50 text-rose-800"
-    : sttBad.length
-      ? "border-amber-400 bg-amber-50 text-amber-900"
-      : "border-amber-300 bg-amber-50 text-amber-800";
-  return (
-    <div className={`rounded-lg border px-3 py-2 text-[12px] print:hidden ${tone}`}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left font-semibold">
-        <span aria-hidden>{hasErr ? "⛔" : "⚠️"}</span>
-        <span className="flex-1">
-          {sttBad.length
-            ? `Cảnh báo dữ liệu: ${sttBad.map((c) => c.label).join(" · ")}`
-            : `${bad.length} cảnh báo chất lượng dữ liệu đầu vào`}
-        </span>
-        <span className="text-[11px] font-medium opacity-70">{open ? "Thu gọn ▲" : "Chi tiết ▼"}</span>
-      </button>
-      {open && (
-        <ul className="mt-2 space-y-1.5 border-t border-current/20 pt-2">
-          {bad.map((c) => (
-            <li key={c.id} className="leading-snug">
-              <span className="font-semibold">{c.level === "error" ? "⛔ " : "• "}{c.label}</span>
-              {c.detail && <span className="opacity-80"> — {c.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+/** DIALOG CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU — mở từ menu "Hệ thống" (cho PMO/admin), KHÔNG bày ngoài trang.
+ *  Liệt kê các mục KHÔNG "ok" của cổng kiểm soát (parser.quality). Trọng tâm: STT trùng/trống — khoá
+ *  lưu Vướng mắc/Giải pháp; là nguyên nhân tin "nhảy sai" / "mất". */
+function DataQualityDialog({ checks, onClose }: { checks: DataQualityCheck[]; onClose: () => void }) {
+  if (typeof document === "undefined") return null;
+  const hasErr = checks.some((c) => c.level === "error");
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className={`flex items-start justify-between gap-3 border-b-2 px-5 py-3 ${hasErr ? "border-rose-400" : "border-amber-400"}`}>
+          <div>
+            <div className={`text-[10px] font-semibold uppercase tracking-wider ${hasErr ? "text-rose-700" : "text-amber-700"}`}>Cổng kiểm soát dữ liệu</div>
+            <div className="text-sm font-bold text-slate-900">CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU</div>
+            <div className="mt-0.5 text-[11px] text-slate-600">Kiểm mỗi lần nạp nguồn. STT trùng/trống là nguyên nhân Vướng mắc bị nhảy dòng hoặc mất.</div>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100">Đóng ✕</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          {checks.length === 0 ? (
+            <div className="py-8 text-center text-sm text-emerald-600">Không có cảnh báo — dữ liệu đầu vào sạch.</div>
+          ) : (
+            <ul className="space-y-2.5">
+              {checks.map((c) => (
+                <li key={c.id} className={`rounded-lg border px-3 py-2 text-[12px] ${c.level === "error" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
+                  <div className="font-semibold text-slate-800">{c.level === "error" ? "⛔ " : "⚠️ "}{c.label}</div>
+                  {c.detail && <div className="mt-0.5 text-[11px] leading-snug text-slate-600">{c.detail}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2968,6 +2977,11 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     return Object.keys(kv).length ? kv : DEFAULT_ROLES;
   }, [rolesQuery.data]);
   const [showRoles, setShowRoles] = useState(false);
+  const [showDataQ, setShowDataQ] = useState(false);
+  // Cảnh báo chất lượng dữ liệu (STT trùng/trống…) — KHÔNG bày ngoài trang; rút vào menu "Hệ thống"
+  // cho PMO xem (chỉ hiện khi có cảnh báo + là admin/PMO). Đếm số mục ≠ ok để gắn badge.
+  const dataQualityBad = useMemo(() => (data.quality?.checks ?? []).filter((c) => c.level !== "ok"), [data.quality]);
+  const canSeeSystem = me.isAdmin || roleOf(roleMap, me.email ?? "") === "PMO";
 
   return (
     <RolesCtx.Provider value={roleMap}>
@@ -2996,12 +3010,14 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           isAdmin={me.isAdmin}
           onOpenActivity={() => { setShowActivity(true); track("open_activity"); }}
           onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
+          qualityIssues={canSeeSystem ? dataQualityBad.length : 0}
+          onOpenQuality={() => { setShowDataQ(true); track("open_dataquality"); }}
           tvMode={tvMode}
           onToggleTv={toggleTvMode}
         />
       </HeaderSlot>
 
-      <DataQualityBanner quality={data.quality} />
+      {showDataQ && <DataQualityDialog checks={dataQualityBad} onClose={() => setShowDataQ(false)} />}
 
       <OverviewStrip
         projectCount={tableProjectCount}
@@ -5199,13 +5215,16 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
  *  Đánh giá tuân thủ (theo tháng) + Nhật ký giám sát (chỉ admin). Thêm tính năng sau chỉ
  *  cần push thêm 1 item vào mảng. Không có mục nào khả dụng → không hiện nút (menu rỗng vô nghĩa).
  *  Vẫn giữ TÍN HIỆU: có dự án chưa cập nhật đúng hạn → chấm đỏ trên nút dù đang thu gọn. */
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenQuality, tvMode, onToggleTv }: {
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
   isAdmin: boolean;
   onOpenActivity: () => void;
   onOpenRoles: () => void;
+  /** Số mục cảnh báo chất lượng dữ liệu (STT trùng/trống…). >0 → hiện mục "Cảnh báo dữ liệu" cho PMO. */
+  qualityIssues?: number;
+  onOpenQuality?: () => void;
   /** Chế độ Trình chiếu TV (fullscreen cả app + lấp đầy màn hình lớn) — bật/tắt ngay trong menu. */
   tvMode: boolean;
   onToggleTv: () => void;
@@ -5221,8 +5240,9 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const items: { icon: ReactNode; label: string; badge?: number; active?: boolean; onClick: () => void }[] = [];
+  const items: { icon: ReactNode; label: string; badge?: number; badgeAmber?: boolean; active?: boolean; onClick: () => void }[] = [];
   if (showCompliance) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-slate-500" />, label: "Đánh giá tuân thủ", badge: complianceBadge, onClick: onOpenCompliance });
+  if (qualityIssues > 0 && onOpenQuality) items.push({ icon: <AlertTriangle className="h-4 w-4 text-amber-500" />, label: "Cảnh báo dữ liệu", badge: qualityIssues, badgeAmber: true, onClick: onOpenQuality });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
   // Trình chiếu TV — CHO MỌI NGƯỜI (không riêng admin): fullscreen cả app + phóng lấp đầy màn TV.
@@ -5257,8 +5277,8 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
                 <span className="inline-flex items-center rounded-full bg-violet-100 px-1.5 text-[9px] font-bold text-violet-700">ĐANG BẬT</span>
               )}
               {it.badge != null && it.badge > 0 && (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
-                      title={`${it.badge} dự án chưa cập nhật đúng hạn tuần này`}>{it.badge}</span>
+                <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white ${it.badgeAmber ? "bg-amber-500" : "bg-red-500"}`}
+                      title={it.badgeAmber ? `${it.badge} cảnh báo chất lượng dữ liệu` : `${it.badge} dự án chưa cập nhật đúng hạn tuần này`}>{it.badge}</span>
               )}
             </button>
           ))}
@@ -5745,30 +5765,33 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
    *  (nhiều cột tuần) → giữ bề rộng thật rồi thu tỉ lệ cho vừa giấy. */
   const tableRef = useRef<HTMLTableElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  // KHỐI IN RIÊNG (ẩn ngoài màn hình) — dựng ĐÚNG layout master để xuất PDF; màn hình giữ nguyên.
+  const printHeaderRef = useRef<HTMLDivElement>(null);
+  const printTableRef = useRef<HTMLTableElement>(null);
   const [exporting, setExporting] = useState(false);
   const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait") => {
-    if (exporting || !tableRef.current) return;
+    if (exporting || !printTableRef.current) return;
     setExporting(true);
     const tid = toast.loading("Đang tạo PDF bảng tuân thủ…", { position: "bottom-left" });
-    // onclone của pdf-export XOÁ mọi phần tử "print:hidden" khỏi ảnh chụp (để bỏ nút/điều khiển).
-    // NHƯNG ROOT dialog này cũng mang "print:hidden" (chặn Ctrl+P in modal) ⇒ sẽ bị xoá LUÔN cả
-    // dialog + bảng cần chụp → html2canvas lỗi "unexpected EOF". Tạm gỡ "print:hidden" ở các TỔ TIÊN
-    // của bảng trước khi chụp rồi trả lại — nút print:hidden BÊN TRONG vẫn bị onclone loại như thường.
+    // Chụp KHỐI IN RIÊNG (printHeaderRef + printTableRef) — layout master, ẩn ngoài màn hình. LƯU Ý:
+    // khối in NẰM TRONG modal mang "print:hidden"; onclone của pdf-export XOÁ mọi phần tử print:hidden
+    // khỏi ảnh clone ⇒ xoá LUÔN cả khối in → html2canvas lỗi "unexpected EOF". Tạm gỡ "print:hidden" ở
+    // các TỔ TIÊN của khối in trước khi chụp rồi trả lại (nút print:hidden BÊN TRONG vẫn bị loại như thường).
     const stripped: HTMLElement[] = [];
-    for (let el: HTMLElement | null = tableRef.current; el; el = el.parentElement) {
+    for (let el: HTMLElement | null = printTableRef.current; el; el = el.parentElement) {
       if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
     }
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
       const pages = await exportDashboardPdf({
-        blocks: headerRef.current ? [headerRef.current] : [],
-        table: tableRef.current,
+        blocks: printHeaderRef.current ? [printHeaderRef.current] : [],
+        table: printTableRef.current,
         wide: true,
         orientation,
-        fileName: `DanhGiaTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`,
+        fileName: `BaoCaoTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`,
       });
-      track("export_pdf", `Đánh giá tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${tongDuAn} dự án`.slice(0, 300));
-      toast.success(`Đã tạo PDF bảng tuân thủ (${pages} trang)`);
+      track("export_pdf", `Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${tongDuAn} dự án`.slice(0, 300));
+      toast.success(`Đã tạo PDF khổ ${orientation === "portrait" ? "dọc" : "ngang"} (${pages} trang), theo mẫu master`);
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
@@ -5920,6 +5943,83 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
           </table>
           )}
         </div>
+
+        {/* ── KHỐI IN RIÊNG cho PDF — dựng ĐÚNG mẫu master (thứ tự cột: Ngày CN · Điểm PM · Người PT ·
+            Tên DA · Lũy kế · Điểm DA · các tuần; BỎ cột Vùng). ẨN bằng wrapper 0×0 overflow-hidden
+            (toạ độ DƯƠNG — KHÔNG dùng left âm cực lớn vì html2canvas-pro lỗi "unexpected EOF"); màn
+            hình vẫn giữ bảng gốc phía trên. Không print:hidden để html2canvas clone thẳng. */}
+        {data && byPm.length > 0 && (
+          <div aria-hidden="true" style={{ position: "fixed", left: 0, top: "100vh", width: "1240px", background: "#fff" }} className="text-slate-900">
+            <div ref={printHeaderRef} className="px-1 pb-2.5 pt-1">
+              <div className="text-lg font-extrabold text-slate-900">BÁO CÁO TUÂN THỦ CẬP NHẬT MASTER PLAN{data.monthLabel ? ` THÁNG ${data.monthLabel}` : ""}</div>
+              <div className="mt-1.5 flex items-start justify-between gap-6 text-[11px] leading-relaxed text-slate-700">
+                <div className="flex flex-col gap-0.5">
+                  <div>Tổng hợp bởi: <b className="text-slate-900">Bộ phận Project Planning</b></div>
+                  <div>Ngày cập nhật: <b className="text-slate-900 tabular-nums">{fmtDateVN(today)}</b></div>
+                </div>
+                <div className="flex flex-col">
+                  <div className="font-semibold text-slate-800">Cách tính điểm tuân thủ dự án:</div>
+                  <div className="whitespace-nowrap">(1) Khởi điểm <b>100 điểm/tháng</b>.</div>
+                  <div className="whitespace-nowrap">(2) Trường hợp không cập nhật: <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
+                  <div className="whitespace-nowrap">(3) Trường hợp cập nhật trễ: <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
+                </div>
+                <div className="flex max-w-[230px] flex-col">
+                  <div className="font-semibold text-slate-800">Cách tính điểm tuân thủ PM:</div>
+                  <div>Điểm tuân thủ PM = Tổng điểm tuân thủ các dự án PM quản lý / Tổng số lượng dự án PM quản lý</div>
+                </div>
+                <div className="flex flex-col">
+                  <div className="mb-1 font-semibold text-slate-800">Chú thích:</div>
+                  <table className="border-collapse text-[10px] leading-tight">
+                    <tbody>
+                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-emerald-500">✓</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Cập nhật đúng hạn</td></tr>
+                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-amber-500">o</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Cập nhật trễ</td></tr>
+                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-red-600">✕</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Không cập nhật</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <table ref={printTableRef} className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-[#1f3864] text-white">
+                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Ngày cập nhật gần nhất</th>
+                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Điểm tuân thủ PM</th>
+                  <th className="border border-slate-500 px-2 py-1.5 text-left font-semibold">Người phụ trách chính</th>
+                  <th className="border border-slate-500 px-2 py-1.5 text-left font-semibold">Tên dự án</th>
+                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Lũy kế dự án không cập nhật</th>
+                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Điểm tuân thủ dự án</th>
+                  {data.weeks.map((w) => (
+                    <th key={w} className="border border-slate-500 px-1 py-1.5 text-center font-semibold whitespace-nowrap">{w}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {byPm.flatMap(({ pm, pmScore, rs }) => rs.map((r, i) => (
+                  <tr key={`p-${pm}-${r.stt}-${i}`}>
+                    <td className="border border-slate-300 px-2 py-1 text-center whitespace-nowrap">
+                      <span className="inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums" style={recencyStyle(r.lastUpdate)}>{r.lastUpdate ?? "—"}</span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-center text-[13px] font-extrabold tabular-nums">{scoreLabel(pmScore)}</td>
+                    <td className="border border-slate-300 px-2 py-1 font-medium text-slate-800">{pm || "—"}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-slate-800">{r.name}</td>
+                    <td className="border border-slate-300 px-2 py-1">
+                      <div className="relative mx-auto flex h-4 max-w-[64px] items-center overflow-hidden rounded">
+                        {maxRequired > 0 && r.countX > 0 && (
+                          <div className="absolute inset-y-0 left-0 rounded bg-blue-300" style={{ width: `${Math.min(100, r.countX / maxRequired * 100)}%` }} />
+                        )}
+                        <span className="relative z-[1] mx-auto tabular-nums font-semibold text-blue-700">{r.countX}</span>
+                      </div>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-center text-[13px] font-extrabold tabular-nums">{scoreLabel(r.score)}</td>
+                    {r.marks.map((m, j) => (
+                      <td key={j} className="border border-slate-300 px-1 py-1 text-center"><ComplianceMark m={m} /></td>
+                    ))}
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

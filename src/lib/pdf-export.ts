@@ -116,6 +116,14 @@ export async function exportDashboardPdf(opts: {
 
   /* ── Bảng ── */
   const tbl = opts.table;
+  // Đo ranh giới hàng phải trên ĐÚNG bảng đang chụp. TRƯỚC: hardcode getElementById("pdf-table") →
+  // bảng tuân thủ / khối in master KHÔNG mang id đó nên đo nhầm bảng chính #pdf-table (đang ẩn sau
+  // modal) ⇒ thead/hàng-đầu lệch + sót dải navy "đen" dưới bảng. Gán id tạm nếu bảng chưa có id,
+  // rồi truy đúng id đó trong clone; gỡ lại sau khi chụp.
+  const CAP_ID = "__pdf_capture_table__";
+  const hadOwnId = !!tbl.id;
+  if (!hadOwnId) tbl.id = CAP_ID;
+  const capId = tbl.id;
   // CỐ ĐỊNH bề rộng + cỡ chữ khi chụp → PDF GIỐNG NHAU trên mọi màn hình & trình duyệt
   // (bỏ phụ thuộc clamp(vw) responsive + giảm khác biệt render Chrome/Safari/Firefox).
   // Khôi phục nguyên trạng ngay sau khi chụp xong.
@@ -152,7 +160,7 @@ export async function exportDashboardPdf(opts: {
     scale: 2, backgroundColor: "#ffffff", logging: false,
     onclone: (doc: Document) => {
       applyExportClone(doc);
-      const t = (doc.getElementById("pdf-table") as HTMLTableElement | null) ?? doc.querySelector("table");
+      const t = (doc.getElementById(capId) as HTMLTableElement | null) ?? doc.querySelector("table");
       const rs = t?.tBodies[0] ? (Array.from(t.tBodies[0].rows) as HTMLTableRowElement[]) : [];
       if (t && rs.length) {
         cm.tops = rs.map(r => r.offsetTop);
@@ -166,6 +174,7 @@ export async function exportDashboardPdf(opts: {
   // Khôi phục bảng NGAY (mọi số đo đã nằm trong cm/live + cv) → màn hình tự cân bằng lại hàng.
   bodyRows.forEach((r, i) => { r.style.height = savedHeights[i] ?? ""; });
   tbl.style.cssText = savedTblCss;
+  if (!hadOwnId) tbl.removeAttribute("id");
   window.dispatchEvent(new Event("resize"));
 
   // Ưu tiên số đo CLONE (khớp ảnh); chỉ rơi về số đo DOM sống nếu clone không đo được (đủ hàng &
@@ -196,7 +205,10 @@ export async function exportDashboardPdf(opts: {
   } else {
     // RANH GIỚI Y (ảnh) dùng CHUNG cho thead + từng hàng → không hở, không chồng, không lẹm vệt xanh.
     const bnd: number[] = tops.map(px2cv);
-    bnd.push(px2cv(tops[n - 1] + heights[n - 1])); // đáy hàng cuối
+    // Đáy hàng cuối = ĐÁY ẢNH thật. Với border-collapse, viền đáy CÙNG của bảng nằm NGOÀI
+    // (đỉnh+chiều-cao-hàng-cuối) → cắt đúng số đó sẽ LẸM MẤT line dưới cùng. Dùng cv.height để giữ trọn
+    // (không nhỏ hơn mép hàng cuối đo được, phòng làm tròn).
+    bnd.push(cv.height);
     const theadBotY = px2cv(theadTopCss);
     const theadImg = sliceY(0, theadBotY);          // ảnh header SẠCH (cắt trên ĐÚNG mép hàng đầu → không xanh)
     const theadMm = cv2mm(theadBotY);
