@@ -135,6 +135,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.46.0 (07/08/2026): installFid BỎ fallback maCT khi có STT (`it.id ? installLinks["id:"+it.id] :
+ *     installLinks[it.maCT]`) — dự án chung mã không có link riêng hết mở NHẦM ma trận. Audit main table:
+ *     mọi cột đọc per-row (it.*); chỉ PM (pmOfItem) + install link (id:STT) là lookup, đã sửa cả 2.
+ *   v3.45.0 (07/08/2026): Bỏ SuspectBadge ("% nghi ngờ") khỏi OverviewStrip → trang chính sạch; cảnh báo
+ *     pct vẫn trong menu Hệ thống ▸ Cảnh báo dữ liệu.
  *   v3.44.0 (07/08/2026): FIX domino PM — pmByCode khoá `p.code` → `${p.code} ${p.name}` (1 maCT nhiều
  *     dự án khác PM: Mini Hotel CT25-051 Vũ vs B6-B9 Lý). Thêm helper pmOfItem(it) tra theo mã+tên; 3
  *     lookup + 2 dep array đổi sang pmOfItem. Quét toàn src: filter.ts allByKey đã code+name, cache.ts
@@ -494,6 +499,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.46.0", date: "07/08/2026", items: [
+    "Sửa hyperlink ma trận lắp đặt “nhảy” sang dự án khác: dự án dùng chung mã CT mà KHÔNG có link riêng (vd Mini Hotel B6-B9) không còn mở nhầm ma trận của bản kia — chỉ mở khi chính dòng đó có hyperlink (khoá theo STT, bỏ rớt về mã chung).",
+  ] },
   { v: "3.45.0", date: "07/08/2026", items: [
     "Dọn giao diện ngoài cho SẠCH (sếp lớn xem): bỏ dải cảnh báo “% nghi ngờ dữ liệu” khỏi trang chính — mọi cảnh báo kỹ thuật giờ gom hết trong menu Hệ thống ▸ Cảnh báo dữ liệu.",
   ] },
@@ -4007,10 +4015,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
         Math.abs(actual - s.avgPct) >= 3 && Math.abs(actual - s.pooledPct) >= 3;
     })();
     // "Thi công lắp đặt" đã hyperlink file Summary → bấm chữ mở popup ma trận lắp đặt.
-    // Link matrix gắn theo TỪNG DÒNG (khoá "id:"+STT) → 1 dự án nhiều matrix (phòng/Public) không đụng;
-    // không khớp id (file cũ) → lùi về khoá mã dự án (maCT).
+    // Link matrix gắn theo TỪNG DÒNG (khoá "id:"+STT). CHỈ dùng khoá maCT khi dòng KHÔNG có STT
+    // (file cũ). CÓ STT mà KHÔNG có link riêng → KHÔNG mở (đừng rớt về maCT chung — 2 dự án cùng mã
+    // như Mini Hotel thường vs B6-B9 sẽ mở NHẦM ma trận của nhau).
     const installFid = it.stage === "Thi công lắp đặt"
-      ? ((it.id ? installLinks?.["id:" + it.id] : undefined) ?? installLinks?.[it.maCT])
+      ? (it.id ? installLinks?.["id:" + it.id] : installLinks?.[it.maCT])
       : undefined;
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
     // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
