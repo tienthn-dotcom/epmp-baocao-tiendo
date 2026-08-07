@@ -135,6 +135,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.44.0 (07/08/2026): FIX domino PM — pmByCode khoá `p.code` → `${p.code} ${p.name}` (1 maCT nhiều
+ *     dự án khác PM: Mini Hotel CT25-051 Vũ vs B6-B9 Lý). Thêm helper pmOfItem(it) tra theo mã+tên; 3
+ *     lookup + 2 dep array đổi sang pmOfItem. Quét toàn src: filter.ts allByKey đã code+name, cache.ts
+ *     byProject chỉ demo → an toàn; chỉ installLinks[maCT] là fallback thứ cấp (primary id:STT). parser:
+ *     3 check mới sharedMaPm (maCT chung ≥2 dự án khác PM) + dupName + noPm.
  *   v3.43.0 (07/08/2026): ID CỨNG (chống lệch khoá khi STT bị đánh lại). parser: detectHidCol (header
  *     "IDCUNG"/"KEY") → ProjectRow.hid + ItemRow.projHid (kế thừa currentHid). itemKeyOf ưu tiên
  *     `h:<projHid>:<rawCode>:<dupIdx>` → id:STT → composite. projectKeyOf(+hid) → `h:<hid>`; pkProj/pkItem
@@ -489,6 +494,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.45.0", date: "07/08/2026", items: [
+    "Dọn giao diện ngoài cho SẠCH (sếp lớn xem): bỏ dải cảnh báo “% nghi ngờ dữ liệu” khỏi trang chính — mọi cảnh báo kỹ thuật giờ gom hết trong menu Hệ thống ▸ Cảnh báo dữ liệu.",
+  ] },
+  { v: "3.44.0", date: "07/08/2026", items: [
+    "Sửa lỗi PM hiển thị SAI khi nhiều dự án dùng chung mã CT (vd Mini Hotel PQ CT25-051: bản thường = Nguyễn Hoài Vũ, bản B6-B9 = Trần Quốc Lý) — giờ lấy PM theo TÊN đầy đủ, không gộp theo mã. Thông tin gốc luôn theo file import.",
+    "Cảnh báo dữ liệu (menu Hệ thống) bắt thêm: mã CT dùng cho nhiều dự án khác PM, trùng tên dự án, dự án thiếu PM.",
+  ] },
   { v: "3.43.0", date: "07/08/2026", items: [
     "Chống vướng mắc “nhảy” dự án khi đánh lại STT: app đọc thêm cột “IDCUNG” (mã dự án vĩnh viễn) làm khoá bền — STT đổi thế nào cũng không lệch. Chưa có cột thì vẫn chạy như cũ (theo STT). Có Apps Script tự đóng dấu ID cứng (scripts/stamp-hard-id.gs) + tự di trú dữ liệu cũ 1 lần.",
   ] },
@@ -1744,11 +1756,14 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   // truyền bản này — truyền `thresholds` trần là chiều "sắp bàn giao" im lặng tắt.
   const th = useMemo<Thresholds>(() => ({ ...thresholds, today }), [thresholds, today]);
 
+  // PM dự án — KHOÁ THEO MÃ+TÊN (không chỉ mã). 1 maCT có thể nhiều dự án khác PM (vd Mini Hotel PQ
+  // CT25-051: bản thường = Nguyễn Hoài Vũ, bản B6-B9 = Trần Quốc Lý). Khoá theo mã thôi → PM đè nhầm.
   const pmByCode = useMemo(() => {
     const m = new Map<string, string>();
-    for (const p of data.projects) m.set(p.code, (p.pm && p.pm.trim()) || "—");
+    for (const p of data.projects) m.set(`${p.code} ${p.name}`, (p.pm && p.pm.trim()) || "—");
     return m;
   }, [data.projects]);
+  const pmOfItem = useCallback((it: { projectCode: string; projectName: string }) => pmByCode.get(`${it.projectCode} ${it.projectName}`) || "—", [pmByCode]);
 
   /** (mã dự án + tên) → ID dự án (cột STT). Vì 1 mã có thể nhiều tên, phải khoá theo mã+tên.
    *  Dùng để suy ra ID dự án từ 1 ItemRow (item chỉ mang mã+tên dự án, không mang ID dự án). */
@@ -2089,8 +2104,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         _stageLabel: stageLabelOf(sid),
         _stageDisplay: stageDisplayLabel(sid),
         _dept: deptOf(sid),
-        _pic: it.owner || pmByCode.get(it.projectCode) || "—",
-        _projectPm: pmByCode.get(it.projectCode) || "—",
+        _pic: it.owner || pmOfItem(it) || "—",
+        _projectPm: pmOfItem(it) || "—",
         _planDyn: planDyn,
         _alert: alertKind,
         _alertColor: alertColor,
@@ -2108,7 +2123,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         _sheet: { note: raw.note, pic: raw.owner, deadline: raw.deadline },
       };
     }
-  }, [th, pmByCode, today, edits]);
+  }, [th, pmOfItem, today, edits]);
 
   // Dựng 1 Block (Thi công lắp đặt) thành ĐẦU VIỆC hoàn chỉnh: KẾ THỪA dòng TC cha (người phụ
   // trách/ngày bắt đầu-kết thúc/dự án…), lấy %/tên riêng của Block, rồi enrich NHƯ item thường —
@@ -2226,8 +2241,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     alerts: filters.alerts,
     deadlineMonths: filters.deadlineMonths,
     query: filters.query.trim().toLowerCase(),
-    searchHaystack: (it) => `${it.projectName} ${it.maCT} ${it.owner || pmByCode.get(it.projectCode) || ""} ${pmByCode.get(it.projectCode) || ""} ${it.desc}`,
-  }), [filters, pmByCode]);
+    searchHaystack: (it) => `${it.projectName} ${it.maCT} ${it.owner || pmOfItem(it) || ""} ${pmOfItem(it) || ""} ${it.desc}`,
+  }), [filters, pmOfItem]);
 
   const filterResult = useMemo(
     () => getFilteredProjects(effectiveItems, matcher, criteriaTable, th),
@@ -3202,11 +3217,8 @@ function OverviewStrip(p: {
         <KPI label="Top 20" value={p.topCount} tone="orange"
              active={p.topActive} onClick={p.onPickTop} />
       </div>
-      {p.suspectCount > 0 && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10.5px] text-slate-600">
-          <SuspectBadge count={p.suspectCount} />
-        </div>
-      )}
+      {/* Cảnh báo "% nghi ngờ dữ liệu" ĐÃ DỜI vào menu Hệ thống ▸ Cảnh báo dữ liệu (check "pct").
+          Trang chính giữ SẠCH (nhiều sếp lớn xem) — không bày cảnh báo kỹ thuật ra ngoài. */}
     </section>
   );
 }
@@ -3244,13 +3256,6 @@ function KPI({ label, value, tone, onClick, active }: {
   return <div className={`rounded-md border px-[0.83em] py-[0.33em] ${toneCls} ${activeCls}`}>{inner}</div>;
 }
 
-function SuspectBadge({ count }: { count: number }) {
-  return (
-    <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-900">
-      <AlertTriangle className="h-3 w-3" /> {count} ô phần trăm nghi ngờ dữ liệu, đã loại khỏi phép tính lệch
-    </div>
-  );
-}
 
 /* ----- Section 2: Stage bars (7 stages, fixed order, prominent legend) ----- */
 

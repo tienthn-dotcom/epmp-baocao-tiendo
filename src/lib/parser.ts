@@ -874,6 +874,30 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     for (const [id, n] of seen) if (n > 1) { sttDupCount += n; if (sttDupSamples.length < 8) sttDupSamples.push(`${id}×${n}`); }
   }
 
+  // ── BẤT THƯỜNG KHỚP DỰ ÁN (thông tin gốc PM/tên lấy từ file — cảnh báo chỗ DỄ NHẦM) ──
+  const namesByMa = new Map<string, Set<string>>();   // maCT → tập TÊN dự án dùng chung mã
+  const pmsByMa = new Map<string, Set<string>>();     // maCT → tập PM
+  const projByName = new Map<string, number>();       // tên (thường) → số dự án
+  let noPmCount = 0;
+  const noPmSamples: string[] = [], dupNameSamples: string[] = [], sharedMaSamples: string[] = [];
+  for (const p of activeProjects) {
+    const nm = str(p.name);
+    const nml = nm.toLowerCase();
+    projByName.set(nml, (projByName.get(nml) ?? 0) + 1);
+    for (const mc of str(p.maCT).split(",").map((x) => x.trim()).filter(Boolean)) {
+      if (!namesByMa.has(mc)) namesByMa.set(mc, new Set()); namesByMa.get(mc)!.add(nm);
+      if (!pmsByMa.has(mc)) pmsByMa.set(mc, new Set()); pmsByMa.get(mc)!.add((p.pm || "").trim() || "—");
+    }
+    if (!p.pm || !p.pm.trim() || p.pm.trim() === "—") { noPmCount++; if (noPmSamples.length < 6) noPmSamples.push(nm.slice(0, 28)); }
+  }
+  let sharedMaDiffPm = 0;
+  for (const [mc, pms] of pmsByMa) {
+    const names = namesByMa.get(mc)!;
+    if (names.size > 1 && pms.size > 1) { sharedMaDiffPm++; if (sharedMaSamples.length < 5) sharedMaSamples.push(`${mc}: ${[...names].map((n) => n.slice(0, 18)).join(" · ")}`); }
+  }
+  let dupNameCount = 0;
+  for (const [nm, n] of projByName) if (n > 1) { dupNameCount++; if (dupNameSamples.length < 5) dupNameSamples.push(nm.slice(0, 30)); }
+
   const checks: DataQualityCheck[] = [];
   const add = (id: string, bad: boolean, level: "warn" | "error", label: string, detail?: string) =>
     checks.push({ id, level: bad ? level : "ok", label, detail: bad ? detail : undefined });
@@ -916,6 +940,21 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       ? "Mọi dòng đều có STT (ID)"
       : `${sttBlankCount} dòng THIẾU STT (ID) — dễ mất/nhảy Vướng mắc khi đồng bộ`,
     "Điền STT cho mọi dòng để khoá lưu ổn định (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).");
+  add("sharedMaPm", sharedMaDiffPm > 0, "warn",
+    sharedMaDiffPm === 0
+      ? "Không có mã CT nào dùng cho nhiều dự án khác PM"
+      : `${sharedMaDiffPm} mã CT dùng cho NHIỀU dự án có PM khác nhau — kiểm tra khớp đúng người`,
+    `Ví dụ: ${sharedMaSamples.join(" | ")}. App lấy PM/thông tin theo TÊN dự án (không chỉ mã) để không nhầm.`);
+  add("dupName", dupNameCount > 0, "warn",
+    dupNameCount === 0
+      ? "Mọi tên dự án là duy nhất"
+      : `${dupNameCount} TÊN dự án bị TRÙNG — rất dễ khớp nhầm dữ liệu`,
+    `Ví dụ: ${dupNameSamples.join(" · ")}. Nên đặt tên phân biệt (thêm tháp/khu/giai đoạn).`);
+  add("noPm", noPmCount > 0, "warn",
+    noPmCount === 0
+      ? "Mọi dự án đều có PM (Người phụ trách chính)"
+      : `${noPmCount} dự án THIẾU PM (ô Người phụ trách chính trống)`,
+    `Ví dụ: ${noPmSamples.join(" · ")}. Điền PM để hiện đúng người + lọc theo PM.`);
 
   const quality: DataQuality = {
     level: checks.some((c) => c.level === "error") ? "error"
