@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.49.1", date: "11/08/2026", items: [
+    "Đổi tên cột “Giải pháp” thành “Giải pháp / Action plan” (bảng Danh sách, bảng gộp, xuất PDF/Excel).",
+  ] },
   { v: "3.49.0", date: "11/08/2026", items: [
     "Biểu đồ Tổng thể tiến độ: ô “Sản xuất nhập kho” (SX) nay chuyển XANH LÁ theo % đã sản xuất xong (tô dần từ tuần sớm sang) — nhìn cột SX là biết ngay mỗi dự án đã sản xuất tới đâu; xong 100% thì xanh hết, phần chưa xong vẫn đỏ.",
   ] },
@@ -3250,7 +3253,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
             { label: "Quá hạn", width: 9, align: "center" as const },
             { label: "Tình trạng", width: 15, align: "center" as const },
             { label: "Vướng mắc / Cần xử lý", width: 48, wrap: true, align: "left" as const },
-            { label: "Giải pháp", width: 48, wrap: true, align: "left" as const },
+            { label: "Giải pháp / Action plan", width: 48, wrap: true, align: "left" as const },
           ];
           const rows: XlsxTableRow[] = [];
           for (const g of dueMonthGroups) {
@@ -3513,7 +3516,7 @@ const HEADER_COLS: { k: SortKey; align: "left" | "center" | "right"; label: Reac
   { k: "overdue",         align: "center", label: <>Quá<br />hạn</> },
   { k: "alert",           align: "center", label: "Tình trạng" },
   { k: "note",            align: "left",   label: "Vướng mắc / Cần xử lý" },
-  { k: "action",          align: "left",   label: "Giải pháp" },
+  { k: "action",          align: "left",   label: "Giải pháp / Action plan" },
 ];
 
 /** Tiêu đề bảng NHÓM theo dự án (12 cột — xem GROUP_COL_W): "Mã" (dự án=mã dự án, hạng mục=mã
@@ -3531,7 +3534,7 @@ const HEADER_COLS_GROUP: { k: SortKey; align: "left" | "center" | "right"; label
   { k: "overdue",         align: "center", label: <>Quá<br />hạn</> },
   { k: "alert",           align: "center", label: "Tình trạng" },
   { k: "note",            align: "left",   label: "Vướng mắc / Cần xử lý" },
-  { k: "action",          align: "left",   label: "Giải pháp" },
+  { k: "action",          align: "left",   label: "Giải pháp / Action plan" },
 ];
 
 /** Highlight = IN ĐẬM + đổi màu chữ (KHÔNG nền → đỡ chói). Màu THEO CỘT: Vướng mắc = ĐỎ ĐÔ
