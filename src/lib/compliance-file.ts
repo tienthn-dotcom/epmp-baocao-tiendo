@@ -63,13 +63,13 @@ const toMark = (v: string): CMark => {
   return null;
 };
 
-/** Đọc ô "Điểm" (cột J) từ file: số 0..100. Rỗng/không phải số → null (để fallback tự tính). */
+/** Đọc ô "Điểm" (cột J) từ file: số ≤100 (CÓ THỂ ÂM). Rỗng/không phải số → null (để fallback tự tính). */
 const toScore = (v: string): number | null => {
   const t = (v || "").trim();
   if (!t) return null;
   const n = parseFloat(t.replace(/\s/g, "").replace(",", "."));
   if (!Number.isFinite(n)) return null;
-  return Math.max(0, Math.min(100, Math.round(n)));
+  return Math.min(100, Math.round(n));   // CHO PHÉP ÂM: bỏ sàn 0 (100−25x−10o có thể < 0)
 };
 
 /** Parse text CSV của file tuân thủ → dữ liệu bảng. Ném lỗi rõ nếu không nhận diện được header. */
@@ -138,7 +138,7 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
       lastUpdate: (r[cLast] || "").trim() || null,
       needsMp: cNeed >= 0 && !!(r[cNeed] || "").trim(),
       marks, countX, countO,
-      score: sheetScore != null ? sheetScore : (hasAny ? Math.max(0, Math.min(100, 100 - 25 * countX - 10 * countO)) : null),
+      score: sheetScore != null ? sheetScore : (hasAny ? Math.min(100, 100 - 25 * countX - 10 * countO) : null),
     });
   }
 

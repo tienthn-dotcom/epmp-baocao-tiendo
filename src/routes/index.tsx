@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.50.0", date: "11/08/2026", items: [
+    "Điểm tuân thủ nay CHO PHÉP ÂM (bỏ sàn 0): dự án/PM bị trừ quá nhiều (nhiều tuần không cập nhật, hoặc trừ BOD) sẽ hiện điểm âm thay vì kẹp ở 0 — phản ánh đúng mức độ. Cột điểm & biểu đồ tự hiện số âm (màu đỏ).",
+  ] },
   { v: "3.49.1", date: "11/08/2026", items: [
     "Đổi tên cột “Giải pháp” thành “Giải pháp / Action plan” (bảng Danh sách, bảng gộp, xuất PDF/Excel).",
   ] },
@@ -5913,9 +5916,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
     const hue = Math.round(52 * (1 - t));            // 52° vàng → 0° đỏ
     return { background: `hsl(${hue}, 92%, ${Math.round(58 - 8 * t)}%)` };
   };
-  // ĐIỂM DỰ ÁN CUỐI = điểm nền (cột J: 100−25x−10o) − 10×(số tuần cờ BOD sau tuần đầu), kẹp 0.
+  // ĐIỂM DỰ ÁN CUỐI = điểm nền (cột J: 100−25x−10o) − 10×(số tuần cờ BOD sau tuần đầu). CHO PHÉP ÂM (bỏ sàn 0).
   const finalScoreOf = (r: ComplianceFileRow): number | null =>
-    r.score == null ? null : Math.max(0, r.score - 10 * mpWeeksOf(r));
+    r.score == null ? null : r.score - 10 * mpWeeksOf(r);
   // Màu chữ theo 3 mốc (khớp chart): ≥70 xanh · 50–<70 vàng · <50 đỏ. HEX inline (PDF không vỡ oklch).
   const tone3 = (s: number | null) => (s == null ? "#94a3b8" : s < 50 ? "#dc2626" : s < 70 ? "#ca8a04" : "#16a34a");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("asc"); // mặc định THẤP → CAO (PM điểm thấp/cần chú ý lên đầu)
