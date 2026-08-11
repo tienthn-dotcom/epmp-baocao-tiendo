@@ -47,7 +47,7 @@ export function CleansingDryRunDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-slate-900/40" onClick={onClose} />
+      <div className="flex-1 bg-slate-900/40" />
       <aside className="flex h-full w-full max-w-[920px] flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">

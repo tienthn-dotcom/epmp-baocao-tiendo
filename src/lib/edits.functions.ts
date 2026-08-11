@@ -189,7 +189,10 @@ export const fetchEdits = createServerFn({ method: "GET" }).handler(async () => 
 const CONFIG_KEY = "config:v1";
 const DEV_CONFIG_FILE = ".data/pmo-config.json";
 
-export type AppSharedConfig = { sheetUrl?: string; updatedAt?: string };
+/** `v` = phiên bản schema config. App CHỈ honor nguồn khi v>=2 (do tính năng "Nguồn dữ liệu" admin ghi)
+ *  → config CŨ (trước khi khoá nguồn, không có v) TỰ bị bỏ qua, khỏi phải dọn KV tay khi bật lại. */
+export type AppSharedConfig = { sheetUrl?: string; updatedAt?: string; v?: number };
+export const APP_CONFIG_V = 2;
 
 async function readConfig(): Promise<AppSharedConfig> {
   const kv = await getKv();
@@ -212,10 +215,14 @@ export const saveAppConfig = createServerFn({ method: "POST" })
     z.object({
       sheetUrl: z.string().url().max(2000)
         .regex(/docs\.google\.com\/spreadsheets/, "Link phải là Google Sheets"),
+      devAs: z.string().nullable().optional(),
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    const cfg: AppSharedConfig = { sheetUrl: data.sheetUrl.trim(), updatedAt: new Date().toISOString() };
+    // CHỐT QUYỀN Ở SERVER: đổi NGUỒN CHUNG (mọi người thấy) là hành động nhạy cảm → CHỈ admin.
+    // Chặn cả trường hợp gọi API trực tiếp không qua nút (nút đã ẩn với người thường).
+    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin mới được đổi nguồn dữ liệu chung.");
+    const cfg: AppSharedConfig = { sheetUrl: data.sheetUrl.trim(), updatedAt: new Date().toISOString(), v: APP_CONFIG_V };
     const kv = await getKv();
     if (kv) await kv.put(CONFIG_KEY, JSON.stringify(cfg));
     else {
@@ -475,6 +482,52 @@ export const syncCompletedDates = createServerFn({ method: "POST" })
     for (const key of data.remove) if (map[key]) { delete map[key]; changed++; }
     if (changed > 0) await writeCompleted(map);
     return { completed: map, changed };
+  });
+
+/* ── CỜ "CẦN CẬP NHẬT MP / TRÌNH BOD" — app tự ghi NGÀY LẦN ĐẦU thấy cờ ──
+   Dùng để chấm "không trình BOD: −10 điểm / mỗi tuần cờ còn tồn tại". Sheet KHÔNG biết vướng mắc;
+   APP phát hiện dự án có vướng mắc "trình BOD phê duyệt (Bitrix)" rồi ghi ngày LẦN ĐẦU thấy vào đây.
+   Note đổi / hết cờ → XOÁ để RESET (tái phát sau tính lại từ đầu). Giống hệt completed:v1
+   (add-ngày-lần-đầu + remove). Khoá = pkProj (khoá dự án). */
+export type MpFlagFirstSeen = Record<string, string>; // { [projectKey]: ISO "YYYY-MM-DD" ngày lần đầu thấy cờ }
+const MPFLAG_KEY = "mpflag:v1";
+const DEV_MPFLAG_FILE = ".data/pmo-mpflag.json";
+
+async function readMpFlags(): Promise<MpFlagFirstSeen> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(MPFLAG_KEY); return raw ? (JSON.parse(raw) as MpFlagFirstSeen) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_MPFLAG_FILE, "utf8")) as MpFlagFirstSeen; }
+  catch { return {}; }
+}
+async function writeMpFlags(map: MpFlagFirstSeen): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(MPFLAG_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_MPFLAG_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+/** Đọc mốc "ngày lần đầu thấy cờ MP/BOD" của mọi dự án (dùng chung). */
+export const fetchMpFlags = createServerFn({ method: "GET" }).handler(async () => {
+  return { mpFlags: await readMpFlags() };
+});
+
+/** Đồng bộ cờ MP/BOD: THÊM ngày lần đầu (chỉ khi CHƯA có → giữ mốc gốc, không dời) + XOÁ (khi hết
+ *  cờ). Client tính DELTA nên bình thường không gọi API (giảm ghi KV). */
+export const syncMpFlags = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      add: z.record(z.string().min(1).max(600), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+      remove: z.array(z.string().min(1).max(600)),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const map = await readMpFlags();
+    let changed = 0;
+    for (const [key, date] of Object.entries(data.add)) if (!map[key]) { map[key] = date; changed++; }
+    for (const key of data.remove) if (map[key]) { delete map[key]; changed++; }
+    if (changed > 0) await writeMpFlags(map);
+    return { mpFlags: map, changed };
   });
 
 /* ── DI TRÚ KHOÁ: (mã+tên) đời cũ → ID (cột STT) ──

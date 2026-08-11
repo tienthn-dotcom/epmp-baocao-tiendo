@@ -50,8 +50,9 @@ export async function exportDashboardPdf(opts: {
   title?: HTMLElement | null;
   /** Các khối phía trên (giữ nguyên khối, không cắt ngang). */
   blocks: HTMLElement[];
-  /** Bảng cần xuất — cắt trang theo ranh giới hàng. */
-  table: HTMLTableElement;
+  /** Bảng cần xuất — cắt trang theo ranh giới hàng. BỎ TRỐNG (null) khi chỉ xuất khối (vd biểu đồ
+   *  Tóm tắt không có bảng) → engine chỉ vẽ title + blocks. */
+  table?: HTMLTableElement | null;
   /** Bảng RỘNG tự nhiên (Tổng thể tiến độ): KHÔNG ép về 1280px mà giữ bề rộng thật
    *  rồi thu tỉ lệ cho vừa khổ giấy — nếu ép sẽ bóp méo lưới tuần. */
   wide?: boolean;
@@ -59,8 +60,14 @@ export async function exportDashboardPdf(opts: {
    *  Dọc dùng CÙNG ảnh chụp bảng, chỉ thu tỉ lệ cho vừa bề rộng dọc (196mm) → chữ nhỏ hơn nhưng
    *  KHÔNG đè/chồng cột vì thu ĐỀU (mọi cột giữ đúng tỉ lệ như bản ngang). */
   orientation?: "landscape" | "portrait";
+  /** ÉP GỌN 1 TRANG: thu toàn bộ khối (title + blocks) cho vừa CHIỀU CAO còn lại của trang (giữ tỉ lệ,
+   *  căn giữa) → chắc chắn 1 trang. Dùng cho trang Tóm tắt (biểu đồ + bảng gọn). KHÔNG cắt trang. */
+  singlePage?: boolean;
+  /** XEM TRƯỚC: KHÔNG tải file — trả về `blobUrl` để app hiển thị trong iframe (người dùng soát rồi tự
+   *  Tải/In). Bỏ trống/false → tải file như cũ. */
+  preview?: boolean;
   fileName: string;
-}): Promise<number> {
+}): Promise<{ pages: number; blobUrl?: string }> {
   const portrait = opts.orientation === "portrait";
   const pageW = portrait ? 210 : 297; // A4 (mm)
   const pageH = portrait ? 297 : 210;
@@ -106,16 +113,31 @@ export async function exportDashboardPdf(opts: {
   }
 
   /* ── Khối trên ── */
-  for (const b of opts.blocks) {
-    const cv = await snap(b);
-    const hMm = (cv.height / cv.width) * innerW;
-    if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN; }
-    draw(cv, hMm);
-    y += GAP;
+  if (opts.singlePage && opts.blocks.length) {
+    // ÉP 1 TRANG: chụp hết block, thu theo HỆ SỐ CHUNG cho vừa chiều cao còn lại (giữ tỉ lệ, căn giữa).
+    const cvs: HTMLCanvasElement[] = [];
+    for (const b of opts.blocks) cvs.push(await snap(b));
+    const natH = cvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0) + GAP * (cvs.length - 1);
+    const scale = Math.min(1, (bottomY - y) / natH);
+    for (const cv of cvs) {
+      const hMm = (cv.height / cv.width) * innerW * scale;
+      const wMm = innerW * scale;
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN + (innerW - wMm) / 2, y, wMm, hMm);
+      y += hMm + GAP;
+    }
+  } else {
+    for (const b of opts.blocks) {
+      const cv = await snap(b);
+      const hMm = (cv.height / cv.width) * innerW;
+      if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN; }
+      draw(cv, hMm);
+      y += GAP;
+    }
   }
 
-  /* ── Bảng ── */
+  /* ── Bảng (BỎ QUA nếu không truyền table — vd xuất biểu đồ Tóm tắt) ── */
   const tbl = opts.table;
+  if (tbl) {
   // Đo ranh giới hàng phải trên ĐÚNG bảng đang chụp. TRƯỚC: hardcode getElementById("pdf-table") →
   // bảng tuân thủ / khối in master KHÔNG mang id đó nên đo nhầm bảng chính #pdf-table (đang ẩn sau
   // modal) ⇒ thead/hàng-đầu lệch + sót dải navy "đen" dưới bảng. Gán id tạm nếu bảng chưa có id,
@@ -148,7 +170,6 @@ export async function exportDashboardPdf(opts: {
   // Số đo DỰ PHÒNG trên DOM sống (dùng nếu vì lý do nào đó không đo được trong clone).
   const livePxW = tbl.offsetWidth || PDF_TABLE_WIDTH;
   const liveTops = bodyRows.map(r => r.offsetTop);
-  const liveHeights = bodyRows.map(r => r.offsetHeight);
   const liveTheadBot = bodyRows.length ? bodyRows[0].offsetTop : (tbl.tHead?.offsetHeight ?? 0);
 
   // Chụp bảng 1 lần + ĐO RANH GIỚI HÀNG NGAY TRONG CLONE (đúng toạ độ của ẢNH). Vì clone bị đổi font
@@ -182,7 +203,6 @@ export async function exportDashboardPdf(opts: {
   const ok = cm.tops.length === bodyRows.length && cm.tops.length > 0
     && cm.theadBot > 0 && cm.tops[cm.tops.length - 1] > cm.theadBot;
   const tops = ok ? cm.tops : liveTops;
-  const heights = ok ? cm.heights : liveHeights;
   const theadTopCss = ok ? cm.theadBot : liveTheadBot;
   const W = (ok ? cm.cloneW : livePxW) || 1;
 
@@ -241,7 +261,14 @@ export async function exportDashboardPdf(opts: {
       i = j;
     }
   }
+  } // hết if (tbl)
 
+  const pages = pdf.getNumberOfPages();
+  if (opts.preview) {
+    // Trả blob URL để app xem trước trong iframe (không tải xuống). Người dùng bấm Tải/In trong dialog.
+    const blobUrl = pdf.output("bloburl") as unknown as string;
+    return { pages, blobUrl: String(blobUrl) };
+  }
   pdf.save(opts.fileName);
-  return pdf.getNumberOfPages();
+  return { pages };
 }

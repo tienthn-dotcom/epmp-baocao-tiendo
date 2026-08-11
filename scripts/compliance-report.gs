@@ -9,12 +9,16 @@
  *  DATA), C=STT (+1), K..Z=ngày tuần (+7). Script chỉ làm 3 việc:
  *    1. crUpdateTitle : D3 → "BÁO CÁO TUÂN THỦ CẬP NHẬT MASTER PLAN THÁNG MM/YYYY" (tháng hiện tại).
  *    2. crSyncProjects: dự án có trong AutoData mà CHƯA có trong bảng (khớp theo TÊN) → thêm dòng
- *                       cuối bảng (điền Location/Tên/PM; C,D,H set công thức để tự chạy).
+ *                       cuối bảng (điền Location/Tên; C,D,G,H set CÔNG THỨC để tự chạy — G=PM tra
+ *                       AutoData theo tên nên PM đổi ở nguồn thì tự cập nhật).
  *    3. crManageColumns: cột tuần = các THỨ 4 của THÁNG HIỆN TẠI. Thiếu cột nào thì đổi nhãn cột
  *                       trống cùng tháng (vd cột Thứ 3 04/08 → Thứ 4 05/08) hoặc chèn cột mới.
  *                       ẨN mọi cột tuần KHÔNG thuộc tháng hiện tại; HIỆN các cột Thứ 4 tháng này.
  *    4. crUpdateScores: cột I = ĐẾM "x" (lũy kế không cập nhật trong tháng); cột J = ĐIỂM
  *                       = MAX(0, 100 − 25·(số x) − 10·(số o)) — công thức trên dải Thứ 4 tháng này.
+ *                       (Tùy chọn) trừ thêm 10·(số tuần không trình BOD) nếu bật BOD_DEDUCT.
+ *                       ĐÂY LÀ NGUỒN ĐIỂM DUY NHẤT — app CHỈ ĐỌC cột J để render, KHÔNG tự tính.
+ *                       Điểm PM (trung bình, gộp bỏ DPM) do APP tự tính từ cột J — không ở đây.
  *    5. crMarkWeek    : quét theo lịch (trigger Thứ 4 21h + Thứ 5 12h), tick cột tuần hiện tại:
  *         · Thứ 4 (~21h): ẢNH CHỤP — ngày cập nhật == T4 → "✓" (đúng hạn), còn lại → "x".
  *         · Thứ 5 (~12h): CHỐT — GIỮ "✓" của tối T4; ai còn "x" mà giờ ĐÃ có ngày cập nhật
@@ -38,6 +42,15 @@ var C_MP = 1, C_LOC = 2, C_STT = 3, C_DATE = 4, C_KEY = 5, C_NAME = 6, C_PM = 7,
 var WEEK_COL_START = 11;                          // cột K (ngày tuần đầu tiên)
 // Nếu muốn "≤ Thứ 4 = đúng hạn" thay vì "đúng ngày Thứ 4", đổi ONTIME_LE_WED = true.
 var ONTIME_LE_WED  = false;
+
+// ─── RULE "KHÔNG TRÌNH BOD: −10 điểm / MỖI TUẦN" (mặc định TẮT — chưa có nguồn dữ liệu) ───
+//  Cách bật khi có dữ liệu:
+//   1) Thêm 1 cột "Số tuần không trình BOD" (đếm tay, hoặc công thức của anh) — vd cột AA.
+//   2) BOD_COUNT_COL = 'AA';  BOD_DEDUCT = true;
+//  → Điểm dự án = MAX(0, 100 − 25·x − 10·o − 10·(số tuần không trình BOD)).
+//  Để TẮT: BOD_DEDUCT = false → công thức giữ nguyên 100−25x−10o (như hiện tại).
+var BOD_DEDUCT    = false;
+var BOD_COUNT_COL = '';                            // chữ cột đếm "số tuần không trình BOD" (điền khi bật)
 
 /** HÀM CHÍNH — để trigger gọi mỗi giờ. */
 function runComplianceReport() {
@@ -112,7 +125,10 @@ function crSyncProjects_(ss, sh) {
     sh.getRange(r, C_LOC).setValue(p.loc);
     sh.getRange(r, C_KEY).setValue(p.name);
     sh.getRange(r, C_NAME).setValue(p.name);
-    sh.getRange(r, C_PM).setValue(p.pm);
+    // G = PM: CÔNG THỨC tự tra từ AutoData theo TÊN (E), cột 2 của B:E (= cột C = PM) → PM đổi ở
+    // nguồn thì tự cập nhật, không "đông cứng" giá trị lúc thêm dòng. (dùng dấu PHẨY — Apps Script
+    // luôn nhận en-US; sheet locale sẽ tự hiện thành ";".)
+    sh.getRange(r, C_PM).setFormula('=IFERROR(VLOOKUP(TRIM(E' + r + '), AutoData!$B:$E, 2, 0), "")');
     sh.getRange(r, C_STT).setFormula('=C' + (r - 1) + '+1');
     sh.getRange(r, C_DATE).setFormula('=IFERROR(VLOOKUP(TRIM(E' + r + '), AutoData!$B:$E, 4, 0), "")');
     sh.getRange(r, C_EMAIL).setFormula('=IFERROR(VLOOKUP(G' + r + ',DATA!$A$4:$B$35,2,FALSE),"")');
@@ -187,10 +203,13 @@ function crUpdateScores_(sh, range) {
   var a1 = crColA1_(range.first) + '{r}:' + crColA1_(range.last) + '{r}';
   Logger.log('Điểm: cột I=đếm "x", J=100−25x−10o trên dải ' + crColA1_(range.first) + '..' + crColA1_(range.last) + ' cho ' + (lastRow - DATA_START_ROW + 1) + ' dòng.');
   if (DRY_RUN) return;
+  var bodOn = BOD_DEDUCT && /^[A-Z]+$/i.test(BOD_COUNT_COL);
+  if (BOD_DEDUCT && !bodOn) Logger.log('BOD: BOD_DEDUCT=true nhưng BOD_COUNT_COL rỗng/không hợp lệ → BỎ QUA trừ BOD.');
   for (var r = DATA_START_ROW; r <= lastRow; r++) {
     var rng = crColA1_(range.first) + r + ':' + crColA1_(range.last) + r;
-    sh.getRange(r, 9).setFormula('=COUNTIF(' + rng + ',"x")');                               // I = Lũy kế không cập nhật
-    sh.getRange(r, 10).setFormula('=MAX(0,100-25*COUNTIF(' + rng + ',"x")-10*COUNTIF(' + rng + ',"o"))'); // J = Điểm
+    var bod = bodOn ? ('-10*N(' + BOD_COUNT_COL.toUpperCase() + r + ')') : '';   // −10 mỗi tuần không trình BOD
+    sh.getRange(r, 9).setFormula('=COUNTIF(' + rng + ',"x")');                    // I = Lũy kế không cập nhật
+    sh.getRange(r, 10).setFormula('=MAX(0,100-25*COUNTIF(' + rng + ',"x")-10*COUNTIF(' + rng + ',"o")' + bod + ')'); // J = Điểm
   }
 }
 

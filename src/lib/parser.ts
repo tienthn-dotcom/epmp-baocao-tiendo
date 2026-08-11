@@ -284,24 +284,11 @@ function normPctStrict(v: number | null): { value: number | null; suspect: boole
   return { value: x > 100 ? 100 : x, suspect: false };
 }
 
-function normPct(v: number | null): number | null {
-  return normPctStrict(v).value;
-}
-
-
 function isParent(rowCode: string, maCT: string, projectName: string): boolean {
   if (!rowCode) return false;
   if (/^CT/i.test(rowCode)) return true;
   if (maCT && rowCode === maCT && projectName) return true;
   return false;
-}
-
-
-function daysBetween(a: string, b: string): number {
-  // Parse as UTC midnight to avoid DST/local-tz drift.
-  const ta = new Date(a.slice(0, 10) + "T00:00:00Z").getTime();
-  const tb = new Date(b.slice(0, 10) + "T00:00:00Z").getTime();
-  return Math.round((ta - tb) / 86400000);
 }
 
 
@@ -858,20 +845,23 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   //      "mồ côi" = MẤT. Cả hai đều ÂM THẦM (không báo lỗi) → phải bắt ở cổng dữ liệu. Chỉ soi khi
   //      idCol>=0 (file/cache cũ không có cột STT thì bỏ qua, khỏi báo nhầm). */
   let sttDupCount = 0, sttBlankCount = 0;
-  const sttDupSamples: string[] = [];
+  const sttDupItems: string[] = [], sttBlankItems: string[] = [];
   if (idCol >= 0) {
-    const seen = new Map<string, number>();
-    const bump = (raw: string | undefined) => {
+    const byId = new Map<string, string[]>();   // STT → nhãn các dòng dùng STT đó (để chỉ ĐÍCH DANH)
+    const bump = (raw: string | undefined, label: string) => {
       const v = (raw ?? "").trim();
-      if (!v) { sttBlankCount++; return; }
-      seen.set(v, (seen.get(v) ?? 0) + 1);
+      if (!v) { sttBlankCount++; if (sttBlankItems.length < 80) sttBlankItems.push(label); return; }
+      const arr = byId.get(v) ?? []; arr.push(label); byId.set(v, arr);
     };
     for (const p of activeProjects) {
-      bump(p.id);
-      for (const it of p.allItems) bump(it.id);
+      bump(p.id, `${str(p.maCT) || str(p.code)} ${str(p.name)}`.trim());
+      for (const it of p.allItems) bump(it.id, `${str(p.name)} · ${str(it.desc).slice(0, 26)}`);
     }
-    for (const arr of blocksByProj.values()) for (const b of arr) bump(b.blk.id);
-    for (const [id, n] of seen) if (n > 1) { sttDupCount += n; if (sttDupSamples.length < 8) sttDupSamples.push(`${id}×${n}`); }
+    for (const arr of blocksByProj.values()) for (const b of arr) bump(b.blk.id, `Block ${str(b.blk.code) || "?"}`);
+    for (const [id, labels] of byId) if (labels.length > 1) {
+      sttDupCount += labels.length;
+      sttDupItems.push(`STT ${id} — ${labels.length} dòng: ${labels.slice(0, 4).join(" · ")}${labels.length > 4 ? " …" : ""}`);
+    }
   }
 
   // ── BẤT THƯỜNG KHỚP DỰ ÁN (thông tin gốc PM/tên lấy từ file — cảnh báo chỗ DỄ NHẦM) ──
@@ -879,28 +869,30 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const pmsByMa = new Map<string, Set<string>>();     // maCT → tập PM
   const projByName = new Map<string, number>();       // tên (thường) → số dự án
   let noPmCount = 0;
-  const noPmSamples: string[] = [], dupNameSamples: string[] = [], sharedMaSamples: string[] = [];
+  const noPmItems: string[] = [], dupNameItems: string[] = [], sharedMaItems: string[] = [];
+  const nameOrig = new Map<string, string>();   // tên thường → tên GỐC (để hiện đúng chữ hoa/thường)
   for (const p of activeProjects) {
     const nm = str(p.name);
     const nml = nm.toLowerCase();
     projByName.set(nml, (projByName.get(nml) ?? 0) + 1);
+    if (!nameOrig.has(nml)) nameOrig.set(nml, nm);
     for (const mc of str(p.maCT).split(",").map((x) => x.trim()).filter(Boolean)) {
       if (!namesByMa.has(mc)) namesByMa.set(mc, new Set()); namesByMa.get(mc)!.add(nm);
       if (!pmsByMa.has(mc)) pmsByMa.set(mc, new Set()); pmsByMa.get(mc)!.add((p.pm || "").trim() || "—");
     }
-    if (!p.pm || !p.pm.trim() || p.pm.trim() === "—") { noPmCount++; if (noPmSamples.length < 6) noPmSamples.push(nm.slice(0, 28)); }
+    if (!p.pm || !p.pm.trim() || p.pm.trim() === "—") { noPmCount++; noPmItems.push(`${str(p.maCT) || str(p.code)} ${nm}`.trim()); }
   }
   let sharedMaDiffPm = 0;
   for (const [mc, pms] of pmsByMa) {
     const names = namesByMa.get(mc)!;
-    if (names.size > 1 && pms.size > 1) { sharedMaDiffPm++; if (sharedMaSamples.length < 5) sharedMaSamples.push(`${mc}: ${[...names].map((n) => n.slice(0, 18)).join(" · ")}`); }
+    if (names.size > 1 && pms.size > 1) { sharedMaDiffPm++; sharedMaItems.push(`${mc} — PM: ${[...pms].join(" / ")} · ${[...names].map((n) => n.slice(0, 22)).join(" · ")}`); }
   }
   let dupNameCount = 0;
-  for (const [nm, n] of projByName) if (n > 1) { dupNameCount++; if (dupNameSamples.length < 5) dupNameSamples.push(nm.slice(0, 30)); }
+  for (const [nm, n] of projByName) if (n > 1) { dupNameCount++; dupNameItems.push(`${nameOrig.get(nm) ?? nm} (×${n})`); }
 
   const checks: DataQualityCheck[] = [];
-  const add = (id: string, bad: boolean, level: "warn" | "error", label: string, detail?: string) =>
-    checks.push({ id, level: bad ? level : "ok", label, detail: bad ? detail : undefined });
+  const add = (id: string, bad: boolean, level: "warn" | "error", label: string, detail?: string, items?: string[]) =>
+    checks.push({ id, level: bad ? level : "ok", label, detail: bad ? detail : undefined, items: bad && items?.length ? items : undefined });
 
   add("header", !headerOk, "error",
     headerOk ? "Header Timeline ở hàng 6: nhận diện được" : "KHÔNG nhận diện được header Timeline ở hàng 6",
@@ -934,27 +926,32 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     sttDupCount === 0
       ? "Mọi STT (ID) là duy nhất — khoá lưu Vướng mắc/Giải pháp an toàn"
       : `${sttDupCount} dòng TRÙNG STT (ID) — Vướng mắc có thể nhảy sang dòng khác hoặc bị đè mất`,
-    `STT bị trùng: ${sttDupSamples.join(", ")}. Mỗi dòng (dự án/hạng mục/dòng con) phải có STT RIÊNG ở cột "STT".`);
+    `Cách sửa: mỗi dòng (dự án / hạng mục / dòng con) phải có STT RIÊNG ở cột "STT". Sửa các STT bị trùng dưới đây cho khác nhau.`,
+    sttDupItems);
   add("sttBlank", sttBlankCount > 0, "warn",
     sttBlankCount === 0
       ? "Mọi dòng đều có STT (ID)"
       : `${sttBlankCount} dòng THIẾU STT (ID) — dễ mất/nhảy Vướng mắc khi đồng bộ`,
-    "Điền STT cho mọi dòng để khoá lưu ổn định (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).");
+    `Cách sửa: điền STT cho các dòng dưới đây (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).`,
+    sttBlankItems);
   add("sharedMaPm", sharedMaDiffPm > 0, "warn",
     sharedMaDiffPm === 0
       ? "Không có mã CT nào dùng cho nhiều dự án khác PM"
       : `${sharedMaDiffPm} mã CT dùng cho NHIỀU dự án có PM khác nhau — kiểm tra khớp đúng người`,
-    `Ví dụ: ${sharedMaSamples.join(" | ")}. App lấy PM/thông tin theo TÊN dự án (không chỉ mã) để không nhầm.`);
+    `Cách sửa: xác nhận đúng PM cho từng dự án bên dưới (app lấy PM theo TÊN dự án, không chỉ theo mã, nên không tự nhầm — nhưng nên rà lại nguồn).`,
+    sharedMaItems);
   add("dupName", dupNameCount > 0, "warn",
     dupNameCount === 0
       ? "Mọi tên dự án là duy nhất"
       : `${dupNameCount} TÊN dự án bị TRÙNG — rất dễ khớp nhầm dữ liệu`,
-    `Ví dụ: ${dupNameSamples.join(" · ")}. Nên đặt tên phân biệt (thêm tháp/khu/giai đoạn).`);
+    `Cách sửa: đặt tên phân biệt cho các dự án trùng tên dưới đây (thêm tháp / khu / giai đoạn).`,
+    dupNameItems);
   add("noPm", noPmCount > 0, "warn",
     noPmCount === 0
       ? "Mọi dự án đều có PM (Người phụ trách chính)"
       : `${noPmCount} dự án THIẾU PM (ô Người phụ trách chính trống)`,
-    `Ví dụ: ${noPmSamples.join(" · ")}. Điền PM để hiện đúng người + lọc theo PM.`);
+    `Cách sửa: điền PM (Người phụ trách chính) cho các dự án dưới đây để hiện đúng người + lọc theo PM.`,
+    noPmItems);
 
   const quality: DataQuality = {
     level: checks.some((c) => c.level === "error") ? "error"

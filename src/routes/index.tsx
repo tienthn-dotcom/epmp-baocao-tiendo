@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   EyeOff,
   FileSpreadsheet,
+  Highlighter,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -19,12 +20,11 @@ import {
   Search,
   Settings,
   Tv,
-  Upload,
   Users,
   X,
 } from "lucide-react";
 
-import type { BlockChild, CodeCount, DataQualityCheck, ItemRow, ProjectRow, ReportData } from "@/lib/types";
+import type { BlockChild, CodeCount, DataQualityCheck, ItemRow, ReportData } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -48,12 +48,12 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, getSheetPdf, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, saveEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, remapKeys, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ItemEdit, type ChatMsg, type UpdateHistory, type CompletedDates, type HiddenRows } from "@/lib/edits.functions";
+import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type HiddenRows } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
-import { parseComplianceFile, pmAverages, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
+import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
 import {
   saveLastKnown,
@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.49.0", date: "11/08/2026", items: [
+    "Biểu đồ Tổng thể tiến độ: ô “Sản xuất nhập kho” (SX) nay chuyển XANH LÁ theo % đã sản xuất xong (tô dần từ tuần sớm sang) — nhìn cột SX là biết ngay mỗi dự án đã sản xuất tới đâu; xong 100% thì xanh hết, phần chưa xong vẫn đỏ.",
+  ] },
   { v: "3.48.0", date: "07/08/2026", items: [
     "Bảng Public Summary (popup) đổi thứ tự cột khớp mẫu mới của nguồn: % xong hôm trước · % thực tế · % tăng thêm trong ngày · Cảnh báo trễ tiến độ · Chênh lệch. Số liệu y nguyên (đọc theo tên cột nên đảo cột trong file không lệch data).",
   ] },
@@ -713,7 +716,6 @@ const STAGE_META: Record<StageId, { label: string; dept: string }> = {
 };
 
 const OTHER_LABEL = "Khác";
-const DEPT_ORDER: string[] = ["QS", "SCM", "NM", "PM", OTHER_LABEL];
 
 /** Chữ viết tắt hạng mục — theo bảng mã chuẩn của PMP (TK/MA/BG/VT/TKSX/SX/TC),
  *  dùng trên thẻ giai đoạn và cột "Hạng mục" của bảng (đồng bộ 2 nơi). */
@@ -817,23 +819,6 @@ function deptOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
   return STAGE_META[sid].dept;
 }
 
-/** Tiền tố bộ phận chuẩn hiển thị ở cột PIC, theo hạng mục.
- *  Chỉ dùng cho HIỂN THỊ — không đổi dữ liệu gốc. */
-const PIC_PREFIX_BY_STAGE: Record<StageId, string> = {
-  TK: "PM", MA: "SCM", BG: "QS", VT: "SCM", SD: "PM", SX: "NM", TC: "PM",
-};
-function normalizePicByStage(raw: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
-  const src = (raw || "").trim();
-  if (sid === "MB" || sid === "PS" || sid === "SHOP" || sid === "OTHER") return src;
-  const prefix = PIC_PREFIX_BY_STAGE[sid];
-  if (!src) return prefix;
-  // Nếu có "-" → coi phần trước "-" đầu là tiền tố cũ, thay bằng đúng.
-  const dash = src.search(/[-–—]/);
-  const name = dash >= 0 ? src.slice(dash + 1).trim() : src.trim();
-  // Nếu không có dấu "-" nhưng chuỗi bắt đầu bằng tiền tố quen thuộc, cắt bỏ.
-  const bare = dash >= 0 ? name : name.replace(/^(pm|scm|qs|nh[àa]\s*m[áa]y|sd|tk|ma|bg|vt|sx|tc)\b[:\s.]*/i, "").trim();
-  return bare ? `${prefix} - ${bare}` : prefix;
-}
 
 
 /* ======================================================================
@@ -960,14 +945,6 @@ const ALERT_FULL_NAME: Record<AlertK, string> = {
  *  "—": "—" đọc như ô THIẾU dữ liệu, trong khi đây là một kết luận thật ("đã xét, không
  *  có vấn đề"). Dùng chung cho badge trong bảng và bảng Tiêu chí cảnh báo. */
 const ALERT_NONE_LABEL = "Không vấn đề";
-const ALERT_RANK: Record<AlertK, number> = { late: 0, trim: 1, focus: 2 };
-/** MÀU BADGE theo MỨC NGHIÊM TRỌNG (ma trận trả về), KHÔNG theo nhãn.
- *  Từ 17/07/2026 "Cần tập trung"/"Cần cắt đầu việc" có thể ĐỎ khi dự án sắp bàn giao,
- *  nên tra bảng bằng `_alertColor`; tra bằng `kind` là sai màu. */
-const BADGE_CLS_BY_COLOR: Record<"red" | "amber", string> = {
-  red: "bg-red-600 text-white",
-  amber: "bg-amber-400 text-amber-950",
-};
 
 type SortKey = "list" | "updateDate" | "maCT" | "name" | "projectDeadline" | "pic"
               | "start" | "finish" | "planPct" | "actualPct" | "overdue"
@@ -997,12 +974,17 @@ function Dashboard() {
   };
 
   useEffect(() => {
-    // NGUỒN CỐ ĐỊNH: luôn dùng link hardcode trong default-source.ts. Tiên cập nhật
-    // link bằng cách sửa file đó rồi deploy — KHÔNG đọc localStorage/KV cho nguồn nữa
-    // để file là NGUỒN SỰ THẬT DUY NHẤT (đã ẩn nút "Nguồn dữ liệu").
-    setConfig({ mode: "google", sheetUrl: DEFAULT_SHEET_URL });
     setThresholds(loadThresholds());
     setCached(loadLastKnown());
+    // NGUỒN DỮ LIỆU: tải NGAY nguồn mặc định (file hardcode) để có dữ liệu liền. Song song đọc cấu hình
+    // CHUNG config:v1 (admin đặt qua "Nguồn dữ liệu") — nếu đã set 1 nguồn KHÁC mặc định thì chuyển sang
+    // (đổi nguồn cho CẢ TEAM, không cần deploy). config trống / = mặc định → giữ nguyên, không tải lại.
+    setConfig({ mode: "google", sheetUrl: DEFAULT_SHEET_URL });
+    // CHỈ honor config khi v>=2 (do tính năng "Nguồn dữ liệu" admin ghi) → config CŨ (không v) bị bỏ qua,
+    // tránh app nhảy về sheet cũ đã ngừng dùng. Khác mặc định mới chuyển (tránh tải lại thừa).
+    void fetchAppConfig()
+      .then((cfg) => { if (cfg?.sheetUrl && (cfg.v ?? 0) >= 2 && cfg.sheetUrl !== DEFAULT_SHEET_URL) setConfig({ mode: "google", sheetUrl: cfg.sheetUrl }); })
+      .catch(() => { /* KV lỗi → giữ nguồn mặc định */ });
   }, []);
 
   const gQuery = useQuery({
@@ -1095,7 +1077,7 @@ function Dashboard() {
       <DataModeToast mode={dataMode} freshAt={freshAt} error={error?.message ?? null} />
       <main className="mx-auto w-full max-w-[1600px] px-3 py-3 2xl:px-6 print:p-0 print:max-w-none">
         <h1 className="sr-only">Báo cáo tổng hợp tình trạng phối hợp</h1>
-        {data && <DashboardBody data={data} thresholds={thresholds} />}
+        {data && <DashboardBody data={data} thresholds={thresholds} onOpenSource={() => setSettingsOpen(true)} />}
       </main>
 
 
@@ -1120,7 +1102,7 @@ function Dashboard() {
                 let shareMsg = "";
                 if (shareDefault) {
                   try {
-                    await saveAppConfig({ data: { sheetUrl: c.sheetUrl } });
+                    await saveAppConfig({ data: { sheetUrl: c.sheetUrl, devAs: devAs() } });
                     shareMsg = " Đã đặt làm nguồn mặc định cho MỌI NGƯỜI.";
                   } catch (e) {
                     shareMsg = ` LƯU Ý: chưa lưu được mặc định chung (${(e as Error).message}). Chỉ áp dụng trên máy này.`;
@@ -1179,7 +1161,7 @@ function AALogo({ className = "" }: { className?: string }) {
   );
 }
 
-function Header({ loading, dataMode, freshAt, source, onRefresh, onOpenSettings, gapThreshold }: {
+function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }: {
   loading: boolean;
   dataMode: "live" | "cache" | "demo"; freshAt: string | null; source?: "google" | "upload";
   onRefresh: () => void; onOpenSettings: () => void;
@@ -1318,6 +1300,7 @@ function SettingsDialog({ config, onClose, onSave, onUpload }: {
   onSave: (c: Config, shareDefault: boolean) => Promise<{ ok: boolean; message: string }>;
   onUpload: (d: ReportData) => void;
 }) {
+  useEscapeToClose(onClose);
   const [mode, setMode] = useState<Mode>(config.mode);
   const [url, setUrl] = useState(config.sheetUrl ?? "");
   const [shareDefault, setShareDefault] = useState(true);
@@ -1346,7 +1329,7 @@ function SettingsDialog({ config, onClose, onSave, onUpload }: {
     } catch (e) { setErr((e as Error).message); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">Cài đặt nguồn dữ liệu</h2>
@@ -1406,10 +1389,11 @@ function SettingsDialog({ config, onClose, onSave, onUpload }: {
 function ThresholdDialog({ value, onClose, onSave }: {
   value: Thresholds; onClose: () => void; onSave: (t: Thresholds) => void;
 }) {
+  useEscapeToClose(onClose);
   const [gap, setGap] = useState(value.gapThreshold);
   const [overdue, setOverdue] = useState(value.overdueThreshold);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-semibold">Tiêu chí xác định công việc có vấn đề</h2>
@@ -1594,6 +1578,7 @@ type GanttRow = {
   pct: number | null;        // % thực tế trung bình các giai đoạn
   sxStart: string | null;    // ISO Bắt đầu giai đoạn Sản xuất nhập kho (SX)
   sxEnd: string | null;      // ISO Kết thúc SX
+  sxPct: number | null;      // % thực tế giai đoạn SX — để tô XANH số ô đã sản xuất xong (theo %). null = chưa có số → đỏ hết
   overdue: number;           // số ngày quá mốc bàn giao (0 nếu chưa/đã xong)
   note: string;              // vướng mắc (ghi chú app cấp dự án, fallback mpReason)
   children: GanttChild[];    // đầu việc con (bấm dự án để xổ) — feature "trực quan hoá"
@@ -1632,9 +1617,7 @@ const fmtMsgTime = (iso: string): string => {
   return isNaN(d.getTime()) ? "" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-/** Patch chỉnh sửa 1 đầu việc gửi lên backend (null = xoá override field đó). */
 type HiRange = [number, number];
-type EditPatch = { pic?: string | null; deadline?: string | null };
 
 type StageOrOther = StageId | "MB" | "PS" | "SHOP" | "OTHER";
 type AlertK2 = Exclude<AlertKind, "none">;
@@ -1703,35 +1686,69 @@ function toggleIn<T>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
 }
 
+/** NHÓM cổng kiểm soát dữ liệu theo LOẠI + mức nguy hiểm (xếp trên xuống). Suy nhóm từ id check. */
+const DQ_GROUPS: { key: string; ids: string[]; title: string; hint: string }[] = [
+  { key: "block", ids: ["header", "projects"], title: "⛔ Chặn dùng nguồn", hint: "sai file/tab hoặc không có dữ liệu — không dùng được" },
+  { key: "key", ids: ["sttDup", "sttBlank"], title: "🔑 Khoá dữ liệu — NGUY HIỂM NHẤT", hint: "STT trùng/trống → Vướng mắc/Giải pháp bị nhảy dòng hoặc MẤT" },
+  { key: "mixup", ids: ["sharedMaPm", "dupName"], title: "🔀 Dễ khớp nhầm", hint: "mã / tên trùng → dễ gán nhầm thông tin sang dự án khác" },
+  { key: "missing", ids: ["noPm"], title: "📝 Thiếu thông tin", hint: "thiếu PM → lọc / hiển thị sai người" },
+  { key: "number", ids: ["pct", "dates", "unknownPrefix", "orphans"], title: "🔢 Số liệu", hint: "ô lỗi đã bị loại khỏi phép tính (không tính sai) — nên sửa nguồn" },
+];
+
 /** DIALOG CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU — mở từ menu "Hệ thống" (cho PMO/admin), KHÔNG bày ngoài trang.
- *  Liệt kê các mục KHÔNG "ok" của cổng kiểm soát (parser.quality). Trọng tâm: STT trùng/trống — khoá
- *  lưu Vướng mắc/Giải pháp; là nguyên nhân tin "nhảy sai" / "mất". */
+ *  GOM theo loại + mức nguy hiểm, mỗi lỗi LIỆT KÊ ĐÍCH DANH (STT + tên dự án) + cách sửa → "nhìn biết
+ *  lỗi ở đâu, cụ thể ra". Trọng tâm: STT trùng/trống — khoá lưu Vướng mắc; nguyên nhân tin nhảy/mất. */
 function DataQualityDialog({ checks, onClose }: { checks: DataQualityCheck[]; onClose: () => void }) {
+  useEscapeToClose(onClose);
   if (typeof document === "undefined") return null;
   const hasErr = checks.some((c) => c.level === "error");
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className={`flex items-start justify-between gap-3 border-b-2 px-5 py-3 ${hasErr ? "border-rose-400" : "border-amber-400"}`}>
           <div>
             <div className={`text-[10px] font-semibold uppercase tracking-wider ${hasErr ? "text-rose-700" : "text-amber-700"}`}>Cổng kiểm soát dữ liệu</div>
             <div className="text-sm font-bold text-slate-900">CẢNH BÁO CHẤT LƯỢNG DỮ LIỆU</div>
-            <div className="mt-0.5 text-[11px] text-slate-600">Kiểm mỗi lần nạp nguồn. STT trùng/trống là nguyên nhân Vướng mắc bị nhảy dòng hoặc mất.</div>
+            <div className="mt-0.5 text-[11px] text-slate-600">Kiểm mỗi lần nạp nguồn — gom theo loại, chỉ ĐÍCH DANH dòng lỗi + cách sửa để tránh sai thông tin trên app.</div>
           </div>
-          <button onClick={onClose} className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100">Đóng ✕</button>
+          <button onClick={onClose} aria-label="Đóng" title="Đóng (Esc)" className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100">Đóng ✕</button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
           {checks.length === 0 ? (
             <div className="py-8 text-center text-sm text-emerald-600">Không có cảnh báo — dữ liệu đầu vào sạch.</div>
           ) : (
-            <ul className="space-y-2.5">
-              {checks.map((c) => (
-                <li key={c.id} className={`rounded-lg border px-3 py-2 text-[12px] ${c.level === "error" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
-                  <div className="font-semibold text-slate-800">{c.level === "error" ? "⛔ " : "⚠️ "}{c.label}</div>
-                  {c.detail && <div className="mt-0.5 text-[11px] leading-snug text-slate-600">{c.detail}</div>}
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-4">
+              {DQ_GROUPS.map((g) => {
+                const cs = checks.filter((c) => g.ids.includes(c.id));
+                if (!cs.length) return null;
+                return (
+                  <div key={g.key}>
+                    <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-[12.5px] font-bold text-slate-800">{g.title}</span>
+                      <span className="text-[10px] text-slate-400">— {g.hint}</span>
+                    </div>
+                    <ul className="space-y-2">
+                      {cs.map((c) => (
+                        <li key={c.id} className={`rounded-lg border px-3 py-2 ${c.level === "error" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
+                          <div className="text-[12px] font-semibold text-slate-800">{c.level === "error" ? "⛔ " : "⚠️ "}{c.label}</div>
+                          {c.detail && <div className="mt-0.5 text-[11px] leading-snug text-slate-600">{c.detail}</div>}
+                          {c.items && c.items.length > 0 && (
+                            <div className="mt-1.5 overflow-hidden rounded border border-slate-200 bg-white">
+                              <div className="border-b border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">{c.items.length} dòng cần sửa:</div>
+                              <ul className="max-h-44 divide-y divide-slate-100 overflow-auto">
+                                {c.items.map((it, i) => (
+                                  <li key={i} className="px-2 py-1 text-[11px] leading-snug text-slate-700">{it}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
@@ -1740,7 +1757,7 @@ function DataQualityDialog({ checks, onClose }: { checks: DataQualityCheck[]; on
   );
 }
 
-function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thresholds }) {
+function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; thresholds: Thresholds; onOpenSource: () => void }) {
   const today = data.refDate || todayIso();
 
   // BẢN chạy (live/dev). Bắt đầu là "live" (SSR + lần render đầu → ẩn tính năng dở, kể cả
@@ -1824,34 +1841,33 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   });
   const edits: EditsMap = useMemo(() => editsQuery.data ?? {}, [editsQuery.data]);
 
-  const saveItemEdit = async (key: string, patch: EditPatch) => {
-    try {
-      const r = await saveEdits({ data: { entries: { [key]: patch }, devAs: devAs() } });
-      queryClient.setQueryData(["edits"], r.items);
-      // NHẬT KÝ GHI RÕ SỬA GÌ: trường nào = giá trị nào (vd Vướng mắc = "vvvvv"), kèm dự án ·
-      // công đoạn để admin nhìn phát biết ai sửa gì ở đâu — không chỉ ghi chung "sửa dữ liệu".
-      const FIELD_VN: Record<string, string> = { pic: "Người phụ trách", deadline: "Deadline" };
-      const parts: string[] = [];
-      for (const f of ["pic", "deadline"] as const) {
-        if (patch[f] === undefined) continue;
-        const v = patch[f];
-        parts.push(v == null || String(v).trim() === ""
-          ? `${FIELD_VN[f]}: (xoá)`
-          : `${FIELD_VN[f]} = "${String(v).replace(/\s+/g, " ").trim().slice(0, 140)}"`);
-      }
-      const it = data.items.find(x => itemKeyOf(x) === key);
-      const proj = it ? null : data.projects.find(p => pkProj(p) === key);
-      const ctx = it ? `${it.projectCode} ${it.projectName} · ${stageAbbrOf(stageIdOf(it))}`
-                : proj ? `${proj.maCT || proj.code} ${proj.name} (cấp dự án)` : key.slice(0, 40);
-      track("save_edit", [ctx, parts.join(" · ")].filter(Boolean).join(" — ").slice(0, 290));
-      toast.success("Đã lưu vào bản dùng chung, mọi người đều thấy");
-    } catch (e) {
-      toast.error(`Lưu thất bại (dữ liệu chưa ghi): ${(e as Error).message}`);
-    }
-  };
-
   /** Thao tác BOX CHAT Vướng mắc / Giải pháp (add/hide/unhide/delete[admin]/sethi[admin]). */
-  const msgOp = async (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => {
+  const msgOp = async (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }): Promise<boolean> => {
+    // F5 — XOÁ có HOÀN TÁC (thay window.confirm): xoá khỏi cache NGAY (mọi người thấy mất) + toast
+    // "Hoàn tác" 6s; hết giờ chưa hoàn tác mới ghi server. (Đóng tab trong 6s = coi như hoàn tác.)
+    if (op === "delete") {
+      const prev = queryClient.getQueryData(["edits"]) as EditsMap | undefined;
+      const listKey = field === "note" ? "noteMsgs" : "actionMsgs";
+      if (prev?.[key]) {
+        const entry = prev[key];
+        const newList = (entry[listKey] ?? []).filter((m) => m.id !== opts?.msgId);
+        queryClient.setQueryData(["edits"], { ...prev, [key]: { ...entry, [listKey]: newList.length ? newList : undefined } });
+      }
+      let done = false;
+      const commit = () => {
+        if (done) return; done = true;
+        void editMessages({ data: { key, field, op: "delete", msgId: opts?.msgId, devAs: devAs() } })
+          .then((r) => queryClient.setQueryData(["edits"], r.items))
+          .catch((e) => { if (prev) queryClient.setQueryData(["edits"], prev); toast.error(`Xoá thất bại: ${(e as Error).message}`); });
+      };
+      const timer = setTimeout(commit, 6000);
+      toast("Đã xoá message.", {
+        duration: 6000,
+        action: { label: "Hoàn tác", onClick: () => { done = true; clearTimeout(timer); if (prev) queryClient.setQueryData(["edits"], prev); } },
+      });
+      track("save_edit", `${key.slice(0, 40)} — ${field === "note" ? "Vướng mắc" : "Giải pháp"}: XOÁ (hoàn tác 6s)`.slice(0, 290));
+      return true;
+    }
     try {
       const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, replyTo: opts?.replyTo, replyText: opts?.replyText, devAs: devAs() } });
       queryClient.setQueryData(["edits"], r.items);
@@ -1863,8 +1879,10 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
                 : proj ? `${proj.maCT || proj.code} ${proj.name} (cấp dự án)` : key.slice(0, 40);
       const detail = op === "add" && opts?.text ? `: "${opts.text.replace(/\s+/g, " ").trim().slice(0, 120)}"` : "";
       track("save_edit", `${ctx} — ${FIELD_VN}: ${OP_VN[op]}${detail}`.slice(0, 290));
+      return true;
     } catch (e) {
       toast.error(`Thao tác thất bại: ${(e as Error).message}`);
+      return false;
     }
   };
 
@@ -1930,6 +1948,16 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     staleTime: 60_000,
   });
   const completedDates: CompletedDates = useMemo(() => completedQuery.data ?? {}, [completedQuery.data]);
+
+  /* ── CỜ "CẦN CẬP NHẬT MP / TRÌNH BOD" — app tự ghi NGÀY LẦN ĐẦU thấy cờ (nền cho chấm −10/tuần
+     + tô màu cột "Cần cập nhật MP"). Kho dùng chung KV mpflag:v1. Sync ở effect bên dưới (cần
+     mpProjectKeys, tính sau). */
+  const mpFlagQuery = useQuery({
+    queryKey: ["mpFlags"],
+    queryFn: async (): Promise<MpFlagFirstSeen> => (await fetchMpFlags()).mpFlags ?? {},
+    staleTime: 60_000,
+  });
+  const mpFlags: MpFlagFirstSeen = useMemo(() => mpFlagQuery.data ?? {}, [mpFlagQuery.data]);
 
   // ── DÒNG ẨN THỦ CÔNG (admin) — khoá itemKeyOf → {at,by}. Loại khỏi bảng/KPI/PDF/Excel cho MỌI người;
   //    admin bật "Hiện dòng đã ẩn" để soi + bỏ ẩn. Xem fetchHiddenRows/setHiddenRow (server chốt quyền).
@@ -2248,6 +2276,45 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
   }, [data.projects, edits, pkProj]);
   const mpProjectKeys = useMemo(() => new Set(mpInfo.keys()), [mpInfo]);
 
+  /* ── SYNC CỜ MP/BOD: dự án ĐANG có cờ mà CHƯA ghi mốc → ghi (ngày lần đầu = hôm nay); dự án ĐÃ
+     ghi mà HẾT cờ → xoá (reset). Client tính delta nên bình thường không gọi API. Chờ remap xong
+     (tránh xoá nhầm khoá cũ). */
+  useEffect(() => {
+    if (!remapReady) return;
+    if (mpFlagQuery.isLoading || editsQuery.isLoading || !data.projects.length) return;
+    const add: Record<string, string> = {};
+    for (const key of mpProjectKeys) if (!mpFlags[key]) add[key] = today.slice(0, 10);
+    const remove = Object.keys(mpFlags).filter(k => !mpProjectKeys.has(k));
+    // AN TOÀN chống RESET TUỔI CỜ: nếu detection cho ra 0 cờ (có thể do edits/mpInfo chưa áp xong)
+    // mà lại đòi XOÁ SẠCH mọi mốc đang có → khả năng cao CHƯA sẵn sàng → BỎ QUA (không wipe firstSeen).
+    if (mpProjectKeys.size === 0 && remove.length) return;
+    if (!Object.keys(add).length && !remove.length) return;
+    void (async () => {
+      try {
+        const r = await syncMpFlags({ data: { add, remove } });
+        queryClient.setQueryData(["mpFlags"], r.mpFlags);
+      } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
+    })();
+  }, [remapReady, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
+
+  /* SỐ TUẦN cờ MP/BOD tồn tại theo TÊN dự án (chuẩn hoá) — cho ComplianceDialog tô màu + trừ điểm.
+     Tuần = floor((hôm nay − ngày lần đầu)/7 ngày): tuần đầu = 0 (chưa trừ), mỗi tuần sau +1 (−10đ).
+     Cùng tên trùng (dòng con) → lấy MAX (hiện trường hợp nặng nhất). */
+  const mpWeeksByName = useMemo(() => {
+    const DAY = 86400000;
+    const tNow = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10));
+    const m = new Map<string, number>();
+    for (const p of data.projects) {
+      const first = mpFlags[pkProj(p)];
+      if (!first) continue;
+      const tf = Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, +first.slice(8, 10));
+      const weeks = Math.max(0, Math.floor((tNow - tf) / (7 * DAY)));
+      const k = normProjName(p.name);
+      m.set(k, Math.max(m.get(k) ?? 0, weeks));
+    }
+    return m;
+  }, [data.projects, mpFlags, today, pkProj]);
+
   /* ────────────────────────────────────────────────────────────────
    * HÀM LỌC TRUNG TÂM — getFilteredProjects (src/lib/filter.ts).
    * Bảng app, Excel, PDF đều tiêu thụ TỪ ĐÂY. Không nơi nào tự lọc riêng.
@@ -2258,14 +2325,17 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     computePlanPct: (it) => computePlanPct(it.start, it.deadline, today),
   }), [today]);
 
+  // F8 — GÕ MƯỢT: dùng bản filters "trễ" (useDeferredValue) cho phép lọc BẢNG CHÍNH (nặng nhất). Ô tìm
+  //  vẫn bind filters.query (gõ tức thì, responsive); bảng cập nhật ngay sau khi ngừng gõ, không giật.
+  const dFilters = useDeferredValue(filters);
   const criteriaTable: FilterCriteria = useMemo(() => ({
-    stages: filters.stages as string[],
-    depts: filters.depts,
-    alerts: filters.alerts,
-    deadlineMonths: filters.deadlineMonths,
-    query: filters.query.trim().toLowerCase(),
+    stages: dFilters.stages as string[],
+    depts: dFilters.depts,
+    alerts: dFilters.alerts,
+    deadlineMonths: dFilters.deadlineMonths,
+    query: dFilters.query.trim().toLowerCase(),
     searchHaystack: (it) => `${it.projectName} ${it.maCT} ${it.owner || pmOfItem(it) || ""} ${pmOfItem(it) || ""} ${it.desc}`,
-  }), [filters, pmOfItem]);
+  }), [dFilters, pmOfItem]);
 
   const filterResult = useMemo(
     () => getFilteredProjects(effectiveItems, matcher, criteriaTable, th),
@@ -2281,13 +2351,6 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
     return m;
   }, [enriched]);
   void enrichedByRef;
-  const enrichedKey = (it: ItemRow) =>
-    `${it.projectCode}\u0000${it.projectName}\u0000${it.rawCode}\u0000${it.desc}\u0000${it.start ?? ""}\u0000${it.deadline ?? ""}`;
-  const enrichedMap = useMemo(() => {
-    const m = new Map<string, EnrichedItem>();
-    for (const e of enriched) m.set(enrichedKey(e), e);
-    return m;
-  }, [enriched]);
 
 
   /** Danh sách tháng deadline dự án có cảnh báo — dùng cho dropdown. */
@@ -2641,7 +2704,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           pm: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm),
           start: it.start, end: it.deadline,
           pct: clampPct(it.pctActual),
-          sxStart: null, sxEnd: null,
+          sxStart: null, sxEnd: null, sxPct: null,
           overdue: it.overdueDays ?? 0,
           note: "",
           children: [],
@@ -2711,7 +2774,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       rows.push({
         key: pk, updateDate: p.updateDate ?? null, maCT: p.maCT || p.code, name: p.name, pm: p.pm,
         start: p.start, end: p.deadline, pct,
-        sxStart: sx?.start ?? null, sxEnd: sx?.deadline ?? null,
+        sxStart: sx?.start ?? null, sxEnd: sx?.deadline ?? null, sxPct: sx ? clampPct(sx.pctActual) : null,
         overdue, note: edits[pk]?.note || p.mpReason || "",
         children: childrenByProject.get(pk) ?? [],
       });
@@ -2743,6 +2806,24 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
      → Mã CT → Hạng mục → Ngày bắt đầu) để các dòng cùng giá trị đứng cạnh nhau
      theo thứ tự hợp lý — VD cùng bàn giao 15/07 thì A A A B B B C C C. */
   const [sortChain, setSortChain] = useState<SortSpec[]>([{ key: "projectDeadline", dir: "asc" }]);
+  // F7 — NHỚ bộ lọc + sắp xếp qua reload/mở lại (localStorage). Đọc SAU khi mount để KHÔNG lệch
+  // hydration SSR (server render mặc định; client khôi phục sau). Ghi mỗi khi đổi. Không đụng visual.
+  const [viewRestored, setViewRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("pmo.master.view.v1");
+      if (raw) {
+        const v = JSON.parse(raw) as { filters?: Partial<Filters>; sortChain?: SortSpec[] };
+        if (v.filters) setFilters((f) => ({ ...EMPTY_FILTERS, ...f, ...v.filters }));
+        if (Array.isArray(v.sortChain) && v.sortChain.length) setSortChain(v.sortChain);
+      }
+    } catch { /* localStorage chặn / JSON hỏng → dùng mặc định */ }
+    setViewRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!viewRestored) return; // chưa khôi phục xong thì đừng ghi đè bằng mặc định
+    try { localStorage.setItem("pmo.master.view.v1", JSON.stringify({ filters, sortChain })); } catch { /* */ }
+  }, [filters, sortChain, viewRestored]);
   const toggleSort = (k: SortKey) => {
     setSortChain(prev => {
       const idx = prev.findIndex(s => s.key === k);
@@ -2994,9 +3075,10 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
 
   /** XUẤT PDF = chụp đúng giao diện đang hiển thị (KPI + thẻ giai đoạn + bảng)
    *  và tự dựng file A4 ngang — không qua hộp thoại in, không phụ thuộc máy. */
-  const doPrint = async (orientation: "landscape" | "portrait") => {
+  const doPrint = async (orientation: "landscape" | "portrait", mode: "download" | "preview" = "download") => {
     const isPortrait = orientation === "portrait";
-    const tid = toast.loading(`Đang tạo PDF ${isPortrait ? "khổ DỌC" : "khổ ngang"} từ giao diện…`, { position: "bottom-left" });
+    const isPreview = mode === "preview";
+    const tid = toast.loading(isPreview ? "Đang dựng PDF để xem trước…" : `Đang tạo PDF ${isPortrait ? "khổ DỌC" : "khổ ngang"} từ giao diện…`, { position: "bottom-left" });
     try {
       const { exportDashboardPdf } = await loadSplit(() => import("@/lib/pdf-export"));
       const blocks = [
@@ -3011,7 +3093,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
       const table = listTbl ?? ganttTbl;
       if (!table) throw new Error("Không tìm thấy bảng để xuất.");
       const isGantt = !listTbl && !!ganttTbl;
-      const pages = await exportDashboardPdf({
+      const fileName = `${isGantt ? "TongTheTienDo" : "BaoCao_TienDo"}_${isPortrait ? "Doc" : "Ngang"}_${today.replace(/-/g, "")}.pdf`;
+      const { pages, blobUrl } = await exportDashboardPdf({
         title: document.getElementById("pdf-title"),
         blocks,
         table,
@@ -3020,16 +3103,20 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         // dùng kéo (colW là %). Gantt (isGantt) mới giữ bề rộng thật vì lưới tuần không được bóp méo.
         wide: isGantt,
         orientation,
-        fileName: `${isGantt ? "TongTheTienDo" : "BaoCao_TienDo"}_${isPortrait ? "Doc" : "Ngang"}_${today.replace(/-/g, "")}.pdf`,
+        preview: isPreview,
+        fileName,
       });
-      track("export_pdf", `${isPortrait ? "DỌC" : "Ngang"} · Bảng ${isGantt ? "Tổng thể tiến độ" : "Việc cần xử lý"} · Lọc: ${filterSummary} · ${sortedAlerts.length} đầu việc`.slice(0, 300));
-      toast.success(`Đã tạo PDF ${isPortrait ? "khổ dọc" : "khổ ngang"} (${pages} trang), đúng như giao diện đang xem`);
+      track("export_pdf", `${isPreview ? "XEM TRƯỚC · " : ""}${isPortrait ? "DỌC" : "Ngang"} · Bảng ${isGantt ? "Tổng thể tiến độ" : "Việc cần xử lý"} · Lọc: ${filterSummary} · ${sortedAlerts.length} đầu việc`.slice(0, 300));
+      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); }
+      else toast.success(`Đã tạo PDF ${isPortrait ? "khổ dọc" : "khổ ngang"} (${pages} trang), đúng như giao diện đang xem`);
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
       toast.dismiss(tid);
     }
   };
+  // XEM TRƯỚC PDF (dashboard) — blob hiện trong iframe, chưa tải.
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; name: string } | null>(null);
 
   // ── PHÂN CẤP: bảng email→cấp (KV) cấp qua RolesCtx cho RoleBadge. Rỗng → DEFAULT_ROLES. ──
   const rolesQuery = useQuery({
@@ -3059,6 +3146,7 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         loading={complianceFileQuery.isLoading}
         error={complianceFileQuery.error as Error | null}
         regionByName={regionByName}
+        mpWeeksByName={mpWeeksByName}
         today={today}
         onRetry={() => complianceFileQuery.refetch()}
         onClose={() => setShowCompliance(false)} />}
@@ -3077,12 +3165,14 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
           onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
           qualityIssues={canSeeSystem ? dataQualityBad.length : 0}
           onOpenQuality={() => { setShowDataQ(true); track("open_dataquality"); }}
+          onOpenSource={me.isAdmin ? () => { onOpenSource(); track("open_source"); } : undefined}
           tvMode={tvMode}
           onToggleTv={toggleTvMode}
         />
       </HeaderSlot>
 
       {showDataQ && <DataQualityDialog checks={dataQualityBad} onClose={() => setShowDataQ(false)} />}
+      {pdfPreview && <PdfPreviewDialog url={pdfPreview.url} fileName={pdfPreview.name} onClose={() => setPdfPreview(null)} />}
 
       <OverviewStrip
         projectCount={tableProjectCount}
@@ -3135,9 +3225,8 @@ function DashboardBody({ data, thresholds }: { data: ReportData; thresholds: Thr
         hiddenCount={hiddenKeys.size}
         onHideRow={onHideRow}
         completedDates={completedDates}
-        onSaveEdit={saveItemEdit}
         onMsgOp={msgOp}
-        onPrint={(o) => { void doPrint(o); }}
+        onPrint={(o, mode) => { void doPrint(o, mode); }}
         onExportExcel={async () => {
           // XUẤT EXCEL "Y HỆT BẢNG/PDF": cùng cột + dòng gộp dự án (xổ công đoạn con) + màu trạng thái,
           // nhưng là Ô THẬT (lọc/sort/sửa trong Excel). Dựng từ CHÍNH `dueMonthGroups` (nguồn bảng gộp).
@@ -3493,6 +3582,7 @@ function PicNames({ text }: { text: string }) {
  *  thừa tài nguyên, tránh Error 1102 do parse xlsx 2MB trên Worker). XLSX + renderer nạp ĐỘNG
  *  (chỉ khi mở popup) để không phình bundle chính. */
 function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => void }) {
+  useEscapeToClose(onClose);
   const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
   const [refreshN, setRefreshN] = useState(0);   // bấm "Làm mới" → tăng → lấy bản LIVE (bỏ cache)
   const force = refreshN > 0;
@@ -3552,7 +3642,7 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
   const loading = q.isPending || (!!q.data && !render && !parseErr && !pdfB64);
   const err = q.isError ? (q.error as Error).message : parseErr;
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div className="flex max-h-[92vh] w-full max-w-[1040px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div>
@@ -3597,7 +3687,7 @@ function RoleBadge({ email }: { email: string }) {
 
 // Callback của 1 ô chat (ChatCell/ChatBox): field ("note"/"action") do component CHA gắn sẵn qua
 // closure khi tạo onOp, nên đây chỉ nhận (op, opts). (onMsgOp cấp trên mới cầm đủ key+field+op+opts.)
-type MsgOp = (op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => void | Promise<void>;
+type MsgOp = (op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => Promise<boolean>;
 
 /** Ô BẢNG (Vướng mắc / Giải pháp): mỗi message KHÔNG ẩn = 1 BONG BÓNG CHAT vàng nhạt (hiện người
  *  nhập + ngày giờ). `dark` = hàng gộp dự án (nền navy) → giữ kiểu chữ trắng đơn giản (không bong
@@ -3610,12 +3700,10 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const vis = msgs.filter((m) => !m.hidden);
-  // 1 click (hoãn 230ms nếu admin để chờ nhấp đúp) → mở box chat. cancelOpen: huỷ khi nhấp đúp.
-  const openDelayed = () => { if (!onOpen) return; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => { timer.current = null; onOpen(); }, isAdmin ? 230 : 0); };
-  const cancelOpen = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  // F16 — mở box NGAY khi click (bỏ delay 230ms cho admin). Tô/bỏ màu đỏ giờ là 1 NÚT (không nhấp đúp).
+  const openDelayed = () => onOpen?.();
   // DARK (hàng dự án): giữ nguyên kiểu cũ — chữ trắng đậm, không bong bóng (mở/sửa qua dialog do <td> lo).
   if (dark) {
     if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">＋ nhập…</span>;
@@ -3634,29 +3722,32 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
       {vis.map((m) => editId === m.id ? (
         <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-amber-300 bg-amber-50 p-1.5">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.stopPropagation(); setEditId(null); return; }
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void (async () => { const t = draft.trim(); if (t && t !== m.text) { const ok = await onOp!("edit", { msgId: m.id, text: t }); if (ok) setEditId(null); } else setEditId(null); })(); }
+            }}
             className="w-full resize-y rounded border border-slate-300 px-1.5 py-1 text-[11px] leading-snug focus:border-teal-600 focus:outline-none" />
           <div className="mt-1 flex items-center justify-end gap-2">
             <button type="button" onClick={(e) => { e.stopPropagation(); setEditId(null); }} className="text-[10px] text-slate-500 hover:text-slate-800">Huỷ</button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); const t = draft.trim(); if (t && t !== m.text) void onOp!("edit", { msgId: m.id, text: t }); setEditId(null); }}
+            <button type="button" onClick={async (e) => { e.stopPropagation(); const t = draft.trim(); if (t && t !== m.text) { const ok = await onOp!("edit", { msgId: m.id, text: t }); if (ok) setEditId(null); } else setEditId(null); }}
               className="rounded bg-teal-700 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-teal-800">Lưu</button>
           </div>
         </div>
       ) : (
-        // NHẤP ĐÚP bong bóng (admin) → CHỈ bong bóng đó đổi màu (tô/bỏ full-range của tin đó).
         <div key={m.id}
-          onDoubleClick={isAdmin && onOp ? () => { cancelOpen(); const has = (m.hi?.length ?? 0) > 0; void onOp("sethi", { msgId: m.id, hi: has ? null : [[0, m.text.length]] }); } : undefined}
-          title={isAdmin ? "1 click: mở · nhấp đúp: tô/bỏ màu TIN NÀY" : undefined}
           className="rounded-lg rounded-tl-none border border-amber-200 bg-amber-50 px-2 py-1">
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {((field === "note" && onReply) || canHide(m)) && (
+            {((field === "note" && onReply) || canHide(m) || (isAdmin && !!onOp)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
-                  <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); cancelOpen(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
+                  <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
                 )}
-                {canEdit(m) && <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); cancelOpen(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>}
-                {canHide(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); cancelOpen(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
+                {/* F16 — TÔ / BỎ màu đỏ tin này (admin) — thay cho nhấp đúp cũ. */}
+                {isAdmin && onOp && <button type="button" title="Tô / bỏ màu đỏ tin này" onClick={(e) => { e.stopPropagation(); const has = (m.hi?.length ?? 0) > 0; void onOp("sethi", { msgId: m.id, hi: has ? null : [[0, m.text.length]] }); }} className={(m.hi?.length ?? 0) > 0 ? "text-red-600" : "hover:text-red-600"}><Highlighter className="h-3 w-3" /></button>}
+                {canEdit(m) && <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>}
+                {canHide(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
               </span>
             )}
           </div>
@@ -3675,8 +3766,14 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
 
 /** BOX CHAT trong dialog: danh sách message (ai · lúc nào) + soạn tin mới. Ẩn/mở ẩn ai cũng được;
  *  XOÁ chỉ admin; nhấp đúp 1 từ để tô/bỏ tô đỏ (admin). */
-function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: { msgs: ChatMsg[]; isAdmin: boolean; myEmail?: string | null; field: "note" | "action"; onOp: MsgOp; reply?: { toId: string; text: string }; onClearReply?: () => void }) {
-  const [draft, setDraft] = useState("");
+/** F2 — GIỮ NHÁP chat theo key (mở/đóng popup không mất đoạn đang soạn). Module-level (sống qua unmount). */
+const __chatDrafts = new Map<string, string>();
+function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onClose, draftKey }: { msgs: ChatMsg[]; isAdmin: boolean; myEmail?: string | null; field: "note" | "action"; onOp: MsgOp; reply?: { toId: string; text: string }; onClearReply?: () => void; onClose: () => void; draftKey: string }) {
+  useEscapeToClose(onClose);   // F9/F2 — Esc đóng popup (an toàn vì nháp đã được giữ theo key)
+  const [draft, setDraftRaw] = useState(() => __chatDrafts.get(draftKey) ?? "");
+  const setDraft = (v: string) => { setDraftRaw(v); if (v) __chatDrafts.set(draftKey, v); else __chatDrafts.delete(draftKey); };
+  const [sending, setSending] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
@@ -3685,8 +3782,15 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
   const canEdit = (m: ChatMsg) => isAdmin || isPmo || (!!myEmail && m.author === myEmail);
   const canHide = canEdit;
   const canDelete = isAdmin || isPmo;
-  // Gửi tin: nếu đang trả lời 1 vướng mắc (reply) thì đính kèm replyTo + trích đoạn để hiện "↩ …".
-  const send = () => { const t = draft.trim(); if (!t) return; void onOp("add", { text: t.slice(0, CHAT_MSG_MAX), ...(reply ? { replyTo: reply.toId, replyText: reply.text } : {}) }); setDraft(""); onClearReply?.(); };
+  // Gửi tin (F1/F3): await server; CHỈ xoá nháp khi gửi THÀNH CÔNG (lỗi → giữ nguyên đoạn đã gõ + báo).
+  const send = async () => {
+    const t = draft.trim();
+    if (!t || sending) return;
+    setSending(true);
+    const ok = await onOp("add", { text: t.slice(0, CHAT_MSG_MAX), ...(reply ? { replyTo: reply.toId, replyText: reply.text } : {}) });
+    setSending(false);
+    if (ok) { setDraft(""); onClearReply?.(); }
+  };
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="max-h-[46vh] space-y-2 overflow-auto pr-1">
@@ -3702,17 +3806,21 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
                 <span className="ml-auto flex items-center gap-2">
                   {canEdit(m) && editId !== m.id && <button type="button" onClick={() => { setEditId(m.id); setEditDraft(m.text); }} className="font-medium text-teal-700 hover:underline">Sửa</button>}
                   {canHide(m) && <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>}
-                  {canDelete && <button type="button" onClick={() => { if (window.confirm("Xoá HẲN message này? Không khôi phục được.")) void onOp("delete", { msgId: m.id }); }} className="font-medium text-red-600 hover:underline">Xoá</button>}
+                  {canDelete && <button type="button" onClick={() => void onOp("delete", { msgId: m.id })} className="font-medium text-red-600 hover:underline">Xoá</button>}
                 </span>
               </div>
               {editId === m.id ? (
                 <div>
                   <textarea autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={5}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") { setEditId(null); return; }
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void (async () => { const t = editDraft.trim(); if (t && t !== m.text) { setSavingEdit(true); const ok = await onOp("edit", { msgId: m.id, text: t }); setSavingEdit(false); if (ok) setEditId(null); } else setEditId(null); })(); }
+                    }}
                     className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" style={{ minHeight: "7rem" }} />
                   <div className="mt-1 flex items-center justify-end gap-2">
                     <button type="button" onClick={() => setEditId(null)} className="text-[11px] text-slate-500 hover:text-slate-800">Huỷ</button>
-                    <button type="button" onClick={() => { const t = editDraft.trim(); if (t && t !== m.text) void onOp("edit", { msgId: m.id, text: t }); setEditId(null); }}
-                      className="rounded bg-teal-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-teal-800">Lưu</button>
+                    <button type="button" disabled={savingEdit} onClick={async () => { const t = editDraft.trim(); if (t && t !== m.text) { setSavingEdit(true); const ok = await onOp("edit", { msgId: m.id, text: t }); setSavingEdit(false); if (ok) setEditId(null); } else setEditId(null); }}
+                      className="rounded bg-teal-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{savingEdit ? "Đang lưu…" : "Lưu"}</button>
                   </div>
                 </div>
               ) : (
@@ -3744,13 +3852,63 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
           </div>
         )}
         <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
+          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void send(); } }}
           placeholder={reply ? "Soạn giải pháp trả lời…" : `Soạn ${noun} mới…`} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-[13px] leading-relaxed focus:border-teal-600 focus:outline-none" />
         <div className="mt-1 flex items-center justify-between gap-2">
-          <span className="text-[10px] leading-tight text-slate-400">Gửi rồi KHÔNG thể xoá.</span>
-          <button type="button" onClick={send} disabled={!draft.trim()} className="shrink-0 rounded-md bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-40">Gửi</button>
+          <span className="text-[10px] leading-tight text-slate-400">Ctrl/⌘ + Enter để gửi nhanh.</span>
+          <button type="button" onClick={() => void send()} disabled={!draft.trim() || sending} className="shrink-0 rounded-md bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-40">{sending ? "Đang gửi…" : "Gửi"}</button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** ĐÓNG dialog bằng phím ESC (F9). Dùng STACK để chỉ dialog TRÊN CÙNG đóng khi có nhiều lớp lồng nhau
+ *  (vd xem trước PDF nằm trong ComplianceDialog → Esc đóng preview trước, Esc lần nữa mới đóng dialog). */
+const __escStack: Array<() => void> = [];
+let __escBound = false;
+function useEscapeToClose(onClose: () => void) {
+  const ref = useRef(onClose);
+  ref.current = onClose;
+  useEffect(() => {
+    if (!__escBound) {
+      __escBound = true;
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && __escStack.length) __escStack[__escStack.length - 1]();
+      });
+    }
+    const fn = () => ref.current();
+    __escStack.push(fn);
+    return () => { const i = __escStack.lastIndexOf(fn); if (i >= 0) __escStack.splice(i, 1); };
+  }, []);
+}
+
+/** XEM TRƯỚC PDF trong app — iframe blob + Tải xuống / In / Đóng. Soát trước khi in cho đẹp, không tải ngay. */
+function PdfPreviewDialog({ url, fileName, onClose }: { url: string; fileName: string; onClose: () => void }) {
+  useEscapeToClose(onClose);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  useEffect(() => () => { try { URL.revokeObjectURL(url); } catch { /* */ } }, [url]);
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4 print:hidden">
+      <div className="flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Xem trước PDF</div>
+            <div className="truncate text-sm font-bold text-slate-900" title={fileName}>{fileName}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={() => { try { iframeRef.current?.contentWindow?.print(); } catch { /* */ } }}
+              className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">In</button>
+            <a href={url} download={fileName}
+              className="rounded-md bg-teal-700 px-3 py-1 text-xs font-semibold text-white hover:bg-teal-800">Tải xuống</a>
+            <button onClick={onClose} aria-label="Đóng" title="Đóng" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+        <iframe ref={iframeRef} src={url} title="Xem trước PDF" className="min-h-0 flex-1 bg-slate-100" />
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -3758,7 +3916,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply }: {
  *  `busy` = đang xuất (hiện spinner), `disabled` = chưa có dữ liệu để xuất. `tone` = màu nút.
  *  `portraitHint` = phụ đề dòng "Khổ dọc" (vd bảng rộng: dọc gói gọn nhiều dòng/trang → ÍT TRANG hơn). */
 function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-slate-900 hover:bg-slate-700", portraitHint = "điện thoại" }:
-  { onPrint: (o: "landscape" | "portrait") => void; disabled?: boolean; busy?: boolean; tone?: string; portraitHint?: string }) {
+  { onPrint: (o: "landscape" | "portrait", mode: "download" | "preview") => void; disabled?: boolean; busy?: boolean; tone?: string; portraitHint?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -3767,19 +3925,20 @@ function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-sla
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-  const pick = (o: "landscape" | "portrait") => { setOpen(false); onPrint(o); };
+  const pick = (o: "landscape" | "portrait", mode: "download" | "preview") => { setOpen(false); onPrint(o, mode); };
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((o) => !o)} disabled={disabled || busy} title="Xuất PDF — chọn khổ ngang hoặc dọc"
+      <button onClick={() => setOpen((o) => !o)} disabled={disabled || busy} title="Xuất PDF — xem trước hoặc tải xuống, khổ ngang/dọc"
         className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40 ${tone}`}>
         {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Xuất PDF <span className="text-[8px] leading-none">▼</span>
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-          <button onClick={() => pick("portrait")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
+        <div className="absolute right-0 z-30 mt-1 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-[11px] shadow-lg">
+          <div className="px-3 pb-1 pt-1 text-[9px] font-medium text-slate-400">Chọn khổ → xem trước → Tải xuống / In</div>
+          <button onClick={() => pick("portrait", "preview")} className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-100">
             <span className="text-slate-400">▯</span> Khổ dọc (A4 · {portraitHint})
           </button>
-          <button onClick={() => pick("landscape")} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-700 hover:bg-slate-100">
+          <button onClick={() => pick("landscape", "preview")} className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-100">
             <span className="text-slate-400">▭</span> Khổ ngang (A4)
           </button>
         </div>
@@ -3788,7 +3947,7 @@ function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-sla
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, totalAlertsCount, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onSaveEdit, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -3827,11 +3986,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   onHideRow: (key: string, label: string, hide: boolean) => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
-  onPrint: (orientation: "landscape" | "portrait") => void;
+  onPrint: (orientation: "landscape" | "portrait", mode: "download" | "preview") => void;
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
-  onSaveEdit: (key: string, patch: EditPatch) => void | Promise<void>;
-  onMsgOp: (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => void | Promise<void>;
+  onMsgOp: (key: string, field: "note" | "action", op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hiall" | "unhiall", opts?: { text?: string; msgId?: string; hi?: HiRange[] | null; replyTo?: string; replyText?: string }) => Promise<boolean>;
 }) {
   const activeCount =
     filters.depts.length + filters.stages.length + filters.alerts.length
@@ -3841,6 +3999,16 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
   const [exporting, setExporting] = useState(false);
   // Cách trình bày bảng: "list" = bảng cảnh báo hiện tại; "gantt" = biểu đồ tổng thể tiến độ.
   const [viewMode, setViewMode] = useState<"list" | "gantt">("list");
+  // F7 — nhớ chế độ xem (Danh sách / Tổng thể tiến độ) qua reload. Đọc sau mount, ghi khi đổi.
+  const [vmRestored, setVmRestored] = useState(false);
+  useEffect(() => {
+    try { const v = localStorage.getItem("pmo.viewMode"); if (v === "gantt" || v === "list") setViewMode(v); } catch { /* */ }
+    setVmRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!vmRestored) return;
+    try { localStorage.setItem("pmo.viewMode", viewMode); } catch { /* */ }
+  }, [viewMode, vmRestored]);
   // Xổ tác vụ con của Gantt — giữ ở đây (không trong GanttView) để NÚT trên toolbar dùng chung.
   const [ganttExpanded, setGanttExpanded] = useState<Set<string>>(new Set());
   const ganttAllKeys = ganttRows.map(r => r.key);
@@ -4709,6 +4877,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, total
                 onOp={(op, opts) => onMsgOp(editView.key, editView.field, op, opts)}
                 reply={editView.reply}
                 onClearReply={() => setEditView((v) => (v ? { ...v, reply: undefined } : v))}
+                onClose={() => setEditView(null)}
+                draftKey={`${editView.key}:${editView.field}`}
               />
             </div>
           </div>
@@ -4802,7 +4972,7 @@ function AlertBadge({ kind, color }: { kind: AlertKind; color: AlertColor }) {
  *    • Viền trái đỏ = tuần chứa hôm nay. Nền hổ phách = quá hạn.
  * ====================================================================== */
 const GANTT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, isAdmin = false, showHidden = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; isAdmin?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
+function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, isAdmin = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; isAdmin?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
   const DAY = 86400000;
   // Dropdown Block (Thi công lắp đặt) trong Gantt: tác vụ TC nào đang xổ các Block con.
   const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
@@ -4864,7 +5034,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
     return { iso, months, monthCols, weeks, nWeeks, yearSegs, curColStart, curColEnd, todayCol, weekInWindow };
   }, [today]);
 
-  const { iso, months, monthCols, weeks, nWeeks, yearSegs, curColStart, curColEnd, todayCol, weekInWindow } = g;
+  const { iso, months, monthCols, weeks, nWeeks, yearSegs, todayCol, weekInWindow } = g;
   // Lõi toạ độ MỚI = CỘT TUẦN đều nhau (KHÔNG theo ngày thật nữa): mọi thanh/vạch bám MÉP CỘT.
   const colX = (i: number) => (nWeeks ? i / nWeeks : 0);        // mép TRÁI của cột tuần i (tỉ lệ 0..1)
   const colW = nWeeks ? 1 / nWeeks : 1;                          // bề rộng 1 cột tuần (tỉ lệ 0..1)
@@ -4901,6 +5071,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
     childBar: "#334964",   // thanh tiến độ DÒNG CON (đầu việc) — nền NAVY #334964; phần done XANH LÁ (GC.done) = % thực tế đè lên
     done: "#5ee9b5",       // % hoàn thành — LẤY ĐÚNG màu chấm "Hoàn thành" trên legend (emerald-300)
     sx: "#f87171",         // SX — ĐỎ CORAL sáng (red-400): nhạt + tươi hơn đỏ đô cũ, nổi & hợp trên nền navy #334964
+    sxDone: "#22c55e",     // SX ĐÃ XONG — XANH LÁ (green-500): số ô = phần % sản xuất đã hoàn thành, tô từ trái (tuần sớm) sang; xong 100% → xanh hết
     today: "#7d5fbe",      // TUẦN hiện tại — vạch TÍM DỊU ở đầu tuần (Thứ 2), rõ nhưng không chói
     todayBand: "rgba(125,95,190,0.15)", // băng tuần hiện tại — tím rất nhạt, tô cả cột tuần
     curTint: "#eaf2fb",    // nền quý hiện tại — xanh nhạt (rõ hơn chút cho TV)
@@ -4911,7 +5082,6 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
     childBg: "#f8fafc",    // nền hàng tác vụ con
   };
   const navy = GC.headerBg;
-  const navyCur = GC.headerCur;
   const ROW_H = 34; // chiều cao cố định cho MỌI hàng → đồng bộ tuyệt đối
   const hCls = "border-b border-r border-slate-500/40 px-1.5 py-1 font-semibold text-slate-100";
   const alCls = (a: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
@@ -4979,7 +5149,8 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[10.5px] text-slate-600 print:hidden">
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.bar }} />Tiến độ (Bắt đầu→Kết thúc)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-6 rounded-sm" style={{ background: GC.done }} />% đã hoàn thành (theo cột % Thực tế)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-[1px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />Nhà máy sản xuất (SX)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-[1px]" style={{ background: GC.sx, border: "1px solid #0f172a" }} />SX chưa xong</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-[1px]" style={{ background: GC.sxDone, border: "1px solid #0f172a" }} />SX đã xong (theo %)</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-4 rounded-sm" style={{ background: "#fca5a5" }} />Ngày hiện hành</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm border" style={{ background: GC.overdueBg, borderColor: GC.overdueEdge }} />Quá hạn</span>
       </div>
@@ -5118,13 +5289,21 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                   )}
                   {/* SX (Nhà máy sản xuất) = MỖI CỘT TUẦN trong khoảng SX có ĐÚNG 1 Ô VUÔNG ĐỎ, nằm
                       GIỮA ô (y hệt file import PMP). CHỈ ở chế độ dự án (không phải lọc hạng mục). */}
-                  {!flatStages && sxSpan && Array.from({ length: sxSpan.ei - sxSpan.si + 1 }, (_, k) => {
-                    const i = sxSpan.si + k;
-                    return (
-                      <div key={i} title="Nhà máy sản xuất (SX)" style={{ position: "absolute", left: pct(colX(i) + colW / 2), top: "50%",
-                        width: 10, height: 10, transform: "translate(-50%,-50%)", background: GC.sx, border: "1px solid #0f172a", borderRadius: 1, zIndex: 3 }} />
-                    );
-                  })}
+                  {!flatStages && sxSpan && (() => {
+                    // Số ô SX = số tuần trong khoảng SX. Tô XANH LÁ số ô ĐÃ SẢN XUẤT XONG (theo % thực tế
+                    // giai đoạn SX), từ TRÁI (tuần sớm) sang phải; còn lại ĐỎ. floor → chỉ xanh hết khi thật
+                    // sự đạt 100% (không "xanh giả" ở 90%). sxPct null (chưa có số) → đỏ hết như cũ.
+                    const nSx = sxSpan.ei - sxSpan.si + 1;
+                    const nDone = r.sxPct != null ? Math.floor((nSx * r.sxPct) / 100) : 0;
+                    return Array.from({ length: nSx }, (_, k) => {
+                      const i = sxSpan.si + k;
+                      const done = k < nDone;
+                      return (
+                        <div key={i} title={done ? "Sản xuất xong (SX)" : "Nhà máy sản xuất (SX) — chưa xong"} style={{ position: "absolute", left: pct(colX(i) + colW / 2), top: "50%",
+                          width: 10, height: 10, transform: "translate(-50%,-50%)", background: done ? GC.sxDone : GC.sx, border: "1px solid #0f172a", borderRadius: 1, zIndex: 3 }} />
+                      );
+                    });
+                  })()}
                 </td>
               </tr>
 
@@ -5200,15 +5379,6 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   );
 }
 
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { v: string; l: string }[] }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-teal-600 focus:outline-none">
-      {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-    </select>
-  );
-}
-
 function MultiSelect<T extends string>({ label, selected, options, onToggle, onClear }: {
   label: string;
   selected: T[];
@@ -5273,7 +5443,7 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
  *  Đánh giá tuân thủ (theo tháng) + Nhật ký giám sát (chỉ admin). Thêm tính năng sau chỉ
  *  cần push thêm 1 item vào mảng. Không có mục nào khả dụng → không hiện nút (menu rỗng vô nghĩa).
  *  Vẫn giữ TÍN HIỆU: có dự án chưa cập nhật đúng hạn → chấm đỏ trên nút dù đang thu gọn. */
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenQuality, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenQuality, onOpenSource, tvMode, onToggleTv }: {
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
@@ -5283,6 +5453,8 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   /** Số mục cảnh báo chất lượng dữ liệu (STT trùng/trống…). >0 → hiện mục "Cảnh báo dữ liệu" cho PMO. */
   qualityIssues?: number;
   onOpenQuality?: () => void;
+  /** Đổi nguồn dữ liệu (CHỈ admin) — mở dialog Nguồn dữ liệu. */
+  onOpenSource?: () => void;
   /** Chế độ Trình chiếu TV (fullscreen cả app + lấp đầy màn hình lớn) — bật/tắt ngay trong menu. */
   tvMode: boolean;
   onToggleTv: () => void;
@@ -5303,6 +5475,7 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   if (qualityIssues > 0 && onOpenQuality) items.push({ icon: <AlertTriangle className="h-4 w-4 text-amber-500" />, label: "Cảnh báo dữ liệu", badge: qualityIssues, badgeAmber: true, onClick: onOpenQuality });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
+  if (isAdmin && onOpenSource) items.push({ icon: <Settings className="h-4 w-4 text-slate-500" />, label: "Nguồn dữ liệu", onClick: onOpenSource });
   // Trình chiếu TV — CHO MỌI NGƯỜI (không riêng admin): fullscreen cả app + phóng lấp đầy màn TV.
   items.push({ icon: <Tv className="h-4 w-4 text-violet-600" />, label: tvMode ? "Tắt trình chiếu TV" : "Trình chiếu TV", active: tvMode, onClick: onToggleTv });
   if (items.length === 0) return null;
@@ -5353,11 +5526,6 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
  *  UTIL
  * ====================================================================== */
 
-function fmtDateVN(iso: string): string {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
-}
-
 function fmtDateVN2(iso: string | null | undefined): string {
   if (!iso) return "—";
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -5404,10 +5572,6 @@ function fmtDayMonth(iso: string | null | undefined): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
 }
 
-// keep otherwise-unused imports anchored so tree-shaking warnings stay quiet
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _RN = ReactNode;
-
 /* ====================================================================
  * NHẬT KÝ GIÁM SÁT — bảng ai XEM / THAO TÁC gì, lúc nào.
  * Chỉ admin (liemnt1 / tienthn) mở được nút này; quyền đọc còn được kiểm LẠI ở
@@ -5421,6 +5585,7 @@ type _RN = ReactNode;
 function RoleManagerDialog({ roleMap, onClose, onSaved }: {
   roleMap: Record<string, UserRole>; onClose: () => void; onSaved: (m: Record<string, UserRole>) => void;
 }) {
+  useEscapeToClose(onClose);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>(ALL_ROLES[0]);
   const [busy, setBusy] = useState(false);
@@ -5446,7 +5611,7 @@ function RoleManagerDialog({ roleMap, onClose, onSaved }: {
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div>
@@ -5499,6 +5664,7 @@ function RoleManagerDialog({ roleMap, onClose, onSaved }: {
 }
 
 function ActivityLogDialog({ onClose }: { onClose: () => void }) {
+  useEscapeToClose(onClose);
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [who, setWho] = useState<string>("");    // "" = tất cả mọi người (lọc ở CLIENT để dropdown phân lớp)
   const [days, setDays] = useState<number>(7);     // 0 = toàn bộ
@@ -5598,7 +5764,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b-2 border-indigo-400 px-5 py-3">
           <div>
@@ -5730,14 +5896,29 @@ function ComplianceMark({ m }: { m: CMark }) {
   return <span className="text-[10px] text-slate-200" title="Chưa có dữ liệu tuần này">–</span>;
 }
 
-function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, onClose }: {
+function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, today, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
-  regionByName: Map<string, string>; today: string; onRetry: () => void; onClose: () => void;
+  regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; today: string; onRetry: () => void; onClose: () => void;
 }) {
-  // VÙNG của 1 dòng = tra từ PMP theo tên (KHÔNG lấy cột Location file tuân thủ). Không khớp → "—".
-  const vungOf = (r: ComplianceFileRow) => regionByName.get(normProjName(r.name)) ?? "—";
+  useEscapeToClose(onClose);
+  // SỐ TUẦN cờ "Cần cập nhật MP / trình BOD" tồn tại (0 = tuần đầu/không cờ). Nền cho trừ điểm + tô màu.
+  const mpWeeksOf = (r: ComplianceFileRow) => mpWeeksByName.get(normProjName(r.name)) ?? 0;
+  // TÔ MÀU cột "Cần cập nhật MP" — CF liên tục VÀNG (1 tuần) → ĐỎ (≥6 tuần). 0 tuần/không cờ = trống.
+  const mpFillStyle = (weeks: number): CSSProperties => {
+    if (weeks <= 0) return {};
+    const t = Math.min(1, (weeks - 1) / 5);          // 0 ở 1 tuần → 1 ở ≥6 tuần
+    const hue = Math.round(52 * (1 - t));            // 52° vàng → 0° đỏ
+    return { background: `hsl(${hue}, 92%, ${Math.round(58 - 8 * t)}%)` };
+  };
+  // ĐIỂM DỰ ÁN CUỐI = điểm nền (cột J: 100−25x−10o) − 10×(số tuần cờ BOD sau tuần đầu), kẹp 0.
+  const finalScoreOf = (r: ComplianceFileRow): number | null =>
+    r.score == null ? null : Math.max(0, r.score - 10 * mpWeeksOf(r));
+  // Màu chữ theo 3 mốc (khớp chart): ≥70 xanh · 50–<70 vàng · <50 đỏ. HEX inline (PDF không vỡ oklch).
+  const tone3 = (s: number | null) => (s == null ? "#94a3b8" : s < 50 ? "#dc2626" : s < 70 ? "#ca8a04" : "#16a34a");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("asc"); // mặc định THẤP → CAO (PM điểm thấp/cần chú ý lên đầu)
   const [vungSel, setVungSel] = useState<string[]>([]);
+  // MẶC ĐỊNH mở "Tóm tắt" (biểu đồ điểm TB PM); bấm "Chi tiết" để xem bảng đầy đủ.
+  const [view, setView] = useState<"summary" | "detail">("summary");
   const scoreLabel = (s: number | null) => (s == null ? "—" : String(s));
   // ── ĐIỂM (dự án & TB PM): IN ĐẬM cho NỔI BẬT; < 50 (chưa đạt) → ĐỎ, còn lại → ĐEN. Theo mẫu báo
   //    cáo tuân thủ (bỏ thang xanh/vàng nhiều màu — chỉ đen/đỏ cho gọn, điểm là thông tin chính). ──
@@ -5747,18 +5928,6 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
   const tToday = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10));
   const repYear = data?.monthLabel ? +data.monthLabel.slice(3) : +today.slice(0, 4);
   const repMon = data?.monthLabel ? +data.monthLabel.slice(0, 2) : +today.slice(5, 7);
-  // NGÀY CẬP NHẬT — COLOR SCALE liên tục XANH LÁ (gần hôm nay) → ĐỎ (xa hôm nay). d=0 xanh 120°,
-  // d≥30 ngày đỏ 0°. Nền nhạt + chữ đậm cùng hue.
-  const recencyStyle = (ddmm: string | null | undefined): CSSProperties => {
-    const m = (ddmm ?? "").match(/^(\d{1,2})\/(\d{1,2})$/);
-    if (!m) return { color: "#cbd5e1" };
-    const t = Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]);
-    const d = Math.max(0, Math.round((tToday - t) / 86400000));
-    const hue = Math.round(120 * (1 - Math.min(30, d) / 30));
-    // Cú pháp PHẨY (hsl(H, S%, L%)) — cú pháp CÁCH (hsl(H S% L%)) làm html2canvas-pro (xuất PDF)
-    // parse lỗi "unexpected EOF" vì đọc thẳng giá trị inline. Phẩy thì cả trình duyệt lẫn PDF đều hiểu.
-    return { background: `hsl(${hue}, 75%, 88%)`, color: `hsl(${hue}, 55%, 26%)` };
-  };
 
   // Tuần CÓ DỮ LIỆU mới nhất = tuần đã CHỐT gần nhất → dùng đếm "không cập nhật tuần này".
   const lastDataIdx = useMemo(() => {
@@ -5783,24 +5952,28 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
     return [...s].sort((a, b) => a.localeCompare(b, "vi")).map(v => ({ v, l: v }));
   }, [data, regionByName]);
 
-  const pmAvg = useMemo(() => (data ? pmAverages(data.rows) : new Map<string, number | null>()), [data]);
-  // GOM THEO PM (như cũ): mỗi nhóm PM 1 điểm TB; trong nhóm xếp theo số lần không cập nhật.
+  // GOM THEO PM — CHỐT: gộp theo TÊN PM CHÍNH (pmFirstOf), BỎ DPM. "Nguyễn Văn Cừ / DPM1" và
+  // "Nguyễn Văn Cừ / DPM2" đều vào nhóm "Nguyễn Văn Cừ". Điểm PM = TB điểm các dự án trong nhóm.
   const byPm = useMemo(() => {
     if (!data) return [] as { pm: string; pmScore: number | null; tongX: number; rs: ComplianceFileRow[] }[];
     const dir = sortDir === "desc" ? 1 : -1;
     const base = vungSel.length ? data.rows.filter(r => vungSel.includes(regionByName.get(normProjName(r.name)) ?? "—")) : data.rows;
     const m = new Map<string, ComplianceFileRow[]>();
-    for (const r of base) { const k = r.pm || "—"; const a = m.get(k) ?? []; a.push(r); m.set(k, a); }
+    for (const r of base) { const k = pmFirstOf(r.pm) || "—"; const a = m.get(k) ?? []; a.push(r); m.set(k, a); }
+    const avg = (rs: ComplianceFileRow[]): number | null => {
+      const s = rs.map(r => finalScoreOf(r)).filter((v): v is number => v != null);
+      return s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : null;
+    };
     // Trong nhóm: dự án sort theo ĐIỂM cùng CHIỀU với sort nhóm (desc=cao→thấp); null xuống cuối.
     const cmpScore = (a: ComplianceFileRow, b: ComplianceFileRow) => {
-      const sa = a.score, sb = b.score;
+      const sa = finalScoreOf(a), sb = finalScoreOf(b);
       if (sa == null && sb == null) return a.name.localeCompare(b.name, "vi");
       if (sa == null) return 1;
       if (sb == null) return -1;
       return dir * (sb - sa) || a.name.localeCompare(b.name, "vi");
     };
     return [...m.entries()].map(([pm, rs]) => ({
-      pm, pmScore: pmAvg.get(pm) ?? null,
+      pm, pmScore: avg(rs),
       tongX: rs.reduce((a, r) => a + r.countX, 0),
       rs: [...rs].sort(cmpScore),
     })).sort((a, b) => {
@@ -5811,7 +5984,18 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
       if (sb == null) return -1;
       return dir * (sb - sa) || a.pm.localeCompare(b.pm, "vi");
     });
-  }, [data, sortDir, vungSel, regionByName, pmAvg]);
+  }, [data, sortDir, vungSel, regionByName, mpWeeksByName]);
+
+  // TÁCH byPm thành 2 CỘT cân bằng theo TỔNG số dự án (để bảng gọn PM·Dự án·Điểm ở Tóm tắt vừa 1 trang,
+  // tận dụng bề ngang). Không cắt đôi 1 nhóm PM giữa 2 cột.
+  const summaryCols = useMemo(() => {
+    const total = byPm.reduce((a, g) => a + g.rs.length, 0);
+    const half = Math.ceil(total / 2);
+    const a: typeof byPm = [], b: typeof byPm = [];
+    let cnt = 0;
+    for (const g of byPm) { if (cnt < half) { a.push(g); cnt += g.rs.length; } else b.push(g); }
+    return [a, b];
+  }, [byPm]);
 
   const tongDuAn = data?.rows.length ?? 0;
   // SỐ DỰ ÁN KHÔNG CẬP NHẬT TUẦN NÀY = ô "x" của tuần ĐÃ CHỐT gần nhất (tuần hiện hành theo lịch
@@ -5823,33 +6007,47 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
    *  (nhiều cột tuần) → giữ bề rộng thật rồi thu tỉ lệ cho vừa giấy. */
   const tableRef = useRef<HTMLTableElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  // KHỐI IN RIÊNG (ẩn ngoài màn hình) — dựng ĐÚNG layout master để xuất PDF; màn hình giữ nguyên.
-  const printHeaderRef = useRef<HTMLDivElement>(null);
-  const printTableRef = useRef<HTMLTableElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait") => {
-    if (exporting || !printTableRef.current) return;
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; name: string } | null>(null);
+  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait", mode: "download" | "preview" = "download") => {
+    if (exporting) return;
+    const isPreview = mode === "preview";
+    // XUẤT ĐÚNG VIEW ĐANG XEM ("chiếu gì xuất nấy"): Tóm tắt → biểu đồ cột (summaryRef, dạng khối);
+    // Chi tiết → bảng (tableRef, cắt trang theo hàng). Chỉ khác nhau ở khổ ngang/dọc.
+    const isSummary = view === "summary";
+    const capTable = isSummary ? null : tableRef.current;
+    const capBlock = isSummary ? summaryRef.current : null;
+    if (!headerRef.current || (!capTable && !capBlock)) return;
     setExporting(true);
-    const tid = toast.loading("Đang tạo PDF bảng tuân thủ…", { position: "bottom-left" });
-    // Chụp KHỐI IN RIÊNG (printHeaderRef + printTableRef) — layout master, ẩn ngoài màn hình. LƯU Ý:
-    // khối in NẰM TRONG modal mang "print:hidden"; onclone của pdf-export XOÁ mọi phần tử print:hidden
-    // khỏi ảnh clone ⇒ xoá LUÔN cả khối in → html2canvas lỗi "unexpected EOF". Tạm gỡ "print:hidden" ở
-    // các TỔ TIÊN của khối in trước khi chụp rồi trả lại (nút print:hidden BÊN TRONG vẫn bị loại như thường).
+    const tid = toast.loading(isPreview ? "Đang dựng PDF để xem trước…" : "Đang tạo PDF báo cáo tuân thủ…", { position: "bottom-left" });
+    // headerRef + view NẰM TRONG modal mang "print:hidden"; onclone của pdf-export XOÁ mọi phần tử
+    // print:hidden khỏi clone ⇒ xoá luôn phần cần chụp → html2canvas lỗi "unexpected EOF". Tạm gỡ
+    // "print:hidden" ở các TỔ TIÊN (chung 1 modal) trước khi chụp rồi trả lại.
     const stripped: HTMLElement[] = [];
-    for (let el: HTMLElement | null = printTableRef.current; el; el = el.parentElement) {
+    for (let el: HTMLElement | null = headerRef.current; el; el = el.parentElement) {
       if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
     }
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
-      const pages = await exportDashboardPdf({
-        blocks: printHeaderRef.current ? [printHeaderRef.current] : [],
-        table: printTableRef.current,
+      // headerRef (TIÊU ĐỀ + RULE chấm điểm + chú thích) đưa vào dạng KHỐI (full bề ngang, cao tự nhiên)
+      // — KHÔNG dùng ô title 10mm (sẽ bóp rule nhỏ xíu). Tóm tắt: header + biểu đồ + bảng ép gọn 1 trang.
+      const blocks: HTMLElement[] = [];
+      if (headerRef.current) blocks.push(headerRef.current);
+      if (capBlock) blocks.push(capBlock);
+      const fileName = `BaoCaoTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`;
+      const { pages, blobUrl } = await exportDashboardPdf({
+        blocks,
+        table: capTable,
         wide: true,
         orientation,
-        fileName: `BaoCaoTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`,
+        singlePage: isSummary,   // Tóm tắt → ép gọn 1 trang; Chi tiết → cắt trang bình thường
+        preview: isPreview,
+        fileName,
       });
-      track("export_pdf", `Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${tongDuAn} dự án`.slice(0, 300));
-      toast.success(`Đã tạo PDF khổ ${orientation === "portrait" ? "dọc" : "ngang"} (${pages} trang), theo mẫu master`);
+      track("export_pdf", `${isPreview ? "XEM TRƯỚC · " : ""}Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${isSummary ? "Tóm tắt" : "Chi tiết"}`.slice(0, 300));
+      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); }
+      else toast.success(`Đã tạo PDF khổ ${orientation === "portrait" ? "dọc" : "ngang"} (${pages} trang) — ${isSummary ? "biểu đồ Tóm tắt" : "bảng Chi tiết"}`);
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
@@ -5860,7 +6058,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div>
@@ -5880,6 +6078,7 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                   <div className="whitespace-nowrap">(1) Khởi điểm <b className="text-slate-800">100 điểm/tháng</b>.</div>
                   <div className="whitespace-nowrap">(2) Không cập nhật (sau 12h thứ 5 hằng tuần): <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
                   <div className="whitespace-nowrap">(3) Cập nhật trễ (từ 22h thứ 4 – 12h thứ 5 hằng tuần): <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
+                  <div className="whitespace-nowrap">(4) Không trình BOD: <b className="text-amber-600">−10 điểm</b>.</div>
                 </div>
                 <div className="flex flex-col">
                   <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ PM:</div>
@@ -5908,6 +6107,10 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
               </div>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] leading-relaxed text-slate-500">
+              <span className="inline-flex items-center overflow-hidden rounded-md border border-teal-600 print:hidden">
+                <button onClick={() => setView("summary")} className={`px-2.5 py-0.5 text-[11px] font-bold ${view === "summary" ? "bg-teal-700 text-white" : "bg-white text-teal-700 hover:bg-teal-50"}`}>Tóm tắt</button>
+                <button onClick={() => setView("detail")} className={`px-2.5 py-0.5 text-[11px] font-bold ${view === "detail" ? "bg-teal-700 text-white" : "bg-white text-teal-700 hover:bg-teal-50"}`}>Chi tiết</button>
+              </span>
               <span className="inline-flex items-center gap-1">
                 <span className="text-slate-400">Xếp theo điểm TB PM:</span>
                 <button onClick={() => setSortDir("desc")} className={`rounded px-1.5 py-0.5 font-semibold ${sortDir === "desc" ? "bg-teal-700 text-white" : "border border-slate-300 text-slate-600 hover:border-teal-500"}`}>Cao → thấp</button>
@@ -5921,14 +6124,15 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
           </div>
           <div className="flex shrink-0 items-center gap-2 print:hidden">
             <PdfExportMenu
-              onPrint={(o) => void doExportPdf(o)}
+              onPrint={(o, mode) => void doExportPdf(o, mode)}
               disabled={loading || !!error || !data || !byPm.length}
               busy={exporting}
               tone="bg-teal-700 hover:bg-teal-800"
               portraitHint="gọn trang" />
-            <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+            <button onClick={onClose} aria-label="Đóng" title="Đóng (Esc)" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
           </div>
         </div>
+        {pdfPreview && <PdfPreviewDialog url={pdfPreview.url} fileName={pdfPreview.name} onClose={() => setPdfPreview(null)} />}
 
         <div className="min-h-0 flex-1 overflow-auto px-5 pb-3">
           {loading ? (
@@ -5941,17 +6145,96 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
             </div>
           ) : !data || !byPm.length ? (
             <div className="py-16 text-center text-sm text-slate-500">File không có dòng dữ liệu nào.</div>
+          ) : view === "summary" ? (
+          <div className="py-2">
+            {/* TRANG TÓM TẮT — TIÊU ĐỀ + RULE chấm điểm đã ở đầu dialog (headerRef, cũng đưa vào PDF) nên
+                ở đây CHỈ còn biểu đồ cột + bảng gọn (bỏ header/KPI trùng lặp). Cột flex-1 giãn đều → FIT 1
+                trang; đường mốc + cột + nhãn số CHUNG hệ quy chiếu → mốc 70 đúng dưới đỉnh cột 75. */}
+            <div ref={summaryRef} className="px-3">
+              <div className="mb-1 flex items-center gap-2">
+                <div className="h-3 w-1 rounded-full bg-teal-600" />
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-600">Điểm trung bình theo PM</div>
+              </div>
+              <div className="relative mx-5 mt-6 h-44 border-b border-slate-300">
+                {[70, 50].map((mk) => (
+                  <div key={mk} className="pointer-events-none absolute inset-x-0 flex items-center" style={{ bottom: `${mk}%` }}>
+                    <span className="-ml-5 w-4 text-right text-[8px] font-bold" style={{ color: mk === 70 ? "#16a34a" : "#ca8a04" }}>{mk}</span>
+                    <div className="h-0 flex-1 border-t border-dashed" style={{ borderColor: mk === 70 ? "#86efac" : "#fde047" }} />
+                  </div>
+                ))}
+                <div className="flex h-full items-end gap-2">
+                  {byPm.map(({ pm, pmScore }) => {
+                    const s = pmScore;
+                    const bg = s == null ? "#cbd5e1" : s < 50 ? "#ef4444" : s < 70 ? "#eab308" : "#22c55e";
+                    const fg = s == null ? "#94a3b8" : s < 50 ? "#dc2626" : s < 70 ? "#ca8a04" : "#16a34a";
+                    const h = Math.max(1, Math.min(100, s ?? 0));
+                    return (
+                      <div key={pm} className="relative flex h-full min-w-0 flex-1 items-end" title={`${pm}: ${s ?? "—"}`}>
+                        <div className="w-full rounded-t" style={{ height: `${h}%`, background: bg }} />
+                        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-extrabold tabular-nums" style={{ bottom: `${h}%`, color: fg, marginBottom: "1px" }}>{s ?? "—"}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* NHÃN PM — xoay chéo 45° (KHÔNG viết dọc), đầu phải canh dưới tâm cột */}
+              <div className="mx-5 flex gap-2" style={{ height: 66 }}>
+                {byPm.map(({ pm }) => (
+                  <div key={pm} className="relative min-w-0 flex-1">
+                    <span className="absolute left-1/2 top-0 origin-top-right -translate-x-full -rotate-45 whitespace-nowrap text-[8.5px] leading-none text-slate-600" title={pm}>{pm || "—"}</span>
+                  </div>
+                ))}
+              </div>
+              {/* BẢNG GỌN: Người phụ trách · Dự án · Điểm dự án — chia 2 CỘT cho vừa 1 trang (điểm = điểm
+                  CUỐI, đã trừ BOD; màu 3 mốc như chart). Zebra theo NHÓM PM cho dễ dò. */}
+              <div className="mb-1 mt-3 flex items-center gap-2">
+                <div className="h-3 w-1 rounded-full bg-teal-600" />
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-600">Chi tiết điểm theo dự án</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {summaryCols.map((groups, ci) => (
+                  <table key={ci} className="w-full border-collapse overflow-hidden rounded-md text-[8.5px] leading-tight ring-1 ring-slate-200">
+                    <thead>
+                      <tr style={{ background: "#0f2547" }} className="text-white">
+                        <th className="px-1.5 py-1 text-left font-semibold whitespace-nowrap">Người phụ trách</th>
+                        <th className="px-1.5 py-1 text-left font-semibold">Dự án</th>
+                        <th className="px-1.5 py-1 text-center font-semibold">Điểm</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groups.map(({ pm, rs }, gi) => (
+                        rs.map((r, i) => {
+                          const fs = finalScoreOf(r);
+                          const zebra = gi % 2 === 1 ? "#f1f5f9" : "#ffffff";
+                          return (
+                            <tr key={`${ci}-${pm}-${r.stt}-${i}`} style={{ background: zebra }} className="border-b border-slate-100">
+                              {i === 0 && (
+                                <td rowSpan={rs.length} className="border-r border-slate-200 px-1.5 py-0.5 align-top">
+                                  <div className="font-semibold leading-tight text-slate-800">{pm || "—"}</div>
+                                </td>
+                              )}
+                              <td className="border-r border-slate-100 px-1.5 py-0.5 text-slate-700"><div className="max-w-[130px] truncate" title={r.name}>{r.name}</div></td>
+                              <td className="px-1.5 py-0.5 text-center text-[9.5px] font-extrabold tabular-nums" style={{ color: tone3(fs) }}>{scoreLabel(fs)}</td>
+                            </tr>
+                          );
+                        })
+                      ))}
+                    </tbody>
+                  </table>
+                ))}
+              </div>
+            </div>
+          </div>
           ) : (
           <table ref={tableRef} className="w-full border-collapse text-[11px]">
             <thead className="sticky top-0 z-20 text-white">
               <tr>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản">Điểm PM</th>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold whitespace-nowrap">Người phụ trách</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Vùng</th>
+                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Cần cập nhật MP / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Cần cập nhật<br />MP</th>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold">Tên dự án</th>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm tuân thủ 0–100 (100 − 25·không cập nhật − 10·trễ)">Điểm<br />dự án</th>
                 <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Số lần<br />không cập nhật</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Cập nhật<br />gần nhất</th>
                 {data.weeks.map((w, wi) => (
                   <th key={w} className={`sticky top-0 border-r px-1 py-1.5 text-center font-semibold whitespace-nowrap text-white ${wi === curWeekIdx ? "border-emerald-800" : "border-slate-600 bg-[#1e293b]"}`}
                       style={wi === curWeekIdx ? { background: "#00B050" } : undefined}
@@ -5973,23 +6256,25 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
                         </td>
                       </>
                     )}
-                    <td className="border-r border-slate-100 px-2 py-1 text-center text-slate-600 whitespace-nowrap">{vungOf(r)}</td>
+                    {(() => { const w = mpWeeksOf(r); return (
+                      <td className="border-r border-slate-100 p-0 text-center" title={w > 0 ? `Chưa trình BOD ${w} tuần → −${w * 10} điểm` : "Không có cờ cần cập nhật MP"}>
+                        <div className="mx-auto h-4 w-full" style={mpFillStyle(w)} />
+                      </td>
+                    ); })()}
                     <td className="border-r border-slate-100 px-2 py-1 text-slate-700"><div className="line-clamp-1" title={r.name}>{r.name}</div></td>
                     <td className="border-r border-slate-100 px-2 py-1 text-center">
-                      <span className={`text-[13px] font-extrabold tabular-nums ${scoreTone(r.score)}`} title={r.score == null ? "Chưa có dữ liệu tháng này" : `Điểm tuân thủ = ${r.score} (x${r.countX}·−25, o${r.countO}·−10)`}>{scoreLabel(r.score)}</span>
+                      {(() => { const fs = finalScoreOf(r); const w = mpWeeksOf(r); return (
+                        <span className={`text-[13px] font-extrabold tabular-nums ${scoreTone(fs)}`} title={fs == null ? "Chưa có dữ liệu tháng này" : `Điểm = ${fs} (nền ${r.score}: x${r.countX}·−25, o${r.countO}·−10${w > 0 ? `; BOD ${w} tuần·−${w * 10}` : ""})`}>{scoreLabel(fs)}</span>
+                      ); })()}
                     </td>
-                    {/* SỐ LẦN KHÔNG CẬP NHẬT + DATA BAR (0 → maxRequired = số lần phải cập nhật tới hôm nay). */}
+                    {/* SỐ LẦN KHÔNG CẬP NHẬT + DATA BAR — ĐI HẾT Ô (w-full): count/maxRequired × bề rộng ô. */}
                     <td className="border-r border-slate-100 px-2 py-1">
-                      <div className="relative mx-auto flex h-4 max-w-[64px] items-center overflow-hidden rounded" title={`${r.countX}/${maxRequired} lần phải cập nhật tính đến hôm nay`}>
+                      <div className="relative flex h-4 w-full items-center overflow-hidden rounded bg-slate-100" title={`${r.countX}/${maxRequired} lần phải cập nhật tính đến hôm nay`}>
                         {maxRequired > 0 && r.countX > 0 && (
                           <div className="absolute inset-y-0 left-0 rounded bg-blue-300" style={{ width: `${Math.min(100, r.countX / maxRequired * 100)}%` }} />
                         )}
                         <span className="relative z-[1] mx-auto tabular-nums font-semibold text-blue-700">{r.countX > 0 ? r.countX : <span className="font-normal text-slate-400">0</span>}</span>
                       </div>
-                    </td>
-                    {/* CẬP NHẬT GẦN NHẤT + COLOR SCALE xanh lá (gần) → đỏ (xa). */}
-                    <td className="border-r border-slate-100 px-2 py-1 text-center whitespace-nowrap">
-                      <span className="inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums" style={recencyStyle(r.lastUpdate)}>{r.lastUpdate ?? "—"}</span>
                     </td>
                     {r.marks.map((m, j) => (
                       <td key={j} className="border-r border-slate-100 px-1 py-1 text-center"><ComplianceMark m={m} /></td>
@@ -6002,82 +6287,6 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
           )}
         </div>
 
-        {/* ── KHỐI IN RIÊNG cho PDF — dựng ĐÚNG mẫu master (thứ tự cột: Ngày CN · Điểm PM · Người PT ·
-            Tên DA · Lũy kế · Điểm DA · các tuần; BỎ cột Vùng). ẨN bằng wrapper 0×0 overflow-hidden
-            (toạ độ DƯƠNG — KHÔNG dùng left âm cực lớn vì html2canvas-pro lỗi "unexpected EOF"); màn
-            hình vẫn giữ bảng gốc phía trên. Không print:hidden để html2canvas clone thẳng. */}
-        {data && byPm.length > 0 && (
-          <div aria-hidden="true" style={{ position: "fixed", left: 0, top: "100vh", width: "1240px", background: "#fff" }} className="text-slate-900">
-            <div ref={printHeaderRef} className="px-1 pb-2.5 pt-1">
-              <div className="text-lg font-extrabold text-slate-900">BÁO CÁO TUÂN THỦ CẬP NHẬT MASTER PLAN{data.monthLabel ? ` THÁNG ${data.monthLabel}` : ""}</div>
-              <div className="mt-1.5 flex items-start justify-between gap-6 text-[11px] leading-relaxed text-slate-700">
-                <div className="flex flex-col gap-0.5">
-                  <div>Tổng hợp bởi: <b className="text-slate-900">Bộ phận Project Planning</b></div>
-                  <div>Ngày cập nhật: <b className="text-slate-900 tabular-nums">{fmtDateVN(today)}</b></div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="font-semibold text-slate-800">Cách tính điểm tuân thủ dự án:</div>
-                  <div className="whitespace-nowrap">(1) Khởi điểm <b>100 điểm/tháng</b>.</div>
-                  <div className="whitespace-nowrap">(2) Trường hợp không cập nhật: <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
-                  <div className="whitespace-nowrap">(3) Trường hợp cập nhật trễ: <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
-                </div>
-                <div className="flex max-w-[230px] flex-col">
-                  <div className="font-semibold text-slate-800">Cách tính điểm tuân thủ PM:</div>
-                  <div>Điểm tuân thủ PM = Tổng điểm tuân thủ các dự án PM quản lý / Tổng số lượng dự án PM quản lý</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="mb-1 font-semibold text-slate-800">Chú thích:</div>
-                  <table className="border-collapse text-[10px] leading-tight">
-                    <tbody>
-                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-emerald-500">✓</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Cập nhật đúng hạn</td></tr>
-                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-amber-500">o</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Cập nhật trễ</td></tr>
-                      <tr><td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-red-600">✕</td><td className="whitespace-nowrap border border-slate-300 px-2 py-0.5">Không cập nhật</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <table ref={printTableRef} className="w-full border-collapse text-[11px]">
-              <thead>
-                <tr className="bg-[#1f3864] text-white">
-                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Ngày cập nhật gần nhất</th>
-                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Điểm tuân thủ PM</th>
-                  <th className="border border-slate-500 px-2 py-1.5 text-left font-semibold">Người phụ trách chính</th>
-                  <th className="border border-slate-500 px-2 py-1.5 text-left font-semibold">Tên dự án</th>
-                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Lũy kế dự án không cập nhật</th>
-                  <th className="border border-slate-500 px-2 py-1.5 text-center font-semibold">Điểm tuân thủ dự án</th>
-                  {data.weeks.map((w) => (
-                    <th key={w} className="border border-slate-500 px-1 py-1.5 text-center font-semibold whitespace-nowrap">{w}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {byPm.flatMap(({ pm, pmScore, rs }) => rs.map((r, i) => (
-                  <tr key={`p-${pm}-${r.stt}-${i}`}>
-                    <td className="border border-slate-300 px-2 py-1 text-center whitespace-nowrap">
-                      <span className="inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums" style={recencyStyle(r.lastUpdate)}>{r.lastUpdate ?? "—"}</span>
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center text-[13px] font-extrabold tabular-nums">{scoreLabel(pmScore)}</td>
-                    <td className="border border-slate-300 px-2 py-1 font-medium text-slate-800">{pm || "—"}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-slate-800">{r.name}</td>
-                    <td className="border border-slate-300 px-2 py-1">
-                      <div className="relative mx-auto flex h-4 max-w-[64px] items-center overflow-hidden rounded">
-                        {maxRequired > 0 && r.countX > 0 && (
-                          <div className="absolute inset-y-0 left-0 rounded bg-blue-300" style={{ width: `${Math.min(100, r.countX / maxRequired * 100)}%` }} />
-                        )}
-                        <span className="relative z-[1] mx-auto tabular-nums font-semibold text-blue-700">{r.countX}</span>
-                      </div>
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center text-[13px] font-extrabold tabular-nums">{scoreLabel(r.score)}</td>
-                    {r.marks.map((m, j) => (
-                      <td key={j} className="border border-slate-300 px-1 py-1 text-center"><ComplianceMark m={m} /></td>
-                    ))}
-                  </tr>
-                )))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -6085,9 +6294,10 @@ function ComplianceDialog({ data, loading, error, regionByName, today, onRetry, 
 
 /** DIALOG "CÓ GÌ MỚI" — bấm badge phiên bản để mở; liệt kê CHANGELOG theo từng bản (mới nhất trên). */
 function ChangelogDialog({ onClose }: { onClose: () => void }) {
+  useEscapeToClose(onClose);
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b-2 border-teal-400 px-5 py-3">
           <div>
@@ -6131,6 +6341,7 @@ function ChangelogDialog({ onClose }: { onClose: () => void }) {
  *  Đổi luật ở lib/filter.ts ⇒ bảng này TỰ đúng theo, không cần đụng vào.
  * ====================================================================== */
 function AlertCriteriaDialog({ gapThreshold, onClose }: { gapThreshold: number; onClose: () => void }) {
+  useEscapeToClose(onClose);
   // Giá trị ĐẠI DIỆN của từng bậc — chỉ dùng để tra ma trận, không hiển thị ra.
   const HANG = [
     { nhan: `≥ ${gapThreshold}%`, mo: "Chậm nghiêm trọng", gap: gapThreshold + 10 },
@@ -6171,7 +6382,7 @@ function AlertCriteriaDialog({ gapThreshold, onClose }: { gapThreshold: number; 
   // đưa dialog về gốc body → z-50 phủ đúng mọi thứ. SSR không có document → render null.
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         {/* Vạch vàng MẢNH làm dấu nhận diện, KHÔNG tô cả mảng vàng: vàng trong app này
             đang mang nghĩa "cảnh báo mức vừa" — tô nền lớn sẽ làm loãng nghĩa đó. */}

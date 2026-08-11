@@ -1,9 +1,10 @@
 /**
  * ĐỌC FILE NGUỒN TUÂN THỦ (Google Sheet RIÊNG cho function này — tách khỏi PMP).
- *  • App CHỈ CHẤM ĐIỂM; mọi data ✔/o/x, vùng, PM, lũy kế… lấy THẲNG từ file (ý PMO 28/07).
- *  • Chấm theo THÁNG: điểm & "số lần không cập nhật" CHỈ tính trên các cột tuần của THÁNG hiện
- *    tại (vd T7: 01/07…29/07 = cột P–T). Tuần tháng cũ vẫn có thể hiện nhưng KHÔNG tính.
- *  • Công thức (chốt 28/07): 100 − 25·(x) − 10·(o), kẹp 0..100. Bỏ chấm chất lượng.
+ *  • App CHỈ RENDER: mọi data ✔/o/x, vùng, PM, lũy kế, VÀ ĐIỂM lấy THẲNG từ file (ý PMO).
+ *  • ĐIỂM DỰ ÁN: đọc cột "Điểm" (J) do Apps Script chấm (nguồn DUY NHẤT — chứa cả rule
+ *    "không trình BOD" khi bật). Thiếu cột/ô rỗng → FALLBACK tự tính 100−25x−10o.
+ *  • Chấm theo THÁNG: "số lần không cập nhật" & fallback CHỈ tính trên cột tuần THÁNG hiện tại.
+ *  • Điểm PM = TRUNG BÌNH điểm dự án (gộp bỏ DPM) — app tự tính từ score đọc được.
  * Chạy Ở CLIENT (parse text CSV do fetchSheetCsv trả về) — Worker KHÔNG parse.
  */
 
@@ -62,6 +63,15 @@ const toMark = (v: string): CMark => {
   return null;
 };
 
+/** Đọc ô "Điểm" (cột J) từ file: số 0..100. Rỗng/không phải số → null (để fallback tự tính). */
+const toScore = (v: string): number | null => {
+  const t = (v || "").trim();
+  if (!t) return null;
+  const n = parseFloat(t.replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+};
+
 /** Parse text CSV của file tuân thủ → dữ liệu bảng. Ném lỗi rõ nếu không nhận diện được header. */
 export function parseComplianceFile(csvText: string): ComplianceFileData {
   const grid = parseCsv(csvText);
@@ -82,6 +92,7 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
   const cName = find("Tên dự án");
   const cPm = findHas("Người phụ trách");
   const cNeed = findHas("Cần lập MP");
+  const cScore = findHas("Điểm");   // cột J: điểm dự án Apps Script đã chấm (100−25x−10o[−BOD])
 
   // 2) THÁNG CHẤM: đọc "THÁNG MM/YYYY" ở các dòng phía trên header.
   let mm = "", monthLabel = "";
@@ -116,6 +127,9 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
     const countX = marks.filter((m) => m === "x").length;
     const countO = marks.filter((m) => m === "o").length;
     const hasAny = marks.some((m) => m !== null);
+    // ĐIỂM: ưu tiên ĐỌC cột "Điểm" (J) Apps Script đã chấm (nguồn duy nhất — có cả rule BOD sau này);
+    // thiếu cột / ô rỗng thì FALLBACK tự tính 100−25x−10o. Dự án chưa có mark nào → null (chưa chấm).
+    const sheetScore = cScore >= 0 ? toScore(r[cScore] || "") : null;
     rows.push({
       stt,
       vung: (r[cVung] || "").trim(),
@@ -124,7 +138,7 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
       lastUpdate: (r[cLast] || "").trim() || null,
       needsMp: cNeed >= 0 && !!(r[cNeed] || "").trim(),
       marks, countX, countO,
-      score: hasAny ? Math.max(0, Math.min(100, 100 - 25 * countX - 10 * countO)) : null,
+      score: sheetScore != null ? sheetScore : (hasAny ? Math.max(0, Math.min(100, 100 - 25 * countX - 10 * countO)) : null),
     });
   }
 

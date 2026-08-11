@@ -293,8 +293,8 @@ export async function exportMatrixXlsx(opts: ExportOptions): Promise<void> {
   const N = HEADERS.length;
   const DEPT_START = N - EXPORT_DEPT_ORDER.length + 1; // 11
   // Column indices (1-based) after dropping "Số ngày"
-  const COL_NAME = 3, COL_DEPT = 4, COL_START = 5, COL_END = 6;
-  const COL_PCTPLAN = 7, COL_PCTACT = 8, COL_OVERDUE = 9, COL_NOTE = 10;
+  const COL_START = 5, COL_END = 6;
+  const COL_PCTPLAN = 7, COL_PCTACT = 8, COL_OVERDUE = 9;
 
   // Bảng tra Bộ phận theo công đoạn (CỐ ĐỊNH — không đọc từ file).
   const STAGE_TO_DEPT_LABEL: Record<string, string> = {

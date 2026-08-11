@@ -161,6 +161,8 @@ export type DataQualityCheck = {
   level: "ok" | "warn" | "error";
   label: string;
   detail?: string;
+  /** DANH SÁCH ĐÍCH DANH các dòng lỗi (STT + tên dự án…) — để "nhìn biết lỗi ở đâu, cụ thể ra". */
+  items?: string[];
 };
 
 /** Kết quả CỔNG KIỂM SOÁT DỮ LIỆU — chạy mỗi lần parse nguồn. */

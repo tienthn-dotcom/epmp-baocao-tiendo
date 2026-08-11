@@ -215,10 +215,6 @@ function buildXlsxUrlCandidates(raw: string): string[] {
 /* URL normalisation                                                   */
 /* ------------------------------------------------------------------ */
 
-function normaliseSheetUrl(raw: string): string {
-  return buildSheetUrlCandidates(raw)[0];
-}
-
 /** Tên tab Timeline cần thử khi link không có gid rõ ràng. */
 const TIMELINE_SHEET_NAMES = ["Timeline", "TIMELINE", "timeline"];
 

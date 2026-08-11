@@ -8,10 +8,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { unzipSync, zipSync, strFromU8 } from "fflate";
 
-const idFromUrl = (u: string): string | null => {
-  const m = String(u).match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
-};
 
 async function fetchXlsxById(id: string, gid?: string): Promise<ArrayBuffer> {
   const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
