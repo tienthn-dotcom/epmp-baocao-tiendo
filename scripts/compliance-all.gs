@@ -381,12 +381,12 @@ function crSyncProjects_(ss, sh) {
 
 /** Đặt công thức 1 dòng. C=STT (dòng trên +1) chỉ set khi setStt=true (tránh đụng dòng đầu bảng).
  *  D=Ngày update, G=PM → INDEX/MATCH theo KHOÁ (E) trong cột F của AutoData (đổi tên vẫn khớp).
- *  H=email theo PM. Dùng dấu PHẨY — Apps Script nhận en-US; sheet tự hiện thành ";". */
+ *  H=email theo PM. Dùng dấu CHẤM PHẨY ";" phân tách tham số (sheet locale VN đọc "," thành text). */
 function crRefreshRow_(sh, r, setStt) {
   if (setStt) sh.getRange(r, C_STT).setFormula('=C' + (r - 1) + '+1');
-  sh.getRange(r, C_DATE ).setFormula('=IFERROR(INDEX(AutoData!$E:$E,MATCH(TRIM(E' + r + '),AutoData!$F:$F,0)),"")');
-  sh.getRange(r, C_PM   ).setFormula('=IFERROR(INDEX(AutoData!$C:$C,MATCH(TRIM(E' + r + '),AutoData!$F:$F,0)),"")');
-  sh.getRange(r, C_EMAIL).setFormula('=IFERROR(VLOOKUP(G' + r + ',DATA!$A$4:$B$35,2,FALSE),"")');
+  sh.getRange(r, C_DATE ).setFormula('=IFERROR(INDEX(AutoData!$E:$E;MATCH(TRIM(E' + r + ');AutoData!$F:$F;0));"")');
+  sh.getRange(r, C_PM   ).setFormula('=IFERROR(INDEX(AutoData!$C:$C;MATCH(TRIM(E' + r + ');AutoData!$F:$F;0));"")');
+  sh.getRange(r, C_EMAIL).setFormula('=IFERROR(VLOOKUP(G' + r + ';DATA!$A$4:$B$35;2;FALSE);"")');
 }
 
 /* ── 3) QUẢN CỘT: cột tuần = các Thứ 4 tháng này; ẩn tháng khác. Trả {first,last,cols}. ── */
@@ -457,9 +457,9 @@ function crUpdateScores_(sh, range) {
   for (var r = DATA_START_ROW; r <= lastRow; r++) {
     var rng = crColA1_(range.first) + r + ':' + crColA1_(range.last) + r;
     var bod = bodOn ? ('-10*N(' + BOD_COUNT_COL.toUpperCase() + r + ')') : '';
-    sh.getRange(r, 9).setFormula('=COUNTIF(' + rng + ',"x")');
+    sh.getRange(r, 9).setFormula('=COUNTIF(' + rng + ';"x")');
     // Điểm CÓ THỂ ÂM (bỏ sàn MAX(0,…) theo yêu cầu): 100 − 25·x − 10·o (− 10·BOD nếu bật).
-    sh.getRange(r, 10).setFormula('=100-25*COUNTIF(' + rng + ',"x")-10*COUNTIF(' + rng + ',"o")' + bod + '');
+    sh.getRange(r, 10).setFormula('=100-25*COUNTIF(' + rng + ';"x")-10*COUNTIF(' + rng + ';"o")' + bod + '');
   }
 }
 
