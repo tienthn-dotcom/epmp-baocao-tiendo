@@ -906,7 +906,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     unknownPrefixCount === 0
       ? "Mọi mã công đoạn đều thuộc nhóm giai đoạn đã định nghĩa"
       : `${unknownPrefixCount} dòng có mã KHÔNG thuộc nhóm giai đoạn nào (đã bỏ qua)`,
-    `Ví dụ: ${unknownPrefixSamples.join(", ")} — nếu là quy ước mới của PMP, cần bổ sung vào app.`);
+    `Mã bị bỏ: ${[...new Set(unknownPrefixSamples)].join(", ")} — nếu là quy ước mới của PMP, cần bổ sung vào app.`);
   add("dates", unparsedDateCount > 0, "warn",
     unparsedDateCount === 0
       ? "Toàn bộ ô ngày Kết thúc đọc được"

@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.50.1", date: "11/08/2026", items: [
+    "Cảnh báo dữ liệu — mục mã lạ (không thuộc giai đoạn nào): đổi “Ví dụ:” thành “Mã bị bỏ:” (đây là lỗi thật, liệt kê đúng mã) và gộp trùng cho gọn.",
+  ] },
   { v: "3.50.0", date: "11/08/2026", items: [
     "Điểm tuân thủ nay CHO PHÉP ÂM (bỏ sàn 0): dự án/PM bị trừ quá nhiều (nhiều tuần không cập nhật, hoặc trừ BOD) sẽ hiện điểm âm thay vì kẹp ở 0 — phản ánh đúng mức độ. Cột điểm & biểu đồ tự hiện số âm (màu đỏ).",
   ] },
