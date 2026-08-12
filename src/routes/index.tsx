@@ -508,6 +508,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.51.0", date: "12/08/2026", items: [
+    "Đánh giá tuân thủ · Tóm tắt: biểu đồ điểm TB PM TÁCH KHE các cột cho rõ; phần “Chi tiết điểm theo dự án” gọn lại — mỗi PM 1 dòng (tên + điểm TB), RÊ CHUỘT vào PM hiện bảng nổi liệt kê đủ dự án + điểm. Bỏ “Số dự án không cập nhật tuần này”; đổi “Không trình BOD” → “Không trình Master Plan cập nhật”.",
+    "Xuất PDF báo cáo tuân thủ thêm kiểu GỘP (Tóm tắt trang 1 + Chi tiết trang 2 trở đi, 1 file); xuất riêng Tóm tắt thì bỏ phần chú thích ✓/o/x (không cần), xuất Chi tiết vẫn có.",
+  ] },
   { v: "3.50.1", date: "11/08/2026", items: [
     "Cảnh báo dữ liệu — mục mã lạ (không thuộc giai đoạn nào): đổi “Ví dụ:” thành “Mã bị bỏ:” (đây là lỗi thật, liệt kê đúng mã) và gộp trùng cho gọn.",
   ] },
@@ -3924,8 +3928,8 @@ function PdfPreviewDialog({ url, fileName, onClose }: { url: string; fileName: s
 /** Nút "Xuất PDF" dạng DROPDOWN — bấm xổ ra chọn khổ NGANG / DỌC (gộp 2 nút cho gọn toolbar).
  *  `busy` = đang xuất (hiện spinner), `disabled` = chưa có dữ liệu để xuất. `tone` = màu nút.
  *  `portraitHint` = phụ đề dòng "Khổ dọc" (vd bảng rộng: dọc gói gọn nhiều dòng/trang → ÍT TRANG hơn). */
-function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-slate-900 hover:bg-slate-700", portraitHint = "điện thoại" }:
-  { onPrint: (o: "landscape" | "portrait", mode: "download" | "preview") => void; disabled?: boolean; busy?: boolean; tone?: string; portraitHint?: string }) {
+function PdfExportMenu({ onPrint, onCombined, disabled = false, busy = false, tone = "bg-slate-900 hover:bg-slate-700", portraitHint = "điện thoại" }:
+  { onPrint: (o: "landscape" | "portrait", mode: "download" | "preview") => void; onCombined?: (o: "landscape" | "portrait", mode: "download" | "preview") => void; disabled?: boolean; busy?: boolean; tone?: string; portraitHint?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -3935,6 +3939,8 @@ function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-sla
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
   const pick = (o: "landscape" | "portrait", mode: "download" | "preview") => { setOpen(false); onPrint(o, mode); };
+  const pickC = (o: "landscape" | "portrait", mode: "download" | "preview") => { setOpen(false); onCombined?.(o, mode); };
+  const itemCls = "flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-100";
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((o) => !o)} disabled={disabled || busy} title="Xuất PDF — xem trước hoặc tải xuống, khổ ngang/dọc"
@@ -3942,14 +3948,18 @@ function PdfExportMenu({ onPrint, disabled = false, busy = false, tone = "bg-sla
         {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Xuất PDF <span className="text-[8px] leading-none">▼</span>
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-[11px] shadow-lg">
-          <div className="px-3 pb-1 pt-1 text-[9px] font-medium text-slate-400">Chọn khổ → xem trước → Tải xuống / In</div>
-          <button onClick={() => pick("portrait", "preview")} className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-100">
-            <span className="text-slate-400">▯</span> Khổ dọc (A4 · {portraitHint})
-          </button>
-          <button onClick={() => pick("landscape", "preview")} className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-100">
-            <span className="text-slate-400">▭</span> Khổ ngang (A4)
-          </button>
+        <div className="absolute right-0 z-30 mt-1 w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-[11px] shadow-lg">
+          <div className="px-3 pb-1 pt-1 text-[9px] font-medium text-slate-400">{onCombined ? "Trang đang xem" : "Chọn khổ → xem trước → Tải xuống / In"}</div>
+          <button onClick={() => pick("portrait", "preview")} className={itemCls}><span className="text-slate-400">▯</span> Khổ dọc (A4 · {portraitHint})</button>
+          <button onClick={() => pick("landscape", "preview")} className={itemCls}><span className="text-slate-400">▭</span> Khổ ngang (A4)</button>
+          {onCombined && (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              <div className="px-3 pb-1 pt-1 text-[9px] font-medium text-slate-400">Gộp: Tóm tắt (trang 1) + Chi tiết (trang 2+)</div>
+              <button onClick={() => pickC("portrait", "preview")} className={itemCls}><span className="text-slate-400">▯</span> Gộp · khổ dọc</button>
+              <button onClick={() => pickC("landscape", "preview")} className={itemCls}><span className="text-slate-400">▭</span> Gộp · khổ ngang</button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -5905,6 +5915,46 @@ function ComplianceMark({ m }: { m: CMark }) {
   return <span className="text-[10px] text-slate-200" title="Chưa có dữ liệu tuần này">–</span>;
 }
 
+/** Dòng PM ở Tóm tắt tuân thủ: tên + điểm TB; RÊ CHUỘT → popover ĐẸP liệt kê dự án + điểm (tên đầy
+ *  đủ). Popover dùng position:fixed (thoát vùng cuộn, không bị cắt) + tự lật lên/xuống theo vị trí. */
+function PmSummaryRow({ pm, avgLabel, avgColor, projects }: {
+  pm: string; avgLabel: string; avgColor: string;
+  projects: { name: string; label: string; color: string }[];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pop, setPop] = useState<{ x: number; y: number; up: boolean } | null>(null);
+  const show = () => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const up = r.bottom > window.innerHeight * 0.55;
+    setPop({ x: Math.min(r.left, window.innerWidth - 284), y: up ? r.top - 6 : r.bottom + 6, up });
+  };
+  return (
+    <div ref={ref} onMouseEnter={show} onMouseLeave={() => setPop(null)}
+         className="flex cursor-help items-baseline justify-between gap-2 border-b border-slate-100 py-[3px] hover:bg-teal-50/60">
+      <span className="truncate text-[10px] text-slate-700">{pm}</span>
+      <span className="shrink-0 text-[11px] font-extrabold tabular-nums" style={{ color: avgColor }}>{avgLabel}</span>
+      {pop && (
+        <div style={{ position: "fixed", left: pop.x, top: pop.y, transform: pop.up ? "translateY(-100%)" : undefined, zIndex: 90 }}
+             className="w-[272px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+          <div className="flex items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
+            <span className="truncate text-[11px] font-semibold text-slate-800">{pm}</span>
+            <span className="shrink-0 whitespace-nowrap text-[9px] text-slate-500">Điểm TB <b className="text-[12px] tabular-nums" style={{ color: avgColor }}>{avgLabel}</b></span>
+          </div>
+          <div className="max-h-[56vh] overflow-auto py-1">
+            {projects.map((p, i) => (
+              <div key={i} className={`flex items-baseline justify-between gap-2 px-2.5 py-[2px] text-[10px] ${i % 2 ? "bg-slate-50/60" : ""}`}>
+                <span className="min-w-0 flex-1 leading-snug text-slate-600">{p.name}</span>
+                <span className="shrink-0 font-bold tabular-nums" style={{ color: p.color }}>{p.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, today, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
   regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; today: string; onRetry: () => void; onClose: () => void;
@@ -5995,16 +6045,6 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
     });
   }, [data, sortDir, vungSel, regionByName, mpWeeksByName]);
 
-  // TÁCH byPm thành 2 CỘT cân bằng theo TỔNG số dự án (để bảng gọn PM·Dự án·Điểm ở Tóm tắt vừa 1 trang,
-  // tận dụng bề ngang). Không cắt đôi 1 nhóm PM giữa 2 cột.
-  const summaryCols = useMemo(() => {
-    const total = byPm.reduce((a, g) => a + g.rs.length, 0);
-    const half = Math.ceil(total / 2);
-    const a: typeof byPm = [], b: typeof byPm = [];
-    let cnt = 0;
-    for (const g of byPm) { if (cnt < half) { a.push(g); cnt += g.rs.length; } else b.push(g); }
-    return [a, b];
-  }, [byPm]);
 
   const tongDuAn = data?.rows.length ?? 0;
   // SỐ DỰ ÁN KHÔNG CẬP NHẬT TUẦN NÀY = ô "x" của tuần ĐÃ CHỐT gần nhất (tuần hiện hành theo lịch
@@ -6017,46 +6057,53 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
   const tableRef = useRef<HTMLTableElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);   // khối "Chú thích ✓/o/x" — CHỈ nghĩa lý ở bảng Chi tiết; ẩn khi xuất Tóm tắt
   const [exporting, setExporting] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<{ url: string; name: string } | null>(null);
-  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait", mode: "download" | "preview" = "download") => {
+  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait", mode: "download" | "preview" = "download", scope: "view" | "combined" = "view") => {
     if (exporting) return;
     const isPreview = mode === "preview";
-    // XUẤT ĐÚNG VIEW ĐANG XEM ("chiếu gì xuất nấy"): Tóm tắt → biểu đồ cột (summaryRef, dạng khối);
-    // Chi tiết → bảng (tableRef, cắt trang theo hàng). Chỉ khác nhau ở khổ ngang/dọc.
+    const combined = scope === "combined";
     const isSummary = view === "summary";
-    const capTable = isSummary ? null : tableRef.current;
-    const capBlock = isSummary ? summaryRef.current : null;
-    if (!headerRef.current || (!capTable && !capBlock)) return;
+    if (!headerRef.current) return;
     setExporting(true);
     const tid = toast.loading(isPreview ? "Đang dựng PDF để xem trước…" : "Đang tạo PDF báo cáo tuân thủ…", { position: "bottom-left" });
-    // headerRef + view NẰM TRONG modal mang "print:hidden"; onclone của pdf-export XOÁ mọi phần tử
-    // print:hidden khỏi clone ⇒ xoá luôn phần cần chụp → html2canvas lỗi "unexpected EOF". Tạm gỡ
-    // "print:hidden" ở các TỔ TIÊN (chung 1 modal) trước khi chụp rồi trả lại.
+    // headerRef/summaryRef/tableRef NẰM TRONG modal "print:hidden"; onclone của pdf-export XOÁ phần tử
+    // print:hidden khỏi clone → tạm gỡ "print:hidden" ở các TỔ TIÊN (chung 1 modal) trước khi chụp.
     const stripped: HTMLElement[] = [];
     for (let el: HTMLElement | null = headerRef.current; el; el = el.parentElement) {
       if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
     }
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
-      // headerRef (TIÊU ĐỀ + RULE chấm điểm + chú thích) đưa vào dạng KHỐI (full bề ngang, cao tự nhiên)
-      // — KHÔNG dùng ô title 10mm (sẽ bóp rule nhỏ xíu). Tóm tắt: header + biểu đồ + bảng ép gọn 1 trang.
-      const blocks: HTMLElement[] = [];
-      if (headerRef.current) blocks.push(headerRef.current);
-      if (capBlock) blocks.push(capBlock);
       const fileName = `BaoCaoTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`;
+      // PHẠM VI XUẤT:
+      //  • GỘP: header (CÓ chú thích) + Tóm tắt = TRANG 1; bảng Chi tiết = TRANG 2+.
+      //  • Riêng TÓM TẮT: header (ẨN chú thích — trang này không có ô ✓/o/x) + biểu đồ, ép 1 trang.
+      //  • Riêng CHI TIẾT: header (CÓ chú thích) + bảng, cắt trang thường.
+      const blocks: HTMLElement[] = [headerRef.current];
+      let table: HTMLTableElement | null = null;
+      let singlePage = false, tableStartsNewPage = false, hideLegend = false, label = "";
+      if (combined) {
+        if (summaryRef.current) blocks.push(summaryRef.current);
+        table = tableRef.current; singlePage = true; tableStartsNewPage = true;
+        label = "gộp (Tóm tắt + Chi tiết)";
+      } else if (isSummary) {
+        if (summaryRef.current) blocks.push(summaryRef.current);
+        singlePage = true; hideLegend = true;
+        label = "Tóm tắt";
+      } else {
+        table = tableRef.current;
+        label = "Chi tiết";
+      }
       const { pages, blobUrl } = await exportDashboardPdf({
-        blocks,
-        table: capTable,
-        wide: true,
-        orientation,
-        singlePage: isSummary,   // Tóm tắt → ép gọn 1 trang; Chi tiết → cắt trang bình thường
-        preview: isPreview,
-        fileName,
+        blocks, table, wide: true, orientation, singlePage, tableStartsNewPage,
+        hideInBlocks: hideLegend && legendRef.current ? [legendRef.current] : undefined,
+        preview: isPreview, fileName,
       });
-      track("export_pdf", `${isPreview ? "XEM TRƯỚC · " : ""}Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${isSummary ? "Tóm tắt" : "Chi tiết"}`.slice(0, 300));
-      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); }
-      else toast.success(`Đã tạo PDF khổ ${orientation === "portrait" ? "dọc" : "ngang"} (${pages} trang) — ${isSummary ? "biểu đồ Tóm tắt" : "bảng Chi tiết"}`);
+      track("export_pdf", `${isPreview ? "XEM TRƯỚC · " : ""}Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""} · ${label}`.slice(0, 300));
+      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF ${label} (${pages} trang) — soát rồi Tải xuống / In`); }
+      else toast.success(`Đã tạo PDF ${label} khổ ${orientation === "portrait" ? "dọc" : "ngang"} (${pages} trang)`);
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
@@ -6077,7 +6124,6 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
               <div className="text-sm font-bold text-slate-900">ĐÁNH GIÁ TUÂN THỦ CẬP NHẬT MASTER PLAN{data?.monthLabel ? ` THÁNG ${data.monthLabel}` : ""}</div>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
                 <span>Tổng dự án: <b className="tabular-nums text-slate-900">{tongDuAn}</b></span>
-                <span>Số dự án không cập nhật tuần này: <b className="tabular-nums text-red-600">{khongCNTuanNay}</b></span>
               </div>
               {/* Chú thích cách tính điểm + KÝ HIỆU — DÀN 1 HÀNG: điểm dự án · điểm PM · BẢNG chú thích
                   (bên phải). Đặt trong headerRef nên hiện cả khi XUẤT PDF. */}
@@ -6087,7 +6133,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                   <div className="whitespace-nowrap">(1) Khởi điểm <b className="text-slate-800">100 điểm/tháng</b>.</div>
                   <div className="whitespace-nowrap">(2) Không cập nhật (sau 12h thứ 5 hằng tuần): <b className="text-red-600">−{SCORING.deduct.missed} điểm</b>.</div>
                   <div className="whitespace-nowrap">(3) Cập nhật trễ (từ 22h thứ 4 – 12h thứ 5 hằng tuần): <b className="text-amber-600">−{SCORING.deduct.late} điểm</b>.</div>
-                  <div className="whitespace-nowrap">(4) Không trình BOD: <b className="text-amber-600">−10 điểm</b>.</div>
+                  <div className="whitespace-nowrap">(4) Không trình Master Plan cập nhật: <b className="text-amber-600">−10 điểm</b>.</div>
                 </div>
                 <div className="flex flex-col">
                   <div className="font-semibold text-slate-700">Cách tính điểm tuân thủ PM:</div>
@@ -6099,7 +6145,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                     </span>
                   </div>
                 </div>
-                <div className="flex flex-col">
+                <div ref={legendRef} className="flex flex-col">
                   <div className="mb-1 font-semibold text-slate-700">Chú thích:</div>
                   <div className="flex flex-1 items-center">
                     <div className="overflow-hidden rounded-md border border-slate-300">
@@ -6133,7 +6179,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
           </div>
           <div className="flex shrink-0 items-center gap-2 print:hidden">
             <PdfExportMenu
-              onPrint={(o, mode) => void doExportPdf(o, mode)}
+              onPrint={(o, mode) => void doExportPdf(o, mode, "view")}
+              onCombined={(o, mode) => void doExportPdf(o, mode, "combined")}
               disabled={loading || !!error || !data || !byPm.length}
               busy={exporting}
               tone="bg-teal-700 hover:bg-teal-800"
@@ -6154,8 +6201,11 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
             </div>
           ) : !data || !byPm.length ? (
             <div className="py-16 text-center text-sm text-slate-500">File không có dòng dữ liệu nào.</div>
-          ) : view === "summary" ? (
-          <div className="py-2">
+          ) : (
+          <>
+          {/* Render CẢ 2 view: view không active bị đẩy ra ngoài màn (fixed top:100vh) — vẫn nằm trong
+              DOM để chụp PDF GỘP (trang 1 Tóm tắt + trang 2+ Chi tiết) dù đang xem tab nào. */}
+          <div className={view === "summary" ? "py-2" : "pointer-events-none fixed left-0 top-[100vh] w-[1120px]"} aria-hidden={view !== "summary"}>
             {/* TRANG TÓM TẮT — TIÊU ĐỀ + RULE chấm điểm đã ở đầu dialog (headerRef, cũng đưa vào PDF) nên
                 ở đây CHỈ còn biểu đồ cột + bảng gọn (bỏ header/KPI trùng lặp). Cột flex-1 giãn đều → FIT 1
                 trang; đường mốc + cột + nhãn số CHUNG hệ quy chiếu → mốc 70 đúng dưới đỉnh cột 75. */}
@@ -6171,7 +6221,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                     <div className="h-0 flex-1 border-t border-dashed" style={{ borderColor: mk === 70 ? "#86efac" : "#fde047" }} />
                   </div>
                 ))}
-                <div className="flex h-full items-end gap-2">
+                <div className="flex h-full items-end gap-1">
                   {byPm.map(({ pm, pmScore }) => {
                     const s = pmScore;
                     const bg = s == null ? "#cbd5e1" : s < 50 ? "#ef4444" : s < 70 ? "#eab308" : "#22c55e";
@@ -6179,7 +6229,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                     const h = Math.max(1, Math.min(100, s ?? 0));
                     return (
                       <div key={pm} className="relative flex h-full min-w-0 flex-1 items-end" title={`${pm}: ${s ?? "—"}`}>
-                        <div className="w-full rounded-t" style={{ height: `${h}%`, background: bg }} />
+                        <div className="mx-auto w-[74%] max-w-[46px] rounded-t" style={{ height: `${h}%`, background: bg }} />
                         <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-extrabold tabular-nums" style={{ bottom: `${h}%`, color: fg, marginBottom: "1px" }}>{s ?? "—"}</div>
                       </div>
                     );
@@ -6200,41 +6250,18 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                 <div className="h-3 w-1 rounded-full bg-teal-600" />
                 <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-600">Chi tiết điểm theo dự án</div>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {summaryCols.map((groups, ci) => (
-                  <table key={ci} className="w-full border-collapse overflow-hidden rounded-md text-[8.5px] leading-tight ring-1 ring-slate-200">
-                    <thead>
-                      <tr style={{ background: "#0f2547" }} className="text-white">
-                        <th className="px-1.5 py-1 text-left font-semibold whitespace-nowrap">Người phụ trách</th>
-                        <th className="px-1.5 py-1 text-left font-semibold">Dự án</th>
-                        <th className="px-1.5 py-1 text-center font-semibold">Điểm</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groups.map(({ pm, rs }, gi) => (
-                        rs.map((r, i) => {
-                          const fs = finalScoreOf(r);
-                          const zebra = gi % 2 === 1 ? "#f1f5f9" : "#ffffff";
-                          return (
-                            <tr key={`${ci}-${pm}-${r.stt}-${i}`} style={{ background: zebra }} className="border-b border-slate-100">
-                              {i === 0 && (
-                                <td rowSpan={rs.length} className="border-r border-slate-200 px-1.5 py-0.5 align-top">
-                                  <div className="font-semibold leading-tight text-slate-800">{pm || "—"}</div>
-                                </td>
-                              )}
-                              <td className="border-r border-slate-100 px-1.5 py-0.5 text-slate-700"><div className="max-w-[130px] truncate" title={r.name}>{r.name}</div></td>
-                              <td className="px-1.5 py-0.5 text-center text-[9.5px] font-extrabold tabular-nums" style={{ color: tone3(fs) }}>{scoreLabel(fs)}</td>
-                            </tr>
-                          );
-                        })
-                      ))}
-                    </tbody>
-                  </table>
+              {/* GỌN TỐI ĐA: mỗi PM 1 dòng = TÊN + điểm TB (màu 3 mốc). RÊ CHUỘT vào dòng → tooltip
+                  liệt kê ĐỦ dự án + điểm của PM đó. Chi tiết đầy đủ ở tab "Chi tiết" và trang 2+ khi
+                  xuất PDF. Grid tự dàn nhiều cột → cả 20 PM gói trong vài dòng, không tràn. */}
+              <div className="grid gap-x-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(196px, 1fr))" }}>
+                {byPm.map(({ pm, pmScore, rs }) => (
+                  <PmSummaryRow key={pm} pm={pm || "—"} avgLabel={scoreLabel(pmScore)} avgColor={tone3(pmScore)}
+                    projects={rs.map(r => ({ name: r.name, label: scoreLabel(finalScoreOf(r)), color: tone3(finalScoreOf(r)) }))} />
                 ))}
               </div>
             </div>
           </div>
-          ) : (
+          <div className={view === "detail" ? "" : "pointer-events-none fixed left-0 top-[100vh] w-[1120px]"} aria-hidden={view !== "detail"}>
           <table ref={tableRef} className="w-full border-collapse text-[11px]">
             <thead className="sticky top-0 z-20 text-white">
               <tr>
@@ -6293,6 +6320,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
               ))}
             </tbody>
           </table>
+          </div>
+          </>
           )}
         </div>
 

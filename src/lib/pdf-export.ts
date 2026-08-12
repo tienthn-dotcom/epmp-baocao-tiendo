@@ -63,6 +63,11 @@ export async function exportDashboardPdf(opts: {
   /** ÉP GỌN 1 TRANG: thu toàn bộ khối (title + blocks) cho vừa CHIỀU CAO còn lại của trang (giữ tỉ lệ,
    *  căn giữa) → chắc chắn 1 trang. Dùng cho trang Tóm tắt (biểu đồ + bảng gọn). KHÔNG cắt trang. */
   singlePage?: boolean;
+  /** GỘP: bảng BẮT ĐẦU Ở TRANG MỚI (trang trước dành riêng cho blocks Tóm tắt). */
+  tableStartsNewPage?: boolean;
+  /** Ẩn (display:none) các phần tử này KHI chụp blocks rồi TRẢ LẠI — vd giấu chú thích khỏi trang Tóm tắt
+   *  khi xuất RIÊNG bản Tóm tắt. */
+  hideInBlocks?: HTMLElement[];
   /** XEM TRƯỚC: KHÔNG tải file — trả về `blobUrl` để app hiển thị trong iframe (người dùng soát rồi tự
    *  Tải/In). Bỏ trống/false → tải file như cũ. */
   preview?: boolean;
@@ -113,6 +118,9 @@ export async function exportDashboardPdf(opts: {
   }
 
   /* ── Khối trên ── */
+  // Giấu tạm 1 số phần tử khỏi ẢNH BLOCKS (vd chú thích ✓/o/x không thuộc trang Tóm tắt) — trả lại ngay sau.
+  const tempHidden = (opts.hideInBlocks ?? []).map((el) => ({ el, disp: el.style.display }));
+  tempHidden.forEach(({ el }) => { el.style.display = "none"; });
   if (opts.singlePage && opts.blocks.length) {
     // ÉP 1 TRANG: chụp hết block, thu theo HỆ SỐ CHUNG cho vừa chiều cao còn lại (giữ tỉ lệ, căn giữa).
     const cvs: HTMLCanvasElement[] = [];
@@ -134,10 +142,13 @@ export async function exportDashboardPdf(opts: {
       y += GAP;
     }
   }
+  tempHidden.forEach(({ el, disp }) => { el.style.display = disp; });   // trả lại các phần tử vừa giấu
 
   /* ── Bảng (BỎ QUA nếu không truyền table — vd xuất biểu đồ Tóm tắt) ── */
   const tbl = opts.table;
   if (tbl) {
+  // GỘP: sang TRANG MỚI cho phần bảng (trang trước là Tóm tắt).
+  if (opts.tableStartsNewPage && y > MARGIN + 0.5) { pdf.addPage(); y = MARGIN; }
   // Đo ranh giới hàng phải trên ĐÚNG bảng đang chụp. TRƯỚC: hardcode getElementById("pdf-table") →
   // bảng tuân thủ / khối in master KHÔNG mang id đó nên đo nhầm bảng chính #pdf-table (đang ẩn sau
   // modal) ⇒ thead/hàng-đầu lệch + sót dải navy "đen" dưới bảng. Gán id tạm nếu bảng chưa có id,
