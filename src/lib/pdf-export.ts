@@ -33,12 +33,16 @@ function applyExportClone(doc: Document): void {
   const st = doc.createElement("style");
   st.textContent = `*{font-family:"Segoe UI",Arial,Helvetica,sans-serif !important;font-variant-numeric:normal !important;letter-spacing:normal !important}`
     // Line chia nhóm PM (.pm-group-line) CHỈ hiển thị trên APP — trong BẢN IN PDF ẩn đi (giữ nguyên các viền khác).
-    + `.pm-group-line{border-top-color:transparent !important}`;
+    + `.pm-group-line{border-top-color:transparent !important}`
+    // STATIC-HOÁ MỌI phần tử sticky (thead + th + cột đóng băng): nếu để sticky, khi người dùng ĐÃ CUỘN
+    // bảng rồi mới xuất, html2canvas chụp header ở vị trí "dán" theo scroll → header đi theo chỗ cuộn +
+    // rowSpan (2 cột PM) bị xô lệch nhìn như chưa merge. Ép static → header về đúng đầu bảng, dòng chảy tự nhiên.
+    + `thead,th,tr,[class*="sticky"]{position:static !important;top:auto !important}`;
   doc.head.appendChild(st);
   // Bỏ mọi điều khiển vô dụng trên giấy (đã gắn class print:hidden trong JSX)
   doc.querySelectorAll('[class*="print:hidden"]').forEach((n) => n.remove());
-  // Header bảng đừng sticky trong ảnh chụp
-  doc.querySelectorAll("thead").forEach((n) => (n as HTMLElement).classList.remove("sticky"));
+  // Header bảng đừng sticky trong ảnh chụp (class-based lẫn inline — xem thêm rule CSS ở trên)
+  doc.querySelectorAll<HTMLElement>("thead, th").forEach((n) => { n.classList.remove("sticky"); n.style.position = "static"; });
   // Bảng "Tổng thể tiến độ" đóng băng cột trái bằng inline position:sticky — html2canvas không mô phỏng
   // sticky nên cột sẽ đè/lệch. Trả về static để mọi cột nằm đúng dòng chảy tự nhiên.
   doc.querySelectorAll<HTMLElement>('[style*="position: sticky"], [style*="position:sticky"]')

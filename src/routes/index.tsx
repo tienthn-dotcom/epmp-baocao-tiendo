@@ -508,6 +508,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.53.2", date: "14/08/2026", items: [
+    "Đánh giá tuân thủ — HOTFIX header bảng Chi tiết: khi ĐÃ CUỘN bảng rồi mới bấm xuất PDF, header cột không còn “đi theo” chỗ cuộn — nay LUÔN về đầu bảng, 2 cột Điểm PM/Người phụ trách merge sạch đúng như trên app.",
+    "Header dán (sticky) trên app hết bị “văng” khi cuộn (chỉ dán ở ô tiêu đề, bỏ dán trùng ở thead + thêm z-index).",
+  ] },
   { v: "3.53.1", date: "14/08/2026", items: [
     "Đánh giá tuân thủ — HOTFIX tiêu đề tách theo trang: Tóm tắt = “Báo cáo tuân thủ cập nhật Master Plan”, Chi tiết = “Báo cáo tuân thủ - Danh sách chi tiết” (bản GỘP: trang 1 & trang 2 mỗi trang đúng tiêu đề riêng).",
     "Bảng Chi tiết: sửa header cột bị “nhảy bậy” khi cuộn — nay ghim đúng trên cùng (thêm z-index cho ô tiêu đề dán).",
@@ -6555,7 +6559,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
           </div>
           <div className={view === "detail" ? "" : "pointer-events-none fixed left-0 top-[100vh] w-[1120px]"} aria-hidden={view !== "detail"}>
           <table ref={tableRef} className="w-full border-collapse text-[11px] [&_tbody_td]:border-slate-300">
-            <thead className="sticky top-0 z-20 text-white">
+            <thead className="text-white">
               <tr>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Người phụ trách</th>
