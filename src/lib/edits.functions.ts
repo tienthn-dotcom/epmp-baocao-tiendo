@@ -575,6 +575,76 @@ export const remapKeys = createServerFn({ method: "POST" })
     return { edits: em, completed: cm, updates: um, moved };
   });
 
+/* ── SỬA LỆCH KHOÁ DO CHÈN DỰ ÁN (STT bị dồn) ──
+   Chèn 1 dự án ở giữa (vd STT 11) rồi đánh lại STT → mọi ghi chú/ngày khoá theo `id:<STT>` từ vị trí đó
+   trở đi lệch sang dự án khác. Hàm này DỜI khoá `id:<N>[.sub]` → `id:<N+delta>[.sub]` cho N ≥ from, áp cho
+   CẢ 4 kho (edits · completed · updates · mpflag). CHỐT theo `tag` (lưu ở sysmig:v1) → chạy ĐÚNG 1 LẦN.
+   `dryRun`=true: chỉ đếm + trả mẫu, KHÔNG ghi. Khoá không phải dạng id:<số> (code\0name, h:…) giữ nguyên.
+   Dựng map MỚI hoàn toàn nên phép dời là 1-1, không đè khoá (N≥from→≥from+delta, không đụng khoá <from). */
+const SYSMIG_KEY = "sysmig:v1";
+const DEV_SYSMIG_FILE = ".data/pmo-sysmig.json";
+async function readSysmig(): Promise<Record<string, string>> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(SYSMIG_KEY); return raw ? (JSON.parse(raw) as Record<string, string>) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_SYSMIG_FILE, "utf8")) as Record<string, string>; }
+  catch { return {}; }
+}
+async function writeSysmig(map: Record<string, string>): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(SYSMIG_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_SYSMIG_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+export const remapInsertShift = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      from: z.number().int().min(1),
+      delta: z.number().int().min(-500).max(500),
+      tag: z.string().min(1).max(80),
+      dryRun: z.boolean().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const mig = await readSysmig();
+    const already = !!mig[data.tag];
+    const idRe = /^id:(\d+)(.*)$/s;
+    const shiftKey = (k: string): string => {
+      const m = idRe.exec(k);
+      if (!m) return k;
+      const n = parseInt(m[1], 10);
+      return n >= data.from ? `id:${n + data.delta}${m[2]}` : k;
+    };
+    const remap = <T>(map: Record<string, T>): { out: Record<string, T>; moved: number; samples: string[] } => {
+      const out: Record<string, T> = {}; let moved = 0; const samples: string[] = [];
+      for (const [k, v] of Object.entries(map)) {
+        const nk = shiftKey(k);
+        if (nk !== k) { moved++; if (samples.length < 10) samples.push(`${k} → ${nk}`); }
+        out[nk] = v;
+      }
+      return { out, moved, samples };
+    };
+    const { map: em } = await readAll();
+    const cm = await readCompleted();
+    const um = await readUpdates();
+    const fm = await readMpFlags();
+    const rEm = remap(em), rCm = remap(cm), rUm = remap(um), rFm = remap(fm);
+    const moved = rEm.moved + rCm.moved + rUm.moved + rFm.moved;
+    const breakdown = { edits: rEm.moved, completed: rCm.moved, updates: rUm.moved, mpflag: rFm.moved };
+    const samples = [...rEm.samples, ...rFm.samples].slice(0, 12);
+    // TRẢ VỀ ĐỒNG NHẤT 1 shape (dễ dùng phía client, khỏi narrow union).
+    if (data.dryRun) return { dryRun: true, done: false, skipped: false, already, moved, breakdown, samples };
+    if (already) return { dryRun: false, done: false, skipped: true, already: true, moved: 0, breakdown, samples };
+    if (rEm.moved) await writeAll(rEm.out);
+    if (rCm.moved) await writeCompleted(rCm.out);
+    if (rUm.moved) await writeUpdates(rUm.out);
+    if (rFm.moved) await writeMpFlags(rFm.out);
+    mig[data.tag] = new Date().toISOString();
+    await writeSysmig(mig);
+    return { dryRun: false, done: true, skipped: false, already: false, moved, breakdown, samples };
+  });
+
 /* ── PHÂN CẤP NGƯỜI DÙNG (badge chức vụ PMO/BOD trong comment) — ADMIN tự quản, KHÔNG cần sửa code ──
    Kho KV `roles:v1` = { [email]: "PMO" | "BOD" }. Đọc CÔNG KHAI (mọi người cần để render badge);
    GHI chỉ ADMIN. KV TRỐNG → seed từ DEFAULT_ROLES ở lần ghi đầu (từ đó KV là nguồn sự thật). */

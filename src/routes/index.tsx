@@ -48,7 +48,7 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, getSheetPdf, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type HiddenRows } from "@/lib/edits.functions";
+import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type HiddenRows } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
@@ -508,6 +508,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.52.0", date: "14/08/2026", items: [
+    "CÔNG CỤ ADMIN — “Sửa lệch STT (chèn dự án)”: khi chèn 1 dự án vào giữa làm STT dồn, ghi chú/ngày/cờ bị lệch sang dự án khác. Menu Hệ thống → bấm để dời khoá về đúng dự án (XEM TRƯỚC số lượng rồi mới Áp dụng, chạy 1 lần, ghi nhật ký giám sát).",
+    "Đánh giá tuân thủ · Tóm tắt: danh sách dự án theo nhóm xếp thành các CỘT ĐỀU NHAU (điền dọc từ trên xuống rồi mới sang phải, bé→lớn); biểu đồ điểm TB PM tách khe rõ.",
+    "Đánh giá tuân thủ: cột “Cần cập nhật MP” nay HIỆN các dự án đang cần cập nhật (vàng nhạt = tuần đầu chưa trừ; đậm dần vàng→đỏ theo số TUẦN BÁO CÁO còn cờ). Đếm theo KỲ BÁO CÁO — tuần dính cờ đầu tiên được miễn, sang tuần báo cáo kế tiếp mà vẫn còn cờ mới bắt đầu −10đ/tuần.",
+    "Xuất PDF tuân thủ: bảng Chi tiết & bản Gộp nay PHỦ KÍN bề ngang trang (autofit, cột giàn đều), header cân với bảng, gọn 1 trang; xuất riêng Tóm tắt header hết lỗ hổng khi ẩn chú thích.",
+    "Sửa dấu tuần hiện hành: tô XANH đúng cột tuần CHỨA hôm nay (vd 13/08 tô 12/08, không nhảy sang 19/08).",
+  ] },
   { v: "3.51.0", date: "12/08/2026", items: [
     "Đánh giá tuân thủ · Tóm tắt: biểu đồ điểm TB PM TÁCH KHE các cột cho rõ; phần “Chi tiết điểm theo dự án” gọn lại — mỗi PM 1 dòng (tên + điểm TB), RÊ CHUỘT vào PM hiện bảng nổi liệt kê đủ dự án + điểm. Bỏ “Số dự án không cập nhật tuần này”; đổi “Không trình BOD” → “Không trình Master Plan cập nhật”.",
     "Xuất PDF báo cáo tuân thủ thêm kiểu GỘP (Tóm tắt trang 1 + Chi tiết trang 2 trở đi, 1 file); xuất riêng Tóm tắt thì bỏ phần chú thích ✓/o/x (không cần), xuất Chi tiết vẫn có.",
@@ -2311,22 +2318,35 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   }, [remapReady, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
 
   /* SỐ TUẦN cờ MP/BOD tồn tại theo TÊN dự án (chuẩn hoá) — cho ComplianceDialog tô màu + trừ điểm.
-     Tuần = floor((hôm nay − ngày lần đầu)/7 ngày): tuần đầu = 0 (chưa trừ), mỗi tuần sau +1 (−10đ).
+     ĐẾM THEO KỲ BÁO CÁO (tuần Thứ 2–CN, khớp cột tuần của báo cáo): tuần MỚI DÍNH CỜ = 0 (miễn, chưa
+     trừ) → SANG TUẦN BÁO CÁO KẾ TIẾP mà vẫn còn cờ = 1 (−10đ), mỗi tuần báo cáo tiếp theo +1. KHÔNG đếm
+     theo mốc "đủ 7 ngày kể từ ngày nhập" nữa (để nhập giữa tuần vẫn được miễn trọn tuần đó).
      Cùng tên trùng (dòng con) → lấy MAX (hiện trường hợp nặng nhất). */
   const mpWeeksByName = useMemo(() => {
-    const DAY = 86400000;
-    const tNow = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10));
+    const DAY = 86400000, WEEK = 7 * DAY;
+    // Số thứ tự TUẦN (Thứ 2–CN). Mốc 1970-01-05 là Thứ 2 (= 4 ngày sau epoch) → cùng tuần ⇒ cùng số.
+    const weekNo = (t: number) => Math.floor((t - 4 * DAY) / WEEK);
+    const wNow = weekNo(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)));
     const m = new Map<string, number>();
     for (const p of data.projects) {
       const first = mpFlags[pkProj(p)];
       if (!first) continue;
-      const tf = Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, +first.slice(8, 10));
-      const weeks = Math.max(0, Math.floor((tNow - tf) / (7 * DAY)));
+      const wFirst = weekNo(Date.UTC(+first.slice(0, 4), +first.slice(5, 7) - 1, +first.slice(8, 10)));
+      const weeks = Math.max(0, wNow - wFirst);          // số KỲ BÁO CÁO đã qua kể từ tuần dính cờ
       const k = normProjName(p.name);
       m.set(k, Math.max(m.get(k) ?? 0, weeks));
     }
     return m;
   }, [data.projects, mpFlags, today, pkProj]);
+
+  /* TÊN dự án (chuẩn hoá) ĐANG có cờ "Cần cập nhật MP" — để bảng tuân thủ ĐÁNH DẤU cột KỂ CẢ khi mới gắn
+     cờ tuần đầu (weeks=0, chưa trừ điểm). Lấy từ mpProjectKeys (cờ hiện tại) nên KHÔNG phụ thuộc mốc
+     firstSeen: dự án vừa dính cờ tuần này vẫn hiện ngay, thay vì để trống tới khi qua 1 tuần. */
+  const mpFlaggedNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of data.projects) if (mpProjectKeys.has(pkProj(p))) s.add(normProjName(p.name));
+    return s;
+  }, [data.projects, mpProjectKeys, pkProj]);
 
   /* ────────────────────────────────────────────────────────────────
    * HÀM LỌC TRUNG TÂM — getFilteredProjects (src/lib/filter.ts).
@@ -3131,6 +3151,41 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // XEM TRƯỚC PDF (dashboard) — blob hiện trong iframe, chưa tải.
   const [pdfPreview, setPdfPreview] = useState<{ url: string; name: string } | null>(null);
 
+  /* SỬA LỆCH STT do CHÈN DỰ ÁN (ADMIN, chạy 1 lần) — chèn 1 dự án ở STT 11 làm khoá id:STT≥11 dồn lệch.
+     Bấm → DRY-RUN (đếm + xem trước) → toast "Áp dụng" → dời `id:N→id:N+1` (N≥11) cho cả 4 kho, ghi audit log. */
+  const fixInsertShift = () => {
+    const TAG = "insert-11-terramare";        // chốt chạy-1-lần theo tag (đổi tag nếu có đợt chèn khác)
+    void (async () => {
+      try {
+        const dry = await remapInsertShift({ data: { from: 11, delta: 1, tag: TAG, dryRun: true } });
+        if (dry.already) { toast("Đã sửa lệch đợt này trước đó rồi — không dời lại (chống dời 2 lần)."); return; }
+        if (!dry.moved) { toast("Không có khoá id:STT ≥ 11 nào cần dời."); return; }
+        const b = dry.breakdown;
+        toast(`Sẽ dời ${dry.moved} khoá về đúng dự án — vướng mắc/giải pháp ${b.edits} · ngày kết thúc ${b.completed} · lịch sử update ${b.updates} · cờ MP ${b.mpflag}. Bấm "Áp dụng" để chạy 1 lần.`, {
+          duration: 20000,
+          action: {
+            label: "Áp dụng",
+            onClick: () => void (async () => {
+              try {
+                const r = await remapInsertShift({ data: { from: 11, delta: 1, tag: TAG, dryRun: false } });
+                if (r.skipped) { toast("Đã chạy trước đó — bỏ qua."); return; }
+                const rb = r.breakdown;
+                track("remap_shift", `SỬA LỆCH STT (chèn dự án ở 11): dời ${r.moved} khoá +1 cho STT≥11 — edits ${rb.edits}, completed ${rb.completed}, updates ${rb.updates}, mpflag ${rb.mpflag}`);
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["edits"] }),
+                  queryClient.invalidateQueries({ queryKey: ["completedDates"] }),
+                  queryClient.invalidateQueries({ queryKey: ["updateHistory"] }),
+                  queryClient.invalidateQueries({ queryKey: ["mpFlags"] }),
+                ]);
+                toast.success(`Đã dời ${r.moved} khoá — vướng mắc/giải pháp về đúng dự án. Mọi người nhập tiếp được rồi.`);
+              } catch (e) { toast.error(`Áp dụng lỗi: ${(e as Error).message}`); }
+            })(),
+          },
+        });
+      } catch (e) { toast.error(`Kiểm tra lỗi: ${(e as Error).message}`); }
+    })();
+  };
+
   // ── PHÂN CẤP: bảng email→cấp (KV) cấp qua RolesCtx cho RoleBadge. Rỗng → DEFAULT_ROLES. ──
   const rolesQuery = useQuery({
     queryKey: ["userRoles"],
@@ -3160,6 +3215,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         error={complianceFileQuery.error as Error | null}
         regionByName={regionByName}
         mpWeeksByName={mpWeeksByName}
+        mpFlaggedNames={mpFlaggedNames}
         today={today}
         onRetry={() => complianceFileQuery.refetch()}
         onClose={() => setShowCompliance(false)} />}
@@ -3179,6 +3235,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
           qualityIssues={canSeeSystem ? dataQualityBad.length : 0}
           onOpenQuality={() => { setShowDataQ(true); track("open_dataquality"); }}
           onOpenSource={me.isAdmin ? () => { onOpenSource(); track("open_source"); } : undefined}
+          onFixShift={me.isAdmin ? fixInsertShift : undefined}
           tvMode={tvMode}
           onToggleTv={toggleTvMode}
         />
@@ -3733,7 +3790,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
       {vis.map((m) => editId === m.id ? (
-        <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-amber-300 bg-amber-50 p-1.5">
+        <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-slate-200 bg-white p-1.5">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
             onKeyDown={(e) => {
               if (e.key === "Escape") { e.stopPropagation(); setEditId(null); return; }
@@ -3748,7 +3805,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
         </div>
       ) : (
         <div key={m.id}
-          className="rounded-lg rounded-tl-none border border-amber-200 bg-amber-50 px-2 py-1">
+          className="rounded-lg rounded-tl-none border border-slate-200 bg-white px-2 py-1">
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
@@ -3810,7 +3867,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
         {msgs.length === 0
           ? <div className="py-6 text-center text-[12px] text-slate-400">Chưa có {noun} nào. Soạn ở ô dưới rồi bấm Gửi.</div>
           : msgs.map((m) => (
-            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-amber-200 bg-amber-50"}`}>
+            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-slate-200 bg-white"}`}>
               <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
                 {m.author !== "(cũ)" && <RoleBadge email={m.author} />}
                 <span className="font-semibold text-slate-800">{m.author === "(cũ)" ? "(cũ)" : (m.author || "?").split("@")[0]}</span>
@@ -5462,7 +5519,7 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
  *  Đánh giá tuân thủ (theo tháng) + Nhật ký giám sát (chỉ admin). Thêm tính năng sau chỉ
  *  cần push thêm 1 item vào mảng. Không có mục nào khả dụng → không hiện nút (menu rỗng vô nghĩa).
  *  Vẫn giữ TÍN HIỆU: có dự án chưa cập nhật đúng hạn → chấm đỏ trên nút dù đang thu gọn. */
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenQuality, onOpenSource, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenQuality, onOpenSource, onFixShift, tvMode, onToggleTv }: {
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
@@ -5474,6 +5531,8 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   onOpenQuality?: () => void;
   /** Đổi nguồn dữ liệu (CHỈ admin) — mở dialog Nguồn dữ liệu. */
   onOpenSource?: () => void;
+  /** Sửa lệch khoá do CHÈN dự án (CHỈ admin) — dời id:STT về đúng dự án, chạy 1 lần. */
+  onFixShift?: () => void;
   /** Chế độ Trình chiếu TV (fullscreen cả app + lấp đầy màn hình lớn) — bật/tắt ngay trong menu. */
   tvMode: boolean;
   onToggleTv: () => void;
@@ -5495,6 +5554,7 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
   if (isAdmin && onOpenSource) items.push({ icon: <Settings className="h-4 w-4 text-slate-500" />, label: "Nguồn dữ liệu", onClick: onOpenSource });
+  if (isAdmin && onFixShift) items.push({ icon: <RotateCcw className="h-4 w-4 text-orange-500" />, label: "Sửa lệch STT (chèn dự án)", onClick: onFixShift });
   // Trình chiếu TV — CHO MỌI NGƯỜI (không riêng admin): fullscreen cả app + phóng lấp đầy màn TV.
   items.push({ icon: <Tv className="h-4 w-4 text-violet-600" />, label: tvMode ? "Tắt trình chiếu TV" : "Trình chiếu TV", active: tvMode, onClick: onToggleTv });
   if (items.length === 0) return null;
@@ -5955,16 +6015,19 @@ function PmSummaryRow({ pm, avgLabel, avgColor, projects }: {
   );
 }
 
-function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, today, onRetry, onClose }: {
+function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, today, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
-  regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; today: string; onRetry: () => void; onClose: () => void;
+  regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; today: string; onRetry: () => void; onClose: () => void;
 }) {
   useEscapeToClose(onClose);
   // SỐ TUẦN cờ "Cần cập nhật MP / trình BOD" tồn tại (0 = tuần đầu/không cờ). Nền cho trừ điểm + tô màu.
   const mpWeeksOf = (r: ComplianceFileRow) => mpWeeksByName.get(normProjName(r.name)) ?? 0;
-  // TÔ MÀU cột "Cần cập nhật MP" — CF liên tục VÀNG (1 tuần) → ĐỎ (≥6 tuần). 0 tuần/không cờ = trống.
-  const mpFillStyle = (weeks: number): CSSProperties => {
-    if (weeks <= 0) return {};
+  // Dự án ĐANG có cờ "Cần cập nhật MP" (khớp theo tên) — kể cả tuần đầu (chưa trừ điểm).
+  const mpFlaggedOf = (r: ComplianceFileRow) => mpFlaggedNames.has(normProjName(r.name));
+  // TÔ MÀU cột "Cần cập nhật MP": VÀNG NHẠT = đang cần cập nhật (tuần đầu, chưa trừ) → VÀNG (1 tuần trừ) →
+  //   ĐỎ (≥6 tuần). KHÔNG cờ = trống. Nhờ vậy dự án vừa dính cờ tuần này VẪN hiện ngay (không để trống).
+  const mpFillStyle = (weeks: number, flagged: boolean): CSSProperties => {
+    if (weeks <= 0) return flagged ? { background: "hsl(52, 95%, 74%)" } : {}; // tuần đầu = vàng nhạt
     const t = Math.min(1, (weeks - 1) / 5);          // 0 ở 1 tuần → 1 ở ≥6 tuần
     const hue = Math.round(52 * (1 - t));            // 52° vàng → 0° đỏ
     return { background: `hsl(${hue}, 92%, ${Math.round(58 - 8 * t)}%)` };
@@ -5994,13 +6057,19 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
     for (let j = data.weeks.length - 1; j >= 0; j--) if (data.rows.some(r => r.marks[j] != null)) return j;
     return -1;
   }, [data]);
-  // TUẦN HIỆN HÀNH (để TÔ MÀU cột) = theo LỊCH: cột tuần đầu tiên có ngày ≥ HÔM NAY (vd hôm nay
-  // 28/07 → tô 29/07, không phải 22/07); nếu hôm nay đã qua hết mốc → cột cuối.
+  // TUẦN HIỆN HÀNH (để TÔ MÀU cột) = cột tuần (ngày Thứ 4) RƠI TRONG TUẦN Thứ2–CN CHỨA HÔM NAY.
+  // Vd hôm nay 13/08 (đã qua Thứ 4 12/08) vẫn tô 12/08 — KHÔNG nhảy sang 19/08. Không có cột nào rơi
+  // đúng tuần này (đầu/cuối tháng) → lấy cột gần nhất ≤ CN tuần này; không có nữa → cột đầu.
   const curWeekIdx = useMemo(() => {
     if (!data || !data.weeks.length) return -1;
     const toTs = (w: string) => { const m = w.match(/^(\d{1,2})\/(\d{1,2})$/); return m ? Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]) : null; };
-    for (let j = 0; j < data.weeks.length; j++) { const t = toTs(data.weeks[j]); if (t != null && t >= tToday) return j; }
-    return data.weeks.length - 1;
+    const dow = new Date(tToday).getUTCDay();                 // 0=CN..6=T7
+    const mon = tToday - ((dow + 6) % 7) * 86400000;          // Thứ 2 tuần này
+    const sun = mon + 6 * 86400000;                           // CN tuần này
+    for (let j = 0; j < data.weeks.length; j++) { const t = toTs(data.weeks[j]); if (t != null && t >= mon && t <= sun) return j; }
+    let best = -1;
+    for (let j = 0; j < data.weeks.length; j++) { const t = toTs(data.weeks[j]); if (t != null && t <= sun) best = j; }
+    return best >= 0 ? best : 0;
   }, [data, tToday, repYear, repMon]);
   // MAX cho data bar "số lần không cập nhật" = TỔNG số tuần trong THÁNG (không phải số tuần đã
   // trôi qua) → tháng có 4 tuần thì count 1 chỉ chiếm 1/4 ô (theo yêu cầu hiển thị của PMO).
@@ -6074,6 +6143,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
     for (let el: HTMLElement | null = headerRef.current; el; el = el.parentElement) {
       if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
     }
+    let restoreHeaderJustify: (() => void) | undefined; // xuất Tóm tắt: ẩn chú thích → dồn 2 cột còn lại về trái, tránh gạt cột PM ra sát mép
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
       const fileName = `BaoCaoTuanThu_MP_${(data?.monthLabel ?? today).replace(/[/-]/g, "")}.pdf`;
@@ -6083,21 +6153,30 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
       //  • Riêng CHI TIẾT: header (CÓ chú thích) + bảng, cắt trang thường.
       const blocks: HTMLElement[] = [headerRef.current];
       let table: HTMLTableElement | null = null;
-      let singlePage = false, tableStartsNewPage = false, hideLegend = false, label = "";
+      let singlePage = false, tableStartsNewPage = false, hideLegend = false, tableFitOnePage = false, label = "";
       if (combined) {
         if (summaryRef.current) blocks.push(summaryRef.current);
-        table = tableRef.current; singlePage = true; tableStartsNewPage = true;
+        table = tableRef.current; singlePage = true; tableStartsNewPage = true; tableFitOnePage = true;
         label = "gộp (Tóm tắt + Chi tiết)";
       } else if (isSummary) {
         if (summaryRef.current) blocks.push(summaryRef.current);
         singlePage = true; hideLegend = true;
         label = "Tóm tắt";
+        // Chú thích bị ẩn → hàng "cách tính điểm" chỉ còn 2 cột. justify-between sẽ gạt cột PM ra sát mép
+        // phải (chừa lỗ hổng giữa nhìn kì). Tạm dồn 2 cột về TRÁI + khoảng cách vừa phải; trả lại ở finally.
+        const row = legendRef.current?.parentElement as HTMLElement | undefined;
+        if (row) {
+          const pj = row.style.justifyContent, pg = row.style.columnGap;
+          row.style.justifyContent = "flex-start";
+          row.style.columnGap = "3.5rem";
+          restoreHeaderJustify = () => { row.style.justifyContent = pj; row.style.columnGap = pg; };
+        }
       } else {
-        table = tableRef.current;
+        table = tableRef.current; tableFitOnePage = true;   // CHI TIẾT: ép GỌN 1 TRANG (sếp không cho tràn trang 2)
         label = "Chi tiết";
       }
       const { pages, blobUrl } = await exportDashboardPdf({
-        blocks, table, wide: true, orientation, singlePage, tableStartsNewPage,
+        blocks, table, wide: true, orientation, singlePage, tableStartsNewPage, tableFitOnePage,
         hideInBlocks: hideLegend && legendRef.current ? [legendRef.current] : undefined,
         preview: isPreview, fileName,
       });
@@ -6107,6 +6186,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
+      restoreHeaderJustify?.();
       stripped.forEach((el) => el.classList.add("print:hidden"));
       toast.dismiss(tid);
       setExporting(false);
@@ -6210,55 +6290,90 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                 ở đây CHỈ còn biểu đồ cột + bảng gọn (bỏ header/KPI trùng lặp). Cột flex-1 giãn đều → FIT 1
                 trang; đường mốc + cột + nhãn số CHUNG hệ quy chiếu → mốc 70 đúng dưới đỉnh cột 75. */}
             <div ref={summaryRef} className="px-3">
-              <div className="mb-1 flex items-center gap-2">
-                <div className="h-3 w-1 rounded-full bg-teal-600" />
-                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-600">Điểm trung bình theo PM</div>
+              {/* MỤC 1 — Điểm TB theo Project Manager: THANH NGANG 2 cột, xếp CAO→THẤP, màu theo mốc.
+                  Tên PM ĐẦY ĐỦ (không viết tắt). */}
+              <div className="mb-1.5 flex items-center gap-2 rounded bg-slate-100 px-2 py-1">
+                <div className="h-3.5 w-1 rounded-full bg-teal-600" />
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-700">1. Điểm trung bình theo Project Manager</div>
               </div>
-              <div className="relative mx-5 mt-6 h-44 border-b border-slate-300">
-                {[70, 50].map((mk) => (
-                  <div key={mk} className="pointer-events-none absolute inset-x-0 flex items-center" style={{ bottom: `${mk}%` }}>
-                    <span className="-ml-5 w-4 text-right text-[8px] font-bold" style={{ color: mk === 70 ? "#16a34a" : "#ca8a04" }}>{mk}</span>
-                    <div className="h-0 flex-1 border-t border-dashed" style={{ borderColor: mk === 70 ? "#86efac" : "#fde047" }} />
-                  </div>
-                ))}
-                <div className="flex h-full items-end gap-1">
-                  {byPm.map(({ pm, pmScore }) => {
-                    const s = pmScore;
-                    const bg = s == null ? "#cbd5e1" : s < 50 ? "#ef4444" : s < 70 ? "#eab308" : "#22c55e";
-                    const fg = s == null ? "#94a3b8" : s < 50 ? "#dc2626" : s < 70 ? "#ca8a04" : "#16a34a";
-                    const h = Math.max(1, Math.min(100, s ?? 0));
-                    return (
-                      <div key={pm} className="relative flex h-full min-w-0 flex-1 items-end" title={`${pm}: ${s ?? "—"}`}>
-                        <div className="mx-auto w-[74%] max-w-[46px] rounded-t" style={{ height: `${h}%`, background: bg }} />
-                        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-extrabold tabular-nums" style={{ bottom: `${h}%`, color: fg, marginBottom: "1px" }}>{s ?? "—"}</div>
+              {(() => {
+                const barColor = (s: number | null) => (s == null ? "#cbd5e1" : s < 50 ? "#ef4444" : s <= 70 ? "#eab308" : "#22c55e");
+                const sorted = [...byPm].sort((a, b) => (b.pmScore ?? -9999) - (a.pmScore ?? -9999) || a.pm.localeCompare(b.pm, "vi"));
+                const half = Math.ceil(sorted.length / 2);
+                return (
+                  <div className="mb-3 grid grid-cols-2 gap-x-8">
+                    {[sorted.slice(0, half), sorted.slice(half)].map((col, ci) => (
+                      <div key={ci} className="flex flex-col">
+                        {col.map(({ pm, pmScore }) => {
+                          const s = pmScore; const c = barColor(s);
+                          return (
+                            <div key={pm} className="flex items-center gap-2 py-[2px]">
+                              <span className="w-[132px] shrink-0 whitespace-nowrap text-[9.5px] text-slate-800">{pm || "—"}</span>
+                              <span className="h-2.5 flex-1 overflow-hidden rounded-sm bg-slate-100">
+                                <span className="block h-full rounded-sm" style={{ width: `${Math.max(2, Math.min(100, s ?? 0))}%`, background: c }} />
+                              </span>
+                              <b className="w-7 shrink-0 text-right text-[10px] tabular-nums" style={{ color: c }}>{scoreLabel(s)}</b>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* NHÃN PM — xoay chéo 45° (KHÔNG viết dọc), đầu phải canh dưới tâm cột */}
-              <div className="mx-5 flex gap-2" style={{ height: 66 }}>
-                {byPm.map(({ pm }) => (
-                  <div key={pm} className="relative min-w-0 flex-1">
-                    <span className="absolute left-1/2 top-0 origin-top-right -translate-x-full -rotate-45 whitespace-nowrap text-[8.5px] leading-none text-slate-600" title={pm}>{pm || "—"}</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-              {/* BẢNG GỌN: Người phụ trách · Dự án · Điểm dự án — chia 2 CỘT cho vừa 1 trang (điểm = điểm
-                  CUỐI, đã trừ BOD; màu 3 mốc như chart). Zebra theo NHÓM PM cho dễ dò. */}
-              <div className="mb-1 mt-3 flex items-center gap-2">
-                <div className="h-3 w-1 rounded-full bg-teal-600" />
-                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-600">Chi tiết điểm theo dự án</div>
-              </div>
-              {/* GỌN TỐI ĐA: mỗi PM 1 dòng = TÊN + điểm TB (màu 3 mốc). RÊ CHUỘT vào dòng → tooltip
-                  liệt kê ĐỦ dự án + điểm của PM đó. Chi tiết đầy đủ ở tab "Chi tiết" và trang 2+ khi
-                  xuất PDF. Grid tự dàn nhiều cột → cả 20 PM gói trong vài dòng, không tràn. */}
-              <div className="grid gap-x-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(196px, 1fr))" }}>
-                {byPm.map(({ pm, pmScore, rs }) => (
-                  <PmSummaryRow key={pm} pm={pm || "—"} avgLabel={scoreLabel(pmScore)} avgColor={tone3(pmScore)}
-                    projects={rs.map(r => ({ name: r.name, label: scoreLabel(finalScoreOf(r)), color: tone3(finalScoreOf(r)) }))} />
-                ))}
-              </div>
+                );
+              })()}
+              {/* MỤC 2 — DANH SÁCH TỔNG HỢP tất cả dự án, chia 3 NHÓM theo điểm; mỗi dự án 1 CHIP
+                  bo tròn (tên ĐẦY ĐỦ + điểm), tô màu theo nhóm. Xếp điểm THẤP→CAO trong nhóm. */}
+              {(() => {
+                const base = vungSel.length ? data.rows.filter(r => vungSel.includes(regionByName.get(normProjName(r.name)) ?? "—")) : data.rows;
+                const scored = base.map(r => ({ r, s: finalScoreOf(r) }));
+                const tiers = [
+                  { label: "Nhóm cần chú ý & tồn đọng", range: "Điểm < 50", dot: "#ef4444", head: "#dc2626", bg: "#fef2f2", bd: "#fecaca", nameC: "#7f1d1d", test: (s: number | null) => s != null && s < 50 },
+                  { label: "Nhóm trung bình", range: "Từ 50 đến 70 điểm", dot: "#f59e0b", head: "#d97706", bg: "#fffbeb", bd: "#fde68a", nameC: "#78350f", test: (s: number | null) => s != null && s >= 50 && s <= 70 },
+                  { label: "Nhóm tốt & khá", range: "Đạt > 70 điểm", dot: "#22c55e", head: "#16a34a", bg: "#f0fdf4", bd: "#bbf7d0", nameC: "#14532d", test: (s: number | null) => s != null && s > 70 },
+                ];
+                const naList = scored.filter(x => x.s == null);
+                return (
+                  <>
+                    <div className="mb-1.5 mt-2 flex items-center gap-2 rounded bg-slate-100 px-2 py-1">
+                      <div className="h-3.5 w-1 rounded-full bg-teal-600" />
+                      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-700">2. Danh sách tổng hợp {base.length} dự án</div>
+                    </div>
+                    {tiers.map((t, ti) => {
+                      const list = scored.filter(x => t.test(x.s)).sort((a, b) => (a.s ?? 0) - (b.s ?? 0) || a.r.name.localeCompare(b.r.name, "vi"));
+                      if (!list.length) return null;
+                      return (
+                        <div key={ti} className="mb-2">
+                          <div className="mb-1 flex items-center gap-1.5">
+                            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: t.dot }} />
+                            <span className="text-[10px] font-bold uppercase" style={{ color: t.head }}>{t.label} <span className="font-semibold normal-case">({list.length} dự án · {t.range})</span></span>
+                          </div>
+                          <div className="grid gap-1" style={{ gridAutoFlow: "column", gridTemplateRows: `repeat(${Math.ceil(list.length / 6)}, auto)`, gridAutoColumns: "minmax(0, 1fr)" }}>
+                            {list.map(({ r, s }, i) => (
+                              <span key={`${r.stt}-${i}`} className="flex items-baseline justify-between gap-1 rounded-full border px-2 py-[2px] text-[9px] leading-tight" style={{ background: t.bg, borderColor: t.bd }}>
+                                <span className="min-w-0" style={{ color: t.nameC }}>{r.name}</span>
+                                <b className="shrink-0 tabular-nums" style={{ color: t.head }}>{scoreLabel(s)}</b>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {naList.length > 0 && (
+                      <div className="mb-1">
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-300" />
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Chưa có dữ liệu tháng này <span className="font-semibold normal-case">({naList.length} dự án)</span></span>
+                        </div>
+                        <div className="grid gap-1" style={{ gridAutoFlow: "column", gridTemplateRows: `repeat(${Math.ceil(naList.length / 6)}, auto)`, gridAutoColumns: "minmax(0, 1fr)" }}>
+                          {naList.map(({ r }, i) => (
+                            <span key={`${r.stt}-${i}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-[2px] text-[9px] leading-tight text-slate-500">{r.name}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
           <div className={view === "detail" ? "" : "pointer-events-none fixed left-0 top-[100vh] w-[1120px]"} aria-hidden={view !== "detail"}>
@@ -6292,9 +6407,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, t
                         </td>
                       </>
                     )}
-                    {(() => { const w = mpWeeksOf(r); return (
-                      <td className="border-r border-slate-100 p-0 text-center" title={w > 0 ? `Chưa trình BOD ${w} tuần → −${w * 10} điểm` : "Không có cờ cần cập nhật MP"}>
-                        <div className="mx-auto h-4 w-full" style={mpFillStyle(w)} />
+                    {(() => { const w = mpWeeksOf(r); const flagged = mpFlaggedOf(r); return (
+                      <td className="border-r border-slate-100 p-0 text-center" title={w > 0 ? `Chưa trình BOD ${w} tuần → −${w * 10} điểm` : flagged ? "Đang cần cập nhật MP (tuần đầu — chưa trừ điểm)" : "Không có cờ cần cập nhật MP"}>
+                        <div className="mx-auto h-4 w-full" style={mpFillStyle(w, flagged)} />
                       </td>
                     ); })()}
                     <td className="border-r border-slate-100 px-2 py-1 text-slate-700"><div className="line-clamp-1" title={r.name}>{r.name}</div></td>
