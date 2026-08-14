@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.53.3", date: "14/08/2026", items: [
+    "Đánh giá tuân thủ — xuất PDF Chi tiết: BỎ đường kẻ ngang kẻ xuyên qua ô gộp 2 cột “Điểm PM/Người phụ trách” → nay ô gộp SẠCH, căn giữa đúng y như trên app (chuyển viền ngang giữa hàng từ <tr> sang <td> để html2canvas không kẻ xuyên ô rowSpan).",
+  ] },
   { v: "3.53.2", date: "14/08/2026", items: [
     "Đánh giá tuân thủ — HOTFIX header bảng Chi tiết: khi ĐÃ CUỘN bảng rồi mới bấm xuất PDF, header cột không còn “đi theo” chỗ cuộn — nay LUÔN về đầu bảng, 2 cột Điểm PM/Người phụ trách merge sạch đúng như trên app.",
     "Header dán (sticky) trên app hết bị “văng” khi cuộn (chỉ dán ở ô tiêu đề, bỏ dán trùng ở thead + thêm z-index).",
@@ -6558,7 +6561,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             </div>
           </div>
           <div className={view === "detail" ? "" : "pointer-events-none fixed left-0 top-[100vh] w-[1120px]"} aria-hidden={view !== "detail"}>
-          <table ref={tableRef} className="w-full border-collapse text-[11px] [&_tbody_td]:border-slate-300">
+          <table ref={tableRef} className="w-full border-collapse text-[11px] [&_tbody_td]:border-b [&_tbody_td]:border-slate-300">
             <thead className="text-white">
               <tr>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
@@ -6577,8 +6580,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             <tbody>
               {byPm.map(({ pm, pmScore, rs }, gi) => (
                 rs.map((r, i) => (
-                  <tr key={`${pm}-${r.stt}-${i}`} className={`border-b border-slate-300 hover:bg-teal-50/40${i === 0 && gi > 0 ? " pm-group-line" : ""}`}
+                  <tr key={`${pm}-${r.stt}-${i}`} className={`hover:bg-teal-50/40${i === 0 && gi > 0 ? " pm-group-line" : ""}`}
                       // LINE chia nhóm PM (chỉ trên APP) — class pm-group-line để BẢN IN PDF ẩn đi (applyExportClone).
+                      // Viền ngang giữa hàng đặt ở <td> (không ở <tr>) → html2canvas KHÔNG kẻ xuyên qua ô rowSpan (2 cột PM) → merge sạch.
                       style={i === 0 && gi > 0 ? { borderTop: "1px solid #94a3b8" } : undefined}>
                     {i === 0 && (
                       <>
