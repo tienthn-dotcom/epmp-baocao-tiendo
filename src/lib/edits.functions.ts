@@ -280,8 +280,8 @@ export const saveEdits = createServerFn({ method: "POST" })
  *   hide   : ẩn khỏi bảng (= đã giải quyết) — TÁC GIẢ / ADMIN / PMO (PMO thao tác được tin người khác); unhide = mở lại.
  *   delete : ADMIN hoặc PMO — xoá hẳn (user thường KHÔNG có quyền, chỉ ẩn).
  *   edit   : sửa TEXT 1 message — tác giả (email khớp), ADMIN, hoặc PMO.
- *   sethi  : CHỈ ADMIN — tô/bỏ tô màu 1 đoạn trong text của 1 message.
- *   hiall  : CHỈ ADMIN — tô CẢ Ô (mọi message KHÔNG ẩn tô full); unhiall = bỏ tô cả ô. */
+ *   sethi  : ADMIN & PMO — tô/bỏ tô màu 1 đoạn trong text của 1 message (đỏ ở Vướng mắc, navy ở Giải pháp).
+ *   hiall  : ADMIN & PMO — tô CẢ Ô (mọi message KHÔNG ẩn tô full); unhiall = bỏ tô cả ô. */
 export const editMessages = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
@@ -334,13 +334,13 @@ export const editMessages = createServerFn({ method: "POST" })
         if (i >= 0) list.splice(i, 1);
       }
     } else if (data.op === "sethi") {
-      if (await callerIsAdmin(data.devAs)) {
+      if ((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))) {   // ADMIN & PMO tô/bỏ màu (đỏ ở Vướng mắc, navy ở Giải pháp)
         const m = list.find((x) => x.id === data.msgId);
         if (m) { if (!data.hi || data.hi.length === 0) delete m.hi; else m.hi = clampRanges(data.hi, m.text.length); }
       }
     } else if (data.op === "hiall" || data.op === "unhiall") {
       // Tô/bỏ tô CẢ Ô: áp cho MỌI message KHÔNG ẩn (message ẩn không đụng).
-      if (await callerIsAdmin(data.devAs)) {
+      if ((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))) {
         for (const m of list) {
           if (m.hidden) continue;
           if (data.op === "hiall") m.hi = m.text ? [[0, m.text.length]] : undefined;

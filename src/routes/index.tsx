@@ -508,6 +508,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.53.4", date: "14/08/2026", items: [
+    "Vướng mắc / Giải pháp: CẤP QUYỀN cho PMO được TÔ MÀU (highlight) tin — như admin. Màu tự theo cột: Vướng mắc = ĐỎ, Giải pháp = XANH NAVY. (Bấm biểu tượng bút tô ở góc mỗi tin để tô / bỏ tô.)",
+  ] },
   { v: "3.53.3", date: "14/08/2026", items: [
     "Đánh giá tuân thủ — xuất PDF Chi tiết: BỎ đường kẻ ngang kẻ xuyên qua ô gộp 2 cột “Điểm PM/Người phụ trách” → nay ô gộp SẠCH, căn giữa đúng y như trên app (chuyển viền ngang giữa hàng từ <tr> sang <td> để html2canvas không kẻ xuyên ô rowSpan).",
   ] },
@@ -3854,13 +3857,16 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {((field === "note" && onReply) || canHide(m) || (isAdmin && !!onOp)) && (
+            {((field === "note" && onReply) || canHide(m) || ((isAdmin || isPmo) && !!onOp)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
                   <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
                 )}
-                {/* F16 — TÔ / BỎ màu đỏ tin này (admin) — thay cho nhấp đúp cũ. */}
-                {isAdmin && onOp && <button type="button" title="Tô / bỏ màu đỏ tin này" onClick={(e) => { e.stopPropagation(); const has = (m.hi?.length ?? 0) > 0; void onOp("sethi", { msgId: m.id, hi: has ? null : [[0, m.text.length]] }); }} className={(m.hi?.length ?? 0) > 0 ? "text-red-600" : "hover:text-red-600"}><Highlighter className="h-3 w-3" /></button>}
+                {/* TÔ / BỎ màu tin này — ADMIN & PMO. Màu theo cột: Vướng mắc = ĐỎ, Giải pháp = XANH NAVY (do HiText quyết định). */}
+                {(isAdmin || isPmo) && onOp && (() => { const on = (m.hi?.length ?? 0) > 0; const navy = field === "action"; return (
+                  <button type="button" title={`Tô / bỏ màu ${navy ? "xanh navy" : "đỏ"} tin này`} onClick={(e) => { e.stopPropagation(); void onOp("sethi", { msgId: m.id, hi: on ? null : [[0, m.text.length]] }); }}
+                    className={on ? (navy ? "text-blue-900" : "text-red-600") : (navy ? "hover:text-blue-900" : "hover:text-red-600")}><Highlighter className="h-3 w-3" /></button>
+                ); })()}
                 {canEdit(m) && <button type="button" title="Sửa" onClick={(e) => { e.stopPropagation(); setEditId(m.id); setDraft(m.text); }} className="hover:text-teal-700"><Pencil className="h-3 w-3" /></button>}
                 {canHide(m) && <button type="button" title="Ẩn (coi như đã giải quyết)" onClick={(e) => { e.stopPropagation(); void onOp!("hide", { msgId: m.id }); }} className="hover:text-teal-700"><EyeOff className="h-3.5 w-3.5" /></button>}
               </span>
