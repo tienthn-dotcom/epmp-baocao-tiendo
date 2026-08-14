@@ -508,6 +508,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.53.1", date: "14/08/2026", items: [
+    "Đánh giá tuân thủ — HOTFIX tiêu đề tách theo trang: Tóm tắt = “Báo cáo tuân thủ cập nhật Master Plan”, Chi tiết = “Báo cáo tuân thủ - Danh sách chi tiết” (bản GỘP: trang 1 & trang 2 mỗi trang đúng tiêu đề riêng).",
+    "Bảng Chi tiết: sửa header cột bị “nhảy bậy” khi cuộn — nay ghim đúng trên cùng (thêm z-index cho ô tiêu đề dán).",
+    "Tóm tắt: BỎ dòng ghi chú “* Các dự án lỗi Không cập nhật…”; KÉO CAO bảng “Danh sách không cập nhật” + phóng vừa cho ĐẦY trang in (bớt khoảng trống dư ở dưới).",
+  ] },
   { v: "3.53.0", date: "14/08/2026", items: [
     "Báo cáo tuân thủ — LÀM MỚI BẢN IN cho gọn & đồng bộ giao diện: header CĂN GIỮA, nền xám–thẻ trắng như mẫu (bỏ dải trắng ở đầu), bố cục xếp TỪ TRÊN XUỐNG; tiêu đề bỏ chữ “THÁNG…” lặp (đã có dòng Kỳ báo cáo).",
     "Xuất PDF GỘP: trang Chi tiết (từ trang 2) nay CÓ ĐỦ tiêu đề + phần “Cách tính điểm” + bảng — giống HỆT bản in riêng Chi tiết (trước bị thiếu).",
@@ -6239,7 +6244,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
    *  ngang qua exportDashboardPdf (dùng chung engine với bảng Danh sách). wide=true vì bảng rộng
    *  (nhiều cột tuần) → giữ bề rộng thật rồi thu tỉ lệ cho vừa giấy. */
   const tableRef = useRef<HTMLTableElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);          // header TÓM TẮT (tiêu đề "Báo cáo tuân thủ cập nhật Master Plan")
+  const headerDetailRef = useRef<HTMLDivElement>(null);    // header CHI TIẾT (tiêu đề "Báo cáo tuân thủ - Danh sách chi tiết")
   const summaryRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);   // khối "Chú thích ✓/o/x" — CHỈ nghĩa lý ở bảng Chi tiết; ẩn khi xuất Tóm tắt
   const rulesRef = useRef<HTMLDivElement>(null);    // khối "Cách tính điểm" + chú thích — CHỈ đính vào bản in CHI TIẾT (header Tóm tắt gọn theo mẫu)
@@ -6259,15 +6265,20 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     for (let el: HTMLElement | null = headerRef.current; el; el = el.parentElement) {
       if (el.classList.contains("print:hidden")) { el.classList.remove("print:hidden"); stripped.push(el); }
     }
-    // GỘP xuất từ view TÓM TẮT: khối "Cách tính điểm" (rulesRef) đang display:none → html2canvas chụp canvas
-    // 0×0 → chia 0 = NaN → jsPDF lỗi. Tạm CHO HIỆN đúng layout Chi tiết + đẩy off-screen (giữ bề rộng 1120px)
-    // để chụp vào TRANG CHI TIẾT của bản gộp, rồi trả lại nguyên trạng ở finally.
-    const rulesEl = rulesRef.current;
-    const rulesSavedClass = rulesEl?.className ?? null;
-    const rulesSavedCss = rulesEl?.style.cssText ?? null;
-    if (combined && rulesEl && view !== "detail") {
-      rulesEl.className = COMPLIANCE_RULES_CLS;
-      rulesEl.style.position = "fixed"; rulesEl.style.left = "0"; rulesEl.style.top = "100vh"; rulesEl.style.width = "1120px";
+    // GỘP: cả 2 header (Tóm tắt/Chi tiết) + khối "Cách tính điểm" — phần KHÔNG khớp view hiện tại đang
+    // display:none → html2canvas chụp canvas 0×0 → chia 0 = NaN → jsPDF lỗi. Tạm CHO HIỆN đúng layout + đẩy
+    // off-screen (bề rộng 1120px) để chụp vào đúng trang, rồi trả lại nguyên trạng ở finally.
+    const forceShown: { el: HTMLElement; cls: string; css: string }[] = [];
+    const ensureShown = (el: HTMLElement | null, visibleCls: string) => {
+      if (!el || !el.className.includes("hidden")) return;
+      forceShown.push({ el, cls: el.className, css: el.style.cssText });
+      el.className = visibleCls;
+      el.style.position = "fixed"; el.style.left = "0"; el.style.top = "100vh"; el.style.width = "1120px";
+    };
+    if (combined) {
+      ensureShown(headerRef.current, "text-center");           // header Tóm tắt (ẩn khi đang ở view Chi tiết)
+      ensureShown(headerDetailRef.current, "text-center");     // header Chi tiết (ẩn khi đang ở view Tóm tắt)
+      ensureShown(rulesRef.current, COMPLIANCE_RULES_CLS);     // khối "Cách tính điểm" (ẩn ngoài view Chi tiết)
     }
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
@@ -6276,21 +6287,28 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
       //  • GỘP: header + Tóm tắt = TRANG 1; bảng Chi tiết = TRANG 2+.
       //  • Riêng TÓM TẮT: header gọn + biểu đồ + bảng "không cập nhật", ép 1 trang.
       //  • Riêng CHI TIẾT: header + khối cách tính điểm + bảng, ép gọn 1 trang.
-      const blocks: HTMLElement[] = [headerRef.current];
+      // Header RIÊNG cho từng bảng: Tóm tắt = headerRef ("…cập nhật Master Plan"); Chi tiết = headerDetailRef
+      // ("…Danh sách chi tiết"). Bản GỘP cần CẢ HAI (trang 1 Tóm tắt, trang 2 Chi tiết).
+      const summaryHeader = headerRef.current;
+      const detailHeader = headerDetailRef.current ?? headerRef.current;
+      const blocks: HTMLElement[] = [];
       let table: HTMLTableElement | null = null;
       let detailBlocks: HTMLElement[] | undefined;
       let singlePage = false, tableStartsNewPage = false, tableFitOnePage = false, label = "";
       if (combined) {
+        blocks.push(summaryHeader);
         if (summaryRef.current) blocks.push(summaryRef.current);
         table = tableRef.current; singlePage = true; tableStartsNewPage = true; tableFitOnePage = true;
-        // GỘP: trang Chi tiết (trang 2+) mang header + chú thích cách tính điểm → GIỐNG HỆT bản in riêng Chi tiết.
-        detailBlocks = [headerRef.current, rulesRef.current].filter(Boolean) as HTMLElement[];
+        // GỘP: trang Chi tiết (trang 2+) mang header CHI TIẾT + chú thích cách tính điểm → GIỐNG HỆT bản in riêng.
+        detailBlocks = [detailHeader, rulesRef.current].filter(Boolean) as HTMLElement[];
         label = "gộp (Tóm tắt + Chi tiết)";
       } else if (isSummary) {
+        blocks.push(summaryHeader);
         if (summaryRef.current) blocks.push(summaryRef.current);
         singlePage = true;
         label = "Tóm tắt";
       } else {
+        blocks.push(detailHeader);
         if (rulesRef.current) blocks.push(rulesRef.current);   // CHI TIẾT: kèm khối "Cách tính điểm"
         table = tableRef.current; tableFitOnePage = true;
         label = "Chi tiết";
@@ -6306,7 +6324,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
     } finally {
       stripped.forEach((el) => el.classList.add("print:hidden"));
-      if (rulesEl && rulesSavedClass != null) { rulesEl.className = rulesSavedClass; rulesEl.style.cssText = rulesSavedCss ?? ""; }
+      forceShown.forEach(({ el, cls, css }) => { el.className = cls; el.style.cssText = css; });   // trả lại header/chú thích tạm hiện
       toast.dismiss(tid);
       setExporting(false);
     }
@@ -6320,9 +6338,16 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             {/* headerRef = KHỐI TIÊU ĐỀ vẽ vào đầu PDF (không gồm nút/điều khiển tương tác). */}
             {/* HEADER GỌN (học file mẫu): tiêu đề navy CĂN GIỮA + dòng "Kỳ báo cáo · Tổng số". Phần "Cách
                 tính điểm" ĐÃ TÁCH xuống khối rulesRef (chỉ đính bản in CHI TIẾT). */}
-            <div ref={headerRef} className="text-center">
+            {/* HEADER TÓM TẮT (hiện ở view Tóm tắt + trang 1 bản GỘP) */}
+            <div ref={headerRef} className={view === "detail" ? "hidden" : "text-center"}>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
-              <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">ĐÁNH GIÁ TUÂN THỦ CẬP NHẬT MASTER PLAN</div>
+              <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ cập nhật Master Plan</div>
+              <div className="mt-0.5 text-[11px] text-slate-500">Kỳ báo cáo: {data?.monthLabel ? `Tháng ${data.monthLabel}` : today} · Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</div>
+            </div>
+            {/* HEADER CHI TIẾT (hiện ở view Chi tiết + trang 2+ bản GỘP) */}
+            <div ref={headerDetailRef} className={view === "detail" ? "text-center" : "hidden"}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
+              <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ - Danh sách chi tiết</div>
               <div className="mt-0.5 text-[11px] text-slate-500">Kỳ báo cáo: {data?.monthLabel ? `Tháng ${data.monthLabel}` : today} · Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</div>
             </div>
             {/* KHỐI "Cách tính điểm" + chú thích ✓/o/x — CHỈ hiện ở view CHI TIẾT (đồng bộ với bản in Chi tiết). */}
@@ -6446,11 +6471,10 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   <div className="h-4 w-1 rounded-full bg-[#1e3a5f]" />
                   <div className="text-[11px] font-bold uppercase tracking-wide text-[#1e3a5f]">2. Danh sách không cập nhật trong tuần</div>
                 </div>
-                <div className="mb-1.5 text-[9.5px] italic text-slate-500">* Các dự án lỗi "Không cập nhật" trong tuần {notUpdatedWeekLabel || "này"}.</div>
                 {notUpdatedGroups.length === 0 ? (
                   <div className="py-3 text-center text-[10px] font-medium text-emerald-600">Tuần này không có dự án nào bị "Không cập nhật".</div>
                 ) : (
-                  <table className="w-full border-collapse text-[10px] [&_th]:border-slate-300 [&_td]:border-slate-300">
+                  <table className="w-full border-collapse text-[10px] [&_th]:border-slate-300 [&_td]:border-slate-300 [&_tbody_td]:py-2">
                     <thead>
                       <tr className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
                         <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Project Manager</th>
@@ -6533,14 +6557,14 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
           <table ref={tableRef} className="w-full border-collapse text-[11px] [&_tbody_td]:border-slate-300">
             <thead className="sticky top-0 z-20 text-white">
               <tr>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Người phụ trách</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Cần cập nhật Master Plan / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Cần cập nhật<br />Master Plan</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold">Tên dự án</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm tuân thủ 0–100 (100 − 25·không cập nhật − 10·trễ)">Điểm<br />dự án</th>
-                <th className="sticky top-0 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Số lần<br />không cập nhật</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Người phụ trách</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Cần cập nhật Master Plan / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Cần cập nhật<br />Master Plan</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold">Tên dự án</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm tuân thủ 0–100 (100 − 25·không cập nhật − 10·trễ)">Điểm<br />dự án</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Số lần<br />không cập nhật</th>
                 {data.weeks.map((w, wi) => (
-                  <th key={w} className={`sticky top-0 border-r px-1 py-1.5 text-center font-semibold whitespace-nowrap text-white ${wi === curWeekIdx ? "border-emerald-800" : "border-slate-600 bg-[#1e293b]"}`}
+                  <th key={w} className={`sticky top-0 z-30 border-r px-1 py-1.5 text-center font-semibold whitespace-nowrap text-white ${wi === curWeekIdx ? "border-emerald-800" : "border-slate-600 bg-[#1e293b]"}`}
                       style={wi === curWeekIdx ? { background: "#00B050" } : undefined}
                       title={wi === curWeekIdx ? `Tuần hiện hành — cập nhật tới đây: ${w}` : `Tuần ${w}`}>{w}</th>
                 ))}

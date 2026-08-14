@@ -150,11 +150,13 @@ export async function exportDashboardPdf(opts: {
     const contentH = cvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0);
     const gaps = GAP * (cvs.length - 1);
     const avail = bottomY - y;
-    const scale = Math.min(1, Math.max(0.01, (avail - gaps) / Math.max(1, contentH)));  // KHÔNG phóng quá 1× (phóng lên sẽ tràn bề ngang)
+    const fillScale = (avail - gaps) / Math.max(1, contentH);       // tỉ lệ để LẤP HẾT chiều cao còn lại
+    const maxScaleW = (pageW - 6) / innerW;                         // cho PHÓNG TO lấp bớt khoảng trống dưới, cap bề rộng ≤ pageW−6mm (3mm/bên)
+    const scale = Math.max(0.01, Math.min(fillScale, maxScaleW));   // nội dung ngắn → phóng vừa phải; nội dung dài → thu cho vừa
     for (const cv of cvs) {
       const hMm = (cv.height / cv.width) * innerW * scale;
       const wMm = innerW * scale;
-      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN + (innerW - wMm) / 2, y, wMm, hMm);
+      pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", (pageW - wMm) / 2, y, wMm, hMm);  // căn giữa theo BỀ RỘNG TRANG (scale có thể >1)
       y += hMm + GAP;
     }
   } else if (fitTogether) {
