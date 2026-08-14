@@ -791,3 +791,61 @@ export const setHiddenRow = createServerFn({ method: "POST" })
     await writeHidden(map);
     return { hidden: map };
   });
+
+/* ── TUỲ CHỈNH VÙNG POPUP (admin) — kho KV `sheetview:v1` = { [linkKey]: { sheet?, range? } } ──
+   Popup hyperlink: admin khai TÊN SHEET + VÙNG (A1) cho từng link → app chụp ĐÚNG vùng đó bằng PDF của
+   Google (chart + màu y hệt). Để TRỐNG cả hai → chạy logic mặc định (tự nhận dạng / cả tab). Lưu theo
+   linkKey (chính là `fileId` popup nhận, dạng "fid" hoặc "fid|gid"). Đọc CÔNG KHAI (client cần để áp cấu
+   hình đã lưu cho mọi người xem); GHI chỉ ADMIN. */
+const SHEETVIEW_KEY = "sheetview:v1";
+const DEV_SHEETVIEW_FILE = ".data/pmo-sheetview.json";
+/** pdf=true → ÉP chụp PDF (bỏ tự-nhận-dạng heatmap); sheet/range = tinh chỉnh tab + vùng (tuỳ chọn).
+ *  fileId/gid: khi PMO GẮN LINK THẲNG trong app (không qua hyperlink file import) — key = khoá bền dự án
+ *  (Mã CT + Tên). Có fileId → dự án đó hiện 📊 cho mọi người, popup chụp PDF từ link này. */
+export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string };
+export type SheetViewMap = Record<string, SheetViewCfg>;
+
+async function readSheetViews(): Promise<SheetViewMap> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(SHEETVIEW_KEY); return raw ? (JSON.parse(raw) as SheetViewMap) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_SHEETVIEW_FILE, "utf8")) as SheetViewMap; }
+  catch { return {}; }
+}
+async function writeSheetViews(map: SheetViewMap): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(SHEETVIEW_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_SHEETVIEW_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+/** Đọc cấu hình vùng đã lưu cho 1 link (hoặc cả bảng nếu không truyền key). CÔNG KHAI. */
+export const getSheetViews = createServerFn({ method: "GET" }).handler(async () => {
+  return { views: await readSheetViews() };
+});
+
+/** Lưu/gỡ cấu hình cho 1 link — CHỈ ADMIN. pdf=false → gỡ (về mặc định tự-nhận-dạng). */
+export const saveSheetView = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      key: z.string().min(1).max(200),
+      pdf: z.boolean().optional(),
+      fileId: z.string().max(120).regex(/^[a-zA-Z0-9_-]*$/).optional(),   // link PMO gắn thẳng (Google file id)
+      gid: z.string().max(30).regex(/^\d*$/).optional(),
+      sheet: z.string().max(80).regex(/^[^\n\r]*$/).optional(),
+      range: z.string().max(40).regex(/^[^\n\r]*$/).optional(),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được gắn/tuỳ chỉnh link.");
+    const map = await readSheetViews();
+    const sheet = (data.sheet ?? "").trim();
+    const range = (data.range ?? "").trim();
+    const fileId = (data.fileId ?? "").trim();
+    const gid = (data.gid ?? "").trim();
+    if (!data.pdf) delete map[data.key];   // tắt ép PDF / gỡ link → về mặc định (không hiện 📊 nếu là khoá dự án)
+    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}) };
+    await writeSheetViews(map);
+    return { views: map };
+  });

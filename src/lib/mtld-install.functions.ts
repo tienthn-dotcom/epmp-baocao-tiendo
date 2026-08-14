@@ -191,9 +191,11 @@ export const getSummaryFile = createServerFn({ method: "POST" })
 
 /** TẢI 1 sheet dưới dạng PDF do GOOGLE render (Y HỆT màn hình: có CHART + màu điều kiện + format).
  *  Dùng cho tab "lạ" (không phải Summary/Public Summary) — client hiện thẳng PDF. Cache ghim theo ngày. */
-async function fetchPdfOnce(id: string, gid?: string): Promise<string> {
+async function fetchPdfOnce(id: string, gid?: string, range?: string): Promise<string> {
   const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
-  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}&portrait=false&size=A4&fitw=true&gridlines=true&sheetnames=false&printtitle=false&_ts=${Date.now()}`;
+  const rg = range && range.trim() ? `&range=${encodeURIComponent(range.trim())}` : "";   // giới hạn ĐÚNG vùng admin khai (A1, vd A1:H30) — bỏ trống = cả tab
+  // scale=4 = "Fit to page" → GÓI TRỌN vùng vào 1 TRANG, KHÔNG cắt ngang giữa chart/ma trận (liền mạch).
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&size=A4&scale=4&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&_ts=${Date.now()}`;
   const r = await fetch(url, { redirect: "follow", cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)", Accept: "application/pdf,*/*", "Cache-Control": "no-cache, no-store" } });
   if (!r.ok) throw new Error(`Không tải được PDF (HTTP ${r.status}). Kiểm tra quyền chia sẻ "Anyone with the link".`);
   const bytes = new Uint8Array(await r.arrayBuffer());
@@ -201,29 +203,30 @@ async function fetchPdfOnce(id: string, gid?: string): Promise<string> {
   return toB64(bytes);
 }
 /** Native + gid → PDF ĐÚNG tab. File .xlsx không nhận gid → LÙI về PDF NGUYÊN file (trang đầu = sheet đầu). */
-async function fetchSheetPdf(id: string, gid?: string): Promise<string> {
-  try { return await fetchPdfOnce(id, gid); }
-  catch (e) { if (gid) return await fetchPdfOnce(id); throw e; }
+async function fetchSheetPdf(id: string, gid?: string, range?: string): Promise<string> {
+  try { return await fetchPdfOnce(id, gid, range); }
+  catch (e) { if (gid) return await fetchPdfOnce(id, undefined, range); throw e; }
 }
 
 export const getSheetPdf = createServerFn({ method: "POST" })
-  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), force: z.boolean().optional() }).parse(input))
+  // range = "TênSheet!A1:H30"; đã encodeURIComponent khi ghép URL nên chỉ chặn xuống dòng.
+  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), range: z.string().max(80).regex(/^[^\n\r]*$/).optional(), force: z.boolean().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
     const kv = await getKv();
-    const cacheKey = `spdf:${data.fileId}:${data.gid ?? ""}`;
+    const cacheKey = `spdf2:${data.fileId}:${data.gid ?? ""}:${(data.range ?? "").trim()}`;   // v2 = scale=4 (1 trang); vùng khác → cache riêng
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
         let b64 = hit, ts = 0;
         try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } } catch { /* cache cũ */ }
         if (ts < lastRefreshBoundary(Date.now())) {
-          const job = fetchSheetPdf(data.fileId, data.gid).then((b) => kv.put(cacheKey, JSON.stringify({ b64: b, ts: Date.now() }), { expirationTtl: CACHE_TTL_S })).catch(() => { /* nền */ });
+          const job = fetchSheetPdf(data.fileId, data.gid, data.range).then((b) => kv.put(cacheKey, JSON.stringify({ b64: b, ts: Date.now() }), { expirationTtl: CACHE_TTL_S })).catch(() => { /* nền */ });
           const wu = await getWaitUntil(); if (wu) wu(job);
         }
         return { b64, cached: true };
       }
     }
-    const b64 = await fetchSheetPdf(data.fileId, data.gid);
+    const b64 = await fetchSheetPdf(data.fileId, data.gid, data.range);
     if (kv) { try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi kệ */ } }
     return { b64, cached: false };
   });

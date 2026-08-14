@@ -8,6 +8,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   Highlighter,
+  Link2,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -48,7 +49,7 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, getSheetPdf, recordSummaryFiles } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
-import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type HiddenRows } from "@/lib/edits.functions";
+import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type HiddenRows, type SheetViewCfg, type SheetViewMap } from "@/lib/edits.functions";
 import { whoami, recordActivity, fetchActivityLog } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
@@ -508,6 +509,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.54.0", date: "14/08/2026", items: [
+    "MỚI — PMO GẮN LINK hiển thị thẳng trong app (không cần hyperlink trong file import): rê tới dự án ở cột “Thi công lắp đặt” → bấm “Gắn link” → dán URL Google Sheet + tên sheet + vùng (vd B2:M45) → Xem thử → Lưu. Dự án đã gắn hiện 📊 cho MỌI người bấm xem (ảnh PDF y hệt sheet, gói gọn 1 trang, không cắt ngang chart). Khoá theo Mã CT + Tên nên chèn/đổi STT không lệch. (Sheet phải chia sẻ “Anyone with the link”.)",
+    "Đánh giá tuân thủ — đổi nhãn cho rõ: “Project Manager” → “Người phụ trách”; mục 2 → “Danh sách các dự án không cập nhật tuần …”; cột → “Tên dự án”; cột bảng Chi tiết “Cần cập nhật Master Plan” → “Không trình Master Plan cập nhật”. (Đồng nhất app + bản in PDF.)",
+  ] },
   { v: "3.53.4", date: "14/08/2026", items: [
     "Vướng mắc / Giải pháp: CẤP QUYỀN cho PMO được TÔ MÀU (highlight) tin — như admin. Màu tự theo cột: Vướng mắc = ĐỎ, Giải pháp = XANH NAVY. (Bấm biểu tượng bút tô ở góc mỗi tin để tô / bỏ tô.)",
   ] },
@@ -1837,7 +1842,12 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
     if (ids.length) void recordSummaryFiles({ data: { fileIds: ids } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(Object.values(installLinks).sort())]);
-  const [summaryFileId, setSummaryFileId] = useState<string | null>(null);
+  // Popup xem: {fileId, sheet?, range?, hideAdmin?}. Link PMO gắn → hideAdmin (chỉ xem); hyperlink cũ → có box.
+  const [summaryTarget, setSummaryTarget] = useState<{ fileId: string; sheet?: string; range?: string; hideAdmin?: boolean } | null>(null);
+  const [linkSetup, setLinkSetup] = useState<{ key: string; name: string; cfg?: SheetViewCfg } | null>(null);
+  // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
+  const sheetViewsQuery = useQuery({ queryKey: ["sheetviews"], queryFn: () => getSheetViews(), staleTime: 5 * 60 * 1000 });
+  const sheetViews = sheetViewsQuery.data?.views ?? {};
   useEffect(() => {
     void whoami({ data: { devAs: devAs() } }).then(setMe).catch(() => {});
     track("view");
@@ -3269,7 +3279,8 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         onRetry={() => complianceFileQuery.refetch()}
         onClose={() => setShowCompliance(false)} />}
       {showActivity && <ActivityLogDialog onClose={() => setShowActivity(false)} />}
-      {summaryFileId && <SummaryDialog fileId={summaryFileId} onClose={() => setSummaryFileId(null)} />}
+      {summaryTarget && <SummaryDialog fileId={summaryTarget.fileId} initSheet={summaryTarget.sheet} initRange={summaryTarget.range} onClose={() => setSummaryTarget(null)} />}
+      {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
 
       {/* Tính năng HỆ THỐNG (đánh giá tuân thủ + nhật ký giám sát) render lên GÓC HEADER
           qua portal, không nằm cạnh bảng. State/dialog vẫn ở đây; menu chỉ đổi chỗ hiển thị. */}
@@ -3331,7 +3342,10 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         isAdmin={me.isAdmin}
         myEmail={me.email}
         installLinks={installLinks}
-        onOpenSummary={setSummaryFileId}
+        onOpenSummary={setSummaryTarget}
+        sheetViews={sheetViews}
+        canSetupLink={canSeeSystem}
+        onSetupLink={(key, name, cfg) => setLinkSetup({ key, name, cfg })}
         filters={filters}
         setFilters={setFilters}
         sortChain={sortChain}
@@ -3699,21 +3713,72 @@ function PicNames({ text }: { text: string }) {
 /** POPUP "Thi công lắp đặt": Worker CHỈ tải file (b64, nhẹ) → CLIENT parse + render (trình duyệt
  *  thừa tài nguyên, tránh Error 1102 do parse xlsx 2MB trên Worker). XLSX + renderer nạp ĐỘNG
  *  (chỉ khi mở popup) để không phình bundle chính. */
-function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => void }) {
+/** KHOÁ BỀN của 1 dự án = Mã CT + Tên (chuẩn hoá) — KHÔNG theo STT nên chèn/xoá dòng không lệch link. */
+function stableProjKey(maCT: string, name: string): string {
+  const norm = (s: string) => (s ?? "").normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+  return `pl:${norm(maCT)} ${norm(name)}`;
+}
+/** Tách fileId + gid từ URL Google Sheet dán vào. Nhận cả link /edit#gid= lẫn ?gid=. */
+function parseSheetUrl(url: string): { fileId: string; gid?: string } | null {
+  const id = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] ?? url.match(/^[a-zA-Z0-9_-]{20,}$/)?.[0];
+  if (!id) return null;
+  const gid = url.match(/[#?&]gid=(\d+)/)?.[1];
+  return { fileId: id, ...(gid ? { gid } : {}) };
+}
+
+/** Ghép "Tên sheet" + "Vùng A1" thành tham số range của Google export — GIỮ ĐÚNG vùng người dùng khai,
+ *  KHÔNG nới rộng (nới sẽ kéo cả vùng trống + text lạc → "dư" + không gói 1 trang). Chỉ tên sheet (không
+ *  vùng) → cả tab; chỉ vùng → áp trên tab hiện tại; trống cả hai → undefined (cả tab). */
+function composeSheetRange(sheet: string, range: string): string | undefined {
+  const s = sheet.trim(), r = range.trim();
+  if (s && r) return `${s}!${r}`;
+  if (s) return s;
+  if (r) return r;
+  return undefined;
+}
+
+function SummaryDialog({ fileId, initSheet, initRange, onClose }: { fileId: string; initSheet?: string; initRange?: string; onClose: () => void }) {
   useEscapeToClose(onClose);
   const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
   const [refreshN, setRefreshN] = useState(0);   // bấm "Làm mới" → tăng → lấy bản LIVE (bỏ cache)
   const force = refreshN > 0;
+
+  // Mở từ LINK PMO GẮN (initSheet/initRange) → ÉP chụp PDF đúng vùng. Viewer THUẦN: KHÔNG sửa link ở đây
+  // (gắn/sửa link nằm ở nút "Gắn/Sửa link" riêng trên bảng). Không có init → nhánh tự-nhận-dạng như cũ.
+  const ov = (initSheet || initRange) ? { sheet: initSheet ?? "", range: initRange ?? "" } : null;
+  const hasOverride = !!ov;
+
+  // Nhánh MẶC ĐỊNH cần xlsx (tự nhận dạng). Có override → KHÔNG cần xlsx (đi thẳng PDF).
   const q = useQuery({
     queryKey: ["summary-file", fid, gid ?? "", refreshN],
     queryFn: () => getSummaryFile({ data: { fileId: fid, gid: gid || undefined, force: force || undefined } }),
     staleTime: force ? 0 : 5 * 60 * 1000,
     retry: 1,
+    enabled: !hasOverride,
   });
   const [render, setRender] = useState<{ html: string; css: string } | null>(null);
   const [pdfB64, setPdf] = useState<string | null>(null);
   const [parseErr, setParseErr] = useState<string | null>(null);
+
+  // NHÁNH ÉP PDF — chụp PDF ĐÚNG sheet + vùng admin khai (có tên sheet → range tự chọn tab, bỏ gid).
   useEffect(() => {
+    if (!hasOverride || !ov) return;
+    let off = false;
+    setRender(null); setPdf(null); setParseErr(null);
+    (async () => {
+      try {
+        const composed = composeSheetRange(ov.sheet, ov.range);
+        const useGid = ov.sheet.trim() ? undefined : (gid || undefined);
+        const p = await getSheetPdf({ data: { fileId: fid, gid: useGid, range: composed, force: force || undefined } });
+        if (!off) setPdf(p.b64);
+      } catch (e) { if (!off) setParseErr((e as Error).message); }
+    })();
+    return () => { off = true; };
+  }, [hasOverride, ov?.sheet, ov?.range, refreshN, fid, gid]);
+
+  // NHÁNH MẶC ĐỊNH — tự nhận dạng từ xlsx (Public Summary → cột; Summary → heatmap; khác → PDF). Giữ NGUYÊN.
+  useEffect(() => {
+    if (hasOverride) return;
     const b64 = q.data?.b64;
     if (!b64) return;
     let off = false;
@@ -3724,8 +3789,6 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const wb = XLSX.read(bytes.buffer, { type: "array", cellStyles: true });
-        // CHỌN RENDERER THEO TÊN SHEET: "Public Summary" → biểu đồ cột; chứa "Summary" → heatmap;
-        // TÊN KHÁC (tab chưa đồng bộ form) → ĐỔ NGUYÊN sheet lên (như chụp màn hình).
         const name = wb.SheetNames.find((n) => /public\s*summary/i.test(n))
           ?? wb.SheetNames.find((n) => /summary/i.test(n)) ?? wb.SheetNames[0];
         const sh = name ? wb.Sheets[name] : undefined;
@@ -3736,12 +3799,9 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
           setRender({ html: pub.publicSummaryToHtml(sh), css: pub.PUBLIC_SUMMARY_CSS });
         } else if (/summary/i.test(name)) {
           const mod = await import("@/lib/summary-render");
-          // Đọc màu THẬT từ conditional-formatting (SheetJS không đọc CF) → tô lưới đúng thay vì đoán.
           const cf = await import("@/lib/cf-colors");
           setRender({ html: mod.summaryToHtml(sh, cf.readCodeColors(bytes, name)), css: mod.SUMMARY_CSS });
         } else {
-          // TAB LẠ (chưa đồng bộ form) → CHỤP Y HỆT bằng PDF của Google (có CHART + màu điều kiện).
-          // PDF lỗi (vd file .xlsx không nhận gid) → lùi về đổ HTML từ ô dữ liệu.
           try {
             const p = await getSheetPdf({ data: { fileId: fid, gid: gid || undefined, force: force || undefined } });
             if (off) return;
@@ -3755,29 +3815,107 @@ function SummaryDialog({ fileId, onClose }: { fileId: string; onClose: () => voi
       } catch (e) { if (!off) setParseErr((e as Error).message); }
     })();
     return () => { off = true; };
-  }, [q.data]);
+  }, [q.data, hasOverride, fid, gid, force]);
 
-  const loading = q.isPending || (!!q.data && !render && !parseErr && !pdfB64);
-  const err = q.isError ? (q.error as Error).message : parseErr;
+  const doRefresh = () => { setRender(null); setPdf(null); setParseErr(null); setRefreshN((n) => n + 1); };
+
+  const loading = (!hasOverride && (q.isPending || (!!q.data && !render && !parseErr && !pdfB64)))
+    || (hasOverride && !pdfB64 && !parseErr);
+  const err = (!hasOverride && q.isError) ? (q.error as Error).message : parseErr;
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
       <div className="flex max-h-[92vh] w-full max-w-[1040px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">Ma trận lắp đặt</div>
-            <div className="text-sm font-semibold text-slate-900">Tiến độ bàn giao — Summary</div>
+            <div className="text-sm font-semibold text-slate-900">Tiến độ bàn giao — Summary{hasOverride && <span className="ml-2 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">Chụp PDF</span>}</div>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => { setRender(null); setPdf(null); setParseErr(null); setRefreshN((n) => n + 1); }}
-              className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50" title="Bỏ cache, tải bản mới nhất từ sheet ngay">↻ Làm mới</button>
+            <button onClick={doRefresh} className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50" title="Bỏ cache, tải bản mới nhất từ sheet ngay">↻ Làm mới</button>
             <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
           </div>
         </div>
+
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {loading && <div className="p-10 text-center text-sm text-slate-500">Đang tải…</div>}
           {err && <div className="p-10 text-center text-sm text-red-600">Lỗi: {err}</div>}
           {pdfB64 && <iframe title="Bản gốc sheet" src={`data:application/pdf;base64,${pdfB64}`} className="h-[80vh] w-full border-0" />}
           {render && <><style dangerouslySetInnerHTML={{ __html: render.css }} /><div dangerouslySetInnerHTML={{ __html: render.html }} /></>}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** PMO GẮN / SỬA LINK cho 1 dự án (khoá bền Mã CT + Tên). Dán URL Google Sheet + tên sheet + vùng → xem
+ *  thử (PDF) → Lưu. Lưu xong: dự án đó hiện 📊 cho mọi người. Xoá link = gỡ 📊. */
+function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
+  projKey: string; projName: string; initCfg?: SheetViewCfg; onClose: () => void; onSaved: () => void;
+}) {
+  useEscapeToClose(onClose);
+  const [url, setUrl] = useState(initCfg?.fileId ? `https://docs.google.com/spreadsheets/d/${initCfg.fileId}/edit${initCfg.gid ? `#gid=${initCfg.gid}` : ""}` : "");
+  const [sheet, setSheet] = useState(initCfg?.sheet ?? "");
+  const [range, setRange] = useState(initCfg?.range ?? "");
+  const [pdfB64, setPdf] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const preview = async () => {
+    const parsed = parseSheetUrl(url);
+    if (!parsed) { setErr("Link không hợp lệ — hãy dán URL Google Sheet (…/spreadsheets/d/…)."); return; }
+    setBusy(true); setErr(null); setPdf(null);
+    try {
+      const composed = composeSheetRange(sheet, range);
+      const useGid = sheet.trim() ? undefined : parsed.gid;
+      const p = await getSheetPdf({ data: { fileId: parsed.fileId, gid: useGid, range: composed, force: true } });
+      setPdf(p.b64);
+    } catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  };
+  const save = async () => {
+    const parsed = parseSheetUrl(url);
+    if (!parsed) { setErr("Link không hợp lệ."); return; }
+    setSaving(true); setErr(null);
+    try {
+      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed.fileId, gid: parsed.gid, sheet, range, devAs: devAs() } });
+      onSaved(); onClose();
+    } catch (e) { setErr((e as Error).message); setSaving(false); }
+  };
+  const remove = async () => {
+    setSaving(true); setErr(null);
+    try { await saveSheetView({ data: { key: projKey, pdf: false, devAs: devAs() } }); onSaved(); onClose(); }
+    catch (e) { setErr((e as Error).message); setSaving(false); }
+  };
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4 print:hidden" onClick={onClose}>
+      <div className="flex max-h-[92vh] w-full max-w-[900px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">PMO · Gắn link hiển thị</div>
+            <div className="text-sm font-semibold text-slate-900 line-clamp-1" title={projName}>{projName || "Dự án"}</div>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="grid gap-2 border-b border-slate-100 px-5 py-3 text-[12px]">
+          <label className="grid gap-1"><span className="font-semibold text-slate-700">Link Google Sheet</span>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="Dán URL: https://docs.google.com/spreadsheets/d/…/edit#gid=…" className="w-full rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="grid gap-1"><span className="font-semibold text-slate-700">Tên sheet <span className="font-normal text-slate-400">(trống = tab của link)</span></span>
+              <input value={sheet} onChange={(e) => setSheet(e.target.value.slice(0, 80))} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="vd Summary" className="w-44 rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
+            <label className="grid gap-1"><span className="font-semibold text-slate-700">Vùng <span className="font-normal text-slate-400">(chỉ hiện đúng vùng này)</span></span>
+              <input value={range} onChange={(e) => setRange(e.target.value.slice(0, 40))} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="vd B2:M45" className="w-36 rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
+            <button onClick={() => void preview()} disabled={busy} className="rounded bg-slate-700 px-3 py-1 font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{busy ? "Đang tải…" : "Xem thử"}</button>
+            <button onClick={() => void save()} disabled={saving} className="rounded bg-teal-700 px-3 py-1 font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{saving ? "Đang lưu…" : "Lưu link"}</button>
+            {initCfg?.fileId && <button onClick={() => void remove()} disabled={saving} className="rounded px-2 py-1 font-medium text-slate-500 hover:text-red-600" title="Gỡ link khỏi dự án">Xoá link</button>}
+          </div>
+          <div className="text-[10.5px] leading-tight text-slate-500">Gõ đúng <b>vùng</b> (vd B2:M45) để chỉ hiện phần đó → gói gọn 1 trang, không dư. Sheet phải chia sẻ “Anyone with the link”. Lưu xong dự án hiện 📊 cho mọi người.</div>
+          {err && <div className="text-[11px] font-medium text-red-600">Lỗi: {err}</div>}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-3">
+          {pdfB64 ? <iframe title="Xem thử" src={`data:application/pdf;base64,${pdfB64}`} className="h-[62vh] w-full rounded border border-slate-200 bg-white" />
+            : <div className="py-16 text-center text-sm text-slate-400">Dán link + vùng rồi bấm <b>Xem thử</b> để soát trước khi lưu.</div>}
         </div>
       </div>
     </div>,
@@ -4073,7 +4211,7 @@ function PdfExportMenu({ onPrint, onCombined, disabled = false, busy = false, to
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, sheetViews, canSetupLink, onSetupLink, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -4096,7 +4234,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   myEmail: string | null;
   /** Map maCT → fileId Summary (ô "Thi công lắp đặt" đã hyperlink). Bấm → mở popup. */
   installLinks?: Record<string, string>;
-  onOpenSummary?: (fileId: string) => void;
+  onOpenSummary?: (t: { fileId: string; sheet?: string; range?: string; hideAdmin?: boolean }) => void;
+  sheetViews?: SheetViewMap;
+  canSetupLink?: boolean;
+  onSetupLink?: (key: string, name: string, cfg?: SheetViewCfg) => void;
   filters: Filters;
   setFilters: (f: Filters | ((p: Filters) => Filters)) => void;
   sortChain: SortSpec[];
@@ -4332,6 +4473,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
     const installFid = it.stage === "Thi công lắp đặt"
       ? (it.id ? installLinks?.["id:" + it.id] : installLinks?.[it.maCT])
       : undefined;
+    // LINK PMO GẮN THẲNG (khoá bền Mã CT + Tên) — ưu tiên hơn hyperlink file import; hiện 📊 cho mọi người.
+    const projPk = it.stage === "Thi công lắp đặt" ? stableProjKey(it.maCT, it.projectName) : "";
+    const projCfg = projPk ? sheetViews?.[projPk] : undefined;
+    const viewLink = projCfg?.fileId
+      ? { fileId: projCfg.gid ? `${projCfg.fileId}|${projCfg.gid}` : projCfg.fileId, sheet: projCfg.sheet, range: projCfg.range, hideAdmin: true }
+      : (installFid ? { fileId: installFid } : null);
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
     // Dropdown "Thi công lắp đặt": item TC có Block con → hiện mũi ▶ để xổ.
     const hasBlocks = (it.blocks?.length ?? 0) > 0;
@@ -4391,17 +4538,25 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               </button>
             )}
             <div className="min-w-0 flex-1">
-              {installFid ? (
+              {viewLink ? (
                 <button type="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenSummary?.(installFid); }}
+                  onClick={(e) => { e.stopPropagation(); onOpenSummary?.(viewLink); }}
                   className="line-clamp-3 text-left font-semibold leading-tight text-teal-700 underline decoration-dotted decoration-1 underline-offset-2 hover:text-teal-900"
                   style={{ wordBreak: "break-word" }}
-                  title="Bấm xem tiến độ lắp đặt (ma trận Summary)">
+                  title="Bấm xem (ảnh PDF vùng đã gắn)">
                   {groupMode ? it._stageLabel : it.projectName} 📊
                 </button>
               ) : (
                 <div className="line-clamp-3 font-semibold text-black leading-tight" style={{ wordBreak: "break-word" }}
                      title={groupMode ? it._stageLabel : it.projectName}>{groupMode ? it._stageLabel : it.projectName}</div>
+              )}
+              {/* PMO: nút GẮN / SỬA link cho dự án (khoá bền Mã CT + Tên). */}
+              {canSetupLink && it.stage === "Thi công lắp đặt" && projPk && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); onSetupLink?.(projPk, it.projectName, projCfg); }}
+                  className="mt-0.5 inline-flex items-center gap-0.5 text-[0.72em] font-medium text-slate-400 hover:text-teal-700 print:hidden"
+                  title={projCfg?.fileId ? "Sửa link hiển thị (PMO)" : "Gắn link hiển thị cho dự án (PMO)"}>
+                  <Link2 className="h-3 w-3" />{projCfg?.fileId ? "Sửa link" : "Gắn link"}
+                </button>
               )}
             </div>
           </div>
@@ -6482,7 +6637,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
                 <div className="mb-1 flex items-center gap-2">
                   <div className="h-4 w-1 rounded-full bg-[#1e3a5f]" />
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-[#1e3a5f]">2. Danh sách không cập nhật trong tuần</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-[#1e3a5f]">2. Danh sách các dự án không cập nhật tuần {notUpdatedWeekLabel}</div>
                 </div>
                 {notUpdatedGroups.length === 0 ? (
                   <div className="py-3 text-center text-[10px] font-medium text-emerald-600">Tuần này không có dự án nào bị "Không cập nhật".</div>
@@ -6490,8 +6645,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   <table className="w-full border-collapse text-[10px] [&_th]:border-slate-300 [&_td]:border-slate-300 [&_tbody_td]:py-2">
                     <thead>
                       <tr className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
-                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Project Manager</th>
-                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Dự án không cập nhật tuần {notUpdatedWeekLabel}</th>
+                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Người phụ trách</th>
+                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Tên dự án</th>
                         <th className="border border-slate-200 px-2.5 py-1 text-center font-bold whitespace-nowrap">Điểm dự án</th>
                       </tr>
                     </thead>
@@ -6572,7 +6727,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               <tr>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Người phụ trách</th>
-                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Cần cập nhật Master Plan / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Cần cập nhật<br />Master Plan</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Không trình Master Plan cập nhật / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Không trình Master Plan<br />cập nhật</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold">Tên dự án</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm tuân thủ 0–100 (100 − 25·không cập nhật − 10·trễ)">Điểm<br />dự án</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Số lần<br />không cập nhật</th>
