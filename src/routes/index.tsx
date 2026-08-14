@@ -508,6 +508,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.52.1", date: "14/08/2026", items: [
+    "Trả MÀU Ô NHẬP vướng mắc/giải pháp về VÀNG như cũ (bản trước lỡ đổi sang trắng — chưa được duyệt).",
+    "Đánh giá tuân thủ · Tóm tắt: TẠM ẨN mục “Danh sách tổng hợp dự án” (chip theo nhóm) — chờ duyệt.",
+    "Sửa lệch STT (admin): khi Áp dụng nay ghi CHI TIẾT vào Nhật ký giám sát — từng ghi chú đang nhầm ở dự án nào → dời về dự án nào (biết rõ “lệch ở đâu”).",
+  ] },
   { v: "3.52.0", date: "14/08/2026", items: [
     "CÔNG CỤ ADMIN — “Sửa lệch STT (chèn dự án)”: khi chèn 1 dự án vào giữa làm STT dồn, ghi chú/ngày/cờ bị lệch sang dự án khác. Menu Hệ thống → bấm để dời khoá về đúng dự án (XEM TRƯỚC số lượng rồi mới Áp dụng, chạy 1 lần, ghi nhật ký giám sát).",
     "Đánh giá tuân thủ · Tóm tắt: danh sách dự án theo nhóm xếp thành các CỘT ĐỀU NHAU (điền dọc từ trên xuống rồi mới sang phải, bé→lớn); biểu đồ điểm TB PM tách khe rõ.",
@@ -3155,14 +3160,29 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
      Bấm → DRY-RUN (đếm + xem trước) → toast "Áp dụng" → dời `id:N→id:N+1` (N≥11) cho cả 4 kho, ghi audit log. */
   const fixInsertShift = () => {
     const TAG = "insert-11-terramare";        // chốt chạy-1-lần theo tag (đổi tag nếu có đợt chèn khác)
+    // STT dự án cha → tên (để CHỈ RA lệch ở đâu: vướng mắc đang nhầm ở dự án nào → về dự án nào).
+    const nameByStt = new Map<string, string>();
+    for (const p of data.projects) if (p.id) nameByStt.set(p.id.trim(), p.name);
+    const projName = (stt: number) => nameByStt.get(String(stt)) || `STT ${stt}`;
+    // Soi từ kho ghi chú (client có sẵn): id:N[.sub], N≥11 → note đang nhầm ở [STT N] → về [STT N+1].
+    const moves: { from: string; to: string; text: string }[] = [];
+    for (const [k, v] of Object.entries(edits)) {
+      const m = /^id:(\d+)(.*)$/s.exec(k);
+      if (!m) continue;
+      const n = parseInt(m[1], 10);
+      if (n < 11) continue;
+      const text = (visibleText(v.noteMsgs) || visibleText(v.actionMsgs) || "(ghi chú)").replace(/\s+/g, " ").trim().slice(0, 44);
+      moves.push({ from: projName(n), to: projName(n + 1), text });
+    }
     void (async () => {
       try {
         const dry = await remapInsertShift({ data: { from: 11, delta: 1, tag: TAG, dryRun: true } });
         if (dry.already) { toast("Đã sửa lệch đợt này trước đó rồi — không dời lại (chống dời 2 lần)."); return; }
         if (!dry.moved) { toast("Không có khoá id:STT ≥ 11 nào cần dời."); return; }
         const b = dry.breakdown;
-        toast(`Sẽ dời ${dry.moved} khoá về đúng dự án — vướng mắc/giải pháp ${b.edits} · ngày kết thúc ${b.completed} · lịch sử update ${b.updates} · cờ MP ${b.mpflag}. Bấm "Áp dụng" để chạy 1 lần.`, {
-          duration: 20000,
+        const ex = moves.slice(0, 3).map(mv => `“${mv.text}” ở [${mv.from}]→[${mv.to}]`).join(" · ");
+        toast(`Sẽ dời ${dry.moved} khoá về đúng dự án — vướng mắc/giải pháp ${b.edits} · ngày ${b.completed} · update ${b.updates} · cờ MP ${b.mpflag}.${ex ? " Vd lệch: " + ex : ""} Bấm "Áp dụng" (chạy 1 lần, chi tiết ghi vào Nhật ký giám sát).`, {
+          duration: 30000,
           action: {
             label: "Áp dụng",
             onClick: () => void (async () => {
@@ -3170,14 +3190,16 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
                 const r = await remapInsertShift({ data: { from: 11, delta: 1, tag: TAG, dryRun: false } });
                 if (r.skipped) { toast("Đã chạy trước đó — bỏ qua."); return; }
                 const rb = r.breakdown;
-                track("remap_shift", `SỬA LỆCH STT (chèn dự án ở 11): dời ${r.moved} khoá +1 cho STT≥11 — edits ${rb.edits}, completed ${rb.completed}, updates ${rb.updates}, mpflag ${rb.mpflag}`);
+                track("remap_shift", `SỬA LỆCH STT (chèn dự án ở 11): dời ${r.moved} khoá +1 cho STT≥11 — vướng mắc/giải pháp ${rb.edits}, ngày ${rb.completed}, update ${rb.updates}, cờ MP ${rb.mpflag}`);
+                // Ghi CHI TIẾT "lệch ở đâu" vào Nhật ký giám sát: từng ghi chú nhầm ở dự án nào → dời về đâu.
+                for (const mv of moves.slice(0, 120)) track("remap_shift_detail", `Ghi chú “${mv.text}” đang nhầm ở [${mv.from}] → dời về [${mv.to}]`);
                 await Promise.all([
                   queryClient.invalidateQueries({ queryKey: ["edits"] }),
                   queryClient.invalidateQueries({ queryKey: ["completedDates"] }),
                   queryClient.invalidateQueries({ queryKey: ["updateHistory"] }),
                   queryClient.invalidateQueries({ queryKey: ["mpFlags"] }),
                 ]);
-                toast.success(`Đã dời ${r.moved} khoá — vướng mắc/giải pháp về đúng dự án. Mọi người nhập tiếp được rồi.`);
+                toast.success(`Đã dời ${r.moved} khoá — vướng mắc/giải pháp về đúng dự án. Chi tiết “lệch ở đâu” đã ghi vào Nhật ký giám sát.`);
               } catch (e) { toast.error(`Áp dụng lỗi: ${(e as Error).message}`); }
             })(),
           },
@@ -3790,7 +3812,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
       {vis.map((m) => editId === m.id ? (
-        <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-slate-200 bg-white p-1.5">
+        <div key={m.id} onClick={(e) => e.stopPropagation()} className="rounded-lg rounded-tl-none border border-amber-300 bg-amber-50 p-1.5">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
             onKeyDown={(e) => {
               if (e.key === "Escape") { e.stopPropagation(); setEditId(null); return; }
@@ -3805,7 +3827,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
         </div>
       ) : (
         <div key={m.id}
-          className="rounded-lg rounded-tl-none border border-slate-200 bg-white px-2 py-1">
+          className="rounded-lg rounded-tl-none border border-amber-200 bg-amber-50 px-2 py-1">
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
@@ -3867,7 +3889,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
         {msgs.length === 0
           ? <div className="py-6 text-center text-[12px] text-slate-400">Chưa có {noun} nào. Soạn ở ô dưới rồi bấm Gửi.</div>
           : msgs.map((m) => (
-            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-slate-200 bg-white"}`}>
+            <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-amber-200 bg-amber-50"}`}>
               <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
                 {m.author !== "(cũ)" && <RoleBadge email={m.author} />}
                 <span className="font-semibold text-slate-800">{m.author === "(cũ)" ? "(cũ)" : (m.author || "?").split("@")[0]}</span>
@@ -6321,10 +6343,10 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   </div>
                 );
               })()}
-              {/* MỤC 2 — DANH SÁCH TỔNG HỢP tất cả dự án, chia 3 NHÓM theo điểm; mỗi dự án 1 CHIP
-                  bo tròn (tên ĐẦY ĐỦ + điểm), tô màu theo nhóm. Xếp điểm THẤP→CAO trong nhóm. */}
-              {(() => {
-                const base = vungSel.length ? data.rows.filter(r => vungSel.includes(regionByName.get(normProjName(r.name)) ?? "—")) : data.rows;
+              {/* MỤC 2 — DANH SÁCH TỔNG HỢP tất cả dự án (chip theo nhóm điểm).
+                  ẨN TẠM vì CHƯA ĐƯỢC DUYỆT — bỏ `false &&` để hiện lại khi duyệt. */}
+              {false && (() => {
+                const base = vungSel.length ? (data?.rows ?? []).filter(r => vungSel.includes(regionByName.get(normProjName(r.name)) ?? "—")) : (data?.rows ?? []);
                 const scored = base.map(r => ({ r, s: finalScoreOf(r) }));
                 const tiers = [
                   { label: "Nhóm cần chú ý & tồn đọng", range: "Điểm < 50", dot: "#ef4444", head: "#dc2626", bg: "#fef2f2", bd: "#fecaca", nameC: "#7f1d1d", test: (s: number | null) => s != null && s < 50 },
