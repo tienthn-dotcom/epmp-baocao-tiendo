@@ -509,6 +509,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.54.2", date: "14/08/2026", items: [
+    "PMO gắn link — SỬA lỗi “hiện cả file thay vì đúng vùng”: nay LUÔN giữ gid của link (gid trỏ đúng tab) + cắt theo vùng A1 → hiện ĐÚNG vùng, KÈM biểu đồ, gói 1 trang (đã kiểm trên sheet thật, cắt đúng A1:F20). Bỏ ô “Tên sheet” (chính nó gây lỗi) — chỉ cần dán URL đúng tab + gõ Vùng. LƯU Ý: chỉ cắt được với Google Sheet NATIVE; file .xlsx thì Google xuất cả file.",
+  ] },
   { v: "3.54.1", date: "14/08/2026", items: [
     "Đánh giá tuân thủ: căn GIỮA toàn bộ tiêu đề cột của các bảng (Tóm tắt + Chi tiết) — đồng nhất app + bản in PDF.",
   ] },
@@ -3740,6 +3743,15 @@ function composeSheetRange(sheet: string, range: string): string | undefined {
   return undefined;
 }
 
+/** Tham số {gid, range} cho getSheetPdf. QUAN TRỌNG: LUÔN GIỮ gid của link (gid đã trỏ đúng tab) rồi CHỈ
+ *  cắt theo vùng A1 → Google cắt ĐÚNG vùng. Nếu bỏ gid + dùng "Sheet!range", Google hay xuất CẢ FILE. Chỉ
+ *  khi link KHÔNG có gid mới dùng tên sheet trong range. */
+function pdfRangeArgs(gid: string | undefined, sheet: string, range: string): { gid?: string; range?: string } {
+  const r = range.trim();
+  if (gid) return { gid, range: r || undefined };            // có gid → cắt theo vùng A1 trên đúng tab
+  return { range: composeSheetRange(sheet, range) };         // không gid → mới dùng tên sheet
+}
+
 function SummaryDialog({ fileId, initSheet, initRange, onClose }: { fileId: string; initSheet?: string; initRange?: string; onClose: () => void }) {
   useEscapeToClose(onClose);
   const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
@@ -3770,9 +3782,8 @@ function SummaryDialog({ fileId, initSheet, initRange, onClose }: { fileId: stri
     setRender(null); setPdf(null); setParseErr(null);
     (async () => {
       try {
-        const composed = composeSheetRange(ov.sheet, ov.range);
-        const useGid = ov.sheet.trim() ? undefined : (gid || undefined);
-        const p = await getSheetPdf({ data: { fileId: fid, gid: useGid, range: composed, force: force || undefined } });
+        const args = pdfRangeArgs(gid || undefined, ov.sheet, ov.range);
+        const p = await getSheetPdf({ data: { fileId: fid, gid: args.gid, range: args.range, force: force || undefined } });
         if (!off) setPdf(p.b64);
       } catch (e) { if (!off) setParseErr((e as Error).message); }
     })();
@@ -3858,7 +3869,7 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
 }) {
   useEscapeToClose(onClose);
   const [url, setUrl] = useState(initCfg?.fileId ? `https://docs.google.com/spreadsheets/d/${initCfg.fileId}/edit${initCfg.gid ? `#gid=${initCfg.gid}` : ""}` : "");
-  const [sheet, setSheet] = useState(initCfg?.sheet ?? "");
+  const sheet = initCfg?.sheet ?? "";   // giữ tương thích cfg cũ; tab lấy theo gid trong URL (không cần nhập tên sheet)
   const [range, setRange] = useState(initCfg?.range ?? "");
   const [pdfB64, setPdf] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -3869,9 +3880,8 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
     if (!parsed) { setErr("Link không hợp lệ — hãy dán URL Google Sheet (…/spreadsheets/d/…)."); return; }
     setBusy(true); setErr(null); setPdf(null);
     try {
-      const composed = composeSheetRange(sheet, range);
-      const useGid = sheet.trim() ? undefined : parsed.gid;
-      const p = await getSheetPdf({ data: { fileId: parsed.fileId, gid: useGid, range: composed, force: true } });
+      const args = pdfRangeArgs(parsed.gid, sheet, range);
+      const p = await getSheetPdf({ data: { fileId: parsed.fileId, gid: args.gid, range: args.range, force: true } });
       setPdf(p.b64);
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
@@ -3905,15 +3915,13 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
           <label className="grid gap-1"><span className="font-semibold text-slate-700">Link Google Sheet</span>
             <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="Dán URL: https://docs.google.com/spreadsheets/d/…/edit#gid=…" className="w-full rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="grid gap-1"><span className="font-semibold text-slate-700">Tên sheet <span className="font-normal text-slate-400">(trống = tab của link)</span></span>
-              <input value={sheet} onChange={(e) => setSheet(e.target.value.slice(0, 80))} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="vd Summary" className="w-44 rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
             <label className="grid gap-1"><span className="font-semibold text-slate-700">Vùng <span className="font-normal text-slate-400">(chỉ hiện đúng vùng này)</span></span>
-              <input value={range} onChange={(e) => setRange(e.target.value.slice(0, 40))} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="vd B2:M45" className="w-36 rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
+              <input value={range} onChange={(e) => setRange(e.target.value.slice(0, 40))} onKeyDown={(e) => { if (e.key === "Enter") void preview(); }} placeholder="vd B2:M45" className="w-40 rounded border border-slate-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
             <button onClick={() => void preview()} disabled={busy} className="rounded bg-slate-700 px-3 py-1 font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{busy ? "Đang tải…" : "Xem thử"}</button>
             <button onClick={() => void save()} disabled={saving} className="rounded bg-teal-700 px-3 py-1 font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{saving ? "Đang lưu…" : "Lưu link"}</button>
             {initCfg?.fileId && <button onClick={() => void remove()} disabled={saving} className="rounded px-2 py-1 font-medium text-slate-500 hover:text-red-600" title="Gỡ link khỏi dự án">Xoá link</button>}
           </div>
-          <div className="text-[10.5px] leading-tight text-slate-500">Gõ đúng <b>vùng</b> (vd B2:M45) để chỉ hiện phần đó → gói gọn 1 trang, không dư. Sheet phải chia sẻ “Anyone with the link”. Lưu xong dự án hiện 📊 cho mọi người.</div>
+          <div className="text-[10.5px] leading-tight text-slate-500">Dán URL của ĐÚNG tab (mở tab đó trong Google Sheet rồi copy link — link đã chứa gid của tab). Gõ <b>vùng</b> (vd B2:M45) → chỉ hiện phần đó, gói gọn, KÈM biểu đồ. <b>Lưu ý:</b> chỉ cắt được vùng nếu là <b>Google Sheet native</b> (file .xlsx thì Google xuất cả file). Sheet phải chia sẻ “Anyone with the link”.</div>
           {err && <div className="text-[11px] font-medium text-red-600">Lỗi: {err}</div>}
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-3">

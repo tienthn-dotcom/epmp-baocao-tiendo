@@ -53,6 +53,44 @@ export function sheetToHtml(sh: XLSX.WorkSheet): string {
   return `<div class="sd-wrap"><div class="sd-scroll"><table class="sd-tb">${body}</table></div>${note}</div>`;
 }
 
+/** RENDER ĐÚNG 1 VÙNG (A1, vd "B2:M45" hoặc "Sheet!B2:M45") → HTML — KHÔNG hiểu cấu trúc, chỉ vẽ y hệt ô
+ *  (giá trị + màu). Màu: ưu tiên màu conditional-formatting theo MÃ (codeColors: giá trị ô → màu), sau đó
+ *  fill tĩnh. Vùng rỗng → dùng cả sheet (cap kích thước). Dùng cho "chụp vùng" native + xlsx (không nhờ Google). */
+export function rangeToHtml(sh: XLSX.WorkSheet, rangeStr?: string, codeColors?: Record<string, string>): string {
+  const ref = sh["!ref"]; if (!ref) return `<div class="sd-empty">Sheet rỗng.</div>`;
+  const full = XLSX.utils.decode_range(ref);
+  let b = full;
+  const rs = (rangeStr ?? "").trim().replace(/^[^!]*!/, "");   // bỏ tiền tố "Sheet!" nếu có
+  if (rs) { try { b = XLSX.utils.decode_range(rs); } catch { b = full; } }
+  const sR = Math.max(b.s.r, 0), sC = Math.max(b.s.c, 0);
+  const eR = Math.min(b.e.r, sR + MAX_R - 1), eC = Math.min(b.e.c, sC + MAX_C - 1);
+  if (eR < sR || eC < sC) return `<div class="sd-empty">Vùng không hợp lệ.</div>`;
+  type Cell = XLSX.CellObject & { s?: { fgColor?: { rgb?: string }; font?: { color?: { rgb?: string }; bold?: boolean } }; w?: string };
+  const cell = (r: number, c: number) => sh[XLSX.utils.encode_cell({ r, c })] as Cell | undefined;
+  const merges = (sh["!merges"] ?? []);
+  const cover = (r: number, c: number) => merges.find((m) => r >= m.s.r && r <= m.e.r && c >= m.s.c && c <= m.e.c);
+  let body = "";
+  for (let r = sR; r <= eR; r++) {
+    body += "<tr>";
+    for (let c = sC; c <= eC; c++) {
+      const cv = cover(r, c);
+      if (cv && !(cv.s.r === r && cv.s.c === c)) continue;
+      const cl = cell(r, c);
+      const raw = cl?.w != null ? cl.w : (cl?.v != null ? String(cl.v) : "");
+      const key = cl?.v != null ? String(cl.v).trim() : "";
+      const bg = (key && codeColors?.[key]) || argb(cl?.s?.fgColor?.rgb);   // ưu tiên màu CF theo mã, rồi fill tĩnh
+      let fg = argb(cl?.s?.font?.color?.rgb);
+      if (!fg) fg = bg && lum(bg) < 140 ? "#fff" : "#111";
+      const bold = cl?.s?.font?.bold ? "font-weight:700;" : "";
+      let span = "";
+      if (cv) { const cs = Math.min(cv.e.c, eC) - c + 1, rows = Math.min(cv.e.r, eR) - r + 1; if (cs > 1) span += ` colspan="${cs}"`; if (rows > 1) span += ` rowspan="${rows}"`; }
+      body += `<td${span} style="background:${bg ?? "transparent"};color:${fg};${bold}">${esc(raw).replace(/\n/g, "<br>")}</td>`;
+    }
+    body += "</tr>";
+  }
+  return `<div class="sd-wrap"><div class="sd-scroll"><table class="sd-tb">${body}</table></div></div>`;
+}
+
 export const SHEET_DUMP_CSS = `
 .sd-wrap{font:11px 'Segoe UI',Arial;color:#111}
 .sd-scroll{overflow:auto;max-height:78vh}
