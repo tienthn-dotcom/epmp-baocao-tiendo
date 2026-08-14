@@ -17,8 +17,10 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { PDF_TABLE_WIDTH, PDF_TABLE_FONT_PX } from "./table-scale";
 
-const MARGIN = 7;
+const MARGIN = 12;   // lề nội dung 12mm (~1.2cm) mỗi bên — KHỚP file mẫu A4; nền xám vẫn tràn mép trang.
 const GAP = 2.5; // khoảng cách giữa các khối (mm)
+const PAGE_BG_RGB: [number, number, number] = [238, 241, 244]; // #eef1f4 — nền xám nhạt cả trang (card trắng nổi lên như mẫu)
+const PAGE_BG_HEX = "#eef1f4";                                   // dùng cho html2canvas để header/chú thích BLEND vào nền xám (hết dải trắng)
 
 /** Chuẩn hoá DOM CLONE trước khi html2canvas chụp (dùng CHUNG cho mọi khối + bảng, và cũng là
  *  layout mà ta ĐO ranh giới hàng để cắt trang → đo & chụp luôn KHỚP nhau). */
@@ -29,7 +31,9 @@ function applyExportClone(doc: Document): void {
   //    → cắt Mã, chèn space vào ngày). Ép về "Segoe UI" (font system-ui trên Windows) để ảnh khớp màn &
   //    GIỐNG NHAU mọi trình duyệt. tabular-nums dễ giãn khi đổi font → ép normal cho số khỏi lệch.
   const st = doc.createElement("style");
-  st.textContent = `*{font-family:"Segoe UI",Arial,Helvetica,sans-serif !important;font-variant-numeric:normal !important;letter-spacing:normal !important}`;
+  st.textContent = `*{font-family:"Segoe UI",Arial,Helvetica,sans-serif !important;font-variant-numeric:normal !important;letter-spacing:normal !important}`
+    // Line chia nhóm PM (.pm-group-line) CHỈ hiển thị trên APP — trong BẢN IN PDF ẩn đi (giữ nguyên các viền khác).
+    + `.pm-group-line{border-top-color:transparent !important}`;
   doc.head.appendChild(st);
   // Bỏ mọi điều khiển vô dụng trên giấy (đã gắn class print:hidden trong JSX)
   doc.querySelectorAll('[class*="print:hidden"]').forEach((n) => n.remove());
@@ -41,8 +45,8 @@ function applyExportClone(doc: Document): void {
     .forEach((n) => { n.style.position = "static"; });
 }
 
-async function snap(el: HTMLElement): Promise<HTMLCanvasElement> {
-  return html2canvas(el, { scale: 2, backgroundColor: "#ffffff", logging: false, onclone: applyExportClone });
+async function snap(el: HTMLElement, bg: string = "#ffffff"): Promise<HTMLCanvasElement> {
+  return html2canvas(el, { scale: 2, backgroundColor: bg, logging: false, onclone: applyExportClone });
 }
 
 export async function exportDashboardPdf(opts: {
@@ -65,6 +69,9 @@ export async function exportDashboardPdf(opts: {
   singlePage?: boolean;
   /** GỘP: bảng BẮT ĐẦU Ở TRANG MỚI (trang trước dành riêng cho blocks Tóm tắt). */
   tableStartsNewPage?: boolean;
+  /** GỘP: các khối (header + chú thích cách tính điểm) vẽ Ở ĐẦU TRANG CHI TIẾT — để trang 2+ GIỐNG HỆT bản
+   *  in RIÊNG Chi tiết (header + chú thích + bảng cùng 1 trang). Bỏ trống → trang bảng không có header. */
+  detailBlocks?: HTMLElement[];
   /** ÉP BẢNG GỌN 1 TRANG: thu NGUYÊN ảnh bảng cho vừa chiều cao còn lại (chữ tự nhỏ) — KHÔNG cắt sang
    *  trang 2. Dùng khi sếp yêu cầu "chi tiết chỉ 1 trang". */
   tableFitOnePage?: boolean;
@@ -88,6 +95,9 @@ export async function exportDashboardPdf(opts: {
   // thu theo CÙNG một tỉ lệ (mm/px) để cỡ chữ ĂN KHỚP nhau — tránh header to đùng khi chữ bảng bị nhỏ —
   // trong khi bảng vẫn phủ hết bề rộng trang. (Bản GỘP có bảng ở trang riêng nên KHÔNG áp dụng.)
   const fitTogether = !!(opts.table && opts.tableFitOnePage && !opts.tableStartsNewPage && !opts.singlePage);
+  // GỘP: trang Chi tiết (trang 2+) vẽ header + chú thích + bảng CÙNG 1 trang, GIỐNG HỆT bản in riêng Chi tiết.
+  const detailBlocks = opts.detailBlocks ?? [];
+  const fitDetail = !!(opts.table && opts.tableStartsNewPage && detailBlocks.length);
   const fitBlocks: HTMLCanvasElement[] = [];
 
   // Đợi web-font tải xong TRƯỚC khi chụp: Safari/Firefox hay chụp lúc font chưa sẵn
@@ -131,11 +141,16 @@ export async function exportDashboardPdf(opts: {
   const tempHidden = (opts.hideInBlocks ?? []).map((el) => ({ el, disp: el.style.display }));
   tempHidden.forEach(({ el }) => { el.style.display = "none"; });
   if (opts.singlePage && opts.blocks.length) {
-    // ÉP 1 TRANG: chụp hết block, thu theo HỆ SỐ CHUNG cho vừa chiều cao còn lại (giữ tỉ lệ, căn giữa).
+    // ÉP 1 TRANG: chụp hết block rồi thu cho vừa CHIỀU CAO còn lại. Bố cục ĐI TỪ TRÊN XUỐNG (KHÔNG căn giữa
+    // dọc — tránh "dư 1 đống" phía trên); nội dung ngắn thì để trống phần dưới, không phóng to.
+    // Snap với NỀN XÁM để header BLEND vào trang (hết dải trắng trên đầu).
+    pdf.setFillColor(...PAGE_BG_RGB); pdf.rect(0, 0, pageW, pageH, "F");  // NỀN XÁM nhạt cả trang (card trắng nổi lên như mẫu)
     const cvs: HTMLCanvasElement[] = [];
-    for (const b of opts.blocks) cvs.push(await snap(b));
-    const natH = cvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0) + GAP * (cvs.length - 1);
-    const scale = Math.min(1, (bottomY - y) / natH);
+    for (const b of opts.blocks) cvs.push(await snap(b, PAGE_BG_HEX));
+    const contentH = cvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0);
+    const gaps = GAP * (cvs.length - 1);
+    const avail = bottomY - y;
+    const scale = Math.min(1, Math.max(0.01, (avail - gaps) / Math.max(1, contentH)));  // KHÔNG phóng quá 1× (phóng lên sẽ tràn bề ngang)
     for (const cv of cvs) {
       const hMm = (cv.height / cv.width) * innerW * scale;
       const wMm = innerW * scale;
@@ -144,7 +159,8 @@ export async function exportDashboardPdf(opts: {
     }
   } else if (fitTogether) {
     // Chỉ CHỤP các khối header, CHƯA vẽ — vẽ sau cùng với bảng ở CÙNG tỉ lệ (xem nhánh vẽ bên dưới).
-    for (const b of opts.blocks) fitBlocks.push(await snap(b));
+    // Snap NỀN XÁM để header/chú thích BLEND vào trang (hết dải trắng), giống trang Tóm tắt.
+    for (const b of opts.blocks) fitBlocks.push(await snap(b, PAGE_BG_HEX));
   } else {
     for (const b of opts.blocks) {
       const cv = await snap(b);
@@ -161,6 +177,10 @@ export async function exportDashboardPdf(opts: {
   if (tbl) {
   // GỘP: sang TRANG MỚI cho phần bảng (trang trước là Tóm tắt).
   if (opts.tableStartsNewPage && y > MARGIN + 0.5) { pdf.addPage(); y = MARGIN; }
+  // GỘP: chụp header + chú thích cho TRANG CHI TIẾT (nền xám → blend), để trang bảng GIỐNG HỆT bản in riêng.
+  const detailCvs: HTMLCanvasElement[] = [];
+  if (fitDetail) { for (const b of detailBlocks) detailCvs.push(await snap(b, PAGE_BG_HEX)); }
+  const detailHeaderHmm = detailCvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0) + GAP * detailCvs.length;
   // Đo ranh giới hàng phải trên ĐÚNG bảng đang chụp. TRƯỚC: hardcode getElementById("pdf-table") →
   // bảng tuân thủ / khối in master KHÔNG mang id đó nên đo nhầm bảng chính #pdf-table (đang ẩn sau
   // modal) ⇒ thead/hàng-đầu lệch + sót dải navy "đen" dưới bảng. Gán id tạm nếu bảng chưa có id,
@@ -193,7 +213,9 @@ export async function exportDashboardPdf(opts: {
     // width) → mọi cột tách ra đều nhau, phủ kín bề ngang trang. Chừa chỗ header vẽ FULL bề ngang.
     const headerHmm = fitTogether
       ? fitBlocks.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0) + GAP * fitBlocks.length
-      : (opts.tableStartsNewPage ? 8 : 40);                    // GỘP: bảng ở TRANG RIÊNG nên chỉ chừa ~8mm
+      : fitDetail
+      ? detailHeaderHmm                                        // GỘP: chừa đúng chiều cao header + chú thích (như in riêng)
+      : (opts.tableStartsNewPage ? 8 : 40);                    // GỘP không header: bảng ở TRANG RIÊNG nên chỉ chừa ~8mm
     const availMm = Math.max(1, (pageH - MARGIN * 2) - headerHmm); // phần cao còn lại cho bảng (mm)
     const N = tbl.tHead?.rows?.[0]?.cells.length || tbl.rows?.[0]?.cells.length || 1;
     fitCells = Array.from(tbl.querySelectorAll("th,td"));
@@ -279,11 +301,13 @@ export async function exportDashboardPdf(opts: {
     return c.toDataURL("image/jpeg", 0.92);
   };
 
-  if (opts.tableFitOnePage && fitTogether) {
-    // Header vẽ FULL bề ngang (như mẫu), rồi bảng vẽ FULL bề ngang ngay dưới — CẢ HAI kín bề ngang trang,
-    // không còn "cục ở giữa". Bảng đã được làm rộng ở trên để lọt phần cao còn lại; thu nhẹ + căn giữa nếu
-    // lỡ dư do làm tròn.
-    for (const c of fitBlocks) {
+  if (opts.tableFitOnePage && (fitTogether || fitDetail)) {
+    // CHI TIẾT (in riêng = fitTogether · hoặc TRANG 2+ bản GỘP = fitDetail): vẽ GIỐNG HỆT nhau — header + chú
+    // thích FULL bề ngang (như mẫu), rồi bảng FULL bề ngang ngay dưới — CẢ HAI kín bề ngang trang, không "cục
+    // ở giữa". NỀN XÁM cả trang để header/chú thích blend (hết dải trắng), bảng trắng nổi lên như card.
+    pdf.setFillColor(...PAGE_BG_RGB); pdf.rect(0, 0, pageW, pageH, "F");
+    const heads = fitTogether ? fitBlocks : detailCvs;
+    for (const c of heads) {
       const hMm = (c.height / c.width) * innerW;
       pdf.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN, y, innerW, hMm);
       y += hMm + GAP;

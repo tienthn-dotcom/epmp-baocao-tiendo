@@ -636,6 +636,7 @@ export const remapInsertShift = createServerFn({ method: "POST" })
     // TRẢ VỀ ĐỒNG NHẤT 1 shape (dễ dùng phía client, khỏi narrow union).
     if (data.dryRun) return { dryRun: true, done: false, skipped: false, already, moved, breakdown, samples };
     if (already) return { dryRun: false, done: false, skipped: true, already: true, moved: 0, breakdown, samples };
+    await snapshotBackup(`Trước khi sửa lệch STT (${data.tag})`);   // LƯỚI AN TOÀN: chụp bản gốc trước khi dời
     if (rEm.moved) await writeAll(rEm.out);
     if (rCm.moved) await writeCompleted(rCm.out);
     if (rUm.moved) await writeUpdates(rUm.out);
@@ -643,6 +644,60 @@ export const remapInsertShift = createServerFn({ method: "POST" })
     mig[data.tag] = new Date().toISOString();
     await writeSysmig(mig);
     return { dryRun: false, done: true, skipped: false, already: false, moved, breakdown, samples };
+  });
+
+/* ── SAO LƯU / KHÔI PHỤC (edits + completed + updates + mpflag) ──
+   Trước mỗi thao tác NGUY HIỂM (dời khoá / đóng khoá bền) TỰ CHỤP 1 bản; admin có thể KHÔI PHỤC lại khi lệch.
+   Giữ tối đa 8 bản gần nhất. KV `edits:baks:v1` (dev: .data/pmo-baks.json). */
+type EditsBackup = { id: string; label: string; at: string; edits: EditsMap; completed: CompletedDates; updates: UpdateHistory; mpflag: MpFlagFirstSeen };
+const BAKS_KEY = "edits:baks:v1";
+const DEV_BAKS_FILE = ".data/pmo-baks.json";
+async function readBaks(): Promise<EditsBackup[]> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(BAKS_KEY); return raw ? (JSON.parse(raw) as EditsBackup[]) : []; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_BAKS_FILE, "utf8")) as EditsBackup[]; }
+  catch { return []; }
+}
+async function writeBaks(list: EditsBackup[]): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(BAKS_KEY, JSON.stringify(list)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_BAKS_FILE, JSON.stringify(list, null, 2), "utf8");
+}
+/** Chụp trạng thái hiện tại thành 1 bản sao lưu (đầu danh sách), cắt còn 8 bản. */
+async function snapshotBackup(label: string): Promise<EditsBackup> {
+  const em = (await readAll()).map, cm = await readCompleted(), um = await readUpdates(), fm = await readMpFlags();
+  const bak: EditsBackup = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label, at: new Date().toISOString(), edits: em, completed: cm, updates: um, mpflag: fm };
+  const list = await readBaks();
+  list.unshift(bak);
+  while (list.length > 8) list.pop();
+  await writeBaks(list);
+  return bak;
+}
+const bakCounts = (b: EditsBackup) => ({ edits: Object.keys(b.edits).length, completed: Object.keys(b.completed).length, updates: Object.keys(b.updates).length, mpflag: Object.keys(b.mpflag).length });
+
+/** Tạo bản sao lưu NGAY (admin bấm tay). */
+export const backupEdits = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ label: z.string().min(1).max(120) }).parse(input))
+  .handler(async ({ data }) => { const b = await snapshotBackup(data.label); return { id: b.id, at: b.at, counts: bakCounts(b) }; });
+
+/** Liệt kê các bản sao lưu (chỉ meta, không kèm nội dung). */
+export const listBackups = createServerFn({ method: "GET" }).handler(async () => {
+  const list = await readBaks();
+  return { backups: list.map((b) => ({ id: b.id, label: b.label, at: b.at, counts: bakCounts(b) })) };
+});
+
+/** KHÔI PHỤC 1 bản sao lưu → ghi đè 4 kho. Tự chụp bản HIỆN TẠI trước (khôi phục nhầm vẫn quay lại được). */
+export const restoreBackup = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ id: z.string().min(1).max(80) }).parse(input))
+  .handler(async ({ data }) => {
+    const list = await readBaks();
+    const bak = list.find((b) => b.id === data.id);
+    if (!bak) throw new Error("Không thấy bản sao lưu này");
+    await snapshotBackup("Tự chụp trước khi khôi phục");
+    await writeAll(bak.edits); await writeCompleted(bak.completed); await writeUpdates(bak.updates); await writeMpFlags(bak.mpflag);
+    return { restored: bak.id, at: bak.at, counts: bakCounts(bak) };
   });
 
 /* ── PHÂN CẤP NGƯỜI DÙNG (badge chức vụ PMO/BOD trong comment) — ADMIN tự quản, KHÔNG cần sửa code ──
