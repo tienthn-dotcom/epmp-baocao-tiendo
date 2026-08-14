@@ -509,6 +509,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.54.1", date: "14/08/2026", items: [
+    "Đánh giá tuân thủ: căn GIỮA toàn bộ tiêu đề cột của các bảng (Tóm tắt + Chi tiết) — đồng nhất app + bản in PDF.",
+  ] },
   { v: "3.54.0", date: "14/08/2026", items: [
     "MỚI — PMO GẮN LINK hiển thị thẳng trong app (không cần hyperlink trong file import): rê tới dự án ở cột “Thi công lắp đặt” → bấm “Gắn link” → dán URL Google Sheet + tên sheet + vùng (vd B2:M45) → Xem thử → Lưu. Dự án đã gắn hiện 📊 cho MỌI người bấm xem (ảnh PDF y hệt sheet, gói gọn 1 trang, không cắt ngang chart). Khoá theo Mã CT + Tên nên chèn/đổi STT không lệch. (Sheet phải chia sẻ “Anyone with the link”.)",
     "Đánh giá tuân thủ — đổi nhãn cho rõ: “Project Manager” → “Người phụ trách”; mục 2 → “Danh sách các dự án không cập nhật tuần …”; cột → “Tên dự án”; cột bảng Chi tiết “Cần cập nhật Master Plan” → “Không trình Master Plan cập nhật”. (Đồng nhất app + bản in PDF.)",
@@ -6645,8 +6648,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   <table className="w-full border-collapse text-[10px] [&_th]:border-slate-300 [&_td]:border-slate-300 [&_tbody_td]:py-2">
                     <thead>
                       <tr className="bg-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
-                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Người phụ trách</th>
-                        <th className="border border-slate-200 px-2.5 py-1 text-left font-bold">Tên dự án</th>
+                        <th className="border border-slate-200 px-2.5 py-1 text-center font-bold">Người phụ trách</th>
+                        <th className="border border-slate-200 px-2.5 py-1 text-center font-bold">Tên dự án</th>
                         <th className="border border-slate-200 px-2.5 py-1 text-center font-bold whitespace-nowrap">Điểm dự án</th>
                       </tr>
                     </thead>
@@ -6728,7 +6731,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm PM = trung bình cộng điểm các dự án PM quản lý">Điểm PM</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Người phụ trách</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Không trình Master Plan cập nhật / trình BOD — màu càng đỏ = càng nhiều tuần chưa trình (mỗi tuần −10 điểm)">Không trình Master Plan<br />cập nhật</th>
-                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-left font-semibold">Tên dự án</th>
+                <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold">Tên dự án</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap" title="Điểm tuân thủ 0–100 (100 − 25·không cập nhật − 10·trễ)">Điểm<br />dự án</th>
                 <th className="sticky top-0 z-30 border-r border-slate-600 bg-[#1e293b] px-2 py-1.5 text-center font-semibold whitespace-nowrap">Số lần<br />không cập nhật</th>
                 {data.weeks.map((w, wi) => (
