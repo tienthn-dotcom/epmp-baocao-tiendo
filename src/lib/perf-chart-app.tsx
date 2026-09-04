@@ -38,9 +38,9 @@ const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
   "HYATT HỒ TRÀM", "OLALANI", "COSMO ĐÀ NẴNG", "CÁT BÀ", "TIẾN BỘ PLAZA",
-  "HYATT HẠ LONG", "INTERCONT HẠ LONG", "CON TÀU EWO 3", "BẮC BỘ PHỦ", "43 ĐTM",
-  "APEC S2", "APEC S3", "APEC S4", "HILLSIDE PQ", "BV MẶT TRỜI PQ",
-  "TRỤC ĐÔNG TÂY", "MARRIOTT CAM RANH", "TULIP 3", "TULIP 123",
+  "HYATT HẠ LONG", "INTERCONT HẠ LONG", "CON TÀU EWO 3", "43 ĐTM",
+  "APEC S2", "APEC S3", "APEC S4", "HILLSIDE PQ",
+  "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
 ];
 /** VÙNG KHAI TAY — chỉ cho dự án CÓ trong file tuần nhưng KHÔNG có trên ePMP (nên tra vùng không ra).
  *  Khai ở đây thì dự án mới không bị luật "rời ePMP thì mang ra" quét mất. ePMP luôn thắng: chỗ này chỉ
@@ -48,10 +48,7 @@ const PERF_SHOW = [
 const PERF_REGION: Record<string, string> = {
   "intercont ha long": "Bắc",     // Hạ Long, Quảng Ninh
   "con tau ewo 3": "Bắc",         // ePMP có nhánh EWO (EWO4, "EWO") ở miền Bắc, chỉ khác số hiệu tàu
-  "bac bo phu": "Bắc",            // Hà Nội
   "hillside pq": "PQ",            // Phú Quốc
-  "bv mat troi pq": "PQ",         // Phú Quốc
-  "marriott cam ranh": "Trung",   // Cam Ranh, Khánh Hoà
 };
 /** DÒNG GOM, KHÔNG PHẢI DỰ ÁN — cấm lên lưới dù có ai lỡ khai vào PERF_SHOW hay file tuần có đánh STT.
  *  Chủ nhà chốt: KHÔNG dùng nhóm "OTHERS". Mấy dòng còn lại cùng loại (OEM, Loose Export, công nợ cũ,
