@@ -151,25 +151,26 @@ export function rangeToHtml(sh: XLSX.WorkSheet, rangeStr?: string, codeColors?: 
 
   // ── KHOANH VÙNG "Ô TRẠNG THÁI CỦA CĂN" (lưới thật) — dùng cho 2 việc: tô ô TRỐNG = bậc thấp nhất
   // của legend ("Chưa bàn giao"), và ẨN CHỮ heatmap ĐÚNG chỗ (nhãn Toà/số phòng/tầng + dòng tổng vẫn
-  // đọc được). Nhận hàng header block bằng DÃY ≥3 ô 2 chữ số ở CỘT LIỀN NHAU và TĂNG ĐÚNG 1 ("01",
-  // "02","03"…) → nới sang 2 phía lấy trọn cột đơn vị (kể cả "HL"); các dòng dưới có ≥1 ô có chữ trong
+  // đọc được). Nhận hàng header block bằng DÃY ≥4 ô SỐ ở CỘT LIỀN NHAU và TĂNG ĐÚNG 1 — số căn mỗi
+  // file gõ một kiểu: "01","02","03" (Mini Hotel) hay "1","2","3" (Hyatt Hạ Long) nên nhận 1-3 chữ số,
+  // bù lại đòi ≥4 ô liên tiếp → nới sang 2 phía lấy trọn cột đơn vị (kể cả "HL"); các dòng dưới có ≥1 ô có chữ trong
   // tập cột đó là DÒNG CĂN, tới dòng trắng thì hết block. Nhờ vậy dòng tổng ("Lũy kế" 84/82/59… cũng
   // 2 chữ số nhưng không tăng dần 1) KHÔNG bị coi là lưới.
   const blankBg = cc[""];
   const txtOf = (r: number, c: number) => { const x = cell(r, c); return x?.w != null ? String(x.w).trim() : (x?.v != null ? String(x.v).trim() : ""); };
-  const isUnit = (t: string) => /^\d{2}$/.test(t) || /^HL$/i.test(t);
+  const isUnit = (t: string) => /^\d{1,3}$/.test(t) || /^HL$/i.test(t);
   const gridCell = new Set<string>();
   {
     let unit: number[] = [];
     for (let r = sR; r <= eR; r++) {
       const two: number[] = [];
-      for (let c = sC; c <= eC; c++) if (/^\d{2}$/.test(txtOf(r, c))) two.push(c);
+      for (let c = sC; c <= eC; c++) if (/^\d{1,3}$/.test(txtOf(r, c))) two.push(c);
       let run = 1, best = 0, bEnd = -1;
       for (let i = 1; i < two.length; i++) {
         run = (two[i] === two[i - 1] + 1 && +txtOf(r, two[i]) === +txtOf(r, two[i - 1]) + 1) ? run + 1 : 1;
         if (run > best) { best = run; bEnd = two[i]; }
       }
-      if (best >= 3) {                                                           // → hàng header block
+      if (best >= 4) {                                                           // → hàng header block
         let a = bEnd - best + 1, z = bEnd;
         while (a - 1 >= sC && isUnit(txtOf(r, a - 1))) a--;
         while (z + 1 <= eC && isUnit(txtOf(r, z + 1))) z++;

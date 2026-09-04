@@ -308,6 +308,42 @@ BẢNG BÁO CÁO có sẵn cột **"Các khu"** (Public Toilet 1,3 · Khối A �
   thì NHỚ cập nhật cả bộ kiểm này, không thì lưu xong mất trắng.
 Verify: CT25-070 Nhà hàng Maxine → 18 khu đúng tên sheet; bấm "Main Lobby" → popup đúng khu.
 
+### d6) ĐỢT 5 (04/09, sau deploy v3.88.0) — NHẬN DIỆN BẢNG TỔNG QUÁT + CHỐNG ĐẺ FOLDER TRÙNG
+
+**SỐ CĂN KHÔNG PHẢI LÚC NÀO CŨNG 2 CHỮ SỐ.** Hyatt Regency Hạ Long (CT24-035) đánh căn `1..16` (không
+đệm 0) và tầng `L6..L22` → luật cũ chỉ nhận `/^\d{2}$/` nên KHÔNG nhận ra hàng header ⇒ **heatmap hiện
+ra nhưng bấm không được**. Sửa ở CẢ HAI nơi (phải đồng bộ, lệch nhau là ẩn chữ / tô ô trống sai):
+- `can-media-app.tsx`: `isUnitHdr` = `/^\d{1,3}$/` hoặc `HL`; `isHeaderRow` đòi dãy **≥4** ô liền cột tăng
+  đúng 1 (`UNIT_RUN`) — nới từ 2-chữ-số sang 1-3 chữ số thì phải siết độ dài run, không thì dòng số liệu
+  bị nhận nhầm là header.
+- `sheet-dump.ts` (`gridCell`): cùng luật `/^\d{1,3}$/` + `best >= 4`.
+- **Mã căn luôn đệm 2 chữ số**: `${tầng}${pad2(đơn vị)}` → L22×"1" = **2201**, L6×"1" = **601**,
+  Mini Hotel L06×"01" = **601** (không đổi). Đừng bỏ `pad2`, không thì ra "221".
+- **Ô đầu hàng header chưa chắc là TOÀ**: Hyatt ghi "KHU PHÒNG" (tiêu đề cột), lấy nguyên si sẽ đẻ thư
+  mục Drive tên "KHU PHÒNG". `toaOf()` chỉ nhận mã toà ngắn (B1 · A · Tháp A · Khối B), còn lại trả `""`
+  = dự án 1 toà.
+Kiểm chứng: Mini Hotel ra **465 ô** (B1 90 · B2 90 · B3 80 · B4 95 · B5 110) — B1/B2 KHÔNG có cột HL nên
+465 mới đúng, con số 470 trước kia là đếm dư do luật cũ lỏng.
+
+**CỘT KHU: cùng form nhưng khác chữ.** "Các khu" (NPHH) · "Các khu PUBLIC" (Villa Tulip 3) → `ZONE_HDR`
+đổi thành `/^(các\s+)?(khu\s*vực|tên\s*khu|hạng\s*mục|khu)\b/i` (nhận cả đuôi phía sau).
+Và `zonesOfSheet` **ưu tiên heatmap**: gọi `hasUnitBlocks()` trước, sheet nào là ma trận căn thì trả `[]`
+ngay — không thì một sheet ma trận lỡ có chữ "khu" sẽ bị đổ nhầm sang bảng khu.
+(Form `PUBLIC 4S` của Tây Hồ View / Chairman Villa là dạng KHÁC: cột `CĂN` + nhiều cột công đoạn — chủ
+nhà chốt "mấy cái khác form thì từ từ", chưa làm.)
+
+**⚠ GỐC RỄ VỤ FOLDER TRÙNG TÊN (quan trọng, đừng làm hỏng lại).** `driveListChildrenImpl` trước đây dùng
+`ensureDbPath` = *tìm-hoặc-TẠO*. Mà `listCanMedia` đọc "Hình ảnh" và "Video" bằng `Promise.all` → hai lời
+gọi SONG SONG cùng thấy thiếu thư mục căn và cùng tạo ⇒ **2 folder căn trùng tên**; app chỉ đọc được cái
+đầu nên ảnh nằm folder này, video nằm folder kia. Đúng các căn từng mở popup: B4/607, B4/Hanh lang
+T2·T3·T4·T6, B3/205, B1/509, B1/601, B3/208.
+- Sửa: thêm `findDbPath()` / `findFolder()` = **CHỈ TÌM, KHÔNG TẠO**; `driveListChildrenImpl` dùng nó và
+  trả rỗng khi thiếu. **Mọi thao tác ĐỌC phải dùng findDbPath.** Thư mục chỉ sinh ra lúc UPLOAD thật.
+- Dọn hậu quả: `scripts/media-dedupe.mjs` (giữ folder nhiều file nhất, dời file sang, trash bản rỗng).
+  Đã chạy 2 đợt, gộp 10 phòng trùng. **LƯU Ý: chạy lại NGAY sau `--go` có thể báo 0 do Drive chưa đồng
+  bộ — chờ vài giây rồi kiểm lại.**
+- Verify: mở popup 3 căn trống (B1/201·202·203) → số folder phòng đứng yên 75, dedupe báo 0.
+
 ### e) Khảo sát Drive
 `scripts/media-survey.mjs` (mới, CHỈ ĐỌC): in cây `Media/<dự án>/<Toà>/<phòng>/(Hình ảnh|Video)` + đếm file.
 Xác nhận 04/09: B1 2 phòng · B2 6 · B3 17 · B4 7 · B5 32; mỗi phòng đủ 2 thư mục.

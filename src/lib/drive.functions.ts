@@ -124,6 +124,25 @@ export async function driveIsConfigured(): Promise<boolean> {
 /** Tìm-hoặc-tạo CHUỖI thư mục con dưới DATABASE, trả id folder cuối. Cấu trúc chuẩn của app:
  *    "Data Source" › DATABASE › <App> › <Dự án> › <Loại> …  (segments = ["ePMP","Mini Hotel","Hình ảnh"]).
  *  DATABASE = 1 folder/app-tổng; mỗi app tự phân cấp bên dưới. */
+/** TÌM chuỗi thư mục — KHÔNG TẠO. Trả null nếu thiếu bất kỳ cấp nào.
+ *  BẮT BUỘC dùng cho mọi thao tác ĐỌC: `ensureDbPath` vừa-tìm-vừa-tạo, mà 2 lời gọi CHẠY SONG SONG cùng
+ *  một đường dẫn (listCanMedia đọc "Hình ảnh" và "Video" bằng Promise.all) sẽ cùng thấy thiếu và cùng
+ *  tạo → SINH RA 2 FOLDER CĂN TRÙNG TÊN, app chỉ đọc được 1 nên ảnh/video lạc mỗi nơi một ít.
+ *  (Đã dính thật ở B4/607, B4/Hanh lang T2·T3·T4·T6, B3/205 — phải chạy scripts/media-dedupe.mjs gộp lại.) */
+async function findDbPath(token: string, env: Env, segments: string[]): Promise<string | null> {
+  let parent: string | null = await findFolder(token, DB_SUBFOLDER, rootOf(env));
+  for (const seg of segments) {
+    if (!parent) return null;
+    parent = await findFolder(token, safeName(seg) || "khac", parent);
+  }
+  return parent;
+}
+async function findFolder(token: string, name: string, parent: string): Promise<string | null> {
+  const q = `name='${name.replace(/'/g, "\'")}' and '${parent}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${SHARED}`, { headers: AUTHH(token) });
+  const j = await r.json() as { files?: { id: string }[] };
+  return j.files?.length ? j.files[0].id : null;
+}
 async function ensureDbPath(token: string, env: Env, segments: string[]): Promise<string> {
   let parent = await ensureFolder(token, DB_SUBFOLDER, rootOf(env));
   for (const seg of segments) parent = await ensureFolder(token, safeName(seg) || "khac", parent);
@@ -269,11 +288,15 @@ export async function driveListDirImpl(path: string[]): Promise<{ id: string; na
   return (j.files || []).map((f) => ({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view` }));
 }
 
-/** Liệt kê CON của 1 path: tách riêng FILE (không phải folder) và FOLDER con. 1 truy vấn. HÀM THUẦN. */
+/** Liệt kê CON của 1 path: tách riêng FILE (không phải folder) và FOLDER con. 1 truy vấn. HÀM THUẦN.
+ *  CHỈ ĐỌC — dùng findDbPath (KHÔNG tạo thư mục): xem một căn chưa có gì thì trả rỗng, tuyệt đối không
+ *  đẻ folder. Trước đây dùng ensureDbPath nên chỉ mở popup xem cũng tạo folder, và 2 lời gọi song song
+ *  (Hình ảnh + Video) còn tạo trùng folder căn. Thư mục chỉ sinh ra lúc UPLOAD thật. */
 export async function driveListChildrenImpl(path: string[]): Promise<{ files: { id: string; name: string; link: string }[]; folders: { id: string; name: string }[] }> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
-  const folder = await ensureDbPath(token, env, path);
+  const folder = await findDbPath(token, env, path);
+  if (!folder) return { files: [], folders: [] };
   const q = `'${folder}' in parents and trashed=false`;
   const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink)&orderBy=name&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
   const j = await r.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string }[] };

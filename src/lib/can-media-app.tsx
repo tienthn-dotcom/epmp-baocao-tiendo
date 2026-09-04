@@ -160,17 +160,34 @@ function ManualEntry({ onOpen }: { onOpen: (project: string, toa: string, can: s
 }
 
 const txt = (el?: Element | null) => (el?.textContent || "").replace(/\s+/g, " ").trim();
-/** Ô tiêu đề đơn vị của lưới: số phòng 2 chữ số ("01".."18") hoặc hành lang ("HL"). */
-const isUnitHdr = (t: string) => /^\d{2}$/.test(t) || /^HL$/i.test(t);
-/** HÀNG HEADER của 1 block căn: có dãy ≥3 ô 2 chữ số ở CỘT LIỀN NHAU và TĂNG ĐÚNG 1 ("01","02","03"…).
- *  Bảng KHÔNG có hàng nào như vậy = KHÔNG phải heatmap bản đồ căn (vd chart khu public) → dùng bảng khu. */
+/** Ô tiêu đề đơn vị của lưới: SỐ CĂN (mỗi file gõ một kiểu — Mini Hotel "01".."21", Hyatt "1".."16")
+ *  hoặc hành lang ("HL"). Nhận 1-3 chữ số; khi ghép mã căn thì luôn đệm về 2 chữ số cho đồng nhất. */
+const isUnitHdr = (t: string) => /^\d{1,3}$/.test(t) || /^HL$/i.test(t);
+const pad2 = (t: string) => (t.length < 2 ? "0" + t : t);
+/** Ô đầu hàng header là MÃ TOÀ hay chỉ là chữ tiêu đề? Dự án nhiều toà ghi "B1".."B5"; dự án 1 toà lại
+ *  ghi tiêu đề cột như "KHU PHÒNG" — lấy nguyên si sẽ đẻ ra thư mục Drive tên "KHU PHÒNG". Chỉ nhận
+ *  dạng mã toà ngắn (B1 · A · Tháp A · Khối B); còn lại trả "" = dự án không chia toà. */
+const GENERIC_LBL = /^(khu|phòng|khu phòng|căn|stt|tầng|floor|room|đơn vị|hạng mục|các khu)$/i;
+function toaOf(raw: string): string {
+  const v = raw.replace(/\s+/g, " ").trim();
+  if (!v || GENERIC_LBL.test(v)) return "";
+  if (/^[A-Za-z]{1,3}\s?\d{1,3}$/.test(v)) return v.replace(/\s+/g, "");
+  if (/^[A-Za-z]{1,4}$/.test(v)) return v;
+  if (/^(tháp|khối|toà|tòa|block)\s+\S{1,4}$/i.test(v)) return v;
+  return "";
+}
+/** HÀNG HEADER của 1 block căn: dãy ≥4 ô SỐ ở CỘT LIỀN NHAU và TĂNG ĐÚNG 1 ("01,02,03,04" hoặc
+ *  "1,2,3,4"). Nhận cả số không đệm 0 (Hyatt Hạ Long đánh 1..16) — bù lại siết từ 3 lên 4 ô liên tiếp
+ *  để dòng tổng/dòng số liệu không bị nhận nhầm là header. Bảng không có hàng nào như vậy = không phải
+ *  bản đồ căn → xử theo bảng danh sách khu. */
+const UNIT_RUN = 4;
 export function isHeaderRow(cells: HTMLTableCellElement[]): boolean {
-  const two = cells.filter((x) => /^\d{2}$/.test(txt(x))).sort((a, b) => (+(a.dataset.c ?? 0)) - (+(b.dataset.c ?? 0)));
+  const num = cells.filter((x) => /^\d{1,3}$/.test(txt(x))).sort((a, b) => (+(a.dataset.c ?? 0)) - (+(b.dataset.c ?? 0)));
   let run = 1;
-  for (let i = 1; i < two.length; i++) {
-    const adj = +(two[i].dataset.c ?? 0) === +(two[i - 1].dataset.c ?? 0) + 1 && +txt(two[i]) === +txt(two[i - 1]) + 1;
+  for (let i = 1; i < num.length; i++) {
+    const adj = +(num[i].dataset.c ?? 0) === +(num[i - 1].dataset.c ?? 0) + 1 && +txt(num[i]) === +txt(num[i - 1]) + 1;
     run = adj ? run + 1 : 1;
-    if (run >= 3) return true;
+    if (run >= UNIT_RUN) return true;
   }
   return false;
 }
@@ -220,8 +237,8 @@ export function canAt(td: HTMLTableCellElement, table: HTMLTableElement): { toa:
   const lblC = +(hdr.find((x) => txt(x) !== "")?.dataset.c ?? -1);
   const floor = (txt(rowOf(r).find((x) => +(x.dataset.c ?? -1) === lblC)).match(/(\d+)/) || [])[1];   // "L06" → "06"
   if (!floor) return null;
-  const toa = label(hdr);                                          // "B1"
-  const can = /^HL$/i.test(unit) ? `Hanh lang T${+floor}` : `${+floor}${unit}`;
+  const toa = toaOf(label(hdr));                                   // "B1"; bảng 1 toà → ""
+  const can = /^HL$/i.test(unit) ? `Hanh lang T${+floor}` : `${+floor}${pad2(unit)}`;
   return { toa, can };
 }
 
@@ -328,8 +345,32 @@ const zoneKey = (p: InstallProj) => `media:zones::${p.maCT || p.name}`;
 /** ĐỌC DANH SÁCH KHU TỪ SHEET: dự án khu public không phải heatmap mà là BẢNG BÁO CÁO có sẵn cột
  *  "Các khu" (Public Toilet 1,3 · Khối A · Main Lobby · Nhà Hàng Maxine…). Lấy đúng cột đó, bỏ dòng
  *  trống/trùng. Nhờ vậy admin KHÔNG phải gõ lại danh sách khu. Không thấy cột → [] (dùng heatmap). */
-const ZONE_HDR = /^(các khu|khu vực|tên khu|khu|hạng mục|các hạng mục)$/i;
+/** Tiêu đề cột khu — CÙNG MỘT FORM báo cáo nhưng mỗi file gõ tên hơi khác: "Các khu" (NPHH) ·
+ *  "Các khu PUBLIC" (Villa Tulip) · "Khu vực" · "Hạng mục". Nhận cả cụm có chữ đuôi phía sau. */
+const ZONE_HDR = /^(các\s+)?(khu\s*vực|tên\s*khu|hạng\s*mục|khu)\b/i;
+/** Sheet có phải MA TRẬN CĂN không: có hàng chứa dãy ≥3 ô 2 chữ số ở CỘT LIỀN NHAU, TĂNG ĐÚNG 1
+ *  ("01","02","03"…). Dùng để ƯU TIÊN heatmap — nếu không kiểm cái này, một sheet ma trận lỡ có chữ
+ *  "khu" ở đâu đó sẽ bị đổ nhầm sang bảng khu. */
+export function hasUnitBlocks(sh: XLSX.WorkSheet, rangeStr?: string): boolean {
+  const ref = sh["!ref"]; if (!ref) return false;
+  const XL = XLSXNS;
+  let b = XL.utils.decode_range(ref);
+  const rs = (rangeStr ?? "").trim().replace(/^[^!]*!/, "");
+  if (rs) { try { b = XL.utils.decode_range(rs); } catch { /* giữ nguyên */ } }
+  const at = (r: number, c: number) => { const cl = sh[XL.utils.encode_cell({ r, c })]; const v = cl?.w != null ? cl.w : cl?.v; return v == null ? "" : String(v).trim(); };
+  for (let r = b.s.r; r <= b.e.r; r++) {
+    let run = 1;
+    for (let c = b.s.c + 1; c <= b.e.c; c++) {
+      const a = at(r, c - 1), x = at(r, c);
+      run = (/^\d{1,3}$/.test(a) && /^\d{1,3}$/.test(x) && +x === +a + 1) ? run + 1 : 1;
+      if (run >= UNIT_RUN) return true;
+    }
+  }
+  return false;
+}
+
 export function zonesOfSheet(sh: XLSX.WorkSheet, rangeStr?: string): string[] {
+  if (hasUnitBlocks(sh, rangeStr)) return [];   // là ma trận căn → không phải bảng khu
   const ref = sh["!ref"]; if (!ref) return [];
   const XL = XLSXNS;
   const full = XL.utils.decode_range(ref);
