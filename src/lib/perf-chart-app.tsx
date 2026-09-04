@@ -19,11 +19,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X } from "lucide-react";
-import { getSummaryFile } from "@/lib/mtld-install.functions";
+import { getSummaryFile, getProjRegions } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { useIsNarrow } from "@/lib/use-breakpoint";
+import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion } from "@/lib/vung";
 
 /** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
  *  thứ tự dưới đây đọc theo CỘT của bản in: cột 1 từ trên xuống, rồi cột 2…).
@@ -49,9 +50,38 @@ const DEFAULT_NM = 7;
 const SERIF = '"Times New Roman", Times, serif';
 
 type Proj = { no: number; name: string; rev: number[]; ns: number[] };
+/** Dự án đã gắn VÙNG (lấy từ ePMP) — chỉ dùng ở tab "Hiệu suất theo tháng" để gom cụm + tô viền. */
+type ProjV = Proj & { vung: string };
 
 const tyf = (v: number | null): string => { if (v == null) return ""; let s = (v / 1e9).toFixed(1); if (s === "-0.0") s = "0.0"; return s.replace(".", ","); };
 const perfOf = (p: Proj, m: number): number | null => (p.ns[m] > 0 ? p.rev[m] / p.ns[m] : null);
+/** NGUYÊN TẮC LOẠI TRỪ THÁNG ÂM (chỉ áp cho tab "Hiệu suất theo tháng").
+ *  Sản lượng âm ở tháng m là phần ĐIỀU CHỈNH/HOÀN của sản lượng đã ghi nhận TRƯỚC đó, nên gánh ngược:
+ *    · trừ vào THÁNG LIỀN TRƯỚC;
+ *    · tháng liền trước không đủ (hoặc cũng âm) → lùi tiếp tháng trước nữa, cho tới tháng đầu.
+ *  Gánh trên SẢN LƯỢNG (VND) rồi mới chia nhân sự — mỗi tháng nhân sự một khác, cộng trừ thẳng trên
+ *  tỷ-số sẽ ra số vô nghĩa. TỔNG sản lượng cả năm KHÔNG đổi.
+ *  Gánh hết các tháng trước mà vẫn dư âm → DỒN NỐT VÀO THÁNG 12 (ô cuối năm). Tháng 12 nằm ngoài
+ *  vùng đang hiển thị (chart chỉ vẽ tới tháng có số) nên phần dư KHÔNG hiện lên, mà tổng cả năm vẫn
+ *  khớp file — chốt theo yêu cầu: "cỡ không có thì trừ qua tháng 12 luôn, chỉ là không show lên". */
+const DEC = 11;   // chỉ số tháng 12
+export function absorbNegBack(rev: readonly number[]): number[] {
+  const r = rev.slice();
+  while (r.length <= DEC) r.push(0);                    // nới đủ 12 tháng để có chỗ dồn phần dư
+  for (let m = r.length - 1; m >= 1; m--) {
+    if (!(r[m] < 0)) continue;
+    let need = -r[m];                                   // phần âm cần gánh
+    for (let k = m - 1; k >= 0 && need > 1e-9; k--) {
+      const take = Math.min(need, Math.max(0, r[k]));   // chỉ lấy phần DƯƠNG còn lại của tháng trước
+      r[k] -= take; need -= take;
+    }
+    r[m] = 0;
+    // Hết chỗ gánh → dồn về tháng 12. Nếu chính tháng 12 đang âm thì phần dư NẰM LẠI đó (gán, không
+    // cộng dồn) — vẫn đúng "trừ qua tháng 12", và tổng cả năm không đổi.
+    if (need > 1e-9) r[DEC] = m === DEC ? -need : r[DEC] - need;
+  }
+  return r;
+}
 const nmOf = (projs: Proj[]): number => projs[0]?.rev.length || DEFAULT_NM;
 /** Tháng "mới nhất" = tháng CUỐI có doanh thu (tự nhảy khi thêm tháng); fallback tháng cuối có nhân sự. */
 function latestMonth(projs: Proj[], nm: number): number {
@@ -439,8 +469,10 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
   ];
   const vals = slots.map((s) => s.v).filter((v): v is number => v != null && isFinite(v));
   const maxV = vals.length ? Math.max(...vals) : 0;
-  let yMax = Math.max(0.4, Math.ceil(Math.max(0.4, maxV) / 0.2 - 1e-9) * 0.2);
-  if (yMax <= maxV + 1e-9) yMax += 0.2;   // luôn chừa 1 nấc trống trên đỉnh cho nhãn giá trị
+  // TRẦN 1,2 tỷ: để cột cao nhất (0,98) không chạm nóc, các cột nhìn cân nhau hơn. Vượt 1,2 thì mới
+  // nới tiếp theo nấc 0,2 (chart tự lo khi có tháng đột biến), luôn chừa 1 nấc trống cho nhãn số.
+  let yMax = Math.max(1.2, Math.ceil(Math.max(0.4, maxV) / 0.2 - 1e-9) * 0.2);
+  if (yMax <= maxV + 1e-9) yMax += 0.2;
   const ticks: number[] = []; for (let t = 0; t <= yMax + 1e-9; t += 0.2) ticks.push(+t.toFixed(1));
 
   const W = 1040, H = 560, mL = 84, mR = 22, mT = 66, mB = 66;
@@ -458,13 +490,13 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
       {/* Biểu đồ nền đen */}
       <div style={{ background: "#000", borderRadius: 10, padding: 8, marginTop: 14 }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: SANS }}>
-          <text x={W / 2} y={30} textAnchor="middle" fontSize={33} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">SẢN LƯỢNG ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
+          <text x={W / 2} y={37} textAnchor="middle" fontSize={30} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">SẢN LƯỢNG ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
           {/* ĐƯỜNG KẺ NGANG ở MỌI MỐC để dò giá trị (sếp yêu cầu) — màu TRẮNG, mảnh; cộng 2 vạch TRỤC
               đậm hơn: dọc bên trái + ngang ở mốc 0. Đừng bỏ mấy đường ngang này. */}
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={mL} y1={yOf(t)} x2={W - mR} y2={yOf(t)} stroke={RPC_WHITE} strokeWidth={t === 0 ? 1.6 : 0.9} />
-              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={22} fontWeight={600} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
+              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={25} fontWeight={600} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
             </g>
           ))}
           <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
@@ -486,7 +518,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
           })}
           {/* Nhãn trục X */}
           {slots.map((s, i) => (
-            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>{s.label}</text>
+            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={20} fontWeight={700} fill={RPC_WHITE}>{s.label}</text>
           ))}
           <text x={mL + iw / 2} y={H - 10} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>Tháng</text>
         </svg>
@@ -521,6 +553,10 @@ export function PerfChartApp() {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["perf-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["perf-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
+  // VÙNG lấy từ ePMP (file PMP có cột Location; file Pivot của app này thì không) — xem saveProjRegions.
+  // Chưa có map → mọi dự án về "—", lưới vẫn chạy đúng thứ tự PERF_SHOW như trước.
+  const regionQ = useQuery({ queryKey: ["proj-regions"], queryFn: () => getProjRegions(), staleTime: 10 * 60 * 1000 });
+  const regionMap = regionQ.data?.map ?? {};
   const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
 
   useEffect(() => {
@@ -542,10 +578,24 @@ export function PerfChartApp() {
   const rm = rankMonth != null && rankMonth < nm ? rankMonth : latestIdx;
   // XU HƯỚNG (20 mini): 2 tầng — có-data trước, rỗng sau, tên tự nhiên (để dự án rỗng không chen lên).
   // HIỆN ĐÚNG 20 DỰ ÁN trong PERF_SHOW, THEO ĐÚNG THỨ TỰ đó (không xếp lại theo số liệu).
-  const ordered = useMemo(() => {
+  const ordered = useMemo<ProjV[]>(() => {
     const byKey = new Map(projs.map((p) => [keyName(p.name), p] as const));
-    return SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p);
-  }, [projs]);
+    const list = SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p)
+      // Nguyên tắc loại trừ tháng âm — CHỈ ở tab này (xem absorbNegBack). Hai tab kia đọc thẳng
+      // projs nên vẫn giữ nguyên số của file.
+      .map((p) => ({ ...p, rev: absorbNegBack(p.rev), vung: vungVN(lookupRegion(regionMap, p.name)) }));
+    // GOM CỤM THEO VÙNG: Phú Quốc → Bắc → Trung → Nam → Nước Ngoài (thứ tự của lib/vung.ts, giống
+    // báo cáo tuân thủ). Trong cùng vùng thì GIỮ NGUYÊN thứ tự PERF_SHOW chủ nhà đã chốt.
+    return list.map((p, i) => [p, i] as const)
+      .sort((a, b) => vungRank(a[0].vung) - vungRank(b[0].vung) || a[1] - b[1])
+      .map(([p]) => p);
+  }, [projs, regionMap]);
+  /** Các vùng ĐANG có trên lưới, đúng thứ tự — để vẽ dải chú giải màu viền. */
+  const vungShown = useMemo(() => {
+    const seen = new Set(ordered.map((p) => p.vung));
+    return [...VUNG_ORDER, ...[...seen].filter((v) => !(VUNG_ORDER as readonly string[]).includes(v))]
+      .filter((v) => seen.has(v));
+  }, [ordered]);
   // XẾP HẠNG (1 chart): THUẦN giá trị CAO → THẤP (số âm xuống cuối cùng); bằng nhau → tên tự nhiên.
   const rankRows = useMemo(() => projs
     .filter((p) => SHOW_KEYS.includes(keyName(p.name)))     // chỉ 20 dự án được hiện
@@ -569,7 +619,7 @@ export function PerfChartApp() {
 
   const rowsN = Math.max(1, Math.ceil(ordered.length / COLS));
   const gridItems = useMemo(() => {
-    const arr: (Proj | null)[] = Array(rowsN * COLS).fill(null);
+    const arr: (ProjV | null)[] = Array(rowsN * COLS).fill(null);
     ordered.forEach((p, k) => { const col = Math.floor(k / rowsN), row = k % rowsN; arr[row * COLS + col] = p; });
     return arr;
   }, [ordered, rowsN]);
@@ -761,11 +811,32 @@ export function PerfChartApp() {
             // dọc khi nhiều hàng) thay vì ép nhỏ tí. Chiều cao ô cố định để số luôn to.
             <div style={{ width: "100%" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>HIỆU SUẤT THEO THÁNG · CÁC DỰ ÁN (tỷ đồng/người)</div>
+              {/* Nói rõ nguyên tắc ngay dưới tiêu đề: số ở đây có thể LỆCH file gốc ở tháng có điều
+                  chỉnh âm — không ghi ra thì người xem tưởng app tính sai. */}
+              <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 8, textAlign: "center" }}>
+                Tháng có sản lượng âm được gánh ngược về tháng liền trước (không đủ thì lùi tiếp tháng trước nữa) — tổng cả năm giữ nguyên.
+              </div>
+              {/* CHÚ GIẢI VÙNG — nói rõ viền màu nào là vùng nào; vùng lấy từ ePMP nên khỏi khai tay. */}
+              {vungShown.length > 1 && (
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14, marginBottom: 10, fontSize: 11.5, color: "#475569" }}>
+                  {vungShown.map((v) => (
+                    <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 16, height: 10, borderRadius: 3, border: `2px solid ${vungColor(v)}`, background: "#fff" }} />
+                      {v === "—" ? "Chưa rõ vùng (dự án không còn trong file ePMP)" : v}
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* ĐIỆN THOẠI: 1 CỘT — mỗi ô chiếm trọn bề ngang nên đọc thoải mái, cuộn DỌC như đọc danh
                   sách (thứ tự đúng PERF_SHOW). MÁY TÍNH: giữ nguyên lưới 5 cột xếp dọc-rồi-ngang. */}
               <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr)" : `repeat(${COLS}, minmax(300px, 1fr))`, gridAutoRows: "210px", gap: 10 }}>
                 {(narrow ? ordered : gridItems).map((p, i) => (
-                  <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", minHeight: 0 }}>
+                  // VIỀN = VÙNG: liếc một cái là biết cụm nào, khỏi phải dò tên dự án. Ô trống (lưới
+                  // xếp dọc-rồi-ngang có thể hụt cuối) giữ viền xám nhạt như cũ.
+                  <div key={i} style={{
+                    background: "#fff", borderRadius: 8, overflow: "hidden", minHeight: 0,
+                    border: p ? `2px solid ${vungColor(p.vung)}` : "1px solid #e2e8f0",
+                  }}>
                     {p && <MiniChart p={p} nm={nm} w={340} h={210} />}
                   </div>
                 ))}
