@@ -499,7 +499,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={mL} y1={yOf(t)} x2={W - mR} y2={yOf(t)} stroke={RPC_WHITE} strokeWidth={t === 0 ? 1.6 : 0.9} />
-              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={25} fontWeight={600} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
+              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={22} fontWeight={600} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
             </g>
           ))}
           <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
@@ -521,7 +521,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
           })}
           {/* Nhãn trục X */}
           {slots.map((s, i) => (
-            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={20} fontWeight={700} fill={RPC_WHITE}>{s.label}</text>
+            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>{s.label}</text>
           ))}
           <text x={mL + iw / 2} y={H - 10} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>Tháng</text>
         </svg>
