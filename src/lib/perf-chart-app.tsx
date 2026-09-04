@@ -23,6 +23,7 @@ import { getSummaryFile } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
+import { useIsNarrow } from "@/lib/use-breakpoint";
 
 /** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
  *  thứ tự dưới đây đọc theo CỘT của bản in: cột 1 từ trên xuống, rồi cột 2…).
@@ -413,18 +414,6 @@ const dec2 = (v: number): string => v.toFixed(2);        // nhãn giá trị tr�
  *  sếp duyệt. Sang năm đổi mốc thì sửa đúng hằng số này. */
 const PRIOR_YEAR_TY = 0.9;
 
-/** Màn HẸP (điện thoại) — dùng để đổi bố cục, KHÔNG phải để thu nhỏ chữ. */
-function useNarrow(bp = 820): boolean {
-  const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width:${bp}px)`);
-    const on = () => setNarrow(mq.matches);
-    on(); mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, [bp]);
-  return narrow;
-}
-
 /** KHUNG "VỪA THÌ HIỆN ĐỦ, KHÔNG VỪA THÌ CUỘN NGANG" — thay vì ép chart bé tí cho lọt màn điện thoại
  *  (chữ nhỏ không đọc nổi). Máy tính rộng hơn `min` → không có thanh cuộn, hiện full như cũ. */
 function FitOrScroll({ min, children }: { min: number; children: React.ReactNode }) {
@@ -513,7 +502,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
 
 // ─────────────────────────────────────────────────────────────────────── APP ──
 export function PerfChartApp() {
-  const narrow = useNarrow();          // điện thoại → đổi bố cục (xem useNarrow / FitOrScroll)
+  const narrow = useIsNarrow();        // điện thoại/tablet → đổi bố cục (xem use-breakpoint.ts)
   const [projs, setProjs] = useState<Proj[]>([]);
   /** TOÀN KHỐI đọc thẳng từ khối A sheet "SLTB (kết quả)" — số CHUẨN của báo cáo tuần. */
   const [block, setBlock] = useState<{ rev: number[]; ns: number[] } | null>(null);

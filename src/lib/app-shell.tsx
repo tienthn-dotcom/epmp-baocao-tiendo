@@ -28,6 +28,7 @@ import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
+import { useIsMobile } from "@/lib/use-breakpoint";
 import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { DetailPlanApp } from "@/lib/detail-plan-app";
@@ -61,6 +62,9 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   const [activeApp, setActiveApp] = useState("epmp");
   const [open, setOpen] = useState(false);
   const [wantProject, setWantProject] = useState<string | null>(null);   // dự án cần mở sẵn khi nhảy app
+  // ĐIỆN THOẠI: KHÔNG chừa chỗ cố định cho rail (52px là 14% bề ngang máy 375px) — rail thành DRAWER
+  // trượt đè lên nội dung, mở bằng nút tròn góc dưới-trái (tầm ngón cái, thao tác 1 tay).
+  const isMobile = useIsMobile();
   useEffect(() => { setMounted(true); setStage(detectStage()); }, []);
   // Dashboard ePMP bấm nút "Video" của 1 dự án → nhảy sang app Media và chọn sẵn dự án đó.
   // (Gộp 04/09: app cũ "Video tại công trường" đã bỏ, Media là chỗ duy nhất xem/tải ảnh-video.)
@@ -109,14 +113,18 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
           )}
           {/* KHÔNG dùng transition trên `width`: nó làm width kẹt ở giá trị "thu" (52px) khi
               app re-render liên tục → nhãn bị cắt. Đổi/thu tức thì cho chắc. */}
-          <div style={{ position: "fixed", top: 0, left: 0, bottom: 0, width: open ? RAIL_W_OPEN : RAIL_W, zIndex: 45,
-               background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column",
+          <div style={{ position: "fixed", top: 0, left: 0, bottom: 0,
+               // Điện thoại: đóng thì TRƯỢT HẲN ra ngoài màn (không chiếm chỗ); mở thì rộng như bản mở.
+               width: isMobile ? RAIL_W_OPEN : (open ? RAIL_W_OPEN : RAIL_W),
+               transform: isMobile && !open ? `translateX(-${RAIL_W_OPEN}px)` : "none",
+               transition: isMobile ? "transform .18s ease" : "none",
+               zIndex: 45, background: "#0f172a", color: "#e2e8f0", display: "flex", flexDirection: "column",
                boxShadow: open ? "6px 0 22px rgba(0,0,0,.28)" : "none", overflow: "hidden" }}>
             {/* Nút MỞ / THU */}
             <button type="button" onClick={() => setOpen(o => !o)} title={open ? "Thu gọn" : "Mở rộng"}
               style={{ display: "flex", alignItems: "center", gap: 10, height: 46, padding: "0 15px", color: "#94a3b8", flexShrink: 0 }}>
               {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
-              {open && <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", whiteSpace: "nowrap" }}>ỨNG DỤNG</span>}
+              {(open || isMobile) && <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", whiteSpace: "nowrap" }}>ỨNG DỤNG</span>}
             </button>
             <div style={{ height: 1, background: "rgba(148,163,184,.2)", margin: "0 8px 6px" }} />
             {/* Danh sách app (đã lọc theo bản live/dev) */}
@@ -124,12 +132,12 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
               const active = a.id === activeApp;
               return (
                 <button key={a.id} type="button" onClick={() => { setActiveApp(a.id); setOpen(false); }} title={a.name}
-                  style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 46, padding: "0 15px",
+                  style={{ display: "flex", alignItems: "center", gap: 12, minHeight: isMobile ? 52 : 46, padding: "0 15px",
                     background: active ? "rgba(45,212,191,.14)" : "transparent",
                     borderLeft: active ? "3px solid #2dd4bf" : "3px solid transparent",
                     color: active ? "#ffffff" : "#cbd5e1", whiteSpace: "nowrap", textAlign: "left" }}>
                   <span style={{ flexShrink: 0, display: "flex" }}>{a.icon}</span>
-                  {open && (
+                  {(open || isMobile) && (
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, lineHeight: 1.2 }}>{a.name}</span>
                       <span style={{ display: "block", fontSize: 10, color: "#94a3b8" }}>{a.sub}</span>
@@ -141,11 +149,21 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
             <div style={{ flex: 1 }} />
             {open && <div style={{ padding: "10px 15px", fontSize: 9.5, color: "#64748b" }}>1 link · nhiều app</div>}
           </div>
+          {/* Nút mở drawer — góc DƯỚI-TRÁI cho vừa tầm ngón cái khi cầm 1 tay. Chỉ có trên điện thoại,
+              và ẩn đi khi drawer đang mở (lúc đó bấm ra ngoài để đóng). */}
+          {isMobile && !open && (
+            <button type="button" onClick={() => setOpen(true)} aria-label="Mở danh sách ứng dụng"
+              style={{ position: "fixed", left: 12, bottom: 16, zIndex: 43, width: 48, height: 48, borderRadius: 999,
+                background: "#0f172a", color: "#e2e8f0", border: "1px solid rgba(148,163,184,.35)",
+                boxShadow: "0 6px 18px rgba(2,6,23,.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <PanelLeftOpen className="h-5 w-5" />
+            </button>
+          )}
         </>,
         document.body,
       )}
       {/* SPACER giữ chỗ cho rail (fixed, đã portal ra ngoài) — flex item, width không bị co. */}
-      {shellOn && <div style={{ width: RAIL_W, flexShrink: 0 }} aria-hidden />}
+      {shellOn && <div style={{ width: isMobile ? 0 : RAIL_W, flexShrink: 0 }} aria-hidden />}
       {/* Ô NỘI DUNG = flex item chiếm phần còn lại. Thanh rail (fixed) phủ lên div SPACER phía
           trên → nội dung bắt đầu ngay sau rail, không bị đè. Mở rộng rail = overlay, spacer giữ
           nguyên 52px nên app ePMP KHÔNG phải reflow. */}
