@@ -28,9 +28,12 @@ import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } f
 
 /** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
  *  thứ tự dưới đây đọc theo CỘT của bản in: cột 1 từ trên xuống, rồi cột 2…).
- *  File báo cáo tuần liệt kê ~56 nhóm (gồm OEM, OTHERS, LOOSE EXPORT, CÔNG NỢ CŨ…) — KHÔNG hiện hết.
- *  ĐỪNG tự đổi thứ tự hay tự xếp theo số liệu: chủ nhà xem quen bố cục này. Thêm/bớt dự án thì sửa
- *  đúng danh sách này. Dự án không có trong file thì tự bỏ qua (không để ô trống). */
+ *  File báo cáo tuần liệt kê nhiều nhóm khác (OEM, OTHERS, LOOSE EXPORT, CÔNG NỢ CŨ…) — KHÔNG hiện hết.
+ *  Dự án không có trong file thì tự bỏ qua (không để ô trống).
+ *  LƯU Ý thứ tự: lưới nay GOM CỤM THEO VÙNG (Phú Quốc → Bắc → Trung → Nam → Nước Ngoài), thứ tự dưới
+ *  đây chỉ còn quyết định trước-sau TRONG cùng một vùng.
+ *  QUY ƯỚC VẬN HÀNH: dự án đã rời ePMP thì tự mang ra khỏi lưới (xem `ordered`), nhường chỗ cho dự án
+ *  mới — muốn thêm dự án mới thì viết tên nhóm vào danh sách này, đúng như cách gọi trong file tuần. */
 const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
@@ -601,9 +604,16 @@ export function PerfChartApp() {
       // Nguyên tắc loại trừ tháng âm — CHỈ ở tab này (xem absorbNegBack). Hai tab kia đọc thẳng
       // projs nên vẫn giữ nguyên số của file.
       .map((p) => ({ ...p, rev: absorbNegBack(p.rev), vung: vungVN(lookupRegion(regionMap, p.name)) }));
+    // DỰ ÁN ĐÃ RỜI ePMP THÌ MANG RA KHỎI LƯỚI — quy ước vận hành của chủ nhà: chỗ đó để dành cho dự án
+    // mới. Không tra được vùng nghĩa là ePMP không còn dòng nào của dự án đó.
+    // CHỐT AN TOÀN: chỉ lọc khi bảng vùng còn LÀNH (≥60% số dự án tra ra vùng). Nếu KV vùng rỗng hay
+    // hỏng mà vẫn lọc thì cả lưới trắng bong — mất hẳn màn hình còn tệ hơn thừa vài dự án cũ.
+    const nOk = list.filter((p) => p.vung !== "—").length;
+    const healthy = list.length > 0 && nOk >= Math.ceil(list.length * 0.6);
+    const live = healthy ? list.filter((p) => p.vung !== "—") : list;
     // GOM CỤM THEO VÙNG: Phú Quốc → Bắc → Trung → Nam → Nước Ngoài (thứ tự của lib/vung.ts, giống
     // báo cáo tuân thủ). Trong cùng vùng thì GIỮ NGUYÊN thứ tự PERF_SHOW chủ nhà đã chốt.
-    return list.map((p, i) => [p, i] as const)
+    return live.map((p, i) => [p, i] as const)
       .sort((a, b) => vungRank(a[0].vung) - vungRank(b[0].vung) || a[1] - b[1])
       .map(([p]) => p);
   }, [projs, regionMap]);
