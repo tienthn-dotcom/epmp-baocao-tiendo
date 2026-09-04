@@ -29,6 +29,11 @@ const cfg = JSON.parse(fs.readFileSync(WRANGLER, "utf8"));
 // tên repo (tienthn-dotcom-epmp-baocao-tiendo) → deploy NHẦM sang worker mới, URL live cũ không cập
 // nhật. Ghim cứng để mọi deploy luôn trúng đúng worker/URL đang chạy.
 cfg.name = "baocao-tiendo-pmo";
+// GHIM compatibility_date. Nitro tự điền NGÀY TRÊN MÁY BUILD; máy ở giờ VN nên sau 0h là ngày mai so
+// với giờ UTC của Cloudflare → API chặn "Can't set compatibility date in the future" và deploy hỏng
+// giữa đêm. Ghim một mốc cố định cũng đúng cách làm chuẩn của Workers: hành vi runtime không được
+// đổi âm thầm theo ngày build. Muốn nâng thì sửa tay ở đây rồi thử lại.
+cfg.compatibility_date = "2026-09-04";
 // GỠ cờ nodejs_compat: từ 2026-08-04 Cloudflare đặt nó làm MẶC ĐỊNH và TỪ CHỐI khi khai báo tường
 // minh (lỗi validation 10021). Nitro vẫn tự thêm cờ này → phải lọc bỏ trước khi deploy. nodejs_compat
 // vẫn hoạt động (mặc định), nên gỡ khai báo KHÔNG ảnh hưởng runtime.
