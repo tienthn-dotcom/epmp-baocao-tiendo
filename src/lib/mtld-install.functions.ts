@@ -51,16 +51,26 @@ function toB64(bytes: Uint8Array): string {
  *  chỉ ~170KB thay vì cả 2MB. AN TOÀN: dùng fflate GIẢI NÉN CÓ CHỌN LỌC (chỉ ~1.7MB, không dựng
  *  object cả 24MB như SheetJS → không OOM). Rewrite workbook/rels/content-types về 1 sheet. Lỗi
  *  bất kỳ → ném để caller fallback gửi nguyên file. */
-function extractSummaryXlsx(buf: ArrayBuffer): Uint8Array {
+const escXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function extractSheetXlsx(buf: ArrayBuffer, sheetName: string): Uint8Array {
   const data = new Uint8Array(buf);
   const meta = unzipSync(data, { filter: (f) => f.name === "xl/workbook.xml" || f.name === "xl/_rels/workbook.xml.rels" });
-  const rid = strFromU8(meta["xl/workbook.xml"]).match(/<sheet[^>]*name="Summary"[^>]*r:id="([^"]+)"/)?.[1];
-  if (!rid) throw new Error("Không thấy sheet Summary");
+  // Dò r:id của ĐÚNG tab theo TÊN (name & r:id có thể ở thứ tự bất kỳ; tên bị escape XML → giải mã rồi so).
+  const wbxml = strFromU8(meta["xl/workbook.xml"]);
+  let rid: string | undefined;
+  const re = /<sheet\b([^>]*?)\/?>/g; let sm: RegExpExecArray | null;
+  while ((sm = re.exec(wbxml))) {
+    const a = sm[1];
+    const nm = a.match(/\bname="([^"]*)"/)?.[1];
+    const id = a.match(/\br:id="([^"]+)"/)?.[1];
+    if (nm != null && id && decodeXml(nm) === sheetName) { rid = id; break; }
+  }
+  if (!rid) throw new Error(`Không thấy sheet "${sheetName}"`);
   const target = strFromU8(meta["xl/_rels/workbook.xml.rels"]).match(new RegExp(`Id="${rid}"[^>]*Target="([^"]+)"`))?.[1];
-  if (!target) throw new Error("Không map được sheet Summary");
+  if (!target) throw new Error("Không map được sheet");
   const sheetPath = "xl/" + target.replace(/^\//, "");
   const parts = unzipSync(data, { filter: (f) => f.name === sheetPath || f.name === "xl/styles.xml" || f.name === "xl/sharedStrings.xml" });
-  if (!parts[sheetPath]) throw new Error("Thiếu phần Summary");
+  if (!parts[sheetPath]) throw new Error("Thiếu phần sheet");
   const enc = (s: string) => new TextEncoder().encode(s);
   const hasSS = !!parts["xl/sharedStrings.xml"];
   const ovSS = hasSS ? '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>' : "";
@@ -68,7 +78,7 @@ function extractSummaryXlsx(buf: ArrayBuffer): Uint8Array {
   const out: Record<string, Uint8Array> = {
     "[Content_Types].xml": enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${ovSS}</Types>`),
     "_rels/.rels": enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
-    "xl/workbook.xml": enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Summary" sheetId="1" r:id="rId1"/></sheets></workbook>`),
+    "xl/workbook.xml": enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${escXml(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`),
     "xl/_rels/workbook.xml.rels": enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${relSS}</Relationships>`),
     "xl/worksheets/sheet1.xml": parts[sheetPath],
     "xl/styles.xml": parts["xl/styles.xml"] ?? enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>'),
@@ -110,15 +120,15 @@ async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
   return null;
 }
 
-/** Fetch Drive → (gid: đúng 1 tab, khỏi tách · không gid: tách sheet "Summary") → b64 → cache. Trả b64. */
-async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string): Promise<string> {
+/** Fetch Drive → (gid: đúng 1 tab · không gid: TÁCH đúng tab `sheet` (mặc định "Summary")) → b64 → cache. */
+async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string, sheet?: string, full?: boolean): Promise<string> {
   let raw: ArrayBuffer, effGid = gid;
   try {
     raw = await fetchXlsxById(fileId, gid);
   } catch (e) {
     if (!gid) throw e;
     // gid-export lỗi (vd HTTP 400: gid không khớp/không tồn tại trong file) → LÙI về tải NGUYÊN file
-    // (không gid) rồi tách sheet "Summary" — đúng hành vi cũ cho dạng phòng, không để popup chết.
+    // (không gid) rồi tách sheet — đúng hành vi cũ cho dạng phòng, không để popup chết.
     raw = await fetchXlsxById(fileId);
     effGid = undefined;
   }
@@ -126,9 +136,11 @@ async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLi
   if (effGid) {
     // export?gid=… đã trả ĐÚNG 1 tab (~23KB) → gửi nguyên, KHÔNG cần tách (nhẹ nhất).
     bytes = new Uint8Array(raw);
+  } else if (full) {
+    bytes = new Uint8Array(raw);                                  // NGUYÊN file (mọi sheet) — cho "Tự động" quét hết
   } else {
-    try { bytes = extractSummaryXlsx(raw); }          // ~170KB
-    catch { bytes = new Uint8Array(raw); }             // tách lỗi → nguyên file
+    try { bytes = extractSheetXlsx(raw, sheet ?? "Summary"); }   // chỉ đúng TAB đã chọn (~170KB)
+    catch { bytes = new Uint8Array(raw); }                        // tách lỗi → nguyên file (client tự chọn tab)
   }
   const b64 = toB64(bytes);
   if (kv) {
@@ -145,6 +157,29 @@ async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLi
   }
   return b64;
 }
+
+/** LIỆT KÊ TÊN MỌI TAB của 1 file (KHÔNG tách Summary → nên KHÔNG mất tab). Chỉ giải nén `xl/workbook.xml`
+ *  (vài KB) rồi regex tên sheet → NHẸ, không OOM, KHÔNG gửi cả file 2MB về client. Cache theo fileId. */
+const decodeXml = (s: string) => s
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+  .replace(/&amp;/g, "&");
+export const listSheetTabs = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), force: z.boolean().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ tabs: string[] }> => {
+    const kv = await getKv();
+    const cacheKey = `stabs:${data.fileId}`;
+    if (kv && !data.force) { const hit = await kv.get(cacheKey); if (hit) { try { const t = JSON.parse(hit) as string[]; if (Array.isArray(t)) return { tabs: t }; } catch { /* cache hỏng → tải lại */ } } }
+    const raw = await fetchXlsxById(data.fileId);                                  // tải nguyên workbook (mọi tab)
+    const wb = unzipSync(new Uint8Array(raw), { filter: (f) => f.name === "xl/workbook.xml" })["xl/workbook.xml"];
+    const xml = wb ? strFromU8(wb) : "";
+    const tabs: string[] = [];
+    const re = /<sheet\b[^>]*\bname="([^"]*)"/g; let m: RegExpExecArray | null;
+    while ((m = re.exec(xml))) tabs.push(decodeXml(m[1]));
+    if (kv && tabs.length) { try { await kv.put(cacheKey, JSON.stringify(tabs), { expirationTtl: CACHE_TTL_S }); } catch { /* bỏ qua */ } }
+    return { tabs };
+  });
 
 /** CLIENT gửi TOÀN BỘ fileId install-link (đọc từ hyperlink) → gộp vào REGISTRY sfile:index để
  *  worker cron sáng warm SẴN mọi dự án (không chờ từng người mở). Idempotent, gọi mỗi lần load. */
@@ -163,14 +198,48 @@ export const recordSummaryFiles = createServerFn({ method: "POST" })
     } catch { return { count: 0 }; }
   });
 
+// ── DANH SÁCH POPUP LẮP ĐẶT cho app MTLĐ ─────────────────────────────────────
+// Dashboard (sau khi parse installLinks) ĐẨY danh sách này vào KV; app MTLĐ ĐỌC thẳng từ KV →
+// không còn phụ thuộc cầu nối localStorage (ghi/đọc lệch thời điểm, khác tab → trống).
+const INSTALL_LIST_KEY = "mtld:install:list:v2";
+type InstallListItem = {
+  fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
+  // Vùng + form để render Y HỆT popup "Thi công lắp đặt" (MatrixFormEditor: ma trận live + form đã lưu).
+  sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
+};
+export const saveInstallList = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ list: z.array(z.object({
+    fileId: z.string().max(120), gid: z.string().max(30).optional(), name: z.string().max(300),
+    maCT: z.string().max(120), region: z.string().max(120).optional(), groupDA: z.string().max(300).optional(),
+    sheet: z.string().max(200).optional(), range: z.string().max(60).optional(), tl: z.string().max(30).optional(),
+    br: z.string().max(30).optional(), formKey: z.string().max(400).optional(), chart: z.boolean().optional(),
+  })).max(1000) }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const kv = await getKv();
+    if (kv) { try { await kv.put(INSTALL_LIST_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
+    return { ok: true };
+  });
+export const getInstallList = createServerFn({ method: "POST" })
+  .handler(async (): Promise<{ list: InstallListItem[] }> => {
+    const kv = await getKv();
+    if (!kv) return { list: [] };
+    try { const raw = await kv.get(INSTALL_LIST_KEY); return { list: raw ? (JSON.parse(raw) as InstallListItem[]) : [] }; }
+    catch { return { list: [] }; }
+  });
+
 /** TẢI file Summary về CLIENT — chỉ gửi riêng sheet "Summary" (~170KB) thay vì cả file 2MB.
  *  KHÔNG parse trên Worker (parse xlsx 2MB làm OOM → Error 1102). Việc parse + render ở CLIENT.
  *  Cache GHIM THEO NGÀY + tự làm mới nền (xem khối chú thích trên). `force` = lấy LIVE ngay. */
 export const getSummaryFile = createServerFn({ method: "POST" })
-  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), force: z.boolean().optional() }).parse(input))
-  .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
+  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), sheet: z.string().max(120).regex(/^[^\n\r]*$/).optional(), full: z.boolean().optional(), force: z.boolean().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ b64: string; cached: boolean; ts: number }> => {
     const kv = await getKv();
-    const cacheKey = data.gid ? `sfile:${data.fileId}:${data.gid}` : `sfile:${data.fileId}`;
+    // sheet != "Summary" → cache RIÊNG theo tab. full=true → nguyên file (cache riêng) cho "Tự động" quét mọi sheet.
+    const sh = (data.sheet ?? "").trim();
+    const cacheKey = data.gid ? `sfile:${data.fileId}:${data.gid}`
+      : data.full ? `sfile:${data.fileId}:full`
+      : (sh && sh !== "Summary") ? `sfile:${data.fileId}:sh:${sh}`
+      : `sfile:${data.fileId}`;
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
@@ -178,15 +247,15 @@ export const getSummaryFile = createServerFn({ method: "POST" })
         try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } }
         catch { /* cache đời cũ (b64 thô) → coi như ts=0 để refresh nền 1 lần */ }
         if (ts < lastRefreshBoundary(Date.now())) {          // cũ hơn mốc quét hôm nay → làm mới ở NỀN
-          const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey).catch(() => { /* nền, lỗi kệ */ });
+          const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full).catch(() => { /* nền, lỗi kệ */ });
           const wu = await getWaitUntil();
           if (wu) wu(job);
         }
-        return { b64, cached: true };                        // LUÔN trả cache tức thì
+        return { b64, cached: true, ts: ts || Date.now() };  // LUÔN trả cache tức thì (kèm mốc dữ liệu)
       }
     }
-    const b64 = await refreshAndStore(data.fileId, data.gid, kv, cacheKey);
-    return { b64, cached: false };
+    const b64 = await refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full);
+    return { b64, cached: false, ts: Date.now() };
   });
 
 /** TẢI 1 sheet dưới dạng PDF do GOOGLE render (Y HỆT màn hình: có CHART + màu điều kiện + format).
@@ -194,8 +263,9 @@ export const getSummaryFile = createServerFn({ method: "POST" })
 async function fetchPdfOnce(id: string, gid?: string, range?: string): Promise<string> {
   const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
   const rg = range && range.trim() ? `&range=${encodeURIComponent(range.trim())}` : "";   // giới hạn ĐÚNG vùng admin khai (A1, vd A1:H30) — bỏ trống = cả tab
-  // scale=4 = "Fit to page" → GÓI TRỌN vùng vào 1 TRANG, KHÔNG cắt ngang giữa chart/ma trận (liền mạch).
-  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&size=A4&scale=4&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&_ts=${Date.now()}`;
+  // scale=4 = "Fit to page" → gói trọn vùng vào 1 TRANG. MARGIN=0 + căn TRÊN-TRÁI → bỏ lề trắng thừa của khổ giấy
+  // (vùng vẫn cắt đúng theo range; phần "thừa" trước đây là lề A4). fzr=false: không lặp hàng/cột tiêu đề.
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&scale=4&fzr=false&top_margin=0&bottom_margin=0&left_margin=0&right_margin=0&horizontal_alignment=LEFT&vertical_alignment=TOP&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&_ts=${Date.now()}`;
   const r = await fetch(url, { redirect: "follow", cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)", Accept: "application/pdf,*/*", "Cache-Control": "no-cache, no-store" } });
   if (!r.ok) throw new Error(`Không tải được PDF (HTTP ${r.status}). Kiểm tra quyền chia sẻ "Anyone with the link".`);
   const bytes = new Uint8Array(await r.arrayBuffer());

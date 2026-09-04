@@ -128,14 +128,16 @@ async function writeRow(row: ActivityRow): Promise<void> {
   await devAppend(row);
 }
 
-async function readRows(opts: { email?: string; since?: string; limit: number }): Promise<ActivityRow[]> {
+async function readRows(opts: { email?: string; since?: string; before?: string; action?: string; limit: number }): Promise<ActivityRow[]> {
   const d1 = await getD1();
   if (d1) {
     await ensureD1(d1);
     const clauses: string[] = [];
     const binds: unknown[] = [];
     if (opts.email) { clauses.push("email = ?"); binds.push(opts.email); }
+    if (opts.action) { clauses.push("action = ?"); binds.push(opts.action); }
     if (opts.since) { clauses.push("ts >= ?"); binds.push(opts.since); }
+    if (opts.before) { clauses.push("ts < ?"); binds.push(opts.before); }   // KEYSET: trang sau = cũ hơn con trỏ
     let q = "SELECT ts, email, action, detail FROM access_log";
     if (clauses.length) q += " WHERE " + clauses.join(" AND ");
     q += " ORDER BY ts DESC LIMIT ?";
@@ -145,9 +147,30 @@ async function readRows(opts: { email?: string; since?: string; limit: number })
   }
   let rows = await devReadAll();
   if (opts.email) rows = rows.filter((r) => normEmail(r.email) === opts.email);
+  if (opts.action) rows = rows.filter((r) => r.action === opts.action);
   if (opts.since) rows = rows.filter((r) => r.ts >= opts.since!);
+  if (opts.before) rows = rows.filter((r) => r.ts < opts.before!);
   rows.sort((a, b) => b.ts.localeCompare(a.ts));
   return rows.slice(0, opts.limit);
+}
+
+/** Đọc TOÀN BỘ log (không giới hạn) — dùng cho sao lưu ra Drive. Sắp xếp cũ → mới. */
+async function readAllRows(): Promise<ActivityRow[]> {
+  const d1 = await getD1();
+  if (d1) {
+    await ensureD1(d1);
+    const { results } = await d1.prepare("SELECT ts, email, action, detail FROM access_log ORDER BY ts ASC").all<ActivityRow>();
+    return results ?? [];
+  }
+  const rows = await devReadAll();
+  rows.sort((a, b) => a.ts.localeCompare(b.ts));
+  return rows;
+}
+
+/** 1 ô CSV: bọc "" nếu chứa dấu phẩy/nháy/xuống dòng; nhân đôi nháy trong ô. */
+function csvCell_(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 /** Danh sách email đã từng xuất hiện — đổ vào ô lọc "theo người". */
@@ -161,6 +184,46 @@ async function distinctUsers(): Promise<string[]> {
   const rows = await devReadAll();
   return Array.from(new Set(rows.map((r) => r.email))).sort();
 }
+
+/** Danh sách LOẠI thao tác đã từng xuất hiện — đổ vào ô lọc "thao tác" (lọc ở SERVER, không cần ôm hết log). */
+async function distinctActions(): Promise<string[]> {
+  const d1 = await getD1();
+  if (d1) {
+    await ensureD1(d1);
+    const { results } = await d1.prepare("SELECT DISTINCT action FROM access_log ORDER BY action").all<{ action: string }>();
+    return (results ?? []).map((r) => r.action);
+  }
+  const rows = await devReadAll();
+  return Array.from(new Set(rows.map((r) => r.action))).sort();
+}
+
+/** RÀ SOÁT NOTE THEO NHẬT KÝ: đọc mọi lần "thêm" Vướng mắc/Giải pháp → map NỘI DUNG (60 ký tự đầu,
+ *  bỏ dấu) → VỊ TRÍ ĐÚNG lúc viết = "maCT||giai đoạn". Client dùng để dò note nào đang nằm sai chỗ. */
+const _normTxt = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+async function buildAuditPosMap(): Promise<Record<string, string>> {
+  const d1 = await getD1();
+  let details: string[] = [];
+  if (d1) {
+    await ensureD1(d1);
+    const { results } = await d1.prepare("SELECT detail FROM access_log WHERE action='save_edit' AND detail LIKE '%: thêm%' ORDER BY ts ASC").all<{ detail: string }>();
+    details = (results ?? []).map((r) => r.detail);
+  } else {
+    details = (await devReadAll()).filter((r) => r.action === "save_edit").sort((a, b) => a.ts.localeCompare(b.ts)).map((r) => r.detail ?? "");
+  }
+  const reItem = /^(\S+)\s+.+?\s+·\s+(\S+)\s+—\s+(?:Vướng mắc|Giải pháp):\s+thêm:\s+"([\s\S]+)"$/;
+  const reProj = /^(\S+)\s+.+?\s+\(cấp dự án\)\s+—\s+(?:Vướng mắc|Giải pháp):\s+thêm:\s+"([\s\S]+)"$/;
+  const map: Record<string, string> = {};
+  for (const d of details) {
+    let m = reItem.exec(d);
+    if (m) { map[_normTxt(m[3])] = `${m[1]}||${m[2]}`; continue; }   // maCT||stageAbbr
+    m = reProj.exec(d);
+    if (m) map[_normTxt(m[2])] = `${m[1]}||DA`;                      // cấp dự án
+  }
+  return map;
+}
+export const fetchAuditPosMap = createServerFn({ method: "GET" }).handler(async () => {
+  return { map: await buildAuditPosMap() };
+});
 
 /* ───────────────────────── server functions ───────────────────────── */
 
@@ -202,7 +265,9 @@ export const fetchActivityLog = createServerFn({ method: "POST" })
     z.object({
       email: z.string().max(200).nullish(),
       since: z.string().max(40).nullish(),
-      limit: z.number().int().min(1).max(2000).optional(),
+      before: z.string().max(40).nullish(),      // KEYSET: chỉ lấy dòng CŨ HƠN mốc này (tải trang tiếp)
+      action: z.string().max(60).nullish(),      // lọc LOẠI thao tác Ở SERVER
+      limit: z.number().int().min(1).max(1000).optional(),
       devAs: z.string().max(200).nullish(),
     }).parse(input ?? {}),
   )
@@ -210,13 +275,43 @@ export const fetchActivityLog = createServerFn({ method: "POST" })
     const me = await currentEmail(data.devAs);
     const admins = await readAdmins();
     if (!isAdminEmail(me, admins ?? DEFAULT_ADMINS)) {
-      return { ok: false as const, rows: [] as ActivityRow[], users: [] as string[] };
+      return { ok: false as const, rows: [] as ActivityRow[], users: [] as string[], actions: [] as string[], hasMore: false };
     }
+    // PHÂN TRANG: mỗi lần chỉ kéo `limit` dòng từ D1 (mặc định 200) → app KHÔNG ôm hết log.
+    // Lọc Người/Ngày/Thao tác ngay ở SQL. hasMore = trang này đầy → còn dòng cũ hơn để "Tải thêm".
+    const pageSize = data.limit ?? 200;
     const rows = await readRows({
       email: data.email ? normEmail(data.email) : undefined,
       since: data.since || undefined,
-      limit: data.limit ?? 500,
+      before: data.before || undefined,
+      action: data.action || undefined,
+      limit: pageSize,
     });
-    const users = await distinctUsers();
-    return { ok: true as const, rows, users };
+    // Danh sách người/thao tác cho dropdown chỉ cần lấy Ở TRANG ĐẦU (không có `before`) — đỡ truy vấn thừa.
+    const first = !data.before;
+    const users = first ? await distinctUsers() : [];
+    const actions = first ? await distinctActions() : [];
+    return { ok: true as const, rows, users, actions, hasMore: rows.length === pageSize };
+  });
+
+/** SAO LƯU nhật ký giám sát ra Google Drive (CHỈ admin). Xuất TOÀN BỘ access_log → CSV (UTF-8 BOM,
+ *  mở Excel đúng tiếng Việt) → upsert vào "Data Source" › DATABASE › ePMP › Nhật ký giám sát.
+ *  Mirror 1 file "nhat-ky-giam-sat.csv" (luôn đầy đủ, ghi đè mỗi lần) — bản lưu dài hạn ngoài D1. */
+export const backupAuditLogToDrive = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ devAs: z.string().max(200).nullish() }).parse(input ?? {}))
+  .handler(async ({ data }): Promise<{ ok: boolean; count?: number; link?: string; updated?: boolean; msg?: string }> => {
+    const me = await currentEmail(data?.devAs);
+    const admins = await readAdmins();
+    if (!isAdminEmail(me, admins ?? DEFAULT_ADMINS)) return { ok: false, msg: "Chỉ admin giám sát mới sao lưu được." };
+
+    const drive = await import("./drive.functions");
+    if (!(await drive.driveIsConfigured())) return { ok: false, msg: "Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*)." };
+
+    const rows = await readAllRows();
+    const header = ["Thời điểm (ISO)", "Người dùng", "Thao tác", "Chi tiết"];
+    const body = rows.map((r) => [r.ts, r.email, r.action, r.detail ?? ""].map(csvCell_).join(","));
+    const csv = "﻿" + [header.join(","), ...body].join("\r\n") + "\r\n";   // ﻿ = BOM cho Excel VN
+
+    const res = await drive.driveArchiveText(["ePMP", "Nhật ký giám sát"], "nhat-ky-giam-sat.csv", csv, "text/csv");
+    return { ok: true, count: rows.length, link: res.link, updated: res.updated };
   });

@@ -22,17 +22,37 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { LayoutDashboard, LineChart, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X } from "lucide-react";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
-import { parseMatrixWorkbook } from "@/lib/matrix-reader";
+import { whoami } from "@/lib/activity.functions";
+import { fetchUserRoles } from "@/lib/edits.functions";
+import { roleOf } from "@/lib/roles";
+import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
+import { MatrixFormEditor } from "@/lib/matrix-form-editor";
+import { DetailPlanApp } from "@/lib/detail-plan-app";
+import { PmoAiApp } from "@/lib/pmo-ai-app";
+import { DataStudioApp } from "@/lib/data-studio-app";
+import { PerfChartApp } from "@/lib/perf-chart-app";
+import { CanMediaApp } from "@/lib/can-media-app";
 
 const RAIL_W = 52;        // bề rộng thanh khi THU (icon)
 const RAIL_W_OPEN = 214;  // bề rộng khi MỞ (overlay)
 
-type AppDef = { id: string; name: string; sub: string; icon: ReactNode };
+type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: boolean; adminPmoOnly?: boolean };
+// `live: true` = hiện cả trên bản chính thức. Không có = CHỈ hiện ở dev (tính năng đang làm dở).
+// `adminPmoOnly: true` = trên bản live CHỈ admin/PMO thấy (người thường không thấy trong rail).
 const APPS: AppDef[] = [
-  { id: "epmp", name: "Project Master Plan", sub: "ePMP · PMO", icon: <LayoutDashboard className="h-5 w-5" /> },
-  { id: "mtld", name: "MTLĐ", sub: "Biểu đồ tiến độ", icon: <LineChart className="h-5 w-5" /> },
+  { id: "epmp", name: "Project Master Plan", sub: "ePMP · PMO", icon: <LayoutDashboard className="h-5 w-5" />, live: true },
+  { id: "mtld", name: "MTLĐ", sub: "Biểu đồ tiến độ", icon: <LineChart className="h-5 w-5" />, live: true, adminPmoOnly: true },
+  { id: "detail", name: "DST", sub: "Theo dõi tiến độ chi tiết", icon: <ListTree className="h-5 w-5" />, live: true },
+  { id: "pmoai", name: "Trợ lý PMO", sub: "Cảnh báo & quyết định", icon: <Brain className="h-5 w-5" /> },
+  { id: "datastudio", name: "Dữ liệu dự án", sub: "Nhập & quản lý dữ liệu", icon: <Database className="h-5 w-5" /> },
+  { id: "perf", name: "Hiệu suất dự án", sub: "Doanh thu / Nhân sự", icon: <BarChart3 className="h-5 w-5" />, live: true },
+  // ĐANG DỰNG (dev-only) — Media công trường: chọn dự án → ma trận → click ô căn → xem/tải ảnh+video.
+  // GỘP 04/09/2026: app cũ "Video tại công trường" (clipcan) đã BỎ — Media là bản duy nhất, cùng
+  // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
+  { id: "media", name: "Media công trường", sub: "Ma trận + ảnh/video theo căn", icon: <Images className="h-5 w-5" />, live: true },
 ];
 
 export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
@@ -40,11 +60,39 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   const [stage, setStage] = useState<Stage>("live"); // "live" ở lần render đầu → tránh lệch hydration
   const [activeApp, setActiveApp] = useState("epmp");
   const [open, setOpen] = useState(false);
+  const [wantProject, setWantProject] = useState<string | null>(null);   // dự án cần mở sẵn khi nhảy app
   useEffect(() => { setMounted(true); setStage(detectStage()); }, []);
+  // Dashboard ePMP bấm nút "Video" của 1 dự án → nhảy sang app Media và chọn sẵn dự án đó.
+  // (Gộp 04/09: app cũ "Video tại công trường" đã bỏ, Media là chỗ duy nhất xem/tải ảnh-video.)
+  useEffect(() => {
+    const go = (e: Event) => {
+      const d = (e as CustomEvent<{ app?: string; project?: string }>).detail || {};
+      if (!d.app) return;
+      setActiveApp(d.app); setWantProject(d.project ?? null); setOpen(false);
+      window.scrollTo({ top: 0 });
+    };
+    window.addEventListener("epmp:open-app", go);
+    return () => window.removeEventListener("epmp:open-app", go);
+  }, []);
 
   const shellOn = mounted && featureOn("appShell", stage);
+  // Quyền: 1 số app (adminPmoOnly) trên bản live CHỈ admin/PMO thấy. devAs = giả lập ?as= khi dev.
+  const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
+  const meQ = useQuery({ queryKey: ["shell-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
+  const rolesQ = useQuery({ queryKey: ["shell-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
+  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  // Trên bản chính thức (live) chỉ hiện app có cờ `live`, và app adminPmoOnly chỉ khi là admin/PMO.
+  const visibleApps = APPS.filter((a) => (stage === "live" ? a.live : true) && (!a.adminPmoOnly || canManage));
+  // App đang chọn phải nằm trong danh sách được phép; nếu không (vd người thường lỡ ở mtld) → về ePMP.
+  const effectiveApp = visibleApps.some((a) => a.id === activeApp) ? activeApp : "epmp";
   // Nội dung = app đang chọn. `epmpApp` LUÔN nằm ở đây (không remount khi bật/tắt thanh).
-  const content = shellOn && activeApp === "mtld" ? <MtldApp /> : epmpApp;
+  const content = shellOn && effectiveApp === "mtld" ? <MtldApp />
+    : shellOn && effectiveApp === "detail" ? <DetailPlanApp />
+    : shellOn && effectiveApp === "pmoai" ? <PmoAiApp />
+    : shellOn && effectiveApp === "datastudio" ? <DataStudioApp />
+    : shellOn && effectiveApp === "perf" ? <PerfChartApp />
+    : shellOn && effectiveApp === "media" ? <CanMediaApp wantProject={wantProject} />
+    : epmpApp;
 
   return (
     // Cờ TẮT (live) → không style: 2 div bọc thành block TRONG SUỐT, app ePMP render y hệt như
@@ -71,8 +119,8 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
               {open && <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", whiteSpace: "nowrap" }}>ỨNG DỤNG</span>}
             </button>
             <div style={{ height: 1, background: "rgba(148,163,184,.2)", margin: "0 8px 6px" }} />
-            {/* Danh sách app */}
-            {APPS.map(a => {
+            {/* Danh sách app (đã lọc theo bản live/dev) */}
+            {visibleApps.map(a => {
               const active = a.id === activeApp;
               return (
                 <button key={a.id} type="button" onClick={() => { setActiveApp(a.id); setOpen(false); }} title={a.name}
@@ -108,73 +156,298 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   );
 }
 
-/** App MTLĐ = "Tường Camera Tiến độ Lắp đặt". UI = prototype tự chứa (public/mtld-monitor.html)
- *  trong <iframe> để cách ly CSS/JS/theme. DỮ LIỆU THẬT: FileDrop ở thanh trên → reader ma trận
- *  (src/lib/matrix-reader.ts) đọc file → map sang shape DIRECTORY → postMessage bơm vào iframe
- *  (thay data DEMO). Vì CHƯA có ngày/vùng (metadata PMO cấp) nên gửi noPlan=true: tường hiện %
- *  THỰC TẾ thật, cột trung tính, chưa vẽ đường KH / chưa báo động. Xem BRIEF-TICH-HOP-ePMP.md. */
-function MtldApp() {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+/** App MTLĐ = "Tường Camera Lắp đặt": GOM tất cả popup lắp đặt của ePMP về MỘT màn để xem tổng thể
+ *  (thay vì phải click từng popup). Nguồn dữ liệu = app Project Master Plan (app đầu tiên): mỗi dự án
+ *  có link "Thi công lắp đặt", ghi qua cầu nối localStorage MTLD_INSTALL_LS ({fileId,name,maCT}).
+ *  Mỗi ô render Y HỆT popup Summary bên ePMP (renderSummaryFromB64: heatmap ma trận / bảng+cột / dump).
+ *  Parse ở CLIENT (Worker chỉ tải file). */
+export const MTLD_INSTALL_LS = "mtld:install:v2";   // v2: kèm vùng + formKey (render ma trận + form)
+type InstallProj = {
+  fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
+  // Vùng + form để render Y HỆT popup "Thi công lắp đặt" (MatrixFormEditor).
+  sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
+};
+// ID DUY NHẤT 1 ma trận = fileId + gid (nhiều dự án chung file, khác tab) — dùng cho React key + bộ lọc.
+const projId = (p: InstallProj) => p.fileId + (p.gid ? "|" + p.gid : "");
+// DEDUP theo NỘI DUNG popup (file+tab+form) — nhiều dự án gắn cùng 1 ma trận chỉ hiện 1 thẻ.
+function dedupInstall(arr: InstallProj[]): InstallProj[] {
+  const seen = new Set<string>(); const out: InstallProj[] = [];
+  for (const p of arr) { const sig = `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`; if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
+  return out;
+}
+// Vùng cho bản PDF "có chart" (Google render) — khớp cách dashboard tính: có gid → cắt A1 trên tab đó;
+// không gid → dùng "TênSheet!range".
+const pdfArgsOf = (p: InstallProj): { gid?: string; range?: string } => {
+  const r = (p.range || "").trim();
+  if (p.gid) return { gid: p.gid, range: r || undefined };
+  const s = (p.sheet || "").trim();
+  return { range: s && r ? `${s}!${r}` : (s || r || undefined) };
+};
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || !files.length) return;
-    setBusy(true); setStatus("Đang đọc…");
-    try {
-      const projects: unknown[] = [];
-      let sheetCount = 0, warnCount = 0, errCount = 0;
-      for (const file of Array.from(files)) {
-        const buf = await file.arrayBuffer();
-        const units: unknown[] = [];
-        for (const { sheet, result } of parseMatrixWorkbook(buf)) {
-          if (!result.ok) continue;
-          sheetCount++;
-          if (result.qlevel === "warn") warnCount++;
-          if (result.qlevel === "error") errCount++;
-          const isPublic = /public/i.test(result.goi) || /public/i.test(sheet);
-          // Public → mỗi KHU VỰC 1 cột; Phòng → mỗi TOÀ 1 cột (tổng toà). Bỏ dòng chưa có số.
-          const rows = result.units.filter((u) => u.level === (isPublic ? "khuvuc" : "toa"));
-          for (const u of rows) {
-            if (u.pct == null) continue;
-            units.push({
-              name: isPublic ? (u.toa ? `${u.toa}·${u.name}` : u.name) : u.name,
-              scope: isPublic ? "public" : "rooms",
-              actual: u.pct, plan: null, prev: null, start: null, deadline: null,
-            });
-          }
-        }
-        if (units.length) projects.push({ group: "", name: file.name.replace(/\.(xlsx|xls)$/i, ""), cam: file.name, real: true, units });
-      }
-      if (!projects.length) { setStatus("Không tìm thấy ma trận định lượng đọc được trong file."); setBusy(false); return; }
-      const directory = [{ code: "loaded", name: "File đã nạp", projects }];
-      const today = new Date().toISOString().slice(0, 10);
-      iframeRef.current?.contentWindow?.postMessage({ type: "mtldLoad", directory, reportDate: today, noPlan: true }, "*");
-      setStatus(`Đã nạp ${projects.length} dự án · ${sheetCount} ma trận` +
-        (warnCount ? ` · ${warnCount} cờ ⚠` : "") + (errCount ? ` · ${errCount} cờ ❌` : ""));
-    } catch (err) {
-      setStatus("Lỗi đọc file: " + (err instanceof Error ? err.message : String(err)));
-    }
-    setBusy(false);
-  }
+/** 1 ô = 1 dự án. Render Y HỆT popup "Thi công lắp đặt": ma trận LIVE + FORM (kể cả ZOOM) đã lưu —
+ *  hiện ĐÚNG cỡ zoom admin đã lưu (không tự thu nhỏ); ô cuộn nếu lớn hơn. */
+function PopupCell({ proj, bump, h, onOpen }: { proj: InstallProj; bump: number; h: number; onOpen: () => void }) {
+  // HYBRID: popup cấu hình "có chart" → hiện bản PDF Google render (đủ chart + màu); còn lại → ma trận + form.
+  const pdfQ = useQuery({
+    queryKey: ["mtld-pdf", proj.fileId, proj.gid ?? "", proj.sheet ?? "", proj.range ?? "", bump],
+    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...pdfArgsOf(proj), force: bump > 0 || undefined } }),
+    enabled: !!proj.chart, staleTime: 5 * 60 * 1000, retry: 1,
+  });
+  // FIT-BỀ-NGANG bằng transform (đo scrollWidth → chính xác). Ma trận trong ô để zoom nội bộ=1 (prop
+  // `natural`) nên CHỈ transform scale — KHÔNG chồng CSS zoom + transform (thủ phạm dải trắng che bảng).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [scaledH, setScaledH] = useState(0);
+  useEffect(() => {
+    if (proj.chart) return;
+    const box = boxRef.current, content = contentRef.current;
+    if (!box || !content) return;
+    const fit = () => {
+      const cw = content.scrollWidth, ch = content.scrollHeight, bw = box.clientWidth;
+      if (!cw || !bw) return;
+      const s = Math.min(3, bw / cw);
+      setScale(s); setScaledH(Math.ceil(ch * s));   // setScale idempotent → giá trị ổn thì React bỏ qua
+    };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(box); ro.observe(content);
+    // Poll đều tới khi ma trận tải xong (loadRegion qua mạng có thể >2s) → luôn đo lại đúng cỡ.
+    let n = 0; const iv = window.setInterval(() => { fit(); if (++n > 40) clearInterval(iv); }, 150);
+    return () => { ro.disconnect(); clearInterval(iv); };
+  }, [proj.formKey, proj.chart, h, bump]);
+  return (
+    <div onClick={onOpen} title="Bấm để xem chi tiết"
+      style={{ height: h, background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #232c3d", boxShadow: "0 8px 22px rgba(0,0,0,.34)", display: "flex", flexDirection: "column", cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#131a26", color: "#e7ebf3", padding: "7px 11px", fontSize: 12, fontWeight: 700, flexShrink: 0, borderBottom: "1px solid #232c3d" }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4aa6ee", flexShrink: 0 }} />
+        <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={proj.name}>{proj.name || proj.maCT || proj.fileId}</span>
+        {proj.maCT && <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#6b7488", flexShrink: 0 }}>{proj.maCT}</span>}
+        <Maximize2 className="h-3 w-3" style={{ marginLeft: "auto", color: "#6b7488", flexShrink: 0 }} />
+      </div>
+      {proj.chart ? (
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
+          {pdfQ.isPending ? <div style={{ color: "#94a3b8", fontSize: 12, padding: 8 }}>Đang tải chart…</div>
+            : pdfQ.isError ? <div style={{ color: "#b91c1c", fontSize: 11.5, padding: 8, lineHeight: 1.5 }}>{(pdfQ.error as Error).message}</div>
+            : pdfQ.data ? <iframe title={proj.name} src={`data:application/pdf;base64,${pdfQ.data.b64}#toolbar=0&navpanes=0&view=FitH`} style={{ width: "100%", height: "100%", border: "none", pointerEvents: "none" }} /> : null}
+        </div>
+      ) : (
+        // Ô ĐỒNG ĐỀU (cao cố định); ma trận co vừa bề ngang, chỉ cuộn dọc nếu cao hơn ô.
+        <div ref={boxRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarGutter: "stable", background: "#fff" }}>
+          <div style={{ height: scaledH || undefined }}>
+            <div ref={contentRef} style={{ width: "max-content", transformOrigin: "top left", transform: `scale(${scale})` }}>
+              <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }} formKey={proj.formKey || ""} canEdit={false} force={bump} hideChrome natural />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Dialog xem CHI TIẾT 1 popup ở kích thước THẬT (100%), cuộn tự do — bấm nền tối hoặc ✕/Esc để đóng. */
+function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump: number; canEdit?: boolean; onClose: () => void }) {
+  const pdfQ = useQuery({
+    queryKey: ["mtld-pdf", proj.fileId, proj.gid ?? "", proj.sheet ?? "", proj.range ?? "", bump],
+    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...pdfArgsOf(proj), force: bump > 0 || undefined } }),
+    enabled: !!proj.chart, staleTime: 5 * 60 * 1000, retry: 1,
+  });
+  const [full, setFull] = useState(false);   // XEM TOÀN MÀN HÌNH để coi chi tiết
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { if (full) setFull(false); else onClose(); }   // Esc: thoát full trước, lần nữa mới đóng
+      else if (e.key === "f" || e.key === "F") setFull((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, full]);
+  return (
+    <div onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(2,6,23,.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: full ? 0 : 24, backdropFilter: "blur(2px)" }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ display: "flex", flexDirection: "column", width: full ? "100vw" : "min(1500px, 98vw)", height: full ? "100vh" : undefined, maxHeight: full ? "100vh" : "96vh", background: "#fff", borderRadius: full ? 0 : 14, overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,.55)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#131a26", color: "#e7ebf3", padding: "11px 16px", flexShrink: 0 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4aa6ee", flexShrink: 0 }} />
+          <span style={{ fontSize: 14, fontWeight: 700, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={proj.name}>{proj.name || proj.maCT || proj.fileId}</span>
+          {proj.maCT && <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: "#8b95ab", flexShrink: 0 }}>{proj.maCT}</span>}
+          <button type="button" onClick={() => setFull((v) => !v)} title={full ? "Thu nhỏ (F)" : "Xem toàn màn hình (F)"}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, background: "#232c3d", color: "#cbd5e1", flexShrink: 0, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>
+            {full ? "🗗" : "⛶"}
+          </button>
+          <button type="button" onClick={onClose} title="Đóng (Esc)"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, background: "#232c3d", color: "#cbd5e1", flexShrink: 0, cursor: "pointer" }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: proj.chart ? 0 : 16, background: "#fff" }}>
+          {proj.chart ? (
+            pdfQ.isPending ? <div style={{ color: "#64748b", fontSize: 13, padding: 12 }}>Đang tải chart…</div>
+              : pdfQ.isError ? <div style={{ color: "#b91c1c", fontSize: 13, padding: 12, lineHeight: 1.6 }}>{(pdfQ.error as Error).message}</div>
+              : pdfQ.data ? <iframe title={proj.name} src={`data:application/pdf;base64,${pdfQ.data.b64}#view=FitH`} style={{ width: "100%", height: full ? "calc(100vh - 48px)" : "82vh", border: "none" }} /> : null
+          ) : (
+            <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }} formKey={proj.formKey || ""} canEdit={!!canEdit} force={bump} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Theme tối (bám app cũ mtld-monitor): nền, panel, sidebar, viền, chữ, nhấn.
+const MTLD_T = { bg: "#0a0e15", side: "#10151e", panel: "#131a26", line: "#232c3d", ink: "#e7ebf3", soft: "#a3adc2", faint: "#6b7488", accent: "#5b8cff" };
+
+function MtldApp() {
+  const [list, setList] = useState<InstallProj[]>([]);
+  const [bump, setBump] = useState(0);
+  const [region, setRegion] = useState("all");
+  const [fGroup, setFGroup] = useState("");
+  const [fProj, setFProj] = useState("");
+  const [tile, setTile] = useState(320);   // bề rộng ô tối thiểu (mật độ): to = thưa, nhỏ = dày
+  const [openR, setOpenR] = useState<Set<string>>(new Set());   // vùng đang xổ danh sách dự án
+  const [detail, setDetail] = useState<InstallProj | null>(null);   // ô đang mở dialog chi tiết
+  const [viewMode, setViewMode] = useState<"region" | "wall">("region");   // xem theo vùng / gom hết như TV
+  // Quyền: admin/PMO mới được chỉnh zoom + Lưu form trong popup chi tiết.
+  const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
+  const meQ = useQuery({ queryKey: ["mtld-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
+  const rolesQ = useQuery({ queryKey: ["mtld-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
+  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  // localStorage = vẽ ngay (nếu cùng máy đã có); KV = NGUỒN THẬT (Dashboard đẩy lên) → chạy mọi lúc/tab.
+  useEffect(() => {
+    try { const l = JSON.parse(localStorage.getItem(MTLD_INSTALL_LS) || "[]"); if (Array.isArray(l) && l.length) setList(dedupInstall(l)); } catch { /* bỏ qua */ }
+  }, []);
+  const listQ = useQuery({ queryKey: ["mtld-install-list", bump], queryFn: () => getInstallList(), staleTime: 60 * 1000 });
+  useEffect(() => {
+    const l = listQ.data?.list;
+    if (Array.isArray(l) && l.length) { const u = dedupInstall(l as InstallProj[]); setList(u); try { localStorage.setItem(MTLD_INSTALL_LS, JSON.stringify(u)); } catch { /* bỏ qua */ } }
+  }, [listQ.data]);
+
+  const regionOf = (p: InstallProj) => p.region || "Khác";
+  const allByRegion = new Map<string, InstallProj[]>();
+  for (const p of list) { const r = regionOf(p); (allByRegion.get(r) ?? allByRegion.set(r, []).get(r)!).push(p); }
+  const regionList = [...allByRegion.entries()].map(([r, ps]) => [r, ps.length] as const).sort((a, b) => a[0].localeCompare(b[0], "vi"));
+  const groups = [...new Set(list.filter((p) => region === "all" || regionOf(p) === region).map((p) => p.groupDA).filter(Boolean))].sort() as string[];
+
+  const shown = list.filter((p) =>
+    (region === "all" || regionOf(p) === region) &&
+    (!fGroup || p.groupDA === fGroup) &&
+    (!fProj || projId(p) === fProj));
+  const byRegion = new Map<string, InstallProj[]>();
+  for (const p of shown) { const r = regionOf(p); (byRegion.get(r) ?? byRegion.set(r, []).get(r)!).push(p); }
+  const sections = [...byRegion.entries()].sort((a, b) => a[0].localeCompare(b[0], "vi"));
+  const cellH = Math.round(tile * 0.9);
+
+  const sel = { height: 28, borderRadius: 6, border: `1px solid ${MTLD_T.line}`, background: MTLD_T.bg, color: MTLD_T.ink, fontSize: 11.5, padding: "0 6px", colorScheme: "dark" as const, maxWidth: 220 };
+  const lab = { fontSize: 10, fontWeight: 700 as const, letterSpacing: ".05em", color: MTLD_T.faint, textTransform: "uppercase" as const };
 
   return (
-    <div style={{ height: "100vh", width: "100%", display: "flex", flexDirection: "column", background: "#e9ebf0" }}
-         onDragOver={(e) => e.preventDefault()}
-         onDrop={(e) => { e.preventDefault(); void handleFiles(e.dataTransfer.files); }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "#0f172a",
-                    color: "#e2e8f0", fontSize: 12, flexShrink: 0, borderBottom: "1px solid rgba(148,163,184,.18)" }}>
-        <strong style={{ letterSpacing: ".02em" }}>MTLĐ · Tường Camera Lắp đặt</strong>
-        <label style={{ cursor: busy ? "default" : "pointer", background: busy ? "#334155" : "#2dd4bf", color: busy ? "#94a3b8" : "#06251f",
-                        fontWeight: 700, padding: "5px 12px", borderRadius: 6, whiteSpace: "nowrap" }}>
-          {busy ? "Đang đọc…" : "Chọn / kéo-thả file ma trận (.xlsx)"}
-          <input type="file" accept=".xlsx,.xls" multiple style={{ display: "none" }} disabled={busy}
-                 onChange={(e) => void handleFiles(e.target.files)} />
-        </label>
-        <span style={{ color: "#94a3b8", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{status}</span>
-      </div>
-      <iframe ref={iframeRef} src="/mtld-monitor.html" title="MTLĐ · Tường Camera Tiến độ Lắp đặt"
-        style={{ flex: 1, width: "100%", border: "none", display: "block" }} />
+    <div style={{ height: "100vh", width: "100%", display: "flex", background: MTLD_T.bg, color: MTLD_T.ink, fontFamily: "system-ui,sans-serif" }}>
+      {/* SIDEBAR — Vùng (bám app cũ) */}
+      <aside style={{ width: 228, flexShrink: 0, background: MTLD_T.side, borderRight: `1px solid ${MTLD_T.line}`, display: "flex", flexDirection: "column", padding: "16px 12px", overflow: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#35c281", boxShadow: "0 0 0 3px rgba(53,194,129,.18)" }} />
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Theo dõi lắp đặt</span>
+        </div>
+        <div style={{ ...lab, marginTop: 3, marginLeft: 17 }}>AA CORPORATION · MONITORING</div>
+        <div style={{ ...lab, marginTop: 20, marginBottom: 6 }}>Vùng</div>
+        <RRow name="Tất cả vùng" count={list.length} active={region === "all" && !fProj} onClick={() => { setRegion("all"); setFGroup(""); setFProj(""); }} />
+        {regionList.map(([r, c]) => (
+          <div key={r}>
+            <RRow name={r} count={c} active={region === r && !fProj} open={openR.has(r)}
+              onClick={() => {
+                setRegion(r); setFGroup(""); setFProj("");
+                setOpenR((prev) => { const s = new Set(prev); s.has(r) ? s.delete(r) : s.add(r); return s; });
+              }} />
+            {openR.has(r) && (allByRegion.get(r) ?? []).map((p) => (
+              <button key={projId(p)} type="button" onClick={() => { setRegion(r); setFGroup(""); setFProj(projId(p)); }}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "5px 9px 5px 26px", marginBottom: 1, borderRadius: 6, cursor: "pointer", border: "none",
+                  background: fProj === p.fileId ? "rgba(91,140,255,.16)" : "transparent",
+                  color: fProj === p.fileId ? "#dbe6ff" : MTLD_T.soft, fontSize: 11.5, fontWeight: fProj === p.fileId ? 600 : 400, lineHeight: 1.4, whiteSpace: "normal", wordBreak: "break-word" }}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        ))}
+      </aside>
+
+      {/* MAIN */}
+      <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, padding: "10px 16px", borderBottom: `1px solid ${MTLD_T.line}`, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{region === "all" ? "Tất cả vùng" : region}</span>
+          <span style={{ fontSize: 12, color: MTLD_T.soft }}>{shown.length}/{list.length} dự án</span>
+          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={lab}>Cụm</span>
+              <select value={fGroup} onChange={(e) => setFGroup(e.target.value)} style={sel}>
+                <option value="">Tất cả</option>{groups.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select></span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={lab}>Dự án</span>
+              <select value={fProj} onChange={(e) => setFProj(e.target.value)} style={sel}>
+                <option value="">Tất cả</option>{list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}</option>)}
+              </select></span>
+            {/* Kiểu xem: THEO VÙNG (nhóm, mặc định) hoặc GOM HẾT (một lưới liền như xem TV). */}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span style={lab}>Kiểu xem</span>
+              <span style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${MTLD_T.line}` }}>
+                {(["region", "wall"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setViewMode(m)}
+                    style={{ padding: "4px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", border: "none",
+                      background: viewMode === m ? MTLD_T.accent : "transparent", color: viewMode === m ? "#fff" : MTLD_T.soft }}>
+                    {m === "region" ? "Theo vùng" : "Gom hết"}
+                  </button>
+                ))}
+              </span></span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span style={lab}>Mật độ</span>
+              <input type="range" min={220} max={460} step={20} value={tile} onChange={(e) => setTile(+e.target.value)} style={{ width: 100, accentColor: MTLD_T.accent }} /></span>
+            <button type="button" onClick={() => setBump((n) => n + 1)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, background: MTLD_T.panel, color: MTLD_T.ink, border: `1px solid ${MTLD_T.line}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <RefreshCw className="h-3.5 w-3.5" /> Làm mới
+            </button>
+          </div>
+        </div>
+
+        {list.length === 0 ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+            <div style={{ color: MTLD_T.soft, fontSize: 13, lineHeight: 1.7, maxWidth: 460 }}>
+              Chưa có danh sách dự án. Mở app <b style={{ color: MTLD_T.ink }}>Project Master Plan</b> một lần để nạp
+              danh sách link lắp đặt, rồi quay lại đây — mỗi ô hiện đúng popup lắp đặt của từng dự án.
+            </div>
+          </div>
+        ) : viewMode === "wall" ? (
+          // GOM HẾT: mọi ô vào MỘT lưới liền (không tách vùng) — xem tổng thể như bức tường TV.
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 16px 20px" }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))`, alignContent: "start", alignItems: "start" }}>
+              {shown.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 16px 20px" }}>
+            {sections.map(([rg, items]) => (
+              <section key={rg}>
+                {/* STICKY, nền ĐẶC trải hết ngang (margin âm bù padding 16px) → dính mà KHÔNG lòi/hở nội dung. */}
+                <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 10, margin: "0 -16px", padding: "12px 16px 8px", background: MTLD_T.bg }}>
+                  <h2 style={{ fontSize: 13.5, fontWeight: 700, margin: 0 }}>{rg}</h2>
+                  <span style={{ fontSize: 11, color: MTLD_T.faint, marginLeft: "auto" }}>{items.length} dự án</span>
+                </div>
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
+                  {items.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </main>
+      {detail && <PopupModal proj={detail} bump={bump} canEdit={canManage} onClose={() => setDetail(null)} />}
     </div>
+  );
+}
+
+/** 1 dòng vùng trong sidebar (tên · số dự án), tô sáng khi đang chọn; `open` = đang xổ danh sách dự án. */
+function RRow({ name, count, active, open, onClick }: { name: string; count: number; active: boolean; open?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 9px", marginBottom: 2, borderRadius: 7, cursor: "pointer",
+        border: `1px solid ${active ? "#2a3852" : "transparent"}`, background: active ? "rgba(91,140,255,.14)" : "transparent",
+        color: active ? "#dbe6ff" : MTLD_T.soft, fontSize: 12.5, fontWeight: active ? 700 : 500 }}>
+      {open !== undefined && <span style={{ fontSize: 9, color: MTLD_T.faint, width: 9, flexShrink: 0, transition: "transform .12s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>}
+      <span style={{ minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+      <span style={{ fontSize: 11, color: active ? "#9db8ff" : MTLD_T.faint, fontVariantNumeric: "tabular-nums" }}>{count}</span>
+    </button>
   );
 }

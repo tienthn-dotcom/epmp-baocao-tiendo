@@ -37,6 +37,9 @@ export type BlockChild = {
   /** ID phân cấp đọc từ cột STT của file (dạng "70.1a"). Ổn định & duy nhất toàn cục —
    *  dùng làm KHOÁ match vướng mắc/giải pháp thay cho tên. undefined nếu file không có cột STT. */
   id?: string;
+  /** RID — SỐ NGUYÊN duy nhất mỗi DÒNG do PMO tự điền (cột "RID", cột đầu). KHOÁ BỀN nhất chống mất
+   *  note khi STT bị đánh lại (STT trôi → id: mồ côi). undefined nếu nguồn chưa có cột RID. */
+  rid?: string;
   label: string;             // Block 1 (86 căn) / Block 1 (Lobby + Res…)
   pctActual: number | null;  // % thực tế Block (thang 0..100)
   kind: "tho" | "avg" | "plain";
@@ -53,6 +56,9 @@ export type ItemRow = {
   /** ID phân cấp đọc từ cột STT (dạng "70.1"). Ổn định & duy nhất toàn cục → KHOÁ match
    *  vướng mắc/giải pháp thay cho (mã+tên). undefined nếu nguồn không có cột STT (cache/CSV cũ). */
   id?: string;
+  /** RID — SỐ NGUYÊN duy nhất mỗi DÒNG do PMO tự điền (cột "RID"). KHOÁ ƯU TIÊN cao nhất chống mất note
+   *  khi STT bị đánh lại. undefined nếu nguồn chưa có cột RID. Xem itemKeyOf/itemKeysOf. */
+  rid?: string;
   /** ID CỨNG của DỰ ÁN cha (cột "IDCUNG", vd "P0025") — KHOÁ BỀN nhất: STT đổi mặc kệ, ID cứng không
    *  đổi. Kế thừa từ dòng dự án. Khoá vướng mắc = h:<projHid>:<rawCode>. undefined nếu nguồn chưa có cột. */
   projHid?: string;
@@ -121,6 +127,9 @@ export type ProjectRow = {
   /** ID CỨNG (cột "IDCUNG", vd "P0025") — mã VĨNH VIỄN gán 1 lần cho dự án, KHÔNG đổi khi STT bị đánh
    *  lại. Khoá bền nhất cho vướng mắc (h:<hid> cấp dự án; h:<hid>:<rawCode> cấp công đoạn). */
   hid?: string;
+  /** RID — SỐ NGUYÊN duy nhất mỗi DÒNG (cột "RID") do PMO tự điền. KHOÁ ƯU TIÊN cao nhất chống mất note
+   *  cấp dự án khi STT trôi. undefined nếu nguồn chưa có cột RID. */
+  rid?: string;
   code: string;
   name: string;
   cdt: string;

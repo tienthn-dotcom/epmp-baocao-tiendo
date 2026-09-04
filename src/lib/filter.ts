@@ -251,10 +251,22 @@ export function qualifyItem(
 /** Khóa nhận diện dự án. ƯU TIÊN ID dự án (cột STT) — ổn định & duy nhất kể cả khi đổi tên hay
  *  hoàn thành/ẩn. Không có ID (nguồn cũ) → khoá mã+tên (một mã có thể nhiều tên: CT25-070 =
  *  Lobby và Nhà hàng Maxine → chỉ dùng mã sẽ kéo nhầm). Lọc nội bộ filter.ts vẫn dùng nhánh tên. */
-export const projectKeyOf = (code: string, name: string, id?: string, hid?: string) =>
+export const projectKeyOf = (code: string, name: string, id?: string, hid?: string, rid?: string) =>
+  rid && rid.trim() ? `rid:${rid.trim()}` :
   hid && hid.trim() ? `h:${hid.trim()}` :
   id && id.trim() ? `id:${id.trim()}` :
   `${code}\u0000${name}`;
+
+/** Mọi khoá ứng viên của 1 DỰ ÁN theo thứ tự ưu tiên (rid → h → id → composite). Dùng cho ĐỌC DỰ
+ *  PHÒNG: note cũ lưu ở khoá cũ vẫn hiện dù nay ưu tiên rid. */
+export const projectKeysOf = (code: string, name: string, id?: string, hid?: string, rid?: string): string[] => {
+  const ks: string[] = [];
+  if (rid && rid.trim()) ks.push(`rid:${rid.trim()}`);
+  if (hid && hid.trim()) ks.push(`h:${hid.trim()}`);
+  if (id && id.trim()) ks.push(`id:${id.trim()}`);
+  ks.push(`${code} ${name}`);
+  return ks;
+};
 
 export type EligibleProject = {
   code: string;

@@ -37,9 +37,9 @@ const MATRIX: Record<FeatureName, Record<Stage, boolean>> = {
   // Tác vụ con trong Gantt — 28/07 BẬT LÊN LIVE: hiện dòng tiến độ CON (mở rộng dự án) trên
   // bảng "Tổng thể tiến độ".
   ganttChildTasks:  { dev: true, live: true },
-  // APP SHELL (thanh dọc trái · multi-app) — đang phát triển, CHỈ hiện ở dev, ẨN trên live
-  // để không đụng app đang chạy. Xem lib/app-shell.tsx. Bật lại: đổi live → true.
-  appShell:         { dev: true, live: false },
+  // APP SHELL (thanh dọc trái · multi-app) — BẬT LIVE (17/08): deploy app "Chi tiết tiến độ".
+  // Ở live rail CHỈ hiện app có cờ `live` (ePMP + Chi tiết); MTLĐ/Trợ lý PMO/ETL vẫn ẨN (dev-only).
+  appShell:         { dev: true, live: true },
 };
 
 export function featureOn(name: FeatureName, stage: Stage): boolean {

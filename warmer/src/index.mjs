@@ -76,14 +76,103 @@ async function warmAll(env) {
   return { ok, fail, total: ids.length };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  SAO LƯU NHẬT KÝ GIÁM SÁT (D1 access_log) → GOOGLE DRIVE (tự động mỗi ngày).
+ *  Drive giữ bản đầy đủ → giảm tải cho app. Ghi ĐÈ 1 file mirror "nhat-ky-giam-sat.csv"
+ *  trong "Data Source" › DATABASE › ePMP › Nhật ký giám sát (CÙNG file với nút bấm tay trong app).
+ *  Cần: D1 binding PMO_LOG + 3 secret GDRIVE_OAUTH_CLIENT_ID/_CLIENT_SECRET/_REFRESH trên warmer.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const DRIVE_ROOT_DEFAULT = "1O9VktCpBENaZB1xgABr8MfIbl3YW8hFO"; // folder "Data Source" (đè bằng env.GDRIVE_ROOT)
+const DRIVE_SHARED = "supportsAllDrives=true&includeItemsFromAllDrives=true";
+const AUDIT_PATH = ["DATABASE", "ePMP", "Nhật ký giám sát"];   // KHỚP ensureDbPath của app (DATABASE + segments)
+const AUDIT_FILE = "nhat-ky-giam-sat.csv";
+
+async function driveToken(env) {
+  const body = new URLSearchParams({
+    client_id: env.GDRIVE_OAUTH_CLIENT_ID, client_secret: env.GDRIVE_OAUTH_CLIENT_SECRET,
+    refresh_token: env.GDRIVE_OAUTH_REFRESH, grant_type: "refresh_token",
+  });
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body,
+  });
+  const j = await r.json();
+  if (!j.access_token) throw new Error("Drive token: " + (j.error_description || j.error || "?"));
+  return j.access_token;
+}
+async function driveEnsureFolder(token, name, parent) {
+  const AUTH = { Authorization: `Bearer ${token}` };
+  const q = `name='${name.replace(/'/g, "\\'")}' and '${parent}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${DRIVE_SHARED}`, { headers: AUTH });
+  const j = await r.json();
+  if (j.files && j.files.length) return j.files[0].id;
+  const cr = await fetch(`https://www.googleapis.com/drive/v3/files?${DRIVE_SHARED}&fields=id`, {
+    method: "POST", headers: { ...AUTH, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parent] }),
+  });
+  const cj = await cr.json();
+  if (!cj.id) throw new Error("Tạo folder Drive lỗi: " + (cj.error?.message || "?"));
+  return cj.id;
+}
+function csvCell(v) { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+
+async function backupAuditLog(env) {
+  const d1 = env.PMO_LOG;
+  if (!d1) return { skip: "thiếu D1 PMO_LOG" };
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+  // Đọc TOÀN BỘ log (cũ → mới). Bảng có thể chưa tồn tại nếu app chưa ghi lần nào.
+  let rows = [];
+  try {
+    const res = await d1.prepare("SELECT ts, email, action, detail FROM access_log ORDER BY ts ASC").all();
+    rows = res.results || [];
+  } catch (e) { return { skip: "chưa có bảng access_log (" + e + ")" }; }
+
+  const header = ["Thời điểm (ISO)", "Người dùng", "Thao tác", "Chi tiết"];
+  const lines = rows.map((r) => [r.ts, r.email, r.action, r.detail ?? ""].map(csvCell).join(","));
+  const csv = "﻿" + [header.join(","), ...lines].join("\r\n") + "\r\n";   // BOM cho Excel VN
+  const b64 = toB64(new TextEncoder().encode(csv));
+
+  const token = await driveToken(env);
+  const root = env.GDRIVE_ROOT || DRIVE_ROOT_DEFAULT;
+  let folder = root;
+  for (const seg of AUDIT_PATH) folder = await driveEnsureFolder(token, seg, folder);
+
+  const AUTH = { Authorization: `Bearer ${token}` };
+  const q = `name='${AUDIT_FILE}' and '${folder}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
+  const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${DRIVE_SHARED}`, { headers: AUTH });
+  const fj = await fr.json();
+  const existing = fj.files && fj.files[0] && fj.files[0].id;
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+  if (existing) {
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing}?uploadType=media&fields=id&${DRIVE_SHARED}`, {
+      method: "PATCH", headers: { ...AUTH, "Content-Type": "text/csv" }, body: bytes,
+    });
+  } else {
+    const boundary = "warmerAudit" + Date.now();
+    const enc = new TextEncoder();
+    const meta = JSON.stringify({ name: AUDIT_FILE, parents: [folder] });
+    const pre = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: text/csv\r\n\r\n`);
+    const post = enc.encode(`\r\n--${boundary}--`);
+    const bodyBuf = new Uint8Array(pre.length + bytes.length + post.length);
+    bodyBuf.set(pre, 0); bodyBuf.set(bytes, pre.length); bodyBuf.set(post, pre.length + bytes.length);
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&${DRIVE_SHARED}`, {
+      method: "POST", headers: { ...AUTH, "Content-Type": `multipart/related; boundary=${boundary}` }, body: bodyBuf,
+    });
+  }
+  return { rows: rows.length, updated: !!existing };
+}
+
 export default {
-  // Cron 17:30 VN — warm sẵn mọi file trong registry.
+  // Cron 17:30 VN — warm Summary + SAO LƯU nhật ký giám sát ra Drive.
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(warmAll(env));
+    ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
   },
-  // Gọi tay để test: mở URL worker (GET) → warm ngay + trả kết quả.
+  // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(_req, env) {
-    const res = await warmAll(env);
-    return new Response(JSON.stringify(res), { headers: { "content-type": "application/json" } });
+    const warm = await warmAll(env);
+    let audit;
+    try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
+    return new Response(JSON.stringify({ warm, audit }, null, 2), { headers: { "content-type": "application/json" } });
   },
 };

@@ -17,7 +17,8 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { PDF_TABLE_WIDTH, PDF_TABLE_FONT_PX } from "./table-scale";
 
-const MARGIN = 12;   // lề nội dung 12mm (~1.2cm) mỗi bên — KHỚP file mẫu A4; nền xám vẫn tràn mép trang.
+const MARGIN = 12;   // lề TRÁI/PHẢI 12mm (~1.2cm) — KHỚP file mẫu A4; nền xám vẫn tràn mép trang.
+const MARGIN_Y = 7;  // lề TRÊN/DƯỚI 7mm — hẹp hơn 12mm cũ để bảng CAO hơn, chữ to & dễ đọc (kể cả trên điện thoại).
 const GAP = 2.5; // khoảng cách giữa các khối (mm)
 const PAGE_BG_RGB: [number, number, number] = [238, 241, 244]; // #eef1f4 — nền xám nhạt cả trang (card trắng nổi lên như mẫu)
 const PAGE_BG_HEX = "#eef1f4";                                   // dùng cho html2canvas để header/chú thích BLEND vào nền xám (hết dải trắng)
@@ -79,21 +80,33 @@ export async function exportDashboardPdf(opts: {
   /** ÉP BẢNG GỌN 1 TRANG: thu NGUYÊN ảnh bảng cho vừa chiều cao còn lại (chữ tự nhỏ) — KHÔNG cắt sang
    *  trang 2. Dùng khi sếp yêu cầu "chi tiết chỉ 1 trang". */
   tableFitOnePage?: boolean;
+  /** GIỮ TỈ LỆ CỘT theo colgroup (form người dùng kéo) — KHÔNG "chia đều" lại bề ngang. Vẫn autofit LẤP ĐẦY
+   *  bề ngang (bằng khối chú thích ở trên) + thu vừa 1 trang. Dùng cho bảng tuân thủ đã có form. */
+  keepColWidths?: boolean;
+  /** (đi kèm keepColWidths) Các CỘT nhận phần bề rộng dư khi lấp đầy trang — vd [1,3] = Người phụ trách +
+   *  Tên dự án nở ra, các cột khác giữ tỉ lệ. Bỏ trống → nở đều mọi cột. */
+  growCols?: number[];
   /** Ẩn (display:none) các phần tử này KHI chụp blocks rồi TRẢ LẠI — vd giấu chú thích khỏi trang Tóm tắt
    *  khi xuất RIÊNG bản Tóm tắt. */
   hideInBlocks?: HTMLElement[];
   /** XEM TRƯỚC: KHÔNG tải file — trả về `blobUrl` để app hiển thị trong iframe (người dùng soát rồi tự
    *  Tải/In). Bỏ trống/false → tải file như cũ. */
   preview?: boolean;
+  /** LẤY DỮ LIỆU: trả về `dataUri` (data:application/pdf;base64,…) để luồng khác dùng (vd đẩy lên Drive).
+   *  Ưu tiên cao hơn `preview`. Mặc định KHÔNG tải file — kết hợp `download:true` để VỪA tải VỪA lấy dataUri. */
+  toDataUri?: boolean;
+  /** Chỉ có tác dụng cùng `toDataUri`: tải file xuống (pdf.save) TRƯỚC khi trả dataUri → 1 lần dựng, vừa
+   *  tải cho người dùng vừa có bytes để lưu Drive. */
+  download?: boolean;
   fileName: string;
-}): Promise<{ pages: number; blobUrl?: string }> {
+}): Promise<{ pages: number; blobUrl?: string; dataUri?: string }> {
   const portrait = opts.orientation === "portrait";
   const pageW = portrait ? 210 : 297; // A4 (mm)
   const pageH = portrait ? 297 : 210;
   const innerW = pageW - MARGIN * 2;
-  const bottomY = pageH - MARGIN;
+  const bottomY = pageH - MARGIN_Y;
   const pdf = new jsPDF({ orientation: portrait ? "portrait" : "landscape", unit: "mm", format: "a4" });
-  let y = MARGIN;
+  let y = MARGIN_Y;
 
   // FIT-TOGETHER: bản Chi tiết đứng RIÊNG (header + bảng CÙNG 1 trang, ép gọn 1 trang). Header & bảng phải
   // thu theo CÙNG một tỉ lệ (mm/px) để cỡ chữ ĂN KHỚP nhau — tránh header to đùng khi chữ bảng bị nhỏ —
@@ -171,7 +184,7 @@ export async function exportDashboardPdf(opts: {
     for (const b of opts.blocks) {
       const cv = await snap(b);
       const hMm = (cv.height / cv.width) * innerW;
-      if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN; }
+      if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN_Y; }
       draw(cv, hMm);
       y += GAP;
     }
@@ -182,7 +195,7 @@ export async function exportDashboardPdf(opts: {
   const tbl = opts.table;
   if (tbl) {
   // GỘP: sang TRANG MỚI cho phần bảng (trang trước là Tóm tắt).
-  if (opts.tableStartsNewPage && y > MARGIN + 0.5) { pdf.addPage(); y = MARGIN; }
+  if (opts.tableStartsNewPage && y > MARGIN_Y + 0.5) { pdf.addPage(); y = MARGIN_Y; }
   // GỘP: chụp header + chú thích cho TRANG CHI TIẾT (nền xám → blend), để trang bảng GIỐNG HỆT bản in riêng.
   const detailCvs: HTMLCanvasElement[] = [];
   if (fitDetail) { for (const b of detailBlocks) detailCvs.push(await snap(b, PAGE_BG_HEX)); }
@@ -203,6 +216,7 @@ export async function exportDashboardPdf(opts: {
   // html2canvas chỉ chụp chắc chắn style inline / computed, KHÔNG chắc chụp <style> chèn vào <head>.
   let fitCells: Element[] | null = null;
   let fitCellStyles: (string | null)[] | null = null;
+  let savedColW: string[] | null = null;                        // width gốc của <col> (keepColWidths sửa tạm rồi trả lại)
   if (!opts.wide) {
     tbl.style.width = `${PDF_TABLE_WIDTH}px`;
     tbl.style.minWidth = `${PDF_TABLE_WIDTH}px`;
@@ -222,35 +236,75 @@ export async function exportDashboardPdf(opts: {
       : fitDetail
       ? detailHeaderHmm                                        // GỘP: chừa đúng chiều cao header + chú thích (như in riêng)
       : (opts.tableStartsNewPage ? 8 : 40);                    // GỘP không header: bảng ở TRANG RIÊNG nên chỉ chừa ~8mm
-    const availMm = Math.max(1, (pageH - MARGIN * 2) - headerHmm); // phần cao còn lại cho bảng (mm)
+    // Chiều cao THỰC còn lại cho bảng = (đáy trang − y hiện tại đã gồm lề trên + TIÊU ĐỀ) − header/chú thích.
+    // Trước đây lấy (pageH − lề×2) − header → QUÊN trừ tiêu đề (~13mm) nên bảng dựng cho khung cao hơn thực,
+    // lúc vẽ phải thu nhỏ (s<1) → co vào giữa, chừa trắng 2 bên + chữ nhỏ. Nay tính đúng → bảng lấp KÍN, chữ to tối đa.
+    const availMm = Math.max(1, (bottomY - y) - headerHmm);
     const N = tbl.tHead?.rows?.[0]?.cells.length || tbl.rows?.[0]?.cells.length || 1;
     fitCells = Array.from(tbl.querySelectorAll("th,td"));
     fitCellStyles = fitCells.map((c) => c.getAttribute("style"));
     // (1) Chữ nhỏ lại (inline trên bảng) + hàng sát lại (padding dọc inline từng ô) → bảng THẤP xuống.
     const baseFont = parseFloat(getComputedStyle(tbl).fontSize) || 11;
-    tbl.style.fontSize = `${Math.max(7, Math.round(baseFont * 0.85 * 10) / 10)}px`;
-    fitCells.forEach((c) => { (c as HTMLElement).style.paddingTop = "1.5px"; (c as HTMLElement).style.paddingBottom = "1.5px"; });
-    // Đo bề rộng NỘI DUNG thật: bảng có class w-full (width:100%) nên bị KHOÁ theo khung cha (~1120px) →
-    // padding không nới được. Tạm mở khoá bằng max-content để đo đúng bề rộng nội dung + chiều cao 1-hàng.
-    tbl.style.width = "max-content"; tbl.style.minWidth = "0"; tbl.style.maxWidth = "none";
-    void tbl.offsetHeight;
-    const contentW = tbl.offsetWidth || PDF_TABLE_WIDTH, natH = tbl.offsetHeight || 1;
-    // (2) Bề rộng cần để vẽ full-ngang mà vừa cao còn lại; phần dư chia ĐỀU cho mọi cột (padding ngang)
-    //     rồi ÉP width = wantW (đè w-full) để bảng PHỦ KÍN bề ngang trang, không co vào giữa.
-    const wantW = Math.max(contentW, Math.ceil(natH * innerW / availMm));
-    const padEach = Math.round((wantW - contentW) / (2 * N));
-    if (padEach > 0) {
-      fitCells.forEach((c) => { (c as HTMLElement).style.paddingLeft = `${padEach}px`; (c as HTMLElement).style.paddingRight = `${padEach}px`; });
+    // CÓ FORM (keepColWidths): GIỮ NGUYÊN cỡ chữ người dùng chỉnh (không co) → cỡ chữ ĂN thẳng vào bản in.
+    // Không form: co nhẹ (0.95) cho bảng thấp lại, vừa 1 trang.
+    tbl.style.fontSize = opts.keepColWidths ? `${baseFont}px` : `${Math.max(7, Math.round(baseFont * 0.95 * 10) / 10)}px`;
+    // SIẾT LINE-HEIGHT sát cỡ chữ → chữ LẤP ĐẦY ô, bỏ khoảng trống dòng. Nhờ vậy tăng cỡ chữ sẽ ĂN vào bản in
+    // (chữ to hơn trong cùng chiều cao hàng, chưa làm hàng cao thêm cho tới khi chữ vượt chiều cao hàng).
+    // CHỈ ÁP KHI CHỤP XUẤT PDF (khôi phục ngay sau) → KHÔNG đụng bản trên app.
+    // Bảng 77 dòng ÉP 1 TRANG: chiều cao mỗi hàng càng thấp → cả bảng càng ngắn → phóng to lấp trang → CHỮ IN TO NHẤT.
+    // Siết line-height + đệm dọc tới mức tối thiểu vẫn đọc được (1.1 / 1.5px) để tối đa cỡ chữ trên 1 trang.
+    const lh = opts.keepColWidths ? "1.1" : "1.05";
+    const padV = opts.keepColWidths ? "1.5px" : "1px";
+    tbl.style.lineHeight = lh;
+    fitCells.forEach((c) => { (c as HTMLElement).style.paddingTop = padV; (c as HTMLElement).style.paddingBottom = padV; (c as HTMLElement).style.lineHeight = lh; });
+    // GIỮ TỈ LỆ CỘT THEO FORM (keepColWidths): bảng đã có colgroup % do người dùng KÉO → KHÔNG chia đều lại,
+    // để nguyên tỉ lệ (cột "Đổi tiến độ" hẹp thì tiêu đề tự xuống 4 dòng như trên màn); phần VẼ bên dưới tự
+    // thu cho vừa 1 trang. Ngược lại (bảng cũ không form): chia đều bề ngang cho phủ kín trang.
+    if (!opts.keepColWidths) {
+      // Đo bề rộng NỘI DUNG thật: bảng w-full bị KHOÁ theo khung cha → tạm mở max-content để đo + giàn đều.
+      tbl.style.width = "max-content"; tbl.style.minWidth = "0"; tbl.style.maxWidth = "none";
+      void tbl.offsetHeight;
+      const contentW = tbl.offsetWidth || PDF_TABLE_WIDTH, natH = tbl.offsetHeight || 1;
+      const wantW = Math.max(contentW, Math.ceil(natH * innerW / availMm));
+      const padEach = Math.round((wantW - contentW) / (2 * N));
+      if (padEach > 0) {
+        fitCells.forEach((c) => { (c as HTMLElement).style.paddingLeft = `${padEach}px`; (c as HTMLElement).style.paddingRight = `${padEach}px`; });
+      }
+      tbl.style.width = `${wantW}px`; tbl.style.minWidth = `${wantW}px`; tbl.style.maxWidth = `${wantW}px`;
+      void tbl.offsetHeight;                                    // reflow: cột giãn đều + bảng phủ kín bề ngang
+    } else {
+      // GIỮ TỈ LỆ CỘT + LẤP ĐẦY BỀ NGANG (bằng khối chú thích ở trên): tính bề rộng cần để khi thu vừa CHIỀU
+      // CAO còn lại thì phủ kín innerW; phần DƯ so với hiện tại DỒN vào growCols (Tên dự án + Người phụ trách),
+      // các cột khác GIỮ NGUYÊN px → không "ép 2 bên bằng y app", không giàn đều.
+      const headCells = Array.from(tbl.tHead?.rows?.[0]?.cells ?? []) as HTMLElement[];
+      const curW = headCells.map((c) => c.offsetWidth);
+      const curTotal = curW.reduce((a, b) => a + b, 0) || tbl.offsetWidth || PDF_TABLE_WIDTH;
+      const natH = tbl.offsetHeight || 1;
+      const wantW = Math.max(curTotal, Math.ceil(natH * innerW / availMm));
+      const extra = wantW - curTotal;
+      const cols = Array.from(tbl.querySelectorAll("col")) as HTMLElement[];
+      savedColW = cols.map((c) => c.style.width);
+      const newW = curW.slice();
+      const grow = (opts.growCols ?? []).filter((i) => i >= 0 && i < curW.length);
+      if (extra > 0 && grow.length) {
+        const wsum = grow.reduce((s, i) => s + curW[i], 0) || grow.length;   // chia theo tỉ trọng bề rộng hiện có (Tên rộng hơn → nhận nhiều hơn)
+        grow.forEach((i) => { newW[i] += extra * (curW[i] / wsum); });
+      } else if (extra > 0) {
+        newW.forEach((_, i) => { newW[i] += extra / newW.length; });          // không chỉ định → nở đều
+      }
+      cols.forEach((c, i) => { if (newW[i]) c.style.width = `${newW[i]}px`; });
+      tbl.style.width = `${wantW}px`; tbl.style.minWidth = `${wantW}px`; tbl.style.maxWidth = `${wantW}px`;
+      void tbl.offsetHeight;
     }
-    tbl.style.width = `${wantW}px`; tbl.style.minWidth = `${wantW}px`; tbl.style.maxWidth = `${wantW}px`;
-    void tbl.offsetHeight;                                      // reflow: cột giãn đều + bảng phủ kín bề ngang
   }
   // Bỏ chiều cao hàng do "equalize" ép trên màn hình (có thể còn dính giá trị
   // cũ khi cửa sổ từng hẹp → hàng phồng → PDF thừa hàng chục trang). Chụp bảng
   // ở CHIỀU CAO TỰ NHIÊN để cả ảnh chụp lẫn phép cắt trang dùng cùng số đo.
   const bodyRows = tbl.tBodies[0] ? Array.from(tbl.tBodies[0].rows) as HTMLTableRowElement[] : [];
   const savedHeights = bodyRows.map(r => r.style.height);
-  bodyRows.forEach(r => { r.style.height = ""; });
+  // CÓ FORM (keepColWidths): GIỮ chiều cao hàng người dùng chỉnh (rowH đồng đều) → ăn vào bản in.
+  // Không form: xoá height cũ (equalize màn hình) để chụp ở chiều cao tự nhiên.
+  if (!opts.keepColWidths) bodyRows.forEach(r => { r.style.height = ""; });
   void tbl.offsetHeight; // buộc reflow trước khi chụp
 
   // Số đo DỰ PHÒNG trên DOM sống (dùng nếu vì lý do nào đó không đo được trong clone).
@@ -285,6 +339,10 @@ export async function exportDashboardPdf(opts: {
     fitCells.forEach((c, i) => { const s = fitCellStyles![i]; if (s == null) c.removeAttribute("style"); else c.setAttribute("style", s); });
     fitCells = null; fitCellStyles = null;
   }
+  if (savedColW) {                                             // trả lại width % cho <col> (keepColWidths đã sửa tạm → px)
+    Array.from(tbl.querySelectorAll("col")).forEach((c, i) => { (c as HTMLElement).style.width = savedColW![i] ?? ""; });
+    savedColW = null;
+  }
   if (!hadOwnId) tbl.removeAttribute("id");
   window.dispatchEvent(new Event("resize"));
 
@@ -313,11 +371,13 @@ export async function exportDashboardPdf(opts: {
     // ở giữa". NỀN XÁM cả trang để header/chú thích blend (hết dải trắng), bảng trắng nổi lên như card.
     pdf.setFillColor(...PAGE_BG_RGB); pdf.rect(0, 0, pageW, pageH, "F");
     const heads = fitTogether ? fitBlocks : detailCvs;
-    for (const c of heads) {
+    // Tiêu đề (khối đầu) HỤT SÁT khối "Cách tính" bên dưới → bớt khoảng trắng dưới tiêu đề trong bản in
+    // (yêu cầu: tiêu đề thấp xuống). Các khối sau vẫn cách GAP như cũ.
+    heads.forEach((c, hi) => {
       const hMm = (c.height / c.width) * innerW;
       pdf.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN, y, innerW, hMm);
-      y += hMm + GAP;
-    }
+      y += hMm + (hi === 0 && heads.length > 1 ? 0.5 : GAP);
+    });
     const tHmm = (cv.height / cv.width) * innerW;
     const s = Math.min(1, (bottomY - y) / tHmm);
     const wMm = innerW * s, hMm = tHmm * s;
@@ -333,7 +393,7 @@ export async function exportDashboardPdf(opts: {
   const n = tops.length;
   if (n === 0) {
     const hMm = (cv.height / cv.width) * innerW;
-    if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN; }
+    if (y + hMm > bottomY) { pdf.addPage(); y = MARGIN_Y; }
     pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN, y, innerW, hMm);
   } else {
     // RANH GIỚI Y (ảnh) dùng CHUNG cho thead + từng hàng → không hở, không chồng, không lẹm vệt xanh.
@@ -351,7 +411,7 @@ export async function exportDashboardPdf(opts: {
     while (i < n) {
       const row0Mm = cv2mm(bnd[i + 1] - bnd[i]);
       // Hết chỗ cho header + HÀNG ĐẦU → sang trang mới (nếu chưa ở đầu trang). "Qua trang thì qua HẾT hàng".
-      if (y > MARGIN + 0.5 && y + theadMm + row0Mm > bottomY - SAFE) { pdf.addPage(); y = MARGIN; }
+      if (y > MARGIN_Y + 0.5 && y + theadMm + row0Mm > bottomY - SAFE) { pdf.addPage(); y = MARGIN_Y; }
       // Header lặp ở đầu phần bảng mỗi trang.
       pdf.addImage(theadImg, "JPEG", MARGIN, y, innerW, theadMm); y += theadMm;
       const avail = bottomY - y - SAFE;
@@ -378,6 +438,16 @@ export async function exportDashboardPdf(opts: {
   } // hết if (tbl)
 
   const pages = pdf.getNumberOfPages();
+  if (opts.toDataUri) {
+    // Trả base64 để đẩy Drive (đính kèm mail). download:true → TẢI luôn cho người dùng (1 lần dựng, vừa
+    // tải vừa có bytes để lưu Drive). CHUẨN HOÁ: jsPDF trả "data:application/pdf;filename=…;base64,…" (có
+    // chèn ;filename=) → cắt lấy đúng phần base64 rồi ghép lại "data:application/pdf;base64,…" cho khớp validator.
+    if (opts.download) pdf.save(opts.fileName);
+    const raw = pdf.output("datauristring") as unknown as string;
+    const i = raw.indexOf("base64,");
+    const dataUri = i >= 0 ? "data:application/pdf;base64," + raw.slice(i + 7) : raw;
+    return { pages, dataUri };
+  }
   if (opts.preview) {
     // Trả blob URL để app xem trước trong iframe (không tải xuống). Người dùng bấm Tải/In trong dialog.
     const blobUrl = pdf.output("bloburl") as unknown as string;

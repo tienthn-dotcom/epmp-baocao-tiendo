@@ -13,3 +13,16 @@ crons = ["30 10 * * *"]
 [[kv_namespaces]]
 binding = "PMO_EDITS"
 id = "2bdbce7b49014e538ee3156728ab9548"
+
+# D1 DÙNG CHUNG với app chính (nhật ký giám sát) — để cron tự sao lưu access_log ra Drive.
+# id lấy từ scripts/patch-wrangler.cjs của app chính (D1_LOG.database_id).
+[[d1_databases]]
+binding = "PMO_LOG"
+database_name = "pmo-audit"
+database_id = "ea3aca84-e754-44fb-947f-ca442b3f7b19"
+
+# CẦN 3 SECRET cho Drive (chạy 1 lần trong thư mục warmer):
+#   npx wrangler secret put GDRIVE_OAUTH_CLIENT_ID
+#   npx wrangler secret put GDRIVE_OAUTH_CLIENT_SECRET
+#   npx wrangler secret put GDRIVE_OAUTH_REFRESH
+# (dán đúng 3 giá trị đang có trong .env của app chính). Tuỳ chọn: GDRIVE_ROOT nếu đổi folder gốc.

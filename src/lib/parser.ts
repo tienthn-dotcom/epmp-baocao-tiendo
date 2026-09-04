@@ -346,7 +346,11 @@ export function noteMentionsMpUpdate(note: string): boolean {
 export function noteSaysTrinhBodBitrix(note: string): boolean {
   if (!note) return false;
   const n = stripDiacritics(note).replace(/\s+/g, " ").trim().toLowerCase();
-  return /trinh bod (phe )?duyet/.test(n) && /bitrix/.test(n);
+  // DẤU HIỆU DUY NHẤT để gom vào "Cần cập nhật MP" = cú pháp "cần PM trình BOD (phê) duyệt (Bitrix)".
+  // BẮT BUỘC có cụm LIỀN "BOD (phê) duyệt" (không phải 4 chữ rời rạc — tránh bắt nhầm note "BOD đã duyệt",
+  // "duyệt rồi trình BOD sau"…) + từ "trình" + từ "bitrix". Vẫn nhận biến thể "trình DUYỆT BOD phê duyệt
+  // bitrix" (vì trong đó có cụm liền "BOD phê duyệt"). Note chỉ "dời tiến độ" (không bitrix) → không gom.
+  return /bod (phe )?duyet/.test(n) && /\btrinh\b/.test(n) && /bitrix/.test(n);
 }
 
 /** Nhận diện dự án ĐÃ BÀN GIAO XONG từ ô "Vướng mắc / Cần xử lý" trên DÒNG DỰ ÁN CHA.
@@ -458,6 +462,18 @@ function detectHidCol(headerRow: unknown[]): number {
   return -1;
 }
 
+/** Tìm cột "RID" — SỐ NGUYÊN duy nhất mỗi DÒNG do PMO tự điền (thường cột ĐẦU). Khoá bền chống mất
+ *  note khi STT bị đánh lại. Trả -1 nếu nguồn chưa thêm cột (app tự lùi về STT/IDCUNG). */
+function detectRidCol(headerRow: unknown[]): number {
+  if (!headerRow) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = stripDiacritics(str(headerRow[c]).toLowerCase()).replace(/\s+/g, "");
+    if (!h) continue;
+    if (/^rid$|^r\.i\.d$|^rowid$/.test(h)) return c;
+  }
+  return -1;
+}
+
 /** Parse rows[][] from the Timeline sheet (header row index 5, data from index 7). */
 export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined): ReportData {
   const projects: ProjectRow[] = [];
@@ -474,10 +490,17 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const updateCol = detectUpdateDateCol(rows[COL.headerIdx] ?? []);
   const idCol = detectIdCol(rows[COL.headerIdx] ?? []);
   const hidCol = detectHidCol(rows[COL.headerIdx] ?? []);
+  const ridCol = detectRidCol(rows[COL.headerIdx] ?? []);
   /** ID phân cấp (cột STT) của dòng hiện tại — "" nếu nguồn không có cột. */
   const idOf = (r: unknown[]): string | undefined => {
     if (idCol < 0) return undefined;
     const v = str(r[idCol]);
+    return v || undefined;
+  };
+  /** RID (cột "RID") của dòng — số nguyên duy nhất mỗi dòng; undefined nếu nguồn chưa có cột hoặc ô trống. */
+  const ridOf = (r: unknown[]): string | undefined => {
+    if (ridCol < 0) return undefined;
+    const v = str(r[ridCol]);
     return v || undefined;
   };
   /** ID CỨNG (cột IDCUNG) của dòng — chỉ dòng DỰ ÁN mới điền; dòng con kế thừa qua currentHid. */
@@ -498,9 +521,13 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const headerOk = COL.detected ||
     /(tên\s*dự\s*án|project|công\s*trình)/.test(headerJoined);
   let parentsTotal = 0;
+  const DQ_ITEM_CAP = 60;                          // trần số dòng liệt kê mỗi cảnh báo (đủ để tìm, không phình dialog)
   let unknownPrefixCount = 0;
   const unknownPrefixSamples: string[] = [];
+  const unknownPrefixItems: string[] = [];         // đích danh: STT · dự án · mô tả — mã bị bỏ
   let unparsedDateCount = 0;
+  const unparsedDateItems: string[] = [];          // đích danh: STT · dự án · mô tả — ô ngày không đọc được
+  const suspectPctItems: string[] = [];            // đích danh: STT · dự án · mô tả — ô % nghi ngờ
 
   let currentHidden = false; // when a parent row has Show != "show", skip all its children
   // Đếm lần xuất hiện của (dự án + mã giai đoạn) để gán dupIdx ổn định (0-based)
@@ -554,6 +581,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       const proj: ProjectRow = {
         id: idOf(r),
         hid: currentHid,
+        rid: ridOf(r),
         code: rawCode || maCT,
         name: projectName || rawCode || maCT,
         cdt: str(r[COL.G]),
@@ -660,6 +688,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       // Ngày RIÊNG của dòng con (data tự nhập trong file). Trống → null → buildBlockItem kế thừa cha.
       blk.start = toIso(r[COL.O]);
       blk.deadline = toIso(r[COL.P]);
+      blk.rid = ridOf(r);   // RID dòng con → khoá bền chống mất note (đọc dự phòng nếu trống)
       const arr = blocksByProj.get(current) ?? [];
       arr.push({ parentId: blockParentId, stage: blockStageFallback, blk });
       blocksByProj.set(current, arr);
@@ -672,6 +701,8 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       // (file đổi quy ước prefix thì phải lộ ra, không được nuốt trong im lặng).
       unknownPrefixCount++;
       if (unknownPrefixSamples.length < 5) unknownPrefixSamples.push(rawCode);
+      if (unknownPrefixItems.length < DQ_ITEM_CAP)
+        unknownPrefixItems.push(`[${idOf(r) || "—"}] ${current?.name ?? "(chưa có dự án)"} · ${str(r[COL.M]) || "(không mô tả)"} — mã bị bỏ: “${rawCode}”`);
       continue;
     }
 
@@ -681,7 +712,11 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     const shown = isShown(showCell);
 
     const deadline = toIso(r[COL.P]);
-    if (deadline == null && str(r[COL.P]) !== "") unparsedDateCount++;
+    if (deadline == null && str(r[COL.P]) !== "") {
+      unparsedDateCount++;
+      if (unparsedDateItems.length < DQ_ITEM_CAP)
+        unparsedDateItems.push(`[${idOf(r) || "—"}] ${current?.name ?? "(chưa có dự án)"} · ${str(r[COL.M]) || "(không mô tả)"} — ô Kết thúc: “${str(r[COL.P])}”`);
+    }
     const actCellRaw = r[COL.S];
     const pctActualRaw = num(actCellRaw);
     const actNorm  = normPctStrict(pctActualRaw);
@@ -695,6 +730,9 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     const pctPlanInvalid = false;
     const pctActualInvalid =
       (pctActualRaw == null && str(actCellRaw) !== "") || actNorm.suspect;
+    // Đích danh ô % nghi ngờ — chỉ gom dòng ĐANG hiện (khớp đúng suspectPct đếm trên `items`).
+    if (shown && pctActualInvalid && suspectPctItems.length < DQ_ITEM_CAP)
+      suspectPctItems.push(`[${idOf(r) || "—"}] ${current?.name ?? "(chưa có dự án)"} · ${str(r[COL.M]) || "(không mô tả)"} — ô %: “${str(actCellRaw)}”`);
 
 
     // BỎ HOÀN TOÀN cột T ("Quá hạn") từ nguồn — chứa giá trị rác.
@@ -717,6 +755,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     const row: ItemRow = {
       id: idOf(r),
+      rid: ridOf(r),
       projHid: currentHid,
       projectCode: current?.code ?? "",
       projectName: current?.name ?? "(không xác định)",
@@ -837,7 +876,10 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   // ── CỔNG KIỂM SOÁT DỮ LIỆU: chấm điểm đầu vào ──
   const suspectPct = items.reduce(
     (a, i) => a + (i.pctPlanInvalid ? 1 : 0) + (i.pctActualInvalid ? 1 : 0), 0);
-  const orphanItems = items.filter((i) => !i.projectCode).length;
+  const orphanList = items.filter((i) => !i.projectCode);
+  const orphanItems = orphanList.length;
+  const orphanDetailItems = orphanList.slice(0, DQ_ITEM_CAP).map(
+    (i) => `[${i.id || "—"}] ${i.desc || "(không mô tả)"} — mã “${i.rawCode}”, đứng trước dòng dự án cha nên không gắn được`);
 
   // ── TOÀN VẸN STT (ID) — khoá lưu Vướng mắc/Giải pháp = "id:<STT>" (index.tsx itemKeyOf/projectKeyOf).
   //    · TRÙNG: ≥2 dòng cùng 1 STT → chung 1 ô lưu → Vướng mắc "nhảy" sang dòng khác + đè MẤT nhau.
@@ -891,6 +933,8 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   for (const [nm, n] of projByName) if (n > 1) { dupNameCount++; dupNameItems.push(`${nameOrig.get(nm) ?? nm} (×${n})`); }
 
   const checks: DataQualityCheck[] = [];
+  // Cắt trần thì báo rõ còn bao nhiêu dòng nữa (không giấu bớt).
+  const withMore = (list: string[], total: number) => total > list.length ? [...list, `…và ${total - list.length} dòng nữa (sửa tương tự)`] : list;
   const add = (id: string, bad: boolean, level: "warn" | "error", label: string, detail?: string, items?: string[]) =>
     checks.push({ id, level: bad ? level : "ok", label, detail: bad ? detail : undefined, items: bad && items?.length ? items : undefined });
 
@@ -905,23 +949,27 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   add("unknownPrefix", unknownPrefixCount > 0, "warn",
     unknownPrefixCount === 0
       ? "Mọi mã công đoạn đều thuộc nhóm giai đoạn đã định nghĩa"
-      : `${unknownPrefixCount} dòng có mã KHÔNG thuộc nhóm giai đoạn nào (đã bỏ qua)`,
-    `Mã bị bỏ: ${[...new Set(unknownPrefixSamples)].join(", ")} — nếu là quy ước mới của PMP, cần bổ sung vào app.`);
+      : `${unknownPrefixCount} dòng có mã KHÔNG thuộc nhóm giai đoạn nào (đã bỏ qua khỏi bảng)`,
+    `Cách sửa: sửa mã ở cột "Mã" của các dòng dưới đây về đúng nhóm (VT/SX/TC/TKSX/SD/MA/BG…), hoặc nếu là quy ước mới của PMP thì báo để bổ sung vào app.`,
+    withMore(unknownPrefixItems, unknownPrefixCount));
   add("dates", unparsedDateCount > 0, "warn",
     unparsedDateCount === 0
       ? "Toàn bộ ô ngày Kết thúc đọc được"
-      : `${unparsedDateCount} ô ngày Kết thúc KHÔNG đọc được (dòng đó tính trễ = 0)`,
-    "Kiểm tra định dạng ngày trong file.");
+      : `${unparsedDateCount} ô ngày Kết thúc KHÔNG đọc được (những dòng đó tạm tính trễ = 0)`,
+    `Cách sửa: sửa ô "Kết thúc" của các dòng dưới đây về định dạng ngày (vd 30/08/2026); ô đang chứa chữ/số lạ nên app không đọc được.`,
+    withMore(unparsedDateItems, unparsedDateCount));
   add("pct", suspectPct > 0, "warn",
     suspectPct === 0
       ? "Toàn bộ ô % hợp lệ"
-      : `${suspectPct} ô % nghi ngờ dữ liệu (đã loại khỏi phép tính, không tính sai)`,
-    "Ô % ngoài khoảng [-50%, 150%] hoặc không phải số.");
+      : `${suspectPct} ô % nghi ngờ dữ liệu (đã loại khỏi phép tính để KHÔNG tính sai)`,
+    `Cách sửa: sửa ô "% thực tế" của các dòng dưới đây về số trong khoảng 0–100% (ô đang ngoài [-50%, 150%] hoặc không phải số).`,
+    withMore(suspectPctItems, suspectPct));
   add("orphans", orphanItems > 0, "warn",
     orphanItems === 0
       ? "Mọi đầu việc đều thuộc một dự án"
-      : `${orphanItems} đầu việc KHÔNG gắn được với dự án nào`,
-    "Có dòng công việc đứng trước dòng dự án cha — kiểm tra thứ tự dòng trong file.");
+      : `${orphanItems} đầu việc KHÔNG gắn được với dự án nào (đứng trước dòng dự án cha)`,
+    `Cách sửa: trong file, chuyển các dòng dưới đây xuống DƯỚI dòng dự án cha của nó (mỗi đầu việc phải nằm sau một dòng dự án).`,
+    withMore(orphanDetailItems, orphanItems));
   add("sttDup", sttDupCount > 0, "warn",
     sttDupCount === 0
       ? "Mọi STT (ID) là duy nhất — khoá lưu Vướng mắc/Giải pháp an toàn"

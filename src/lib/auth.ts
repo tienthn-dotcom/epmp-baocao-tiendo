@@ -210,9 +210,11 @@ export function buildAuthUrl(url: URL, clientId: string, state: string, allowedH
     state,
     prompt: "select_account",
   });
-  // `hd` chỉ là GỢI Ý cho màn chọn tài khoản của Google — KHÔNG phải chốt bảo mật.
-  // Chốt thật nằm ở decideAccess() phía server sau khi đã cầm id_token.
-  if (allowedHd) p.set("hd", allowedHd);
+  // KHÔNG gắn `hd`: dù Google nói `hd` chỉ là gợi ý, thực tế nó CHẶN CỨNG tài khoản ngoài domain
+  // ngay ở màn chọn tài khoản → các NGOẠI LỆ ngoài domain (gmail trong allowlist) không đăng nhập được.
+  // Chốt bảo mật thật nằm ở decideAccess() phía server (chỉ @domain + email ngoại lệ trong danh sách),
+  // nên bỏ `hd` KHÔNG làm hở quyền — chỉ để màn chọn tài khoản hiện đủ mọi tài khoản Google.
+  void allowedHd;
   return `${GOOGLE_AUTH}?${p.toString()}`;
 }
 

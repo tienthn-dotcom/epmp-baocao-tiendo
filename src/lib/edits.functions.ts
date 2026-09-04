@@ -127,6 +127,7 @@ function migrateMap(map: EditsMap): EditsMap {
 type KVLike = {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
+  delete?(key: string): Promise<void>;
 };
 
 /** Lấy KV binding trên Workers — thử mọi vị trí nitro/TanStack Start có thể đặt env. */
@@ -353,6 +354,22 @@ export const editMessages = createServerFn({ method: "POST" })
     if (isEmptyEntry(cur)) delete map[data.key];
     else map[data.key] = cur;
     await writeAll(map);
+    // MIRROR sang Drive: "Data Source" › DATABASE › ePMP › Ghi chú. SAO LƯU toàn bộ vướng mắc/giải pháp để
+    // khôi phục được. CHỈ khi ĐỔI NỘI DUNG (add/edit/delete), bỏ qua thao tác tô màu/ẩn để đỡ spam.
+    //  · GhiChu_latest.json          → bản MỚI NHẤT (đè liên tục) — lấy nhanh.
+    //  · Lịch sử/GhiChu_YYYY-MM-DD.json → bản THEO NGÀY (giờ VN) — mỗi ngày 1 file: trong ngày ghi đè, qua
+    //    ngày tạo file mới ⇒ giữ LỊCH SỬ, lỡ đè bậy vẫn lùi về ngày trước lấy lại được.
+    if (data.op === "add" || data.op === "edit" || data.op === "delete") {
+      try {
+        const drive = await import("@/lib/drive.functions");
+        if (await drive.driveIsConfigured()) {
+          const payload = JSON.stringify({ at: now, edits: map }, null, 2);
+          await drive.driveArchiveJson(["ePMP", "Ghi chú"], "GhiChu_latest.json", payload);
+          const vnDate = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+          await drive.driveArchiveJson(["ePMP", "Ghi chú", "Lịch sử"], `GhiChu_${vnDate}.json`, payload);
+        }
+      } catch (e) { console.warn("[notes] mirror Drive bỏ qua:", (e as Error).message); }
+    }
     return { items: map, fetchedAt: now };
   });
 
@@ -484,6 +501,50 @@ export const syncCompletedDates = createServerFn({ method: "POST" })
     return { completed: map, changed };
   });
 
+/* ── MỎ NEO NOTE (chống & phát hiện "trôi" note) ──
+   Mỗi note (vướng mắc/giải pháp) NHỚ nó đang gắn ở ĐÂU: "maCT||tên dự án||giai đoạn||mô tả".
+   Ghi LẦN ĐẦU (baseline) rồi giữ. Mỗi lần nạp nguồn, client so mỏ neo đã nhớ với vị trí HIỆN TẠI của
+   cùng khoá — khác nhau = note đã TRÔI (nguồn đánh lại STT/đảo dòng) → cảnh báo before→after.
+   THUẦN cộng thêm: không đổi khoá lưu note, không rủi ro mất dữ liệu. */
+export type NoteAnchors = Record<string, string>;   // { [noteKey]: "maCT||tên||giai đoạn||mô tả" }
+const NOTEANCHOR_KEY = "noteanchor:v1";
+const DEV_NOTEANCHOR_FILE = ".data/pmo-noteanchor.json";
+async function readNoteAnchors(): Promise<NoteAnchors> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(NOTEANCHOR_KEY); return raw ? (JSON.parse(raw) as NoteAnchors) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_NOTEANCHOR_FILE, "utf8")) as NoteAnchors; }
+  catch { return {}; }
+}
+async function writeNoteAnchors(map: NoteAnchors): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(NOTEANCHOR_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_NOTEANCHOR_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+export const fetchNoteAnchors = createServerFn({ method: "GET" }).handler(async () => {
+  return { anchors: await readNoteAnchors() };
+});
+/** add = ghi mỏ neo LẦN ĐẦU (chỉ khi chưa có → giữ "trước đó nằm ở đâu"). set = ghi đè (khi user xác
+ *  nhận đã đưa note về đúng chỗ). remove = xoá mỏ neo của note không còn tồn tại. */
+export const syncNoteAnchors = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      add: z.record(z.string().min(1).max(600), z.string().max(600)).optional(),
+      set: z.record(z.string().min(1).max(600), z.string().max(600)).optional(),
+      remove: z.array(z.string().min(1).max(600)).optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const map = await readNoteAnchors();
+    let changed = 0;
+    for (const [k, v] of Object.entries(data.add ?? {})) if (!(k in map)) { map[k] = v; changed++; }
+    for (const [k, v] of Object.entries(data.set ?? {})) if (map[k] !== v) { map[k] = v; changed++; }
+    for (const k of data.remove ?? []) if (k in map) { delete map[k]; changed++; }
+    if (changed > 0) await writeNoteAnchors(map);
+    return { anchors: map, changed };
+  });
+
 /* ── CỜ "CẦN CẬP NHẬT MP / TRÌNH BOD" — app tự ghi NGÀY LẦN ĐẦU thấy cờ ──
    Dùng để chấm "không trình BOD: −10 điểm / mỗi tuần cờ còn tồn tại". Sheet KHÔNG biết vướng mắc;
    APP phát hiện dự án có vướng mắc "trình BOD phê duyệt (Bitrix)" rồi ghi ngày LẦN ĐẦU thấy vào đây.
@@ -546,13 +607,27 @@ export const remapKeys = createServerFn({ method: "POST" })
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    let moved = 0;
+    let moved = 0, merged = 0;
+    // Nối message (note/giải pháp là DANH SÁCH) — trùng id thì đổi id để KHÔNG mất tin nào (vd 2 "legacy-note").
+    const mergeMsgs = (t: ChatMsg[] = [], s: ChatMsg[] = []): ChatMsg[] => {
+      const ids = new Set(t.map((m) => m.id)); const out = [...t];
+      s.forEach((m, i) => { let id = m.id; while (ids.has(id)) id = `${m.id}-mg${i}-${out.length}`; ids.add(id); out.push(id === m.id ? m : { ...m, id }); });
+      return out;
+    };
     // 1) EDITS (vướng mắc/giải pháp/PIC/deadline — cấp dự án lẫn hạng mục dùng chung kho này)
     const { map: em } = await readAll();
     let emChanged = false;
     for (const [oldK, newK] of Object.entries(data.edits)) {
-      if (oldK === newK) continue;
-      if (em[oldK] && !em[newK]) { em[newK] = em[oldK]; delete em[oldK]; emChanged = true; moved++; }
+      if (oldK === newK || !em[oldK]) continue;
+      if (!em[newK]) { em[newK] = em[oldK]; delete em[oldK]; emChanged = true; moved++; }
+      else {
+        // ĐÍCH đã có note → GỘP (không bỏ qua): 1 ô note chứa nhiều message nên nối thêm là đúng, không mất gì.
+        const t = migrateEntry(em[newK]), s = migrateEntry(em[oldK]);
+        const noteMsgs = mergeMsgs(t.noteMsgs, s.noteMsgs);
+        const actionMsgs = mergeMsgs(t.actionMsgs, s.actionMsgs);
+        em[newK] = { ...s, ...t, ...(noteMsgs.length ? { noteMsgs } : {}), ...(actionMsgs.length ? { actionMsgs } : {}), updatedAt: (s.updatedAt > t.updatedAt ? s.updatedAt : t.updatedAt) || t.updatedAt };
+        delete em[oldK]; emChanged = true; moved++; merged++;
+      }
     }
     if (emChanged) await writeAll(em);
     // 2) COMPLETED (ngày kết thúc thực tế — cấp hạng mục/Block)
@@ -572,7 +647,7 @@ export const remapKeys = createServerFn({ method: "POST" })
       else { um[newK] = Array.from(new Set([...um[newK], ...um[oldK]])).sort(); delete um[oldK]; umChanged = true; moved++; }
     }
     if (umChanged) await writeUpdates(um);
-    return { edits: em, completed: cm, updates: um, moved };
+    return { edits: em, completed: cm, updates: um, moved, merged };
   });
 
 /* ── SỬA LỆCH KHOÁ DO CHÈN DỰ ÁN (STT bị dồn) ──
@@ -802,7 +877,12 @@ const DEV_SHEETVIEW_FILE = ".data/pmo-sheetview.json";
 /** pdf=true → ÉP chụp PDF (bỏ tự-nhận-dạng heatmap); sheet/range = tinh chỉnh tab + vùng (tuỳ chọn).
  *  fileId/gid: khi PMO GẮN LINK THẲNG trong app (không qua hyperlink file import) — key = khoá bền dự án
  *  (Mã CT + Tên). Có fileId → dự án đó hiện 📊 cho mọi người, popup chụp PDF từ link này. */
-export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string };
+export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean };
+// chart=true → mặc định mở popup ở BẢN CÓ CHART (ảnh Google) cho MỌI người xem (PMO set); vẫn có nút đổi qua lưới.
+// snap=true → đã có ẢNH RENDER (HTML) lưu sẵn ở KV `sheetsnap:<key>` (render 1 lần lúc PMO lưu). Viewer chỉ
+// tải HTML nhỏ đó, KHÔNG tải/parse xlsx → nhẹ, chịu được hàng loạt chart.
+// tl/br = 2 ký hiệu marker đặt ở 2 ô góc (trên-trái / dưới-phải) của vùng. Có → app tự dò range theo marker
+// (chống lệch khi chèn/dời dòng cột), thay cho range gõ tay.
 export type SheetViewMap = Record<string, SheetViewCfg>;
 
 async function readSheetViews(): Promise<SheetViewMap> {
@@ -834,6 +914,10 @@ export const saveSheetView = createServerFn({ method: "POST" })
       gid: z.string().max(30).regex(/^\d*$/).optional(),
       sheet: z.string().max(80).regex(/^[^\n\r]*$/).optional(),
       range: z.string().max(40).regex(/^[^\n\r]*$/).optional(),
+      tl: z.string().max(40).regex(/^[^\n\r]*$/).optional(),   // marker góc trên-trái
+      br: z.string().max(40).regex(/^[^\n\r]*$/).optional(),   // marker góc dưới-phải
+      snap: z.boolean().optional(),                            // đã có snapshot HTML lưu ở sheetsnap:<key>
+      chart: z.boolean().optional(),                           // mặc định mở BẢN CÓ CHART cho mọi người
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
@@ -844,8 +928,441 @@ export const saveSheetView = createServerFn({ method: "POST" })
     const range = (data.range ?? "").trim();
     const fileId = (data.fileId ?? "").trim();
     const gid = (data.gid ?? "").trim();
+    const tl = (data.tl ?? "").trim();
+    const br = (data.br ?? "").trim();
     if (!data.pdf) delete map[data.key];   // tắt ép PDF / gỡ link → về mặc định (không hiện 📊 nếu là khoá dự án)
-    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}) };
+    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}) };
     await writeSheetViews(map);
     return { views: map };
+  });
+
+/* ── FORM BÁO CÁO TUÂN THỦ (admin/PMO "chỉnh bảng": kéo rộng cột + cỡ chữ + in đậm) — KV `complianceform:v1`.
+   Đọc CÔNG KHAI (mọi người thấy form đã chốt); GHI chỉ ADMIN/PMO. Áp cho cả màn hình lẫn bản in PDF. ── */
+const COMPLIANCE_FORM_KEY = "complianceform:v1";
+const DEV_COMPLIANCEFORM_FILE = ".data/pmo-complianceform.json";
+export type ComplianceForm = { colW?: number[]; fontPx?: number; bold?: boolean; colBold?: boolean[]; colFontPx?: number[]; locked?: boolean; rowH?: number };
+async function readComplianceForm(): Promise<ComplianceForm | null> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(COMPLIANCE_FORM_KEY); return raw ? (JSON.parse(raw) as ComplianceForm) : null; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_COMPLIANCEFORM_FILE, "utf8")) as ComplianceForm; }
+  catch { return null; }
+}
+export const getComplianceForm = createServerFn({ method: "GET" }).handler(async (): Promise<{ form: ComplianceForm | null }> => {
+  return { form: await readComplianceForm() };
+});
+export const saveComplianceForm = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    colW: z.array(z.number().min(0).max(100)).max(40).optional(),
+    fontPx: z.number().min(7).max(24).optional(),
+    bold: z.boolean().optional(),
+    colBold: z.array(z.boolean()).max(40).optional(),
+    colFontPx: z.array(z.number().min(0).max(24)).max(40).optional(),
+    locked: z.boolean().optional(),
+    rowH: z.number().min(0).max(60).optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin mới được chỉnh form báo cáo tuân thủ.");
+    const form: ComplianceForm = { ...(data.colW ? { colW: data.colW } : {}), ...(data.fontPx ? { fontPx: data.fontPx } : {}), ...(data.bold ? { bold: true } : {}), ...(data.colBold ? { colBold: data.colBold } : {}), ...(data.colFontPx ? { colFontPx: data.colFontPx } : {}), ...(data.locked ? { locked: true } : {}), ...(data.rowH ? { rowH: data.rowH } : {}) };
+    const kv = await getKv();
+    if (kv) { await kv.put(COMPLIANCE_FORM_KEY, JSON.stringify(form)); }
+    else { const fs = await import("node:fs/promises"); await fs.mkdir(".data", { recursive: true }); await fs.writeFile(DEV_COMPLIANCEFORM_FILE, JSON.stringify(form, null, 2), "utf8"); }
+    return { ok: true };
+  });
+
+/* ── NGUỒN DST (app "Theo dõi tiến độ chi tiết") — link PMO import DÍNH CỨNG (KV `dst:source:v1`) đến khi
+   đổi link. Trước đây reload là về file mẫu. Đọc CÔNG KHAI; GHI chỉ ADMIN/PMO. ── */
+const DST_SOURCE_KEY = "dst:source:v1";
+const DEV_DSTSOURCE_FILE = ".data/pmo-dst-source.json";
+export type DstSource = { fileId: string; gid?: string; sheet?: string; full?: boolean };
+async function readDstSource(): Promise<DstSource | null> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(DST_SOURCE_KEY); return raw ? (JSON.parse(raw) as DstSource) : null; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_DSTSOURCE_FILE, "utf8")) as DstSource; }
+  catch { return null; }
+}
+export const getDstSource = createServerFn({ method: "GET" }).handler(async (): Promise<{ source: DstSource | null }> => {
+  return { source: await readDstSource() };
+});
+export const saveDstSource = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/),
+    gid: z.string().max(30).regex(/^\d*$/).optional(),
+    sheet: z.string().max(120).regex(/^[^\n\r]*$/).optional(),
+    full: z.boolean().optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được đổi nguồn DST.");
+    const src: DstSource = { fileId: data.fileId, ...(data.gid ? { gid: data.gid } : {}), ...(data.sheet ? { sheet: data.sheet } : {}), ...(data.full ? { full: true } : {}) };
+    const kv = await getKv();
+    if (kv) { await kv.put(DST_SOURCE_KEY, JSON.stringify(src)); }
+    else { const fs = await import("node:fs/promises"); await fs.mkdir(".data", { recursive: true }); await fs.writeFile(DEV_DSTSOURCE_FILE, JSON.stringify(src, null, 2), "utf8"); }
+    // MIRROR sang Drive: "Data Source" › DATABASE › DST › DST_source.json — CON TRỎ tới file nguồn (fileId/gid),
+    // KHÔNG phải dữ liệu (dữ liệu DST parse ở client). Best-effort.
+    try {
+      const drive = await import("@/lib/drive.functions");
+      if (await drive.driveIsConfigured()) {
+        const link = `https://docs.google.com/spreadsheets/d/${src.fileId}/edit${src.gid ? `#gid=${src.gid}` : ""}`;
+        await drive.driveArchiveJson(["DST"], "DST_source.json", JSON.stringify({ ...src, link, at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" }, null, 2));
+      }
+    } catch (e) { console.warn("[dst-source] mirror Drive bỏ qua:", (e as Error).message); }
+    return { ok: true };
+  });
+
+/* ── FORM MA TRẬN (admin "chỉnh như Excel") — kho KV `sheetform:v1` = { [formKey]: FormSpec }. FORM = bố cục
+   người dùng (độ rộng cột / cao dòng), màu theo MÃ + theo Ô, chữ đè, ẩn cột/dòng — ĐÈ lên dữ liệu SỐNG. Lưu
+   1 form / 1 link (formKey = "fid::sheet::range") → số liệu đổi vẫn giữ nguyên bố cục ("bê form lên data khác").
+   Đọc CÔNG KHAI (viewer cần áp form); GHI chỉ ADMIN/PMO. */
+const SHEETFORM_KEY = "sheetform:v1";
+const DEV_SHEETFORM_FILE = ".data/pmo-sheetform.json";
+export type SheetForm = {
+  colW?: Record<string, number>; rowH?: Record<string, number>;
+  cellColor?: Record<string, string>; cellFg?: Record<string, string>;
+  codeColor?: Record<string, string>; cellText?: Record<string, string>;
+  hiddenC?: number[]; hiddenR?: number[];
+  rules?: { r1: number; c1: number; r2: number; c2: number; mode: "scale" | "palette" | "steps"; from?: number; to?: number; colors?: string[] }[];
+  zoom?: number;   // mức phóng to đã lưu → mở lại (kể cả ô MTLĐ) hiện đúng cỡ này
+  boxW?: number;   // cỡ KHUNG CHIẾU ma trận (px) admin đã kéo — lưu vào form nên MỌI NGƯỜI thấy như nhau
+  boxH?: number;
+  // BẢNG KHU — cho dự án KHÔNG có heatmap (khu public: chart khác dạng, không dựng được bản đồ ô).
+  // Lưới đơn giản `cols` cột, mỗi ô là 1 KHU; bấm ô = mở kho ảnh/video của khu đó.
+  zones?: { cols: number; h?: number };   // bố cục BẢNG KHU: số cột + chiều cao ô (tên khu đọc từ sheet)
+};
+export type SheetFormMap = Record<string, SheetForm>;
+async function readSheetForms(): Promise<SheetFormMap> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(SHEETFORM_KEY); return raw ? (JSON.parse(raw) as SheetFormMap) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_SHEETFORM_FILE, "utf8")) as SheetFormMap; }
+  catch { return {}; }
+}
+async function writeSheetForms(map: SheetFormMap): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(SHEETFORM_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_SHEETFORM_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+/** Đọc mọi form đã lưu (CÔNG KHAI) — map nhẹ (chỉ số + màu), viewer áp lúc render. */
+export const getSheetForms = createServerFn({ method: "GET" }).handler(async () => {
+  return { forms: await readSheetForms() };
+});
+const colorZ = z.string().max(30);
+const numRecZ = z.record(z.string().max(16), z.number().min(0).max(4000));
+/** Lưu/gỡ form cho 1 link — CHỈ ADMIN/PMO. spec rỗng/không truyền → gỡ form (về mặc định). */
+export const saveSheetForm = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      key: z.string().min(1).max(200),
+      spec: z.object({
+        colW: numRecZ.optional(), rowH: numRecZ.optional(),
+        cellColor: z.record(z.string().max(16), colorZ).optional(),
+        cellFg: z.record(z.string().max(16), colorZ).optional(),
+        codeColor: z.record(z.string().max(60), colorZ).optional(),
+        cellText: z.record(z.string().max(16), z.string().max(300)).optional(),
+        hiddenC: z.array(z.number()).max(600).optional(),
+        hiddenR: z.array(z.number()).max(3000).optional(),
+        rules: z.array(z.object({ r1: z.number(), c1: z.number(), r2: z.number(), c2: z.number(), mode: z.enum(["scale", "palette", "steps"]), from: z.number().optional(), to: z.number().optional(), colors: z.array(z.string().max(30)).max(24).optional() })).max(300).optional(),
+        zoom: z.number().min(0.2).max(5).optional(),
+        boxW: z.number().min(200).max(6000).optional(),
+        boxH: z.number().min(160).max(4000).optional(),
+        zones: z.object({ cols: z.number().min(1).max(8), h: z.number().min(40).max(600).optional() }).optional(),
+      }).nullable().optional(),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu form.");
+    const map = await readSheetForms();
+    const s = data.spec;
+    const empty = !s || (!s.colW && !s.rowH && !s.cellColor && !s.cellFg && !s.codeColor && !s.cellText && !s.hiddenC?.length && !s.hiddenR?.length && !s.rules?.length && (!s.zoom || s.zoom === 1) && !s.boxW && !s.boxH && !s.zones);
+    if (empty) delete map[data.key]; else map[data.key] = s as SheetForm;
+    await writeSheetForms(map);
+    return { ok: true };
+  });
+
+/* ── SNAPSHOT ẢNH RENDER (ETL) — kho KV `sheetsnap:<key>` = { html, css, range }. Tách RIÊNG khỏi map cấu
+   hình để map luôn nhẹ (load mọi dự án), còn HTML lớn chỉ tải KHI viewer mở đúng 1 chart. ─────────── */
+const SHEETSNAP_PREFIX = "sheetsnap:";
+const DEV_SHEETSNAP_DIR = ".data/snap";
+type SheetSnap = { html: string; css: string; range: string };
+async function readSnap(key: string): Promise<SheetSnap | null> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(SHEETSNAP_PREFIX + key); return raw ? (JSON.parse(raw) as SheetSnap) : null; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(`${DEV_SHEETSNAP_DIR}/${encodeURIComponent(key)}.json`, "utf8")) as SheetSnap; }
+  catch { return null; }
+}
+async function writeSnap(key: string, val: SheetSnap): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(SHEETSNAP_PREFIX + key, JSON.stringify(val)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(DEV_SHEETSNAP_DIR, { recursive: true });
+  await fs.writeFile(`${DEV_SHEETSNAP_DIR}/${encodeURIComponent(key)}.json`, JSON.stringify(val), "utf8");
+}
+/** LOAD snapshot cho viewer (CÔNG KHAI, chỉ tải đúng 1 chart) — Worker chỉ ĐỌC chuỗi, không parse gì. */
+export const getSheetSnap = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ key: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data }): Promise<{ snap: SheetSnap | null }> => ({ snap: await readSnap(data.key) }));
+/** LOAD (ghi) snapshot — CHỈ ADMIN/PMO. HTML đã render sẵn ở CLIENT (Worker không parse xlsx). */
+export const saveSheetSnap = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ key: z.string().min(1).max(200), html: z.string().max(4_000_000), css: z.string().max(200_000), range: z.string().max(40).optional(), devAs: z.string().nullable().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu snapshot.");
+    await writeSnap(data.key, { html: data.html, css: data.css, range: (data.range ?? "").trim() });
+    return { ok: true };
+  });
+
+/* ── ẢNH DỰ ÁN (PMO gắn) — mỗi DỰ ÁN có 1 BỘ ẢNH hiện trường (nhiều ảnh); click TÊN DỰ ÁN → popup xem
+   gallery. Tách INDEX nhẹ `projimg:idx:v1` = { [key]: { n, at, by } } (mọi người tải để biết dự án nào có
+   📷 + số ảnh + ngày/người sửa gần nhất) khỏi BLOB nặng `projimg:blob:<key>` = { imgs: [{ data, at, by }] }
+   (chỉ tải khi mở popup). Key = KHOÁ DỰ ÁN chuẩn (projectKeyOf = g.key). GHI chỉ ADMIN/PMO; ĐỌC công khai. */
+const PROJIMG_IDX_KEY = "projimg:idx:v1";
+const DEV_PROJIMG_IDX_FILE = ".data/pmo-projimg-idx.json";
+const PROJIMG_PREFIX = "projimg:blob:";
+const DEV_PROJIMG_DIR = ".data/projimg";
+const PROJIMG_MAX = 12;   // trần số ảnh / dự án (giữ blob KV gọn, dưới hạn 25MB kể cả ảnh nặng)
+export type ProjImgMeta = { n: number; at: string; by: string };
+export type ProjImgIdx = Record<string, ProjImgMeta>;
+export type ProjImgItem = { data: string; at: string; by: string };
+type ProjImgBlob = { imgs: ProjImgItem[] };
+
+async function readProjImgIdx(): Promise<ProjImgIdx> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(PROJIMG_IDX_KEY); return raw ? (JSON.parse(raw) as ProjImgIdx) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_PROJIMG_IDX_FILE, "utf8")) as ProjImgIdx; }
+  catch { return {}; }
+}
+async function writeProjImgIdx(map: ProjImgIdx): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(PROJIMG_IDX_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_PROJIMG_IDX_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+async function readProjImgBlob(key: string): Promise<ProjImgBlob> {
+  const kv = await getKv();
+  let raw: string | null = null;
+  if (kv) raw = await kv.get(PROJIMG_PREFIX + key);
+  else { try { const fs = await import("node:fs/promises"); raw = await fs.readFile(`${DEV_PROJIMG_DIR}/${encodeURIComponent(key)}.json`, "utf8"); } catch { raw = null; } }
+  if (!raw) return { imgs: [] };
+  const parsed = JSON.parse(raw) as ProjImgBlob | { data: string; at: string; by: string };
+  // Di trú bản CŨ (1 ảnh/dự án: { data, at, by }) → mảng.
+  if (Array.isArray((parsed as ProjImgBlob).imgs)) return parsed as ProjImgBlob;
+  const one = parsed as { data: string; at: string; by: string };
+  return one.data ? { imgs: [{ data: one.data, at: one.at, by: one.by }] } : { imgs: [] };
+}
+async function writeProjImgBlob(key: string, val: ProjImgBlob): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(PROJIMG_PREFIX + key, JSON.stringify(val)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(DEV_PROJIMG_DIR, { recursive: true });
+  await fs.writeFile(`${DEV_PROJIMG_DIR}/${encodeURIComponent(key)}.json`, JSON.stringify(val), "utf8");
+}
+async function deleteProjImgBlob(key: string): Promise<void> {
+  const kv = await getKv();
+  if (kv) { if (kv.delete) await kv.delete(PROJIMG_PREFIX + key); else await kv.put(PROJIMG_PREFIX + key, ""); return; }
+  try { const fs = await import("node:fs/promises"); await fs.unlink(`${DEV_PROJIMG_DIR}/${encodeURIComponent(key)}.json`); } catch { /* chưa có file */ }
+}
+
+/** INDEX ảnh (CÔNG KHAI, nhẹ) — client biết dự án nào có 📷 + số ảnh + ngày/người sửa gần nhất. */
+export const getProjImageIndex = createServerFn({ method: "GET" }).handler(async () => {
+  return { idx: await readProjImgIdx() };
+});
+/** LOAD BỘ ảnh 1 dự án (CÔNG KHAI) — chỉ tải KHI viewer mở popup (blob nặng tách riêng khỏi index). */
+export const getProjImage = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ key: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data }): Promise<{ imgs: ProjImgItem[] }> => (await readProjImgBlob(data.key)));
+/** THÊM (nhiều) / XOÁ 1 / XOÁ HẾT ảnh — CHỈ ADMIN/PMO.
+ *   add     : mảng dataURI ảnh đã nén ở client → NỐI vào bộ (trần PROJIMG_MAX).
+ *   removeIdx: xoá ảnh thứ i; clear: xoá cả bộ. Trả index mới để client cập nhật badge. */
+export const saveProjImage = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    key: z.string().min(1).max(200),
+    projectName: z.string().max(300).optional(),   // tên dự án → đặt tên thư mục Drive cho dễ đọc
+    add: z.array(z.string().max(3_500_000)).max(PROJIMG_MAX).optional(),
+    toa: z.string().max(60).optional(),            // Toà (bỏ trống nếu dự án không chia Toà, vd khu public)
+    can: z.string().max(80).optional(),            // CĂN / KHU → ảnh đổ vào đúng folder đó trong cây Media
+    removeIdx: z.number().int().min(0).optional(),
+    clear: z.boolean().optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ idx: ProjImgIdx }> => {
+    // THÊM ảnh: MỌI NGƯỜI được làm. XOÁ/GỠ ảnh: chỉ admin/PMO (tránh xoá nhầm/ác ý).
+    const canManage = (await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs));
+    const map = await readProjImgIdx();
+    const commit = async (imgs: ProjImgItem[]) => {
+      if (!imgs.length) { delete map[data.key]; await deleteProjImgBlob(data.key); }
+      else { await writeProjImgBlob(data.key, { imgs }); map[data.key] = { n: imgs.length, at: imgs[imgs.length - 1].at, by: imgs[imgs.length - 1].by }; }
+      await writeProjImgIdx(map);
+    };
+    if (data.clear) { if (!canManage) throw new Error("Chỉ admin/PMO mới được xoá cả bộ ảnh."); await commit([]); return { idx: map }; }
+    const cur = (await readProjImgBlob(data.key)).imgs;
+    if (typeof data.removeIdx === "number") {
+      if (!canManage) throw new Error("Chỉ admin/PMO mới được gỡ ảnh.");
+      if (data.removeIdx < cur.length) cur.splice(data.removeIdx, 1);
+      await commit(cur);
+      return { idx: map };
+    }
+    const adds = (data.add ?? []).map((s) => s.trim()).filter(Boolean);
+    if (adds.length) {
+      for (const uri of adds) if (!/^data:image\//.test(uri)) throw new Error("Ảnh không hợp lệ (cần dataURI ảnh).");
+      const now = new Date().toISOString();
+      const by = (await callerEmail(data.devAs)) ?? "?";
+      const next = [...cur, ...adds.map((data) => ({ data, at: now, by }))].slice(0, PROJIMG_MAX);
+      await commit(next);
+      // MIRROR sang Google Drive — vào ĐÚNG FOLDER CĂN (hoặc KHU) trong cây Media, cùng chỗ với ảnh/video
+      // up từ app "Media công trường". Không có căn/khu → KHÔNG đẩy lên Drive (bỏ hẳn kho ảnh cấp dự án).
+      // Best-effort: Drive lỗi/chưa cấu hình → bỏ qua, không chặn lưu KV (ảnh vẫn hiện bình thường).
+      if ((data.can || "").trim()) {
+        try {
+          const drive = await import("@/lib/drive.functions");
+          if (await drive.driveIsConfigured())
+            await drive.driveArchiveImages("ePMP", data.projectName || data.key, adds, { toa: data.toa, can: data.can! });
+        } catch (e) { console.warn("[projimg] mirror Drive bỏ qua:", (e as Error).message); }
+      }
+    }
+    return { idx: map };
+  });
+
+/* ── DỮ LIỆU HIỆU SUẤT DỰ ÁN (app "Hiệu suất dự án") — parse từ sheet Pivot(2) ở CLIENT rồi lưu vào
+   KV `perfdata:v1` để GIỮ LẠI đến khi PMO cập nhật file mới (mọi người mở app thấy ngay bản mới nhất).
+   Nhẹ (20 dự án × 14 số). GHI chỉ ADMIN/PMO; ĐỌC công khai. ── */
+const PERFDATA_KEY = "perfdata:v1";
+const DEV_PERFDATA_FILE = ".data/pmo-perfdata.json";
+export type PerfProj = { no: number; name: string; rev: number[]; ns: number[] };
+export type PerfData = { projects: PerfProj[]; src: string; at: string; by: string };
+
+async function readPerfData(): Promise<PerfData | null> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(PERFDATA_KEY); return raw ? (JSON.parse(raw) as PerfData) : null; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_PERFDATA_FILE, "utf8")) as PerfData; }
+  catch { return null; }
+}
+async function writePerfData(d: PerfData): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(PERFDATA_KEY, JSON.stringify(d)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_PERFDATA_FILE, JSON.stringify(d, null, 2), "utf8");
+}
+
+/** Đọc data hiệu suất đang lưu (CÔNG KHAI). */
+export const getPerfData = createServerFn({ method: "GET" }).handler(async (): Promise<{ data: PerfData | null }> => ({ data: await readPerfData() }));
+
+/** Lưu data hiệu suất (parse ở client) — CHỈ ADMIN/PMO. Ghi đè bản cũ (đến khi update file mới). */
+export const savePerfData = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    projects: z.array(z.object({
+      no: z.number(), name: z.string().max(120),
+      rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24),
+    })).max(200),
+    src: z.string().max(200).optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ data: PerfData }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được cập nhật dữ liệu hiệu suất.");
+    const d: PerfData = { projects: data.projects, src: (data.src ?? "").slice(0, 200), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
+    await writePerfData(d);
+    // MIRROR sang Drive: "Data Source" › DATABASE › Hiệu suất dự án › HieuSuatDuAn_latest.json (ghi đè, bản mới
+    // nhất). Best-effort: Drive lỗi/chưa cấu hình → bỏ qua, không chặn KV.
+    try {
+      const drive = await import("@/lib/drive.functions");
+      if (await drive.driveIsConfigured()) await drive.driveArchiveJson(["Hiệu suất dự án"], "HieuSuatDuAn_latest.json", JSON.stringify(d, null, 2));
+    } catch (e) { console.warn("[perfdata] mirror Drive bỏ qua:", (e as Error).message); }
+    return { data: d };
+  });
+
+/** LƯU PDF BÁO CÁO TUÂN THỦ lên Drive (để Apps Script trong file gốc đính kèm mail):
+ *  "Data Source" › DATABASE › ePMP › Báo cáo tuân thủ › <fileName> (upsert, ghi đè mỗi kỳ). Gọi
+ *  driveSaveReportImpl qua DYNAMIC import để drive.functions KHÔNG lọt vào bundle client (import-protection
+ *  chặn "@tanstack/react-start/server"). CHỈ admin/PMO. */
+export const saveComplianceReportPdf = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    fileName: z.string().min(1).max(200),
+    dataUri: z.string().max(30_000_000).regex(/^data:application\/pdf;base64,/),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ id: string; link: string; updated: boolean }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu báo cáo lên Drive.");
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
+    return await drive.driveSaveReportImpl(["ePMP", "Báo cáo tuân thủ"], data.fileName, data.dataUri);
+  });
+
+/* ── KHO ETL — dữ liệu đã CHUẨN HOÁ của các app (ePMP, Chi tiết tiến độ) gom về KV `etl:v1:<source>`.
+   Client Extract+Transform (parse xlsx) rồi Load bundle JSON vào đây. Nền cho dashboard + AI (RAG). ── */
+const ETL_PREFIX = "etl:v1:";
+const DEV_ETL_DIR = ".data/etl";
+async function readEtl(source: string): Promise<string | null> {
+  const kv = await getKv();
+  if (kv) return (await kv.get(ETL_PREFIX + source)) ?? null;
+  try { const fs = await import("node:fs/promises"); return await fs.readFile(`${DEV_ETL_DIR}/${source}.json`, "utf8"); }
+  catch { return null; }
+}
+async function writeEtl(source: string, json: string): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(ETL_PREFIX + source, json); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(DEV_ETL_DIR, { recursive: true });
+  await fs.writeFile(`${DEV_ETL_DIR}/${source}.json`, json, "utf8");
+}
+/** LOAD (ghi) bundle ETL — CHỈ ADMIN/PMO. bundle = JSON đã stringify ở client (Worker chỉ lưu chuỗi). */
+export const saveEtlRecords = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ source: z.enum(["epmp", "detail"]), bundle: z.string().max(20_000_000), devAs: z.string().nullable().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được ghi ETL.");
+    await writeEtl(data.source, data.bundle);
+    return { ok: true };
+  });
+/** Đọc bundle ETL (công khai) → trả chuỗi JSON hoặc null. Dùng cho dashboard/AI. */
+export const getEtlRecords = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ source: z.enum(["epmp", "detail"]) }).parse(input))
+  .handler(async ({ data }): Promise<{ bundle: string | null }> => ({ bundle: await readEtl(data.source) }));
+
+/* ── DATA LIBRARY — kho DATASET đã chuẩn hoá (canonical). Index NHẸ (metadata) tách khỏi bản đầy đủ
+   (records) để list nhanh; bản đầy đủ ở KV riêng `etl:ds:<id>`. Client build Dataset rồi Load lên. ── */
+export type DatasetMeta = { id: string; name: string; domain: string; data_type: string; project_id?: string; created_at: string; source_file_name?: string; record_count: number; quality_score: number; schema_version: string };
+const DS_PREFIX = "etl:ds:";
+const DS_INDEX = "etl:ds:index";
+const DEV_DS_DIR = ".data/ds";
+async function readDsIndex(): Promise<DatasetMeta[]> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(DS_INDEX); return raw ? (JSON.parse(raw) as DatasetMeta[]) : []; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(`${DEV_DS_DIR}/index.json`, "utf8")) as DatasetMeta[]; } catch { return []; }
+}
+async function writeDsIndex(list: DatasetMeta[]): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(DS_INDEX, JSON.stringify(list)); return; }
+  const fs = await import("node:fs/promises"); await fs.mkdir(DEV_DS_DIR, { recursive: true }); await fs.writeFile(`${DEV_DS_DIR}/index.json`, JSON.stringify(list), "utf8");
+}
+async function readDs(id: string): Promise<string | null> {
+  const kv = await getKv();
+  if (kv) return (await kv.get(DS_PREFIX + id)) ?? null;
+  try { const fs = await import("node:fs/promises"); return await fs.readFile(`${DEV_DS_DIR}/${encodeURIComponent(id)}.json`, "utf8"); } catch { return null; }
+}
+async function writeDs(id: string, json: string): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(DS_PREFIX + id, json); return; }
+  const fs = await import("node:fs/promises"); await fs.mkdir(DEV_DS_DIR, { recursive: true }); await fs.writeFile(`${DEV_DS_DIR}/${encodeURIComponent(id)}.json`, json, "utf8");
+}
+/** Liệt kê datasets (metadata nhẹ) — công khai. */
+export const listDatasets = createServerFn({ method: "GET" }).handler(async (): Promise<{ datasets: DatasetMeta[] }> => ({ datasets: (await readDsIndex()).sort((a, b) => b.created_at.localeCompare(a.created_at)) }));
+/** Lấy 1 dataset đầy đủ (records) — công khai. */
+export const getDataset = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ id: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data }): Promise<{ dataset: string | null }> => ({ dataset: await readDs(data.id) }));
+/** PUBLISH dataset — CHỈ ADMIN/PMO. dataset = JSON stringify ở client (Worker chỉ lưu chuỗi). */
+export const saveDataset = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    meta: z.object({ id: z.string().min(1).max(200), name: z.string().max(200), domain: z.string().max(60), data_type: z.string().max(60), project_id: z.string().max(80).optional(), created_at: z.string().max(40), source_file_name: z.string().max(200).optional(), record_count: z.number(), quality_score: z.number(), schema_version: z.string().max(20) }),
+    dataset: z.string().max(20_000_000), devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được publish dataset.");
+    await writeDs(data.meta.id, data.dataset);
+    const idx = await readDsIndex();
+    const i = idx.findIndex((m) => m.id === data.meta.id);
+    if (i >= 0) idx[i] = data.meta; else idx.push(data.meta);
+    await writeDsIndex(idx);
+    return { ok: true };
   });

@@ -43,3 +43,20 @@ if (D1_LOG.database_id) cfg.d1_databases = [D1_LOG];
 fs.writeFileSync(WRANGLER, JSON.stringify(cfg, null, 2));
 const d1Note = D1_LOG.database_id ? ` · D1 ${D1_LOG.binding} (${D1_LOG.database_name})` : " · D1 CHƯA gắn (thiếu database_id)";
 console.log(`[patch-wrangler] KV ${KV_BINDING.binding} (${KV_BINDING.id})${d1Note} · vars: ${Object.keys(VARS).join(", ")}`);
+
+// Ghi /version.json (bản đang live) để client phát hiện bản mới → banner "tải lại".
+// Lấy APP_VERSION = CHANGELOG[0].v = mục `v: "x.y.z"` ĐẦU TIÊN trong routes/index.tsx.
+try {
+  const idx = fs.readFileSync(path.join(__dirname, "..", "src", "routes", "index.tsx"), "utf8");
+  const m = idx.match(/v:\s*"(\d+\.\d+\.\d+)"/);
+  if (m) {
+    const pub = path.join(__dirname, "..", ".output", "public");
+    fs.mkdirSync(pub, { recursive: true });
+    fs.writeFileSync(path.join(pub, "version.json"), JSON.stringify({ v: m[1] }));
+    console.log(`[patch-wrangler] version.json = ${m[1]}`);
+  } else {
+    console.warn("[patch-wrangler] KHÔNG tìm thấy APP_VERSION để ghi version.json");
+  }
+} catch (e) {
+  console.warn("[patch-wrangler] bỏ qua version.json:", e.message);
+}

@@ -20,6 +20,14 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Bí mật (KHÔNG commit) — env local + key Google (service account / OAuth)
+.env
+.env.*
+*.sa.json
+*service-account*.json
+*client_secret*.json
+gdrive-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -33,3 +41,4 @@ dist-ssr
 
 # Dev KV data (regenerable, khong day len)
 .data/
+_tree.txt
