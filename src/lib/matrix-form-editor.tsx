@@ -12,7 +12,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadRegion, type LoadedRegion } from "@/lib/region-load";
 import { rangeToHtml, SHEET_DUMP_CSS, type FormSpec } from "@/lib/sheet-dump";
-import { legendEntries } from "@/lib/summary-render";
+import { legendEntries, setStatusColorMap } from "@/lib/summary-render";
+import { getHeatmapColors } from "@/lib/heatmap-colors.functions";
 import { getSheetForms, saveSheetForm, type SheetForm } from "@/lib/edits.functions";
 
 function devAs(): string | null {
@@ -101,14 +102,22 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
   // hiện đúng cỡ đã lưu). Người xem → chỉ zoom tạm, không lưu.
   const changeZoom = useCallback((z: number) => { setZoom(z); if (canEdit) setDirty(true); }, [canEdit]);
 
+  // BẢNG MÃ MÀU của chủ nhà (thư mục Drive "Mã màu") — nạp 1 lần, cache lâu; áp vào renderer TRƯỚC khi
+  // dựng HTML. Chủ nhà quăng file mới lên Drive là đổi màu, không cần sửa code.
+  const colorQ = useQuery({ queryKey: ["heatmap-colors"], queryFn: () => getHeatmapColors(), staleTime: 10 * 60 * 1000 });
+  const colorsReady = colorQ.data?.colors;
+  if (colorsReady) setStatusColorMap(colorsReady);
+
   const html = useMemo(
     () => (region ? rangeToHtml(region.sh, region.range, region.codeColors, spec, blendText) : ""),
-    [region, spec, blendText],
+    [region, spec, blendText, colorsReady],
   );
 
   hidCRef.current = useMemo(() => new Set(spec.hiddenC ?? []), [spec.hiddenC]);
 
-  useEffect(() => { if (region && onLegend) onLegend(legendEntries(region.sh)); }, [region, onLegend]);
+  // PHẢI phụ thuộc `colorsReady`: bảng mã màu tải XONG SAU khi region có → không tính lại thì chú giải
+  // vẫn hiện màu cũ trong khi ô ma trận đã đổi màu mới (lệch nhau, nhìn là sai ngay).
+  useEffect(() => { if (region && onLegend) onLegend(legendEntries(region.sh)); }, [region, onLegend, colorsReady]);
 
   const commit = useCallback((fn: (s: FormSpec) => FormSpec) => { setSpec((s) => fn(structuredClone(s))); setDirty(true); }, []);
 

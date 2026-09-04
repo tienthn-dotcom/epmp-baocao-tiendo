@@ -41,6 +41,17 @@ const STD_STATUS: Record<string, string> = {
   "x": "#A6A6A6",
 };
 const NO_WORK = "#A6A6A6";   // ô "X" = không có thi công
+
+/** BẢNG MÃ MÀU DO CHỦ NHÀ TỰ CẬP NHẬT — nạp từ file trong thư mục Drive "Mã màu" (xem
+ *  heatmap-colors.functions.ts). Khớp theo DIỄN GIẢI đã bỏ dấu. Đây là NGUỒN ƯU TIÊN: đổi màu chỉ cần
+ *  quăng file mới lên Drive, KHÔNG phải sửa code / deploy lại. Rỗng → dùng thang chuẩn sẵn có. */
+let EXTERNAL_STATUS: Record<string, string> = {};
+export function setStatusColorMap(rows: { name: string; hex: string }[]): void {
+  const m: Record<string, string> = {};
+  for (const r of rows) if (r?.name && r?.hex) m[norm(r.name)] = r.hex;
+  EXTERNAL_STATUS = m;
+}
+export const getStatusColorMap = (): Record<string, string> => EXTERNAL_STATUS;
 /** ARGB/RGB của SheetJS → "#RRGGBB". Bỏ 2 ký tự alpha nếu là 8 ký tự (ARGB). */
 function argbColor(rgb: string | undefined): string | null {
   if (!rgb) return null;
@@ -114,7 +125,10 @@ export function legendEntries(sh: XLSX.WorkSheet): { code: string; text: string;
     if (/^x$/i.test(row.code)) { out.push({ code: row.code, text: row.text, color: NO_WORK }); return; }
     const i = scale.indexOf(row);
     const rank = n <= 1 ? -1 : Math.round((i * (STD_RAMP.length - 1)) / (n - 1));
-    const color = row.hex || (rank >= 0 ? STD_RAMP[rank] : null) || STD_STATUS[norm(row.text)] || row.fill;
+    // ƯU TIÊN: bảng mã màu của chủ nhà (Drive) > hex khai ngay trong legend > thang chuẩn theo thứ hạng
+    // > map tên mặc định > fill ô legend.
+    const color = EXTERNAL_STATUS[norm(row.text)] || row.hex || (rank >= 0 ? STD_RAMP[rank] : null)
+      || STD_STATUS[norm(row.text)] || row.fill;
     if (color) out.push({ code: row.code, text: row.text, color });   // code "" = ô TRỐNG trong lưới (bậc thấp nhất)
   });
   return out;

@@ -569,3 +569,37 @@ Nguyên tắc chốt — áp cho MỌI màn về sau, không riêng app Hiệu s
   chữ xuống dòng rồi bị cắt cụt.
 Verify ở 375px: lưới 1 cột (299px), tab không cắt chữ, **trang KHÔNG cuộn ngang**, chart đen cuộn trong
 khung riêng với số vẫn to (0.90 · 0.77 · 0.19 · 0.98…).
+
+---
+
+## 11. MÃ MÀU HEATMAP LẤY TỪ DRIVE — CHỦ NHÀ TỰ ĐỔI, KHÔNG CẦN SỬA CODE (04/09)
+
+Chủ nhà: *"cập nhật mã màu liên tục cho heatmap rất mệt"*. Nay bảng màu nằm TRÊN DRIVE:
+
+**Vị trí (chú ý):** `Data Source / **Mã màu**` — **NGANG HÀNG với DATABASE**, không nằm trong DATABASE.
+Vì thế `driveNewestFileIn()` dò từ GỐC "Data Source" trước, rồi mới thử dưới DATABASE.
+
+**File:** `heatmap-colors.csv`, 2 cột — `Mã màu, Diễn giải`:
+```
+#C00000,Chưa bàn giao          #1E3A8A,Đã giao tinh (PMU)
+#D3E8FE,Đang thi công          #AFD8C7,Đã ra list Defect (Vận hành)
+#3B82F6,Đã giao thô            #059669,Xoá list Defect (Vận hành)
+#006100,Đã giao Vận Hành       #A6A6A6,Không có thi công
+```
+Đổi màu = **sửa hoặc thay file này trên Drive**, app tự áp (cache 10 phút). Không sửa code, không deploy.
+Dựng lại bằng `node scripts/upload-heatmap-colors.mjs` (ghi đè bản cùng tên).
+
+**Định dạng nhận được** (`heatmap-colors.functions.ts`): CSV/TXT ngăn cách `,` `;` hoặc Tab — **tự dò cột
+nào là mã màu** nên đảo cột vẫn chạy, có dòng tiêu đề cũng tự bỏ; hoặc JSON
+(`{"Đang thi công":"#D3E8FE"}` / `[{name,hex}]`). Excel bấm "Lưu thành CSV" là dùng được ngay.
+
+**KHỚP THEO DIỄN GIẢI** (bỏ dấu, không phân biệt hoa thường) chứ KHÔNG theo mã số ô — mỗi file ma trận
+đánh mã khác nhau nhưng tên công đoạn thì giống. Tên không có trong file → lùi về thang chuẩn cũ.
+
+**Thứ tự ưu tiên màu** (trong `legendEntries`): **bảng Drive** > hex khai trong legend ("Tăng hôm nay")
+> thang `STD_RAMP` theo thứ hạng > map tên mặc định > fill ô legend.
+
+⚠ **BẪY ĐÃ DÍNH:** `onLegend` (dựng chú giải) chạy trong `useEffect` theo `region`; bảng màu tải XONG SAU
+→ không thêm `colorsReady` vào deps thì **ô ma trận đổi màu mới mà chú giải vẫn màu cũ**, lệch nhau.
+Verify: cả ô lẫn chip chú giải cùng ra `#C00000 · #D3E8FE · #3B82F6 · #1E3A8A · #AFD8C7 · #059669 ·
+#006100`, ô trống trong lưới = #C00000, "X" = #A6A6A6.

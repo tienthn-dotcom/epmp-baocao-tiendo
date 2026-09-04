@@ -378,6 +378,35 @@ export async function driveTrashByName(path: string[], fileName: string): Promis
   return n;
 }
 
+/** FILE MỚI NHẤT trong 1 thư mục — tìm TỪ GỐC "Data Source" (KHÔNG chui qua DATABASE), vì thư mục
+ *  "Mã màu" chủ nhà tạo nằm NGANG HÀNG với DATABASE. Không thấy ở gốc thì thử luôn dưới DATABASE cho
+ *  chắc. Trả null nếu không có file nào. CHỈ ĐỌC, không tạo thư mục. */
+export async function driveNewestFileIn(path: string[]): Promise<{ id: string; name: string } | null> {
+  const env = await getEnv(); if (!env) return null;
+  const token = await accessToken(env);
+  const roots = [rootOf(env), await findFolder(token, DB_SUBFOLDER, rootOf(env))];
+  for (const root of roots) {
+    if (!root) continue;
+    let parent: string | null = root;
+    for (const seg of path) { if (!parent) break; parent = await findFolder(token, seg, parent); }
+    if (!parent) continue;
+    const q = `'${parent}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`;
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=20&${SHARED}`, { headers: AUTHH(token) });
+    const j = await r.json() as { files?: { id: string; name: string }[] };
+    if (j.files?.length) return { id: j.files[0].id, name: j.files[0].name };
+  }
+  return null;
+}
+
+/** Tải 1 file Drive về dạng CHỮ (utf-8) — dùng cho CSV/JSON nhỏ như bảng mã màu. */
+export async function driveReadTextImpl(fileId: string): Promise<{ text: string }> {
+  const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
+  const token = await accessToken(env);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&${SHARED}`, { headers: AUTHH(token) });
+  if (!r.ok) throw new Error("Không tải được file: " + r.status);
+  return { text: await r.text() };
+}
+
 /** Tạo PHIÊN UPLOAD TRỰC TIẾP (resumable) vào 1 folder DATABASE → trả session URL để TRÌNH DUYỆT PUT
  *  file THẲNG lên Google (byte KHÔNG qua Worker → hết lo OOM/giới hạn, file lớn vẫn được). HÀM THUẦN. */
 export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string): Promise<{ uploadUrl: string }> {
