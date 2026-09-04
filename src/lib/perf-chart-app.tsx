@@ -179,9 +179,18 @@ function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx"))
     }
     const NM = Math.min(d.revCols.length, d.nsCols.length, 12);
     const rc = d.revCols.slice(0, NM), nc = d.nsCols.slice(0, NM);
-    // ĐƠN VỊ doanh thu: tiêu đề cột hoặc 2 dòng đầu sheet có chữ "tỷ" → số đang là TỶ, đổi về VND.
+    // ĐƠN VỊ doanh thu — QUYẾT THEO ĐỘ LỚN, KHÔNG tin chữ trong tiêu đề. File tuần 04/09 ghi tiêu đề
+    // "DT T1 (tỷ đ)" nhưng số bên trong là ĐỒNG (23.827.384.364): tin chữ thì nhân thêm 1e9, sai đúng
+    // một tỷ lần mà chart vẫn vẽ ra hình nên rất khó phát hiện.
+    // Doanh thu ghi bằng ĐỒNG luôn từ hàng triệu trở lên; ghi bằng TỶ thì chỉ vài chục. Ngưỡng 1 triệu
+    // nằm giữa, cách xa cả hai phía. Toàn 0 (chưa có số) thì mới ngó chữ "tỷ" ở tiêu đề.
     const hdrTxt = [...(rows[d.hr] || []), ...(rows[0] || []), ...(rows[1] || [])].map((x) => String(x ?? "")).join(" | ");
-    const revScale = TY_RE.test(hdrTxt) ? 1e9 : 1;
+    let rawMax = 0;
+    for (let r = d.hr + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      for (const c of rc) { const v = Math.abs(toNum(row[c])); if (v > rawMax) rawMax = v; }
+    }
+    const revScale = rawMax > 1e6 ? 1 : rawMax > 0 ? 1e9 : (TY_RE.test(hdrTxt) ? 1e9 : 1);
     const projs: Proj[] = [];
     for (let r = d.hr + 1; r < rows.length; r++) {
       const row = rows[r] || []; const nmv = row[d.nameCol];
@@ -217,7 +226,10 @@ function parseBlockTotals(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx
   const hdr = rows[hr] || [];
   for (let c = 1; c < hdr.length; c++) if (/^t\s*\d{1,2}$/i.test(txt(hdr[c]))) cols.push(c);
   if (!cols.length) return null;
-  const rev = cols.map((c) => toNum(rows[rRev]?.[c]) * 1e9);   // sheet ghi bằng TỶ
+  // Cùng cách nhận đơn vị như parser chính: theo ĐỘ LỚN, không tin nhãn (xem chú thích ở revScale).
+  const rawRev = cols.map((c) => toNum(rows[rRev]?.[c]));
+  const mx = Math.max(0, ...rawRev.map((v) => Math.abs(v)));
+  const rev = rawRev.map((v) => v * (mx > 1e6 ? 1 : 1e9));
   const ns = cols.map((c) => toNum(rows[rNs]?.[c]));
   return rev.some((v) => v) || ns.some((v) => v) ? { rev, ns } : null;
 }
@@ -381,7 +393,6 @@ function BigChart({ rows, monthIdx }: { rows: RankRow[]; monthIdx: number }) {
             const c = kcolor(d.t, d.rev === 0);
             const barL = d.t >= 0 ? zeroP : pos(d.t);
             const barW = Math.max(0.6, Math.abs(pos(d.t) - zeroP));
-            const gap = d.t - kpi;
             const tr = d.prevT != null ? d.t - d.prevT : null;     // xu hướng vs tháng trước
             const trUp = tr != null && tr > 0.005, trDn = tr != null && tr < -0.005;
             return (
@@ -396,16 +407,17 @@ function BigChart({ rows, monthIdx }: { rows: RankRow[]; monthIdx: number }) {
                 <div style={{ position: "relative", height: rowH }}>
                   <div style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", left: `${barL}%`, width: `${barW}%`, height: 15, background: c, borderRadius: d.t >= 0 ? "3px 4px 4px 3px" : "4px 3px 3px 4px", minWidth: 3, transition: "width .2s ease, left .2s ease" }} />
                 </div>
-                {/* giá trị + xu hướng vs tháng trước + (chênh KPI | chưa có DT) */}
+                {/* giá trị + mũi tên + CHÊNH SO THÁNG TRƯỚC (chênh vs KPI bỏ đi: mốc KPI = 1, nhìn số
+                    là tự trừ ra ngay; số so tháng trước mới là thứ không nhẩm được) */}
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "flex-end", gap: 6, paddingLeft: 8 }}>
                   <span title={tr != null ? `So tháng trước: ${kdelta(tr)}` : "Chưa có tháng trước để so"}
                         style={{ fontSize: 10, fontWeight: 800, width: 10, textAlign: "center", flexShrink: 0, color: trUp ? KDA_TEAL : trDn ? KDA_RED : KDA_FAINT }}>
                     {trUp ? "▲" : trDn ? "▼" : "–"}
                   </span>
                   <span style={{ fontSize: 15.5, fontWeight: 750, color: d.t < 0 ? KDA_RED : KDA_INK, fontVariantNumeric: "tabular-nums", letterSpacing: "-.01em" }}>{kfmt(d.t)}</span>
-                  {d.rev === 0
-                    ? <span style={{ fontSize: 10, fontWeight: 600, color: KDA_FAINT, width: 62, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>chưa có DT</span>
-                    : <span style={{ fontSize: 11, fontWeight: 700, color: gap >= 0 ? KDA_TEAL : KDA_RED, fontVariantNumeric: "tabular-nums", width: 62, textAlign: "right", flexShrink: 0 }}>{kdelta(gap)} <span style={{ color: KDA_FAINT, fontWeight: 600 }}>KPI</span></span>}
+                  {tr == null
+                    ? <span style={{ fontSize: 10, fontWeight: 600, color: KDA_FAINT, width: 62, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>chưa có T trước</span>
+                    : <span title={`So tháng ${monthIdx}: ${kdelta(tr)}`} style={{ fontSize: 11, fontWeight: 700, color: trUp ? KDA_TEAL : trDn ? KDA_RED : KDA_FAINT, fontVariantNumeric: "tabular-nums", width: 62, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>{kdelta(tr)}</span>}
                 </div>
               </div>
             );
@@ -771,9 +783,9 @@ export function PerfChartApp() {
           // ĐIỆN THOẠI: 3 tab không đủ chỗ nằm ngang → cho CUỘN NGANG thay vì xuống dòng rồi bị cắt
           // chữ (h-7 cố định). `shrink-0 whitespace-nowrap` giữ mỗi nút nguyên chữ.
           <div className="flex h-7 max-w-full shrink-0 items-stretch overflow-x-auto rounded-md border border-slate-300 text-[11.5px] font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button type="button" onClick={() => setView("trend")} className={`flex shrink-0 items-center whitespace-nowrap px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
+            <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Sản lượng đầu người</button>
+            <button type="button" onClick={() => setView("trend")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
             <button type="button" onClick={() => setView("rank")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "rank" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người theo dự án</button>
-            <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Sản lượng đầu người</button>
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
