@@ -319,7 +319,7 @@ export async function driveListFoldersByParents(parentIds: string[]): Promise<{ 
   for (let i = 0; i < parentIds.length; i += 40) {
     const chunk = parentIds.slice(i, i + 40);
     const q = `trashed=false and mimeType='application/vnd.google-apps.folder' and (${chunk.map((id) => `'${id}' in parents`).join(" or ")})`;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,parents)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,parents,size)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
     const j = await r.json() as { files?: { id: string; name: string; parents?: string[] }[] };
     for (const f of (j.files || [])) out.push({ id: f.id, name: f.name, parent: f.parents?.[0] || "" });
   }
@@ -336,9 +336,14 @@ export async function driveListFilesByParents(parentIds: string[]): Promise<{ id
   for (let i = 0; i < parentIds.length; i += 40) {   // chia lô để query không quá dài
     const chunk = parentIds.slice(i, i + 40);
     const q = `trashed=false and mimeType!='application/vnd.google-apps.folder' and (${chunk.map((id) => `'${id}' in parents`).join(" or ")})`;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
-    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[] }[] };
-    for (const f of (j.files || [])) out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "" });
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents,size)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[]; size?: string }[] };
+    // BỎ FILE 0 BYTE: upload hụt giữa chừng (rớt mạng, iOS khoá màn) để lại cái vỏ file rỗng trên Drive.
+    // Vỏ đó vẫn hiện thành thẻ video, bấm vào thì Google trả lỗi 400. Không liệt kê nữa.
+    for (const f of (j.files || [])) {
+      if (f.size != null && Number(f.size) === 0) continue;
+      out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "" });
+    }
   }
   return out;
 }
