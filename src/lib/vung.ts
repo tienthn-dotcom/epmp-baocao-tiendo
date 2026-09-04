@@ -37,9 +37,9 @@ export const vungRank = (v: string): number => {
  *  nên vẫn tách được, kể cả khi in đen trắng. */
 export const VUNG_COLOR: Record<string, string> = {
   "Phú Quốc": "#C00000",   // đỏ — bảng mã màu ("Chưa bàn giao")
-  "Bắc": "#3B82F6",        // xanh dương — bảng mã màu ("Đã giao thô")
-  "Trung": "#1E3A8A",      // xanh biển đậm — bảng mã màu ("Đã giao tinh (PMU)")
-  "Nam": "#EAB308",        // vàng — ngoài bảng, chủ nhà chọn để tách hẳn khỏi 2 sắc xanh
+  "Bắc": "#1E3A8A",        // xanh navy — bảng mã màu ("Đã giao tinh (PMU)")
+  "Trung": "#16A34A",      // xanh lá TƯƠI — #059669 của bảng mã màu ngả rêu, in ra nhìn như xám đậm
+  "Nam": "#EAB308",        // vàng — ngoài bảng, để 4 vùng ra 4 sắc khác hẳn nhau
   "Nước Ngoài": "#000000", // đen
 };
 /** Vùng lạ / chưa tra được: xám của bảng mã màu ("Không có thi công"). */

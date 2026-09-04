@@ -116,7 +116,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
       </div>
 
       {/* MA TRẬN LẮP ĐẶT — bấm ô để mở media của căn */}
-      <div style={{ maxWidth: PAGE_W, margin: "0 auto", padding: "16px 16px 40px" }}>
+      <div style={{ maxWidth: PAGE_W, margin: "0 auto", padding: narrowTop ? "6px 0 24px" : "10px 8px 32px" }}>
         {missProject ? (
           <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", color: C.sub, fontSize: 13.5, lineHeight: 1.7, boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
             Dự án <b style={{ color: C.ink }}>{missProject}</b> chưa được gắn link ma trận nên chưa có bảng để bấm.
@@ -282,8 +282,7 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
   const narrow = useIsMobile();   // dien thoai: thanh tren thu gon toi da, nhuong cho cho bang
   const wrapRef = useRef<HTMLDivElement>(null);
   const [miss, setMiss] = useState(0);   // đếm lần bấm vào ô KHÔNG phải căn → nhắc nhẹ
-  const [legend, setLegend] = useState<{ code: string; text: string; color: string }[]>([]);
-  const onLegend = useCallback((rows: { code: string; text: string; color: string }[]) => setLegend(rows), []);
+  // Khong con ve chu giai o thanh tren (ma tran da co san bang mau) -> khong giu state legend nua.
   // Cỡ khung chiếu ma trận do người dùng KÉO — nhớ lại lần sau. Đặt sau khi mount để khỏi lệch hydration.
 
   // CĂN NÀO ĐÃ CÓ MEDIA → chấm dấu lên ô, nhìn ma trận là biết chỗ nào đã có tư liệu, chỗ nào còn trống.
@@ -333,29 +332,23 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
   return (
     // overflow hidden: ma trận TỰ CUỘN NGANG trong .sd-scroll của nó — thẻ card không được rộng theo
     // bảng, không thì cả trang cuộn ngang trên điện thoại.
-    <div style={{ background: "#fff", borderRadius: 14, padding: narrow ? 6 : 12, boxShadow: "0 10px 30px rgba(15,23,42,.10)", overflow: "hidden" }}>
+    // BO HOP BO GOC: vien bo goc + do bong + le trong chi de trang tri, ma an mat be ngang dung
+    // luc ma tran dang can. Nay phang, tran vien - bang duoc rong them ~24px moi ben.
+    <div style={{ background: "#fff", overflow: "hidden" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrow ? "4px 10px" : "6px 14px", margin: narrow ? "0 2px 6px" : "2px 4px 10px" }}>
-        {/* Dien thoai: bo cau huong dan (ai cung bam thu mot cai la biet), chi giu canh bao bam nham o.
-            Man 375px thi moi dong chu o day deu la dong bi day bang xuong duoi. */}
-        {(miss || !narrow) && (
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: miss ? "#b45309" : C.sub }}>
-            {miss ? "Ô này không phải căn (dòng tổng / cột %). Bấm vào ô trong lưới phòng." : "Bấm vào ô của căn để xem / tải ảnh · video của căn đó."}
+        {/* Chi giu CANH BAO bam nham o. Cau huong dan "bam vao o de xem" bo han: ai cung bam thu mot
+            cai la biet, giu lai chi ton mot dong ngang tren cung. */}
+        {miss && (
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: "#b45309" }}>
+            Ô này không phải căn (dòng tổng / cột %). Bấm vào ô trong lưới phòng.
           </span>
         )}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: C.sub }}>
           {mediaQ.isPending ? "đang dò căn có media…" : mediaQ.isError ? "không đọc được Drive" : `${marks.size} căn đã có ảnh / video`}
         </span>
-        {/* Chu giai 7 mau an mat 3 dong tren man dien thoai -> BO HAN tren dien thoai; may tinh giu. */}
-        {legend.length > 0 && !narrow && (
-          <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginLeft: "auto" }}>
-            {legend.map((l) => (
-              <span key={l.code + l.text} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#475569", fontWeight: 600 }}>
-                <span style={{ width: 13, height: 13, borderRadius: 3, background: l.color, border: "1px solid rgba(15,23,42,.18)", flexShrink: 0 }} />
-                {l.text}
-              </span>
-            ))}
-          </span>
-        )}
+        {/* BO dai chu giai mau: chinh ma tran DA CO SAN bang "Mau / Dien giai" o ben phai (thay ro trong
+            anh chup), ve lai o thanh tren la noi dung trung nhau hai lan, ma tren dien thoai no an mat
+            ba dong. Bo ca hai khoi may tinh - dien thoai lech nhau. */}
       </div>
       {/* DẤU CÓ MEDIA: chấm tròn góc dưới-phải ô. Dùng ::after nên không đụng chữ/màu nền của ô,
           và không cần sửa renderer — bảng render lại thì MutationObserver chấm lại. */}
@@ -363,7 +356,7 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
 .mtx-mark td.has-media::after{content:"";position:absolute;right:2px;bottom:2px;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.4px rgba(15,23,42,.75)}`}</style>
       <div ref={wrapRef} onClick={onClick} className="mtx-mark" style={{ cursor: "pointer", minWidth: 0 }}>
         <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }}
-          formKey={mediaFormKey(proj)} canEdit={canEdit} natural blendText zoomable boxResize onLegend={onLegend} />
+          formKey={mediaFormKey(proj)} canEdit={canEdit} natural blendText zoomable boxResize />
       </div>
     </div>
   );

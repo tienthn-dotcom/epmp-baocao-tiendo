@@ -62,6 +62,7 @@ import { whoami, recordActivity, fetchActivityLog, fetchAuditPosMap, backupAudit
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
+import { useIsMobile } from "@/lib/use-breakpoint";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -524,7 +525,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.91.7", date: "04/09/2026", items: [
+  { v: "3.91.8", date: "04/09/2026", items: [
+    "Hiệu suất theo tháng — bỏ INTERCONT HẠ LONG và COSMO ĐÀ NẴNG khỏi lưới; ô nào không có dự án thì ĐỂ TRỐNG, app không tự chọn dự án thay thế nữa. Màu viền vùng đổi cho tách bạch: Phú Quốc đỏ · Bắc xanh navy · Trung xanh lá tươi · Nam vàng · Nước Ngoài đen.",
     "Media công trường trên ĐIỆN THOẠI gọn hẳn, nhường chỗ cho ma trận: thanh tiêu đề thu nhỏ, bỏ nút “Toàn bộ media dự án” (xem cả dự án thì bấm nút Media ngay dòng dự án bên ePMP), bỏ dải chú giải 7 màu và ô vuông minh hoạt, bỏ câu hướng dẫn. Ma trận mặc định mở ở 50% để thấy trọn một toà rồi phóng vào chỗ cần.",
     "ĐIỆN THOẠI xem clip: bỏ khung xem của Google Drive, app phát thẳng bằng trình phát sẵn có của máy — hết cảnh HAI bộ nút chồng lên nhau. Clip cần tải xong mới chạy (vài giây), đổi lại xem đúng một trình phát quen thuộc. Máy tính giữ nguyên khung Drive như cũ (vừa tải vừa xem).",
     "Bỏ thông báo “tự kiểm tra: ĐẠT” bật lên mỗi lần mở app — chỉ báo khi CÓ chuyện; kết quả bình thường xem trong menu Hệ thống.",
@@ -1651,13 +1653,25 @@ function FreshnessBadge({ mode, freshAt, source }: {
 function DataModeToast({ mode, freshAt, error }: {
   mode: "live" | "cache" | "demo"; freshAt: string | null; error: string | null;
 }) {
+  // TRẠNG THÁI DỮ LIỆU đã hiện THƯỜNG TRỰC ở huy hiệu trên header ("Dữ liệu tính đến …", chữ DEMO /
+  // BẢN LƯU). Toast ở đây chỉ để đập vào mắt LẦN ĐẦU. Trước đây mở app lần nào cũng bắn lại, mà nó nằm
+  // góc dưới-trái — đúng chỗ đặt nút mở thanh ứng dụng trên điện thoại, che mất nút.
+  //  · ĐIỆN THOẠI: bỏ hẳn toast này, huy hiệu header là đủ.
+  //  · MÁY TÍNH: mỗi phiên làm việc chỉ nhắc MỘT lần cho mỗi tình trạng (nhớ trong sessionStorage).
+  const narrow = useIsMobile();
   const lastSig = useRef<string>("");
   useEffect(() => {
     const stale = hoursSince(freshAt) >= 24;
     if (mode === "live" && !error && !stale) { lastSig.current = ""; return; }
+    if (narrow) return;
     const sig = `${mode}|${error ?? ""}|${stale ? "stale" : "fresh"}`;
     if (sig === lastSig.current) return;
     lastSig.current = sig;
+    try {
+      const k = "pmo:datamode:" + sig;
+      if (sessionStorage.getItem(k)) return;
+      sessionStorage.setItem(k, "1");
+    } catch { /* trình duyệt chặn storage → cứ báo như cũ */ }
     const msg =
       mode === "demo" ? "Đang xem DỮ LIỆU DEMO, chưa kết nối nguồn dữ liệu thật." :
       mode === "cache" ? "Đang xem BẢN LƯU GẦN NHẤT, không lấy được dữ liệu mới." :
@@ -1665,7 +1679,7 @@ function DataModeToast({ mode, freshAt, error }: {
       "Dữ liệu đã quá 24 giờ, hãy bấm Làm mới.";
     const fn = mode === "demo" ? toast.message : mode === "cache" ? toast.warning : toast.error;
     fn(msg, { position: "bottom-left", duration: 4000 });
-  }, [mode, freshAt, error]);
+  }, [mode, freshAt, error, narrow]);
   return null;
 }
 

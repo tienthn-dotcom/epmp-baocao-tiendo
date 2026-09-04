@@ -535,3 +535,16 @@ body.tv-mode main {
   padding-left: 1.5rem !important;
   padding-right: 1.5rem !important;
 }
+
+/* ── THÔNG BÁO (sonner) TRÊN ĐIỆN THOẠI ────────────────────────────────────────
+   Nhiều chỗ trong app gọi toast kèm position:"bottom-left". Trên điện thoại góc
+   dưới-trái là chỗ đặt nút tròn mở thanh ứng dụng — toast đè lên đó là bấm không
+   được. Kéo mọi toast neo đáy lên ĐỈNH màn khi máy hẹp; đỉnh không vướng nút nào.
+   Đặt bằng CSS vì tuỳ chọn truyền theo từng lời gọi toast đè lên prop của
+   <Toaster>, sửa từng chỗ gọi thì sót. */
+@media (max-width: 767px) {
+  ol[data-sonner-toaster][data-y-position="bottom"] {
+    top: max(8px, env(safe-area-inset-top)) !important;
+    bottom: auto !important;
+  }
+}

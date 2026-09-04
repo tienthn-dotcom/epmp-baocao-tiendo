@@ -37,15 +37,15 @@ import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } f
 const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
-  "HYATT HỒ TRÀM", "OLALANI", "COSMO ĐÀ NẴNG", "CÁT BÀ", "TIẾN BỘ PLAZA",
-  "HYATT HẠ LONG", "INTERCONT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
+  "HYATT HỒ TRÀM", "OLALANI", "CÁT BÀ", "TIẾN BỘ PLAZA",
+  "HYATT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
   "APEC S4", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
 ];
 /** VÙNG KHAI TAY — chỉ cho dự án CÓ trong file tuần nhưng KHÔNG có trên ePMP (nên tra vùng không ra).
  *  Khai ở đây thì dự án mới không bị luật "rời ePMP thì mang ra" quét mất. ePMP luôn thắng: chỗ này chỉ
  *  bù vào chỗ trống. Dự án nào xong thì XOÁ dòng của nó khỏi đây lẫn khỏi PERF_SHOW. */
 const PERF_REGION: Record<string, string> = {
-  "intercont ha long": "Bắc",     // Hạ Long, Quảng Ninh
+  // (trống) — chủ nhà chốt KHÔNG tự chọn dự án thay thế. Ô nào không có dự án thì để trống.
 };
 /** DÒNG GOM, KHÔNG PHẢI DỰ ÁN — cấm lên lưới dù có ai lỡ khai vào PERF_SHOW hay file tuần có đánh STT.
  *  Chủ nhà chốt: KHÔNG dùng nhóm "OTHERS". Mấy dòng còn lại cùng loại (OEM, Loose Export, công nợ cũ,
