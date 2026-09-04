@@ -413,6 +413,28 @@ const dec2 = (v: number): string => v.toFixed(2);        // nhãn giá trị tr�
  *  sếp duyệt. Sang năm đổi mốc thì sửa đúng hằng số này. */
 const PRIOR_YEAR_TY = 0.9;
 
+/** Màn HẸP (điện thoại) — dùng để đổi bố cục, KHÔNG phải để thu nhỏ chữ. */
+function useNarrow(bp = 820): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${bp}px)`);
+    const on = () => setNarrow(mq.matches);
+    on(); mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [bp]);
+  return narrow;
+}
+
+/** KHUNG "VỪA THÌ HIỆN ĐỦ, KHÔNG VỪA THÌ CUỘN NGANG" — thay vì ép chart bé tí cho lọt màn điện thoại
+ *  (chữ nhỏ không đọc nổi). Máy tính rộng hơn `min` → không có thanh cuộn, hiện full như cũ. */
+function FitOrScroll({ min, children }: { min: number; children: React.ReactNode }) {
+  return (
+    <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ minWidth: min }}>{children}</div>
+    </div>
+  );
+}
+
 /** Chart form "Doanh thu đầu người Khối dự án": nền đen — cột cyan từng tháng (từ file) + cột đỏ TB năm nay.
  *  priorYearVnd (TB năm cũ, cột xanh) chỉ vẽ khi có nguồn — file perf hiện chỉ có các tháng năm nay nên = null. */
 function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null)[]; priorYearVnd?: number | null }) {
@@ -491,6 +513,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
 
 // ─────────────────────────────────────────────────────────────────────── APP ──
 export function PerfChartApp() {
+  const narrow = useNarrow();          // điện thoại → đổi bố cục (xem useNarrow / FitOrScroll)
   const [projs, setProjs] = useState<Proj[]>([]);
   /** TOÀN KHỐI đọc thẳng từ khối A sheet "SLTB (kết quả)" — số CHUẨN của báo cáo tuần. */
   const [block, setBlock] = useState<{ rev: number[]; ns: number[] } | null>(null);
@@ -661,10 +684,12 @@ export function PerfChartApp() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-2">
         <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-800"><BarChart3 className="h-4 w-4 text-teal-700" /> Hiệu suất dự án</span>
         {projs.length > 0 && (
-          <div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-slate-300 text-[11.5px] font-medium">
-            <button type="button" onClick={() => setView("trend")} className={`flex items-center px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
-            <button type="button" onClick={() => setView("rank")} className={`flex items-center border-l border-slate-300 px-3 ${view === "rank" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người theo dự án</button>
-            <button type="button" onClick={() => setView("percap")} className={`flex items-center border-l border-slate-300 px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người</button>
+          // ĐIỆN THOẠI: 3 tab không đủ chỗ nằm ngang → cho CUỘN NGANG thay vì xuống dòng rồi bị cắt
+          // chữ (h-7 cố định). `shrink-0 whitespace-nowrap` giữ mỗi nút nguyên chữ.
+          <div className="flex h-7 max-w-full shrink-0 items-stretch overflow-x-auto rounded-md border border-slate-300 text-[11.5px] font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button type="button" onClick={() => setView("trend")} className={`flex shrink-0 items-center whitespace-nowrap px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
+            <button type="button" onClick={() => setView("rank")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "rank" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người theo dự án</button>
+            <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người</button>
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -746,8 +771,10 @@ export function PerfChartApp() {
             // dọc khi nhiều hàng) thay vì ép nhỏ tí. Chiều cao ô cố định để số luôn to.
             <div style={{ width: "100%" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>HIỆU SUẤT THEO THÁNG · CÁC DỰ ÁN (tỷ đồng/người)</div>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${COLS}, minmax(300px, 1fr))`, gridAutoRows: "210px", gap: 10 }}>
-                {gridItems.map((p, i) => (
+              {/* ĐIỆN THOẠI: 1 CỘT — mỗi ô chiếm trọn bề ngang nên đọc thoải mái, cuộn DỌC như đọc danh
+                  sách (thứ tự đúng PERF_SHOW). MÁY TÍNH: giữ nguyên lưới 5 cột xếp dọc-rồi-ngang. */}
+              <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr)" : `repeat(${COLS}, minmax(300px, 1fr))`, gridAutoRows: "210px", gap: 10 }}>
+                {(narrow ? ordered : gridItems).map((p, i) => (
                   <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", minHeight: 0 }}>
                     {p && <MiniChart p={p} nm={nm} w={340} h={210} />}
                   </div>
@@ -756,11 +783,13 @@ export function PerfChartApp() {
             </div>
           ) : view === "rank" ? (
             <div style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
-              <BigChart rows={rankRows} monthIdx={rm} />
+              <FitOrScroll min={620}><BigChart rows={rankRows} monthIdx={rm} /></FitOrScroll>
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>
-              <RevPerCapChart perCapVnd={blockPerCap} priorYearVnd={PRIOR_YEAR_TY * 1e9} />
+              {/* Chart nền đen vẽ 1040×560; ép vừa màn điện thoại thì số trên cột bé không đọc được →
+                  giữ tỷ lệ, cho cuộn ngang. */}
+              <FitOrScroll min={860}><RevPerCapChart perCapVnd={blockPerCap} priorYearVnd={PRIOR_YEAR_TY * 1e9} /></FitOrScroll>
             </div>
           )
         )}

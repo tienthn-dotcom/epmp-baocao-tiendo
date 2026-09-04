@@ -551,3 +551,21 @@ Sếp muốn **có đủ đường ngang ở MỌI MỐC để dò giá trị**,
 (1.6px): dọc bên trái + ngang ở mốc 0. Verify: 6 đường ngang + 1 đường dọc, 3 màu cột
 (#22A64C xanh 2025 · #7BC5E8 cyan tháng · #E01B1B đỏ TB 2026), giá trị
 `0.90 | 0.77 0.19 0.98 0.82 0.75 0.67 0.63 | 0.69`.
+
+### 10D. GÓC NHÌN ĐIỆN THOẠI (chủ nhà: **cấp trên chủ yếu dùng app bằng ĐIỆN THOẠI**)
+
+Nguyên tắc chốt — áp cho MỌI màn về sau, không riêng app Hiệu suất:
+> **Vừa màn thì hiện đủ; KHÔNG vừa thì GIỮ TỶ LỆ cho cuộn ngang.**
+> Tuyệt đối KHÔNG ép chart co nhỏ cho lọt màn — chữ/số bé không đọc được là mất luôn công dụng.
+
+Đã làm trong `perf-chart-app.tsx`:
+- `useNarrow(820)` — hook nhận biết màn hẹp, dùng để ĐỔI BỐ CỤC (không phải để thu nhỏ chữ).
+- `<FitOrScroll min={...}>` — khung bọc: `overflow-x:auto` + con có `min-width`. Máy tính rộng hơn `min`
+  → không có thanh cuộn, y như cũ; điện thoại → cuộn ngang, tỷ lệ nguyên vẹn.
+  Áp cho chart nền đen (`min 860`) và bar xếp hạng (`min 620`).
+- **Lưới mini**: điện thoại → **1 CỘT** full bề ngang (render thẳng `ordered`, đúng thứ tự `PERF_SHOW`),
+  cuộn DỌC như đọc danh sách. Máy tính → giữ nguyên lưới 5 cột xếp dọc-rồi-ngang (`gridItems`).
+- **Thanh 3 tab**: cho CUỘN NGANG (`shrink-0 whitespace-nowrap`, ẩn scrollbar) — trước `h-7` cố định làm
+  chữ xuống dòng rồi bị cắt cụt.
+Verify ở 375px: lưới 1 cột (299px), tab không cắt chữ, **trang KHÔNG cuộn ngang**, chart đen cuộn trong
+khung riêng với số vẫn to (0.90 · 0.77 · 0.19 · 0.98…).
