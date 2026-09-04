@@ -530,6 +530,9 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
 export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
   const narrow = useIsMobile();   // dien thoai: popup chiem tron man, video duoc het be ngang
+  // DIEN THOAI: o Toa/Phong + 2 nut tai len an sau nut "+", vi chung an mat 3 dong header (~230px
+  // tren man 900px) trong khi xem clip khong dung toi. Bam "+" moi mo ra de tai anh/video.
+  const [upOpen, setUpOpen] = useState(false);
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload
@@ -608,7 +611,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".05em", opacity: .75, textTransform: "uppercase" }}>
               📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
+            <div style={{ display: narrow && scope === "can" && !upOpen ? "none" : "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
               {/* Xem cả dự án = CHỈ XEM: hiện tên phòng/khu của item đang xem, không cho sửa, không cho tải.
                   Muốn thêm ảnh/video thì vào app "Media công trường", bấm đúng ô căn — 1 lối lên duy nhất. */}
               {scope === "project" ? (
@@ -624,7 +627,12 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
             </div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            {scope === "can" && <>
+            {scope === "can" && narrow && (
+              <button type="button" onClick={() => setUpOpen((v) => !v)}
+                style={{ ...upBtn, width: 34, padding: 0, justifyContent: "center", fontSize: 18 }}
+                title={upOpen ? "Đóng khung tải lên" : "Tải ảnh / video"}>{upOpen ? "−" : "＋"}</button>
+            )}
+            {scope === "can" && (!narrow || upOpen) && <>
               <label style={upBtn}>＋ Tải ảnh
                 <input type="file" accept="image/*" multiple style={{ display: "none" }}
                   onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
@@ -660,23 +668,26 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
           ) : (
             <div style={{ color: "#94a3b8", fontSize: 13.5 }}>Đang tải ảnh…</div>
           )}
-          {/* Xem VIDEO: bo het lop phu cua app (mui ten + nhan goc trai). Trinh phat da co san thanh
-              tua / am luong / toan man hinh; chong them nut cua minh chi che mat va bam nham.
-              Doi clip khac thi bam o dai thumbnail phia duoi. Anh van giu mui ten nhu cu. */}
-          {items.length > 1 && cur?.kind !== "video" && <>
+          {/* DIEN THOAI xem VIDEO: bo het lop phu cua app (mui ten + nhan goc trai). Dien thoai da co
+              san trinh phat voi thanh tua / am luong / toan man hinh, chong them nut cua minh chi che
+              mat va bam nham; doi clip thi bam o dai anh nho phia duoi.
+              MAY TINH giu nguyen lop phu nay - man rong, khong vuong gi. */}
+          {items.length > 1 && (!narrow || cur?.kind !== "video") && <>
             <button type="button" onClick={() => go(-1)} style={{ ...arrow, left: 10 }}>‹</button>
             <button type="button" onClick={() => go(1)} style={{ ...arrow, right: 10 }}>›</button>
           </>}
-          {items.length > 0 && cur && cur.kind !== "video" && (
+          {items.length > 0 && cur && (!narrow || cur.kind !== "video") && (
             <div style={{ position: "absolute", left: 12, top: 10, background: "rgba(15,23,42,.6)", color: "#e2e8f0", borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>
-              {"🖼 Ảnh"} {Math.min(sel, items.length - 1) + 1}/{items.length}
+              {cur.kind === "video" ? "🎬 Video" : "🖼 Ảnh"} {Math.min(sel, items.length - 1) + 1}/{items.length}
               {curRoom ? ` · ${curRoom}` : ""}{cur.date ? ` · ${cur.date}` : ""}
             </div>
           )}
         </div>
 
-        {/* DẢI THUMBNAIL CUỘN NGANG — ảnh và video chung một dải, bấm để xem */}
-        {items.length > 0 && (
+        {/* DẢI THUMBNAIL CUỘN NGANG — ảnh và video chung một dải, bấm để xem.
+            CHỈ CÓ 1 MỤC thì bỏ hẳn dải này: không có gì để chuyển qua, mà nó ăn mất ~200px chiều cao
+            đúng chỗ đang cần cho clip. */}
+        {items.length > 1 && (
           <div style={{ display: "flex", gap: 14, overflowX: "auto", padding: "9px 12px", background: "#152a45" }}>
             {groups.map((g) => {
               const at = items.findIndex((x) => x.toa === g.toa && x.can === g.can);
