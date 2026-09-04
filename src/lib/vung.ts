@@ -32,12 +32,13 @@ export const vungRank = (v: string): number => {
 /** Màu nhận diện vùng — dùng làm VIỀN thẻ để liếc một cái là biết cụm nào.
  *  LẤY THẲNG mã màu trong "Data Source › Mã màu › heatmap-colors.csv" (bảng chủ nhà đang dùng cho
  *  heatmap) để cả app xài chung một bộ màu, khỏi mỗi chỗ một tông.
- *  Riêng TRUNG giữ cam: bảng đó không có màu cam nào, mà 4 màu còn lại (2 xanh lá, 2 xanh dương) đứng
- *  cạnh Bắc/Nam thì nhìn ra cùng một màu. */
+ *  Bỏ hẳn cam: đứng cạnh đỏ khó phân biệt. Cả 5 vùng nay đều lấy màu trong bảng (+ đen).
+ *  Bắc và Trung cùng họ xanh dương nhưng cách nhau xa về độ sáng (navy #1E3A8A vs xanh tươi #3B82F6)
+ *  nên vẫn tách được, kể cả khi in đen trắng. */
 export const VUNG_COLOR: Record<string, string> = {
-  "Phú Quốc": "#C00000",   // đỏ  — bảng mã màu ("Chưa bàn giao")
+  "Phú Quốc": "#C00000",   // đỏ — bảng mã màu ("Chưa bàn giao")
   "Bắc": "#1E3A8A",        // xanh biển đậm — bảng mã màu ("Đã giao tinh (PMU)")
-  "Trung": "#B45309",      // cam đất — ngoài bảng, xem chú thích trên
+  "Trung": "#3B82F6",      // xanh dương tươi — bảng mã màu ("Đã giao thô")
   "Nam": "#006100",        // xanh lá đậm — bảng mã màu ("Đã giao Vận Hành")
   "Nước Ngoài": "#000000", // đen
 };
