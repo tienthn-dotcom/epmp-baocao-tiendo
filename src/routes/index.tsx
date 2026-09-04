@@ -525,7 +525,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.91.8", date: "04/09/2026", items: [
+  { v: "3.91.9", date: "04/09/2026", items: [
+    "Mini Hotel PQ (B1-B5): đã nạp lại 73 clip công trường quay 03/09 lên đúng từng căn — B1 2 căn, B2 6, B3 17, B4 15, B5 33 (kể cả hành lang từng tầng). Trước đó đợt tải lên bị rớt giữa chừng nên Drive chỉ còn tệp rỗng, mở ra là báo lỗi.",
     "Hiệu suất theo tháng — bỏ INTERCONT HẠ LONG và COSMO ĐÀ NẴNG khỏi lưới; ô nào không có dự án thì ĐỂ TRỐNG, app không tự chọn dự án thay thế nữa. Màu viền vùng đổi cho tách bạch: Phú Quốc đỏ · Bắc xanh navy · Trung xanh lá tươi · Nam vàng · Nước Ngoài đen.",
     "Media công trường trên ĐIỆN THOẠI gọn hẳn, nhường chỗ cho ma trận: thanh tiêu đề thu nhỏ, bỏ nút “Toàn bộ media dự án” (xem cả dự án thì bấm nút Media ngay dòng dự án bên ePMP), bỏ dải chú giải 7 màu và ô vuông minh hoạt, bỏ câu hướng dẫn. Ma trận mặc định mở ở 50% để thấy trọn một toà rồi phóng vào chỗ cần.",
     "ĐIỆN THOẠI xem clip: bỏ khung xem của Google Drive, app phát thẳng bằng trình phát sẵn có của máy — hết cảnh HAI bộ nút chồng lên nhau. Clip cần tải xong mới chạy (vài giây), đổi lại xem đúng một trình phát quen thuộc. Máy tính giữ nguyên khung Drive như cũ (vừa tải vừa xem).",
