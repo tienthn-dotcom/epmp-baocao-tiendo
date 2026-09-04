@@ -273,18 +273,23 @@ function MiniChart({ p, nm, w, h }: { p: Proj; nm: number; w: number; h: number 
 
 // ─────────────────────────────────────── BIG CHART (thang ĐỘNG, xếp hạng tháng) ──
 // ── KDA — thẻ phân tích cấp điều hành (executive analytics card) ─────────────
-// Horizontal ranked bar chart, nền sáng, 3 màu ngữ nghĩa (đạt/dưới/âm), mốc KPI,
+// Horizontal ranked bar chart, nền sáng, 4 màu ngữ nghĩa (≥1 · 0,7–1 · <0,7 · chưa có DT), mốc KPI,
 // khoảng cách vs KPI hiện sẵn, 4 thẻ tóm tắt. Đọc 3–5 giây ra tình hình.
 const SANS = 'Inter, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
-const KDA_TEAL = "#0f766e";   // đạt/vượt KPI (điểm nhấn hiệu suất cao)
-const KDA_GRAY = "#94a3b8";   // dưới KPI nhưng dương (trung tính)
-const KDA_GRAYD = "#64748b";  // gần KPI (dưới ≤0,15) — trung tính đậm hơn
-const KDA_RED = "#c2554d";    // âm (tín hiệu tiêu cực, đỏ trầm không chói)
+const KDA_TEAL = "#0f766e";   // ĐẠT/VƯỢT KPI (≥ 1 tỷ/người)
+const KDA_ORANGE = "#d97706"; // 0,7 – dưới 1: hụt KPI nhưng còn trong tầm với
+const KDA_GRAY = "#94a3b8";   // CHƯA CÓ doanh thu tháng này (không phải mức làm được — đừng tô đỏ)
+const KDA_GRAYD = "#64748b";  // xám đậm — dùng cho chữ số thẻ tóm tắt
+const KDA_RED = "#c2554d";    // DƯỚI 0,7 (kể cả âm) — đỏ trầm, không chói
 const KDA_INK = "#0f172a", KDA_SOFT = "#64748b", KDA_FAINT = "#94a3b8", KDA_LINE = "#e5e7eb";
 
 const kfmt = (x: number): string => { let s = x.toFixed(2); if (s === "-0.00") s = "0.00"; return s.replace("-", "−").replace(".", ","); };
 const kdelta = (x: number): string => (x > 0.005 ? "+" : x < -0.005 ? "−" : "") + Math.abs(x).toFixed(2).replace(".", ",");
-const kcolor = (t: number): string => (t >= 1 ? KDA_TEAL : t < 0 ? KDA_RED : t >= 0.85 ? KDA_GRAYD : KDA_GRAY);
+/** MÀU THANH theo mức hiệu suất (chủ nhà chốt): ≥1 xanh · 0,7–dưới 1 cam · dưới 0,7 đỏ.
+ *  Dự án CHƯA CÓ doanh thu tháng này để XÁM: 0,00 của nó là "chưa phát sinh", không phải "làm kém"
+ *  — nhuộm đỏ cả nhóm đó thì chart đỏ quá nửa và chìm mất mấy dự án thật sự đang hụt. */
+const kcolor = (t: number, noRev = false): string =>
+  (noRev ? KDA_GRAY : t >= 1 ? KDA_TEAL : t >= 0.7 ? KDA_ORANGE : KDA_RED);
 
 function StatCard({ label, value, unit, sub, tone }: { label: string; value: string; unit?: string; sub?: string; tone?: string }) {
   return (
@@ -365,7 +370,7 @@ function BigChart({ rows, monthIdx }: { rows: RankRow[]; monthIdx: number }) {
         {/* CÁC DÒNG */}
         <div style={{ position: "relative", paddingTop: 14 }}>
           {data.map((d, i) => {
-            const c = kcolor(d.t);
+            const c = kcolor(d.t, d.rev === 0);
             const barL = d.t >= 0 ? zeroP : pos(d.t);
             const barW = Math.max(0.6, Math.abs(pos(d.t) - zeroP));
             const gap = d.t - kpi;
@@ -401,9 +406,10 @@ function BigChart({ rows, monthIdx }: { rows: RankRow[]; monthIdx: number }) {
 
         {/* CHÚ THÍCH */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${KDA_LINE}`, fontSize: 11, color: KDA_SOFT, flexWrap: "wrap" }}>
-          <Legend c={KDA_TEAL} t="Đạt/vượt KPI" />
-          <Legend c={KDA_GRAY} t="Dưới KPI" />
-          <Legend c={KDA_RED} t="Âm" />
+          <Legend c={KDA_TEAL} t="Đạt/vượt KPI (từ 1)" />
+          <Legend c={KDA_ORANGE} t="0,7 – dưới 1" />
+          <Legend c={KDA_RED} t="Dưới 0,7" />
+          {noRev > 0 && <Legend c={KDA_GRAY} t="Chưa có doanh thu" />}
           <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 14, borderTop: "2px dashed #94a3b8" }} />Mốc KPI</span>
         </div>
       </div>
@@ -624,12 +630,15 @@ export function PerfChartApp() {
       .filter((v) => seen.has(v));
   }, [ordered]);
   // XẾP HẠNG (1 chart): THUẦN giá trị CAO → THẤP (số âm xuống cuối cùng); bằng nhau → tên tự nhiên.
+  /** Tên các dự án CÒN SỐNG trên lưới xu hướng (đã bỏ dự án rời ePMP) — tab xếp hạng dùng chung
+   *  đúng danh sách này để hai tab không lệch nhau: chỗ thì 18 dự án, chỗ thì 20. */
+  const liveKeys = useMemo(() => new Set(ordered.map((p) => keyName(p.name))), [ordered]);
   const rankRows = useMemo(() => projs
-    .filter((p) => SHOW_KEYS.includes(keyName(p.name)))     // chỉ 20 dự án được hiện
+    .filter((p) => liveKeys.has(keyName(p.name)))           // đúng danh sách dự án đang hiện
     .map((p) => ({ name: p.name, v: perfOf(p, rm), rev: p.rev[rm] ?? 0, ns: p.ns[rm] ?? 0, prev: rm > 0 ? perfOf(p, rm - 1) : null }))
     .filter((r) => r.v != null)
     .sort((a, b) => (b.v as number) - (a.v as number) || a.name.localeCompare(b.name, "vi", { numeric: true })) as RankRow[],
-    [projs, rm]);
+    [projs, rm, liveKeys]);
   // DOANH THU ĐẦU NGƯỜI cấp KHỐI theo tháng (VND/người).
   //  • CÓ khối A của sheet "SLTB (kết quả)" → LẤY THẲNG số của báo cáo. Bắt buộc, vì doanh thu KDA đã
   //    trừ OEM + Loose Export; tự cộng lại từ các nhóm sẽ RA SỐ KHÁC báo cáo (đúng lỗi đang thấy).
