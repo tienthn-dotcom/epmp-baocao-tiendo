@@ -408,6 +408,10 @@ const RPC_CYAN = "#7BC5E8", RPC_GREEN = "#22A64C", RPC_RED = "#E01B1B";
 const RPC_GRID = "rgba(255,255,255,.30)", RPC_WHITE = "#ffffff";
 const dec1 = (v: number): string => v.toFixed(1);        // nhãn trục Y (bước 0,2)
 const dec2 = (v: number): string => v.toFixed(2);        // nhãn giá trị trên cột (2 chữ số thập phân)
+/** TB DOANH THU ĐẦU NGƯỜI NĂM 2025 (tỷ/người) — SỐ LỊCH SỬ, ĐÃ CHỐT, KHÔNG đổi theo file tuần nên cắm
+ *  cứng ở đây (file tuần chỉ có các tháng năm nay). Vẽ thành cột XANH LÁ ngoài cùng bên trái, đúng bản
+ *  sếp duyệt. Sang năm đổi mốc thì sửa đúng hằng số này. */
+const PRIOR_YEAR_TY = 0.9;
 
 /** Chart form "Doanh thu đầu người Khối dự án": nền đen — cột cyan từng tháng (từ file) + cột đỏ TB năm nay.
  *  priorYearVnd (TB năm cũ, cột xanh) chỉ vẽ khi có nguồn — file perf hiện chỉ có các tháng năm nay nên = null. */
@@ -444,13 +448,15 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
       <div style={{ background: "#000", borderRadius: 10, padding: 8, marginTop: 14 }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: SANS }}>
           <text x={W / 2} y={30} textAnchor="middle" fontSize={26} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">DOANH THU ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
-          {/* TRỤC TRẮNG, KHÔNG kẻ lưới ngang — đúng bản sếp duyệt: 1 vạch dọc bên trái + 1 vạch ngang ở
-              mốc 0. (Trước có kẻ lưới mờ ở mọi mốc, nhìn rối hơn bản sếp.) */}
-          <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
-          <line x1={mL} y1={y0} x2={W - mR} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
+          {/* ĐƯỜNG KẺ NGANG ở MỌI MỐC để dò giá trị (sếp yêu cầu) — màu TRẮNG, mảnh; cộng 2 vạch TRỤC
+              đậm hơn: dọc bên trái + ngang ở mốc 0. Đừng bỏ mấy đường ngang này. */}
           {ticks.map((t, i) => (
-            <text key={i} x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={17} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
+            <g key={i}>
+              <line x1={mL} y1={yOf(t)} x2={W - mR} y2={yOf(t)} stroke={RPC_WHITE} strokeWidth={t === 0 ? 1.6 : 0.9} />
+              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={17} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
+            </g>
           ))}
+          <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
           <text transform={`translate(20 ${mT + ih / 2}) rotate(-90)`} textAnchor="middle" fontSize={14} fontWeight={700} fill={RPC_WHITE}>Sản lượng (tỷ đồng)</text>
           {/* Cột từng tháng + nhãn giá trị */}
           {slots.map((s, i) => {
@@ -754,7 +760,7 @@ export function PerfChartApp() {
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>
-              <RevPerCapChart perCapVnd={blockPerCap} />
+              <RevPerCapChart perCapVnd={blockPerCap} priorYearVnd={PRIOR_YEAR_TY * 1e9} />
             </div>
           )
         )}

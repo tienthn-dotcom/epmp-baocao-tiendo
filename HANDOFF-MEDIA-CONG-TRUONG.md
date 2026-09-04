@@ -542,7 +542,12 @@ Sếp gửi bản mẫu, chỉnh 3 điểm (ĐỪNG đổi ngược):
 3. **TRỤC TRẮNG, BỎ LƯỚI NGANG**: chỉ còn 1 vạch dọc bên trái + 1 vạch ngang ở mốc 0, đều
    `#ffffff` `strokeWidth 1.6`. Trước kẻ lưới mờ ở MỌI mốc → rối hơn bản sếp.
 
-**CÒN THIẾU so với bản sếp:** bản sếp có thêm **cột XANH LÁ "2025"** (TB năm trước) ở ngoài cùng bên trái.
-Code đã sẵn (`priorYearVnd` → `RPC_GREEN`) nhưng file tuần CHỈ có các tháng năm nay nên đang `null` →
-không vẽ. Muốn hiện thì phải có nguồn số TB 2025 (thêm 1 dòng trong sheet SLTB hoặc nhập tay) — CHƯA làm,
-chờ chủ nhà chốt lấy số ở đâu.
+**CỘT XANH "2025" — ĐÃ THÊM:** hằng số `PRIOR_YEAR_TY = 0.9` (tỷ/người) trong `perf-chart-app.tsx`.
+Đây là SỐ LỊCH SỬ đã chốt, KHÔNG đổi theo file tuần (file tuần chỉ có các tháng năm nay) nên cắm cứng,
+chủ nhà đồng ý. Sang năm đổi mốc thì sửa đúng hằng số này.
+
+**ĐƯỜNG KẺ NGANG PHẢI GIỮ:** lần đầu hiểu nhầm nên bỏ hết lưới, chỉ để 2 vạch trục → chủ nhà báo thiếu.
+Sếp muốn **có đủ đường ngang ở MỌI MỐC để dò giá trị**, màu TRẮNG (mảnh 0.9px), cộng 2 vạch trục đậm hơn
+(1.6px): dọc bên trái + ngang ở mốc 0. Verify: 6 đường ngang + 1 đường dọc, 3 màu cột
+(#22A64C xanh 2025 · #7BC5E8 cyan tháng · #E01B1B đỏ TB 2026), giá trị
+`0.90 | 0.77 0.19 0.98 0.82 0.75 0.67 0.63 | 0.69`.
