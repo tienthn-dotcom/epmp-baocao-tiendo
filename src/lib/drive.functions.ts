@@ -298,13 +298,15 @@ export async function driveListChildrenImpl(path: string[]): Promise<{ files: { 
   const folder = await findDbPath(token, env, path);
   if (!folder) return { files: [], folders: [] };
   const q = `'${folder}' in parents and trashed=false`;
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink)&orderBy=name&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
-  const j = await r.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string }[] };
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,size)&orderBy=name&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+  const j = await r.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string; size?: string }[] };
   const files: { id: string; name: string; link: string }[] = [];
   const folders: { id: string; name: string }[] = [];
   for (const f of (j.files || [])) {
     if (f.mimeType === "application/vnd.google-apps.folder") folders.push({ id: f.id, name: f.name });
-    else files.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view` });
+    // Bỏ file 0 BYTE ở đây nữa (cùng lý do với driveListFilesByParents): upload hụt để lại vỏ rỗng,
+    // mở ra là Google trả lỗi. Lọc cả hai chỗ liệt kê thì vỏ rỗng không lọt vào đâu được.
+    else if (!(f.size != null && Number(f.size) === 0)) files.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view` });
   }
   return { files, folders };
 }
