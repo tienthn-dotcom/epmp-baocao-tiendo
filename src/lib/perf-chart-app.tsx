@@ -129,7 +129,7 @@ function xlsxCell(r: number, c: number): string {
 // KHÔNG dùng \b: trong JS \b chỉ tính ký tự ASCII, mà "ỷ" KHÔNG phải ASCII nên /\btỷ\b/ không
 // khớp "tỷ đồng" → không quy đổi đơn vị → mọi mini-chart ra 0,0. Chặn hai đầu bằng khoảng
 // trắng / dấu ngoặc / gạch nối thay cho \b.
-const TY_RE = /(^|[\s(\-])t[ỷy]([\s).,\-]|$)/i;
+const TY_RE = /(^|[\s(-])t[ỷy]([\s).,-]|$)/i;
 const toNum = (v: unknown): number => typeof v === "number" ? v : (typeof v === "string" && v.trim() && !isNaN(Number(v.replace(/,/g, ""))) ? Number(v.replace(/,/g, "")) : 0);
 
 // ───────────────────────────────────────────────── PARSER (dò theo tiêu đề) ──

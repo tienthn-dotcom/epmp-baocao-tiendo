@@ -524,6 +524,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.90.0", date: "04/09/2026", items: [
+    "PMO được ẩn / bỏ ẩn đầu việc như admin. Hạng mục trong khuôn khổ, không cần raise thì PMO tự dọn khỏi báo cáo, khỏi chờ admin. Mọi lần ẩn / bỏ ẩn vẫn ghi Nhật ký giám sát: ai làm, dòng nào, lúc nào.",
+    "Điện thoại: thanh ứng dụng bên trái không còn chiếm chỗ, gọi ra bằng nút tròn góc dưới-trái vừa tầm ngón cái. Khối bộ lọc gấp lại sau một nút “Bộ lọc (n)” — số trên nút cho biết đang lọc mấy điều kiện. Các nút tác vụ thôi bị bóp thành chữ dọc.",
+    "Hiệu suất dự án — “Hiệu suất theo tháng”: các dự án xếp theo VÙNG (Phú Quốc → Bắc → Trung → Nam → Nước Ngoài), viền thẻ tô màu vùng để liếc một cái là biết cụm. Vùng lấy thẳng từ ePMP, không phải khai tay. Dự án đã rời ePMP tự rút khỏi lưới, nhường chỗ cho dự án mới.",
+    "Hiệu suất dự án — tháng có sản lượng âm được gánh ngược về tháng liền trước (không đủ thì lùi tiếp), tổng cả năm giữ nguyên; nhờ vậy hết cột âm, trục bắt đầu từ 0 nên cột cao rõ, dễ so.",
+    "Hiệu suất dự án — bảng xếp hạng đổi thang màu: từ 1 tỷ/người trở lên xanh, 0,7 đến dưới 1 cam, dưới 0,7 đỏ; dự án chưa phát sinh doanh thu để xám. Nhìn ra ngay ai sát mốc, ai hụt sâu.",
+    "Chart “Doanh thu đầu người Khối dự án” đổi tên thành “Sản lượng đầu người khối dự án” cho khớp bảng SLTB trong file nguồn; cột có viền trắng, chữ to hơn, trục tung trần 1,2 nên cột cao nhất không còn chạm nóc.",
+  ] },
   { v: "3.89.0", date: "04/09/2026", items: [
     "Xem trên ĐIỆN THOẠI dùng đủ mọi chức năng: biểu đồ nào vừa màn thì hiện trọn, biểu đồ rộng thì giữ nguyên tỷ lệ cho vuốt ngang — không còn cảnh chữ số bé xíu không đọc nổi. Lưới hiệu suất trên điện thoại xếp 1 cột, thanh chọn tab vuốt được, không tab nào bị cắt chữ.",
     "Mã màu heatmap giờ nằm trên Drive (Data Source › Mã màu): đổi màu chỉ cần thay file trong thư mục đó, app tự áp — khỏi báo kỹ thuật, khỏi cập nhật app. Đã áp bảng màu mới nhất.",
