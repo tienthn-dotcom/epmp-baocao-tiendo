@@ -125,3 +125,29 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     }
     return { cans: [...cans.values()].filter((c) => c.photos || c.videos) };
   });
+
+/** DỰ ÁN NÀO TRONG CÂY MEDIA ĐÃ CÓ ÍT NHẤT 1 FILE — để dashboard ePMP chỉ hiện nút "🎬 Media" ở những
+ *  dự án thật sự có ảnh/video (dự án trống thì đừng bày nút cho rối).
+ *  Quét theo LÔ (mỗi cấp 1-vài lượt gọi) chứ không đi từng dự án; kết quả nên cache lâu ở client. */
+export const listMediaProjects = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ projects: string[] }> => {
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) return { projects: [] };
+    const root = await drive.driveListChildrenImpl(["ePMP", "Media"]);
+    if (!root.folders.length) return { projects: [] };
+    const owner = new Map<string, string>();            // id thư mục con → tên dự án gốc
+    for (const p of root.folders) owner.set(p.id, p.name);
+    let level = root.folders.map((f) => f.id);
+    const has = new Set<string>();
+    // File nằm SÂU 4 cấp: <Dự án>/<Toà>/<Phòng>/(Hình ảnh|Video)/file — nên phải đi đủ 4-5 cấp,
+    // dừng sớm ở cấp 3 thì không gặp file nào và kết luận "dự án nào cũng trống".
+    for (let depth = 0; depth < 5 && level.length; depth++) {
+      for (const f of await drive.driveListFilesByParents(level)) {
+        const nm = owner.get(f.parent); if (nm) has.add(nm);
+      }
+      const next = await drive.driveListFoldersByParents(level);
+      for (const f of next) { const nm = owner.get(f.parent); if (nm) owner.set(f.id, nm); }
+      level = next.map((f) => f.id).filter((id) => owner.has(id));
+    }
+    return { projects: [...has] };
+  });

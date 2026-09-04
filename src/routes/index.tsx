@@ -45,6 +45,8 @@ import { TABLE_FONT_CSS } from "@/lib/table-scale";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { AppShell, MTLD_INSTALL_LS } from "@/lib/app-shell";
 import { CanMediaDialog } from "@/lib/can-media-app";
+import { listMediaProjects } from "@/lib/can-media.functions";
+import { mediaProjectFolder, mediaSafe } from "@/lib/media-path";
 import { VersionBanner, useUnsavedGuard, chatDraftStore } from "@/lib/version-guard";
 
 
@@ -2250,6 +2252,10 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   const [imgSetup, setImgSetup] = useState<{ key: string; name: string; hid?: string } | null>(null);
   /** Xem TOÀN BỘ media (ảnh + video) của 1 dự án — mở thẳng popup tại dashboard, gom theo phòng/khu. */
   const [mediaView, setMediaView] = useState<{ name: string; hid?: string } | null>(null);
+  /** Dự án nào THẬT SỰ có ảnh/video trên Drive — chỉ những dự án đó mới hiện nút "🎬 Media".
+   *  Quét 1 lần, cache lâu (cây Media đổi chậm). Khớp CẢ tên có ID cứng lẫn tên trần (folder cũ). */
+  const mediaProjQuery = useQuery({ queryKey: ["media-projects"], queryFn: () => listMediaProjects(), staleTime: 10 * 60 * 1000 });
+  const mediaProjSet = useMemo(() => new Set(mediaProjQuery.data?.projects ?? []), [mediaProjQuery.data]);
   // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
   const sheetViewsQuery = useQuery({ queryKey: ["sheetviews"], queryFn: () => getSheetViews(), staleTime: 5 * 60 * 1000 });
   const sheetViews = sheetViewsQuery.data?.views ?? {};
@@ -4047,6 +4053,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         projImgIdx={projImgIdx}
         onOpenImage={(key, name) => setImgView({ key, name })}
         onOpenVideo={(name, hid) => setMediaView({ name, hid })}
+        hasMedia={(name, hid) => mediaProjSet.has(mediaProjectFolder(name, hid)) || mediaProjSet.has(mediaSafe(name))}
         onSetupImage={(key, name, hid) => setImgSetup({ key, name, hid })}
         onExportReport={handleExportReport}
         onExportPdf={handleExportPdf}
@@ -5312,7 +5319,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -5343,6 +5350,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   projImgIdx?: ProjImgIdx;
   onOpenImage?: (key: string, name: string) => void;
   onOpenVideo?: (name: string, hid?: string) => void;
+  hasMedia?: (name: string, hid?: string) => boolean;
   onSetupImage?: (key: string, name: string, hid?: string) => void;
   /** Xuất báo cáo cho 1 dự án — nhận nguyên group để phía cha tra data đầy đủ. Slide = .pptx, Pdf = .pdf. */
   onExportReport?: (g: DueMonthGroup) => void;
@@ -6082,19 +6090,24 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                         <span className="line-clamp-3 font-bold leading-tight text-white" style={{ wordBreak: "break-word" }} title={g.name}>{g.name}</span>
                       )}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 print:hidden">
-                        {/* THÊM ẢNH: mở cho MỌI NGƯỜI (ai cũng thêm được; xoá/gỡ vẫn chỉ admin/PMO trong dialog). */}
-                        <button type="button" onClick={(e) => { e.stopPropagation(); onSetupImage?.(g.key, g.name, g.items[0]?.projHid); }}
-                          className="inline-flex items-center gap-0.5 text-[0.72em] font-medium text-white/70 hover:text-amber-200"
-                          title={imgN > 0 ? "Xem / thêm ảnh hiện trường của dự án" : "Thêm ảnh hiện trường cho dự án"}>
-                          <ImageIcon className="h-3 w-3" />{imgN > 0 ? `Ảnh (${imgN})` : "Thêm ảnh"}
-                        </button>
+                        {/* "Thêm ảnh" ĐÃ BỎ (04/09): up ảnh/video chỉ còn MỘT lối — app "Media công trường",
+                            bấm đúng ô căn trên ma trận. Ở đây chỉ còn XEM. Ảnh cũ vẫn xem bằng cách bấm tên dự án. */}
+                        {imgN > 0 && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenImage?.(g.key, g.name); }}
+                            className="inline-flex items-center gap-0.5 text-[0.72em] font-medium text-white/70 hover:text-amber-200"
+                            title="Xem ảnh hiện trường của dự án">
+                            <ImageIcon className="h-3 w-3" />Ảnh ({imgN})
+                          </button>
+                        )}
                         {/* MEDIA CÔNG TRƯỜNG — mở THẲNG popup tại đây, xem TOÀN BỘ ảnh + video của dự án
                             (gom theo phòng/khu). Trước chỉ hiện ở Mini Hotel và phải nhảy sang app khác. */}
-                        <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid); }}
-                          className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
-                          title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
-                          🎬 Media
-                        </button>
+                        {hasMedia?.(g.name, g.items[0]?.projHid) && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid); }}
+                            className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
+                            title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
+                            🎬 Media
+                          </button>
+                        )}
                       </div>
                     </td>
                     {/* Nhân sự phụ trách: PM của dự án */}

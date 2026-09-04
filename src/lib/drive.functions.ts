@@ -57,6 +57,8 @@ async function accessToken(env: Env): Promise<string> {
 // ── Drive REST helpers ───────────────────────────────────────────────────────
 const AUTHH = (t: string): Record<string, string> => ({ Authorization: `Bearer ${t}` });
 const SHARED = "supportsAllDrives=true&includeItemsFromAllDrives=true"; // chạy được cả Shared Drive
+export { mediaSafe, mediaProjectFolder, mediaFolderPath } from "@/lib/media-path";
+import { mediaFolderPath as _mediaFolderPath } from "@/lib/media-path";
 const safeName = (s: string): string => (s || "").slice(0, 120).replace(/[\\/:*?"<>|]/g, "-").trim();
 
 /** Tìm-hoặc-tạo thư mục con `name` trong `parent`, trả id. */
@@ -148,33 +150,6 @@ async function ensureDbPath(token: string, env: Env, segments: string[]): Promis
   for (const seg of segments) parent = await ensureFolder(token, safeName(seg) || "khac", parent);
   return parent;
 }
-/** CHUẨN HOÁ TÊN THƯ MỤC MEDIA — **DÙNG CHUNG cho MỌI nơi ghi/đọc cây Media**.
- *  Trước đây app Media dùng bộ cắt riêng (60 ký tự) còn archive ảnh của dashboard đi qua `safeName`
- *  (120 ký tự) ⇒ dự án tên dài như "Mini Hotel PQ (B1-B5) Public: Lobby - Gym - Kid - Spa - Restaurants"
- *  (68 ký tự) bị cắt thành HAI tên khác nhau → ảnh up từ dashboard nằm một folder, app Media đọc folder
- *  kia nên báo "chưa có ảnh". Mọi đường dẫn Media BẮT BUỘC đi qua đây, đừng tự ghép tay. */
-export const mediaSafe = (s: string): string =>
-  (s || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 60);
-
-/** TÊN THƯ MỤC DỰ ÁN — neo theo **ID CỨNG** (IDCUNG, vd "P0025") chứ không chỉ theo tên:
- *      "<tên dự án> [P0025]"
- *  Vì sao: tên dự án đổi được, bị cắt bớt khi dài, và NHIỀU DỰ ÁN có tên/mã CT na ná nhau → neo theo tên
- *  thì hai dự án khác nhau dễ dùng chung một kho media. ID cứng gán 1 lần, không đổi, không tái dùng.
- *  Nguồn chưa có cột IDCUNG (hid rỗng) → lùi về tên trần như cũ, không vỡ dữ liệu đang có. */
-export function mediaProjectFolder(project: string, hid?: string): string {
-  const base = mediaSafe(project) || "Khac";
-  const h = (hid || "").trim();
-  return h ? `${base.slice(0, 46)} [${mediaSafe(h)}]` : base;
-}
-
-/** ePMP › Media › <Dự án [ID cứng]> › [<Toà>] › <Căn|Khu> › ("Hình ảnh" | "Video").
- *  Toà rỗng = dự án không chia toà (khu public) → bỏ hẳn cấp đó. */
-export function mediaFolderPath(project: string, toa: string, can: string, kind: "photo" | "video", app = "ePMP", hid?: string): string[] {
-  const t = mediaSafe(toa);
-  return [app, "Media", mediaProjectFolder(project, hid), ...(t ? [t] : []), mediaSafe(can) || "Khac",
-    kind === "video" ? "Video" : "Hình ảnh"];
-}
-
 /** Lưu (archive) nhiều dataURI ảnh vào Drive — LUÔN đổ vào cây MEDIA theo ĐÚNG CĂN (hoặc KHU với dự án
  *  khu public), là chuẩn duy nhất cho dữ liệu công trường (xem can-media.functions.ts):
  *    "Data Source" › DATABASE › <App> › Media › <Dự án> › [<Toà>] › <Căn|Khu> › "Hình ảnh" › ảnh
@@ -186,7 +161,7 @@ export async function driveArchiveImages(app: string, projectName: string, dataU
   if (!env) throw new Error("Không lấy được env.");
   if (!(loc.can || "").trim()) throw new Error("Thiếu căn/khu — ảnh phải gắn vào một căn hoặc khu.");
   const token = await accessToken(env);
-  const folder = await ensureDbPath(token, env, mediaFolderPath(projectName, loc.toa || "", loc.can, loc.category === "Video" ? "video" : "photo", app, loc.hid));
+  const folder = await ensureDbPath(token, env, _mediaFolderPath(projectName, loc.toa || "", loc.can, loc.category === "Video" ? "video" : "photo", app, loc.hid));
   const out: { id: string; link: string }[] = [];
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   for (let i = 0; i < dataUris.length; i++) {

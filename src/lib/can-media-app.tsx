@@ -605,21 +605,29 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, fontWeight: 700 }}>Toà</span>
-              <input value={toa} onChange={(e) => setToa(e.target.value)} placeholder="B1"
-                style={{ height: 28, width: 62, borderRadius: 7, border: "none", padding: "0 8px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
-              <span style={{ fontSize: 12, fontWeight: 700 }}>Phòng</span>
-              <input value={can} onChange={(e) => setCan(e.target.value)} placeholder="609"
-                style={{ height: 28, width: 110, borderRadius: 7, border: "none", padding: "0 9px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
+              {/* Xem cả dự án = CHỈ XEM: hiện tên phòng/khu của item đang xem, không cho sửa, không cho tải.
+                  Muốn thêm ảnh/video thì vào app "Media công trường", bấm đúng ô căn — 1 lối lên duy nhất. */}
+              {scope === "project" ? (
+                <span style={{ fontSize: 13.5, fontWeight: 800 }}>{curRoom || "—"}</span>
+              ) : <>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Toà</span>
+                <input value={toa} onChange={(e) => setToa(e.target.value)} placeholder="B1"
+                  style={{ height: 28, width: 62, borderRadius: 7, border: "none", padding: "0 8px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Phòng</span>
+                <input value={can} onChange={(e) => setCan(e.target.value)} placeholder="609"
+                  style={{ height: 28, width: 110, borderRadius: 7, border: "none", padding: "0 9px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
+              </>}
             </div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={upBtn}>＋ Tải ảnh
-              <input type="file" accept="image/*" multiple style={{ display: "none" }}
-                onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
-            <label style={upBtn}>＋ Tải video
-              <input type="file" accept="video/*" multiple style={{ display: "none" }}
-                onChange={(e) => { void onFiles("video", e.target.files); e.currentTarget.value = ""; }} /></label>
+            {scope === "can" && <>
+              <label style={upBtn}>＋ Tải ảnh
+                <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                  onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
+              <label style={upBtn}>＋ Tải video
+                <input type="file" accept="video/*" multiple style={{ display: "none" }}
+                  onChange={(e) => { void onFiles("video", e.target.files); e.currentTarget.value = ""; }} /></label>
+            </>}
             <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#cbd5e1", fontSize: 24, lineHeight: 1, cursor: "pointer" }}>×</button>
           </div>
         </div>
@@ -635,7 +643,10 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
           ) : items.length === 0 ? (
             <div style={{ color: "#94a3b8", fontSize: 13.5, textAlign: "center", padding: 20 }}>
               {scope === "can" ? "Phòng / khu này chưa có ảnh hoặc video." : "Dự án này chưa có ảnh hoặc video nào."}<br />
-              <span style={{ fontSize: 12, opacity: .8 }}>Dùng nút “＋ Tải ảnh” / “＋ Tải video” ở trên để thêm.</span>
+              <span style={{ fontSize: 12, opacity: .8 }}>
+                {scope === "can" ? "Dùng nút “＋ Tải ảnh” / “＋ Tải video” ở trên để thêm."
+                  : "Thêm ảnh / video ở app “Media công trường” — bấm đúng ô căn trên ma trận."}
+              </span>
             </div>
           ) : cur?.kind === "video" ? (
             <iframe key={cur.id} title="video" src={`https://drive.google.com/file/d/${cur.id}/preview`} allow="autoplay; fullscreen" allowFullScreen
