@@ -880,7 +880,7 @@ export function PerfChartApp() {
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14, marginBottom: 10, fontSize: 11.5, color: "#475569" }}>
                   {vungShown.map((v) => (
                     <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 16, height: 10, borderRadius: 3, border: `2px solid ${vungColor(v)}`, background: "#fff" }} />
+                      <span style={{ width: 16, height: 10, borderRadius: 3, border: `3px solid ${vungColor(v)}`, background: "#fff" }} />
                       {v === "—" ? "Chưa rõ vùng (dự án không còn trong file ePMP)" : v}
                     </span>
                   ))}
@@ -894,7 +894,7 @@ export function PerfChartApp() {
                   // xếp dọc-rồi-ngang có thể hụt cuối) giữ viền xám nhạt như cũ.
                   <div key={i} style={{
                     background: "#fff", borderRadius: 8, overflow: "hidden", minHeight: 0,
-                    border: p ? `2px solid ${vungColor(p.vung)}` : "1px solid #e2e8f0",
+                    border: p ? `3px solid ${vungColor(p.vung)}` : "1px solid #e2e8f0",
                   }}>
                     {p && <MiniChart p={p} nm={nm} w={340} h={210} />}
                   </div>

@@ -29,17 +29,20 @@ export const vungRank = (v: string): number => {
   return i < 0 ? 99 : i;
 };
 
-/** Màu nhận diện vùng — dùng làm VIỀN thẻ để liếc một cái là biết cụm nào. Chọn tông đậm, tách bạch
- *  với nhau cả khi in đen trắng (đậm/nhạt khác nhau) lẫn với người mù màu đỏ-lục (đỏ vs xanh dương
- *  vs tím khác hẳn độ sáng). */
+/** Màu nhận diện vùng — dùng làm VIỀN thẻ để liếc một cái là biết cụm nào.
+ *  LẤY THẲNG mã màu trong "Data Source › Mã màu › heatmap-colors.csv" (bảng chủ nhà đang dùng cho
+ *  heatmap) để cả app xài chung một bộ màu, khỏi mỗi chỗ một tông.
+ *  Riêng TRUNG giữ cam: bảng đó không có màu cam nào, mà 4 màu còn lại (2 xanh lá, 2 xanh dương) đứng
+ *  cạnh Bắc/Nam thì nhìn ra cùng một màu. */
 export const VUNG_COLOR: Record<string, string> = {
-  "Phú Quốc": "#b91c1c",   // đỏ đậm
-  "Bắc": "#1d4ed8",        // xanh dương đậm
-  "Trung": "#b45309",      // cam đất
-  "Nam": "#047857",        // xanh lá đậm
-  "Nước Ngoài": "#6d28d9", // tím
+  "Phú Quốc": "#C00000",   // đỏ  — bảng mã màu ("Chưa bàn giao")
+  "Bắc": "#1E3A8A",        // xanh biển đậm — bảng mã màu ("Đã giao tinh (PMU)")
+  "Trung": "#B45309",      // cam đất — ngoài bảng, xem chú thích trên
+  "Nam": "#006100",        // xanh lá đậm — bảng mã màu ("Đã giao Vận Hành")
+  "Nước Ngoài": "#000000", // đen
 };
-export const vungColor = (v: string): string => VUNG_COLOR[v] ?? "#94a3b8";
+/** Vùng lạ / chưa tra được: xám của bảng mã màu ("Không có thi công"). */
+export const vungColor = (v: string): string => VUNG_COLOR[v] ?? "#A6A6A6";
 
 /** Chuẩn hoá TÊN DỰ ÁN để ghép giữa các nguồn (bỏ dấu, bỏ ký tự lạ) — cùng cách với ePMP. */
 export function normProjName(s: string): string {
