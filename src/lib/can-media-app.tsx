@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useIsMobile } from "@/lib/use-breakpoint";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getInstallList } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -528,6 +529,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
  *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
 export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
+  const narrow = useIsMobile();   // dien thoai: popup chiem tron man, video duoc het be ngang
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload
@@ -596,8 +598,10 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   const arrow: React.CSSProperties = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: "50%", border: "none", background: "rgba(15,23,42,.55)", color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
 
   return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(15,23,42,.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 980, height: "90vh", display: "flex", flexDirection: "column", background: "#0f172a", borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(2,6,23,.5)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(15,23,42,.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: narrow ? 0 : 16 }}>
+      {/* DIEN THOAI: chiem TRON man (khong le, khong bo goc) - clip moi duoc het be ngang may.
+          May tinh giu nguyen khung 980px bo goc nhu cu. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "none" : 980, height: narrow ? "100dvh" : "90vh", display: "flex", flexDirection: "column", background: "#0f172a", borderRadius: narrow ? 0 : 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(2,6,23,.5)" }}>
         {/* HEADER — Toà / Phòng sửa tay + nút tải lên */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#152a45", color: "#fff", flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
@@ -656,13 +660,16 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
           ) : (
             <div style={{ color: "#94a3b8", fontSize: 13.5 }}>Đang tải ảnh…</div>
           )}
-          {items.length > 1 && <>
+          {/* Xem VIDEO: bo het lop phu cua app (mui ten + nhan goc trai). Trinh phat da co san thanh
+              tua / am luong / toan man hinh; chong them nut cua minh chi che mat va bam nham.
+              Doi clip khac thi bam o dai thumbnail phia duoi. Anh van giu mui ten nhu cu. */}
+          {items.length > 1 && cur?.kind !== "video" && <>
             <button type="button" onClick={() => go(-1)} style={{ ...arrow, left: 10 }}>‹</button>
             <button type="button" onClick={() => go(1)} style={{ ...arrow, right: 10 }}>›</button>
           </>}
-          {items.length > 0 && cur && (
+          {items.length > 0 && cur && cur.kind !== "video" && (
             <div style={{ position: "absolute", left: 12, top: 10, background: "rgba(15,23,42,.6)", color: "#e2e8f0", borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>
-              {cur.kind === "video" ? "🎬 Video" : "🖼 Ảnh"} {Math.min(sel, items.length - 1) + 1}/{items.length}
+              {"🖼 Ảnh"} {Math.min(sel, items.length - 1) + 1}/{items.length}
               {curRoom ? ` · ${curRoom}` : ""}{cur.date ? ` · ${cur.date}` : ""}
             </div>
           )}
