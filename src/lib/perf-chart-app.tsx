@@ -478,7 +478,8 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
             const top = yOf(Math.max(0, s.v)), h = Math.max(1, y0 - top);
             return (
               <g key={i}>
-                <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={s.color} />
+                {/* VIỀN TRẮNG quanh cột — tách cột khỏi nền đen, cột nào cũng thấy rõ mép. */}
+                <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={s.color} stroke={RPC_WHITE} strokeWidth={1.2} shapeRendering="crispEdges" />
                 <text x={cx} y={top - 10} textAnchor="middle" fontSize={20} fontWeight={800} fill={RPC_WHITE}>{dec2(s.v)}</text>
               </g>
             );
