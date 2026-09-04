@@ -24,6 +24,23 @@ import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 
+/** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
+ *  thứ tự dưới đây đọc theo CỘT của bản in: cột 1 từ trên xuống, rồi cột 2…).
+ *  File báo cáo tuần liệt kê ~56 nhóm (gồm OEM, OTHERS, LOOSE EXPORT, CÔNG NỢ CŨ…) — KHÔNG hiện hết.
+ *  ĐỪNG tự đổi thứ tự hay tự xếp theo số liệu: chủ nhà xem quen bố cục này. Thêm/bớt dự án thì sửa
+ *  đúng danh sách này. Dự án không có trong file thì tự bỏ qua (không để ô trống). */
+const PERF_SHOW = [
+  "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
+  "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
+  "HYATT HỒ TRÀM", "OLALANI", "CÁT BÀ", "TIẾN BỘ PLAZA",
+  "HYATT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
+  "APEC S4", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
+];
+/** So tên nhóm: bỏ dấu + gộp khoảng trắng + không phân biệt hoa thường (file gõ mỗi kỳ một kiểu). */
+const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
+const SHOW_KEYS = PERF_SHOW.map(keyName);
+
 const MINI_YMIN = -1e9, MINI_YMAX = 4e9;   // thang CHUNG cho mini (so sánh)
 const KPI = 1e9;                            // KPI hiệu suất/tháng = 1 tỷ đồng/người (đường mốc)
 const COLS = 5;
@@ -67,7 +84,10 @@ function xlsxCell(r: number, c: number): string {
 /** File báo cáo tuần ghi doanh thu bằng TỶ ĐỒNG ("Tổng DT (T1-7, tỷ đ)", "DT T1"… giá trị 23.24),
  *  trong khi cả app tính bằng VND (chia 1e9 khi hiện). Không quy đổi thì chart ra ~0 — đây chính là
  *  "lỗi khi import". Nhận biết bằng chữ "tỷ / ty / bn / tr.đ" ở TIÊU ĐỀ cột hoặc tiêu đề sheet. */
-const TY_RE = /\b(t[ỷy]|billion|bn)\b|\(t[ỷy]/i;
+// KHÔNG dùng \b: trong JS \b chỉ tính ký tự ASCII, mà "ỷ" KHÔNG phải ASCII nên /\btỷ\b/ không
+// khớp "tỷ đồng" → không quy đổi đơn vị → mọi mini-chart ra 0,0. Chặn hai đầu bằng khoảng
+// trắng / dấu ngoặc / gạch nối thay cho \b.
+const TY_RE = /(^|[\s(\-])t[ỷy]([\s).,\-]|$)/i;
 const toNum = (v: unknown): number => typeof v === "number" ? v : (typeof v === "string" && v.trim() && !isNaN(Number(v.replace(/,/g, ""))) ? Number(v.replace(/,/g, "")) : 0);
 
 // ───────────────────────────────────────────────── PARSER (dò theo tiêu đề) ──
@@ -501,9 +521,14 @@ export function PerfChartApp() {
   // Tháng đang xem cho KDA — mặc định tháng mới nhất; người dùng chọn được ở bộ lọc góc phải.
   const rm = rankMonth != null && rankMonth < nm ? rankMonth : latestIdx;
   // XU HƯỚNG (20 mini): 2 tầng — có-data trước, rỗng sau, tên tự nhiên (để dự án rỗng không chen lên).
-  const ordered = useMemo(() => [...projs].sort((a, b) => cmpProj(a, b, latestIdx, nm)), [projs, latestIdx, nm]);
+  // HIỆN ĐÚNG 20 DỰ ÁN trong PERF_SHOW, THEO ĐÚNG THỨ TỰ đó (không xếp lại theo số liệu).
+  const ordered = useMemo(() => {
+    const byKey = new Map(projs.map((p) => [keyName(p.name), p] as const));
+    return SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p);
+  }, [projs]);
   // XẾP HẠNG (1 chart): THUẦN giá trị CAO → THẤP (số âm xuống cuối cùng); bằng nhau → tên tự nhiên.
   const rankRows = useMemo(() => projs
+    .filter((p) => SHOW_KEYS.includes(keyName(p.name)))     // chỉ 20 dự án được hiện
     .map((p) => ({ name: p.name, v: perfOf(p, rm), rev: p.rev[rm] ?? 0, ns: p.ns[rm] ?? 0, prev: rm > 0 ? perfOf(p, rm - 1) : null }))
     .filter((r) => r.v != null)
     .sort((a, b) => (b.v as number) - (a.v as number) || a.name.localeCompare(b.name, "vi", { numeric: true })) as RankRow[],
@@ -575,29 +600,48 @@ export function PerfChartApp() {
     } catch (e) { setErr((e as Error).message + " · Sheet cần chia sẻ “Anyone with the link”."); }
     setBusy(false);
   }
+  /** TEMPLATE = ĐÚNG FORM file báo cáo tuần chủ nhà gửi (Pivot_DoanhThu_NhanSu_theo_Nhom):
+   *    · sheet "Pivot"          — mỗi dòng 1 NHÓM DA, DT T1..T12 (TỶ) + NS T1..T12 (người)
+   *    · sheet "SLTB (kết quả)" — khối A toàn khối: Sản lượng KDA (tỷ) / Tổng nhân sự / SLTB
+   *  Giữ nguyên tên sheet + tên cột này thì tuần nào import cũng chạy thẳng, khỏi sửa app. */
   async function downloadTemplate() {
     const XLSX = await import("xlsx");
     const M = 12;   // ĐỦ 12 THÁNG sẵn cột — điền tháng nào có số, tháng chưa tới để trống/0.
-    const dt = Array.from({ length: M }, (_, i) => `DT T${i + 1}`);
-    const ns = Array.from({ length: M }, (_, i) => `NS T${i + 1}`);
-    const H = ["STT", "Dự án", "Tổng 2026", ...dt, ...ns];
-    // Mẫu: 7 tháng đầu có số, T8–T12 để 0 (điền dần); nhân sự đủ 12 tháng.
-    const revA = [0, 0, 1450000000, 5390000000, 15350000000, 3350000000, 18030000000, 0, 0, 0, 0, 0];
-    const nsA = [12, 11, 11, 12, 14, 13, 12, 12, 12, 12, 12, 12];
-    const revB = Array(M).fill(0);
-    const nsB = [3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2];
-    const aoa: (string | number)[][] = [
-      ["HƯỚNG DẪN: Điền dữ liệu từ DÒNG 4. Cột A = STT (chỉ dòng CÓ SỐ mới được đọc). Doanh thu đơn vị VND. Số âm hợp lệ. Đã có sẵn 12 tháng (DT T1…T12 · NS T1…T12) — điền tháng nào có số, tháng chưa tới để 0 hoặc trống."],
-      [],
-      H,
-      [1, "Dự án mẫu A", 0, ...revA, ...nsA],
-      [2, "Dự án mẫu B", 0, ...revB, ...nsB],
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 5 }, { wch: 22 }, { wch: 12 }, ...Array(M * 2).fill({ wch: 11 })];
+    const T = Array.from({ length: M }, (_, i) => `T${i + 1}`);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Pivot (2)");
-    XLSX.writeFile(wb, "Template_HieuSuat_DuAn.xlsx");
+
+    // ── Sheet 1: Pivot (chi tiết theo NHÓM DA) ──
+    const hdr = ["Nhóm DA", `Tổng DT (T1-${M}, tỷ đ)`, ...T.map((t) => `DT ${t}`), ...T.map((t) => `NS ${t}`)];
+    const rowOf = (name: string, dt: number[], ns: number[]) =>
+      [name, +dt.reduce((a, b) => a + b, 0).toFixed(2), ...dt, ...ns];
+    const pivot: (string | number)[][] = [
+      ["PIVOT DOANH THU & NHÂN SỰ THEO NHÓM DỰ ÁN"],
+      ["Doanh thu: TỶ ĐỒNG (không phải VND). Nhân sự: người. Điền từ DÒNG 5. Tháng chưa tới để 0."],
+      [],
+      hdr,
+      rowOf("NHÓM MẪU A", [0, 0, 1.45, 5.39, 15.35, 3.35, 18.03, 0, 0, 0, 0, 0], [12, 11, 11, 12, 14, 13, 12, 12, 12, 12, 12, 12]),
+      rowOf("NHÓM MẪU B", [0, 0, 0, 7.70, 6.41, 4.32, 4.81, 0, 0, 0, 0, 0], [3, 3, 3, 3, 5, 5, 5, 5, 5, 5, 5, 5]),
+    ];
+    const wsP = XLSX.utils.aoa_to_sheet(pivot);
+    wsP["!cols"] = [{ wch: 26 }, { wch: 18 }, ...Array(M * 2).fill({ wch: 9 })];
+    XLSX.utils.book_append_sheet(wb, wsP, "Pivot");
+
+    // ── Sheet 2: SLTB (kết quả) — khối A là thứ chart "Doanh thu đầu người" đọc ──
+    const sltb: (string | number)[][] = [
+      ["SẢN LƯỢNG ĐẦU NGƯỜI (SLTB) KHỐI DỰ ÁN"],
+      ["SLTB = Doanh thu ÷ Số nhân sự. Doanh thu KDA = Tổng claim trình − OEM − Loose Export. Đơn vị: tỷ đồng/người."],
+      [],
+      ["A. TOÀN KHỐI DỰ ÁN (khớp báo cáo tổng)"],
+      ["Chỉ tiêu", ...T],
+      ["Sản lượng KDA (tỷ)", 184.9, 46.7, 246.2, 208.6, 194.7, 188.1, 186.7, 0, 0, 0, 0, 0],
+      ["Tổng nhân sự", 240, 240, 250, 253, 258, 279, 297, 0, 0, 0, 0, 0],
+      ["SLTB (tỷ/người)", 0.77, 0.19, 0.98, 0.82, 0.75, 0.67, 0.63, 0, 0, 0, 0, 0],
+    ];
+    const wsS = XLSX.utils.aoa_to_sheet(sltb);
+    wsS["!cols"] = [{ wch: 24 }, ...Array(M).fill({ wch: 9 })];
+    XLSX.utils.book_append_sheet(wb, wsS, "SLTB (kết quả)");
+
+    XLSX.writeFile(wb, "Template_BaoCaoHieuSuat_Tuan.xlsx");
   }
   function toggleFull() {
     const el = wrapRef.current; if (!el) return;

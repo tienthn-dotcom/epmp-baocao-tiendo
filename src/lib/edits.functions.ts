@@ -1297,6 +1297,9 @@ export const startPerfSourceUpload = createServerFn({ method: "POST" })
     const day = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
     const path = ["Hiệu suất dự án", "Nguồn tuần", String(d.getUTCFullYear())];
     const name = `${day}_${data.name}`.slice(0, 180);
+    // Nạp LẠI trong cùng ngày → THAY bản cũ, không chồng thêm file trùng tên (kho tuần phải sạch:
+    // mỗi ngày nạp 1 bản mới nhất; các tuần khác vẫn giữ đủ vì tên có ngày ở đầu).
+    await drive.driveTrashByName(path, name).catch(() => { /* không có bản cũ → bỏ qua */ });
     const { uploadUrl } = await drive.driveCreateResumableSession(path, name,
       data.mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     return { uploadUrl, path: [...path, name].join(" / ") };

@@ -358,6 +358,26 @@ export async function driveReadFileB64Impl(fileId: string): Promise<{ mime: stri
   return { mime: mj.mimeType || "image/jpeg", b64: btoa(bin) };
 }
 
+/** Bỏ vào thùng rác MỌI file trùng TÊN trong 1 thư mục (không đụng thư mục con). Dùng trước khi upload
+ *  bản mới cùng tên — Drive CHO PHÉP trùng tên nên không dọn thì mỗi lần nạp lại đẻ thêm 1 bản. */
+export async function driveTrashByName(path: string[], fileName: string): Promise<number> {
+  const env = await getEnv(); if (!env) return 0;
+  const token = await accessToken(env);
+  const folder = await findDbPath(token, env, path); if (!folder) return 0;
+  const nm = safeName(fileName);
+  const q = `'${folder}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder' and name='${nm.replace(/'/g, "\'")}'`;
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${SHARED}`, { headers: AUTHH(token) });
+  const j = await r.json() as { files?: { id: string }[] };
+  let n = 0;
+  for (const f of (j.files || [])) {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?${SHARED}`, {
+      method: "PATCH", headers: { ...AUTHH(token), "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }),
+    });
+    n++;
+  }
+  return n;
+}
+
 /** Tạo PHIÊN UPLOAD TRỰC TIẾP (resumable) vào 1 folder DATABASE → trả session URL để TRÌNH DUYỆT PUT
  *  file THẲNG lên Google (byte KHÔNG qua Worker → hết lo OOM/giới hạn, file lớn vẫn được). HÀM THUẦN. */
 export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string): Promise<{ uploadUrl: string }> {

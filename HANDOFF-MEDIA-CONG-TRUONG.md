@@ -507,3 +507,28 @@ cấp phiên resumable, client PUT byte THẲNG lên Google (không qua Worker, 
 
 **MỖI TUẦN CHỦ NHÀ GỬI FILE Y HỆT FORM NÀY** → chỉ cần giữ nguyên tên sheet `Pivot` + `SLTB (kết quả)`,
 tên cột `Nhóm DA` · `DT T*` · `NS T*`, và 2 dòng `Sản lượng KDA (tỷ)` / `Tổng nhân sự` là import chạy thẳng.
+
+### 10B. TEMPLATE + DANH SÁCH 20 DỰ ÁN (04/09, chốt sau khi chủ nhà phản hồi)
+
+**TEMPLATE ĐỔI SANG ĐÚNG FORM FILE TUẦN.** Nút "Tải template" nay xuất **2 sheet** giống hệt file chủ nhà
+gửi: `Pivot` (Nhóm DA · Tổng DT · DT T1..T12 · NS T1..T12, doanh thu bằng **TỶ**) + `SLTB (kết quả)`
+(khối A: Chỉ tiêu / Sản lượng KDA (tỷ) / Tổng nhân sự / SLTB). Tên file `Template_BaoCaoHieuSuat_Tuan.xlsx`.
+Đã verify VÒNG TRÒN: dựng file y hệt template → thả vào ô import → nạp được, không lỗi.
+
+**CHỈ HIỆN 20 DỰ ÁN, ĐÚNG THỨ TỰ CHỦ NHÀ CHỐT** — hằng số `PERF_SHOW` trong `perf-chart-app.tsx`.
+File tuần liệt kê ~56 nhóm (có cả OEM, OTHERS, LOOSE EXPORT, CÔNG NỢ CŨ…) nhưng bản chủ nhà xem chỉ có 20.
+Lưới điền **TRÊN→XUỐNG rồi mới sang cột**, nên `PERF_SHOW` viết theo cột của bản in:
+`TROPICAL PQ · CHATEAU · NAM PHƯƠNG PQ · TÂY HỒ VIEW | 20 ĐÔNG DU · MINI HOTEL PQ · HOLIDAY INN BÀ NÀ ·
+HYATT PQ | HYATT HỒ TRÀM · OLALANI · CÁT BÀ · TIẾN BỘ PLAZA | HYATT HẠ LONG · 43 ĐTM · APEC S2 · APEC S3 |
+APEC S4 · TRỤC ĐÔNG TÂY · TULIP 3 · TULIP 123`.
+⚠ **ĐỪNG tự xếp lại theo số liệu** (đã từng làm và bị chủ nhà bắt lỗi) — thêm/bớt dự án thì sửa đúng
+danh sách này. Tab "Doanh thu đầu người theo dự án" cũng lọc theo danh sách này.
+
+**⚠ BẪY REGEX TIẾNG VIỆT (đáng nhớ cho mọi chỗ khác):** `` trong JS chỉ tính ký tự ASCII. `"ỷ"` không
+phải ASCII nên `/tỷ/` **KHÔNG khớp** `"tỷ đồng"` → không quy đổi đơn vị → **mọi mini-chart ra 0,0**.
+Phải chặn hai đầu bằng khoảng trắng / dấu ngoặc: `/(^|[\s(\-])t[ỷy]([\s).,\-]|$)/i`.
+Verify sau khi sửa: TROPICAL PQ `1,3 · 0,0 · 3,1 · 1,6 · 2,3 · 2,2 · 1,6`, HYATT HẠ LONG
+`0,0 · -0,3 · 2,9 · 3,8 · 3,3 · -0,8 · -0,6` — khớp đúng bản in của chủ nhà.
+
+**KHO FILE TUẦN KHÔNG CHỒNG BẢN TRÙNG:** `driveTrashByName()` bỏ bản cũ cùng tên trước khi upload
+(Drive cho phép trùng tên, không dọn thì mỗi lần nạp lại đẻ thêm 1 file).
