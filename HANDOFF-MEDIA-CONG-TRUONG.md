@@ -532,3 +532,17 @@ Verify sau khi sửa: TROPICAL PQ `1,3 · 0,0 · 3,1 · 1,6 · 2,3 · 2,2 · 1,6
 
 **KHO FILE TUẦN KHÔNG CHỒNG BẢN TRÙNG:** `driveTrashByName()` bỏ bản cũ cùng tên trước khi upload
 (Drive cho phép trùng tên, không dọn thì mỗi lần nạp lại đẻ thêm 1 file).
+
+### 10C. CHART "DOANH THU ĐẦU NGƯỜI" — CHỈNH THEO BẢN SẾP DUYỆT (04/09)
+
+Sếp gửi bản mẫu, chỉnh 3 điểm (ĐỪNG đổi ngược):
+1. **Cột MẢNH lại**: `barW = min(30, slotW*0.34)` (trước `min(46, slotW*0.52)` nhìn to bè).
+2. **Số trên cột TO hơn**: `fontSize 15 → 20`, `fontWeight 800`; dấu "-" của tháng chưa có số cũng lên 20
+   cho đều. Nhãn trục Y lên 17.
+3. **TRỤC TRẮNG, BỎ LƯỚI NGANG**: chỉ còn 1 vạch dọc bên trái + 1 vạch ngang ở mốc 0, đều
+   `#ffffff` `strokeWidth 1.6`. Trước kẻ lưới mờ ở MỌI mốc → rối hơn bản sếp.
+
+**CÒN THIẾU so với bản sếp:** bản sếp có thêm **cột XANH LÁ "2025"** (TB năm trước) ở ngoài cùng bên trái.
+Code đã sẵn (`priorYearVnd` → `RPC_GREEN`) nhưng file tuần CHỈ có các tháng năm nay nên đang `null` →
+không vẽ. Muốn hiện thì phải có nguồn số TB 2025 (thêm 1 dòng trong sheet SLTB hoặc nhập tay) — CHƯA làm,
+chờ chủ nhà chốt lấy số ở đâu.

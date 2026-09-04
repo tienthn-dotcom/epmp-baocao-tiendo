@@ -432,7 +432,8 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
   const iw = W - mL - mR, ih = H - mT - mB;
   const yOf = (v: number) => mT + ih * (1 - v / yMax);
   const y0 = yOf(0);
-  const n = Math.max(1, slots.length), slotW = iw / n, barW = Math.min(46, slotW * 0.52);
+  // Cột MẢNH như bản sếp duyệt (trước 46px/0.52 nhìn to bè). Đừng nới lại.
+  const n = Math.max(1, slots.length), slotW = iw / n, barW = Math.min(30, slotW * 0.34);
 
   return (
     <div style={{ fontFamily: SANS, background: "#fff", border: `1px solid ${KDA_LINE}`, borderRadius: 14, padding: "18px 20px 20px", color: KDA_INK }}>
@@ -443,25 +444,25 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
       <div style={{ background: "#000", borderRadius: 10, padding: 8, marginTop: 14 }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: SANS }}>
           <text x={W / 2} y={30} textAnchor="middle" fontSize={26} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">DOANH THU ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
-          {/* Lưới ngang + nhãn trục Y */}
+          {/* TRỤC TRẮNG, KHÔNG kẻ lưới ngang — đúng bản sếp duyệt: 1 vạch dọc bên trái + 1 vạch ngang ở
+              mốc 0. (Trước có kẻ lưới mờ ở mọi mốc, nhìn rối hơn bản sếp.) */}
+          <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
+          <line x1={mL} y1={y0} x2={W - mR} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
           {ticks.map((t, i) => (
-            <g key={i}>
-              <line x1={mL} y1={yOf(t)} x2={W - mR} y2={yOf(t)} stroke={t === 0 ? RPC_WHITE : RPC_GRID} strokeWidth={t === 0 ? 1.4 : 0.8} />
-              <text x={mL - 10} y={yOf(t) + 5} textAnchor="end" fontSize={16} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
-            </g>
+            <text key={i} x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={17} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
           ))}
           <text transform={`translate(20 ${mT + ih / 2}) rotate(-90)`} textAnchor="middle" fontSize={14} fontWeight={700} fill={RPC_WHITE}>Sản lượng (tỷ đồng)</text>
           {/* Cột từng tháng + nhãn giá trị */}
           {slots.map((s, i) => {
             const cx = mL + slotW * i + slotW / 2;
             if (s.v == null || !isFinite(s.v)) {
-              return <text key={i} x={cx} y={y0 - 6} textAnchor="middle" fontSize={16} fontWeight={700} fill={RPC_WHITE}>-</text>;
+              return <text key={i} x={cx} y={y0 - 8} textAnchor="middle" fontSize={20} fontWeight={700} fill={RPC_WHITE}>-</text>;
             }
             const top = yOf(Math.max(0, s.v)), h = Math.max(1, y0 - top);
             return (
               <g key={i}>
                 <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={s.color} />
-                <text x={cx} y={top - 8} textAnchor="middle" fontSize={15} fontWeight={700} fill={RPC_WHITE}>{dec2(s.v)}</text>
+                <text x={cx} y={top - 10} textAnchor="middle" fontSize={20} fontWeight={800} fill={RPC_WHITE}>{dec2(s.v)}</text>
               </g>
             );
           })}
