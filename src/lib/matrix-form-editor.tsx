@@ -15,6 +15,7 @@ import { rangeToHtml, SHEET_DUMP_CSS, type FormSpec } from "@/lib/sheet-dump";
 import { legendEntries, setStatusColorMap } from "@/lib/summary-render";
 import { getHeatmapColors } from "@/lib/heatmap-colors.functions";
 import { getSheetForms, saveSheetForm, type SheetForm } from "@/lib/edits.functions";
+import { useIsMobile } from "@/lib/use-breakpoint";
 
 function devAs(): string | null {
   if (typeof window === "undefined") return null;
@@ -76,6 +77,9 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
   const [edit, setEdit] = useState(false);
   const [selBoxes, setSelBoxes] = useState<Box[]>([]);
   const [paint, setPaint] = useState("#ff4d4d");
+  // DIEN THOAI mac dinh 50%: co da luu la co chinh cho MAN MAY TINH, bung nguyen len man 375px thi
+  // chi thay 3-4 cot, phai vuot mai. 50% cho nhin het mot toa roi zoom vao cho can xem.
+  const mobileZoom = useIsMobile();
   const [zoom, setZoom] = useState(1);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -97,7 +101,7 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
     return () => { off = true; };
   }, [fid, opts.sheetName, opts.range, opts.tl, opts.br, force]);
 
-  useEffect(() => { if (!dirty) { setSpec(savedSpec ? structuredClone(savedSpec) : {}); setZoom(savedSpec?.zoom ?? 1); } }, [savedSpec, dirty]);
+  useEffect(() => { if (!dirty) { setSpec(savedSpec ? structuredClone(savedSpec) : {}); setZoom(mobileZoom ? 0.5 : (savedSpec?.zoom ?? 1)); } }, [savedSpec, dirty, mobileZoom]);
   // Đổi zoom: người CÓ QUYỀN → đánh dấu dirty để bật "Lưu form" và lưu kèm zoom (ô MTLĐ + popup ePMP đều
   // hiện đúng cỡ đã lưu). Người xem → chỉ zoom tạm, không lưu.
   const changeZoom = useCallback((z: number) => { setZoom(z); if (canEdit) setDirty(true); }, [canEdit]);

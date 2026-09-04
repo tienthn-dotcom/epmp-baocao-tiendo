@@ -84,13 +84,14 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
   });
   const isZone = !!regionQ.data && zonesOfSheet(regionQ.data.sh, regionQ.data.range).length > 0;
 
+  const narrowTop = useIsMobile();   // dien thoai: thanh tren thu gon, bo nut phu
   return (
     <div style={{ minHeight: "100vh", background: "#eef2f7", fontFamily: "system-ui,-apple-system,Segoe UI,sans-serif" }}>
       {/* HEADER + bộ lọc dự án */}
-      <div style={{ background: `linear-gradient(120deg,${C.navy},#1e3a5f)`, color: "#fff", padding: "16px 16px 18px" }}>
-        <div style={{ maxWidth: PAGE_W, margin: "0 auto", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14 }}>
+      <div style={{ background: `linear-gradient(120deg,${C.navy},#1e3a5f)`, color: "#fff", padding: narrowTop ? "8px 10px" : "16px 16px 18px" }}>
+        <div style={{ maxWidth: PAGE_W, margin: "0 auto", display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrowTop ? 8 : 14 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 19, fontWeight: 800 }}>🏗️ Media công trường</div>
+            <div style={{ fontSize: narrowTop ? 14 : 19, fontWeight: 800 }}>🏗️ Media công trường</div>
           </div>
           {/* ĐIỆN THOẠI: select phải CO được (minWidth 0 + maxWidth 100%) — không thì tên dự án dài
               đẩy rộng cả trang, sinh cuộn ngang toàn màn. */}
@@ -102,12 +103,15 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
             </select>
           </label>
-          {/* Lối vào thứ hai: xem TOÀN BỘ media của dự án (vẫn gom theo phòng) — khác với bấm 1 ô ma trận. */}
+          {/* Lối vào thứ hai (xem TOÀN BỘ media dự án): ĐIỆN THOẠI bỏ đi cho gọn — vào đây là để bấm ô căn;
+              xem cả dự án thì bấm nút “Media” ngay dòng dự án bên ePMP. Máy tính giữ nguyên. */}
+          {!narrowTop && (
           <button type="button" disabled={!sel} onClick={() => sel && setPick({ toa: "", can: "", scope: "project" })}
             style={{ flexShrink: 0, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.12)", color: "#fff",
               borderRadius: 9, padding: "9px 13px", fontSize: 12.5, fontWeight: 700, cursor: sel ? "pointer" : "default" }}>
             🖼 Toàn bộ media dự án
           </button>
+          )}
         </div>
       </div>
 
@@ -275,6 +279,7 @@ const mediaFormKey = (p: InstallProj) => (p.formKey || `${p.fileId}::${p.sheet |
  *  ADMIN: bật thanh công cụ "Chỉnh như Excel" của MatrixFormEditor (ẩn/hiện hàng-cột, cỡ hàng-cột, sửa
  *  chữ, tô màu, lưu form). Khi đang chỉnh, KHÔNG mở popup media — nhường chuột cho việc quét chọn ô. */
 function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: boolean; onPick: (toa: string, can: string) => void }) {
+  const narrow = useIsMobile();   // dien thoai: thanh tren thu gon toi da, nhuong cho cho bang
   const wrapRef = useRef<HTMLDivElement>(null);
   const [miss, setMiss] = useState(0);   // đếm lần bấm vào ô KHÔNG phải căn → nhắc nhẹ
   const [legend, setLegend] = useState<{ code: string; text: string; color: string }[]>([]);
@@ -328,18 +333,20 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
   return (
     // overflow hidden: ma trận TỰ CUỘN NGANG trong .sd-scroll của nó — thẻ card không được rộng theo
     // bảng, không thì cả trang cuộn ngang trên điện thoại.
-    <div style={{ background: "#fff", borderRadius: 14, padding: 12, boxShadow: "0 10px 30px rgba(15,23,42,.10)", overflow: "hidden" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 14px", margin: "2px 4px 10px" }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: miss ? "#b45309" : C.sub }}>
-          {miss ? "Ô này không phải căn (dòng tổng / cột %). Bấm vào ô trong lưới phòng." : "Bấm vào ô của căn để xem / tải ảnh · video của căn đó."}
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: C.sub }}>
-          <span style={{ position: "relative", display: "inline-block", width: 15, height: 15, borderRadius: 3, background: "#64748b" }}>
-            <span style={{ position: "absolute", right: 1, bottom: 1, width: 6, height: 6, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 1.4px rgba(15,23,42,.75)" }} />
+    <div style={{ background: "#fff", borderRadius: 14, padding: narrow ? 6 : 12, boxShadow: "0 10px 30px rgba(15,23,42,.10)", overflow: "hidden" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrow ? "4px 10px" : "6px 14px", margin: narrow ? "0 2px 6px" : "2px 4px 10px" }}>
+        {/* Dien thoai: bo cau huong dan (ai cung bam thu mot cai la biet), chi giu canh bao bam nham o.
+            Man 375px thi moi dong chu o day deu la dong bi day bang xuong duoi. */}
+        {(miss || !narrow) && (
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: miss ? "#b45309" : C.sub }}>
+            {miss ? "Ô này không phải căn (dòng tổng / cột %). Bấm vào ô trong lưới phòng." : "Bấm vào ô của căn để xem / tải ảnh · video của căn đó."}
           </span>
+        )}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: C.sub }}>
           {mediaQ.isPending ? "đang dò căn có media…" : mediaQ.isError ? "không đọc được Drive" : `${marks.size} căn đã có ảnh / video`}
         </span>
-        {legend.length > 0 && (
+        {/* Chu giai 7 mau an mat 3 dong tren man dien thoai -> BO HAN tren dien thoai; may tinh giu. */}
+        {legend.length > 0 && !narrow && (
           <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginLeft: "auto" }}>
             {legend.map((l) => (
               <span key={l.code + l.text} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#475569", fontWeight: 600 }}>
@@ -477,9 +484,6 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 14px", marginBottom: 12 }}>
         <span style={{ fontSize: 11.5, fontWeight: 600, color: C.sub }}>Bấm vào ô của khu để xem / tải ảnh · video của khu đó.</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: C.sub }}>
-          <span style={{ position: "relative", display: "inline-block", width: 15, height: 15, borderRadius: 3, background: "#64748b" }}>
-            <span style={{ position: "absolute", right: 1, bottom: 1, width: 6, height: 6, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 1.4px rgba(15,23,42,.75)" }} />
-          </span>
           {mediaQ.isPending ? "đang dò khu có media…" : mediaQ.isError ? "không đọc được Drive" : `${marks.size} khu đã có ảnh / video`}
         </span>
         {canEdit && names.length > 0 && (
