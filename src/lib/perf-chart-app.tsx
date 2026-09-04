@@ -453,46 +453,46 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
   return (
     <div style={{ fontFamily: SANS, background: "#fff", border: `1px solid ${KDA_LINE}`, borderRadius: 14, padding: "18px 20px 20px", color: KDA_INK }}>
       {/* Tiêu đề + 2 dòng số tính từ file */}
-      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "#111827" }}>Sản lượng đầu người khối dự án</div>
+      <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-.01em", color: "#111827" }}>Sản lượng đầu người khối dự án</div>
 
       {/* Biểu đồ nền đen */}
       <div style={{ background: "#000", borderRadius: 10, padding: 8, marginTop: 14 }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: SANS }}>
-          <text x={W / 2} y={30} textAnchor="middle" fontSize={26} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">SẢN LƯỢNG ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
+          <text x={W / 2} y={30} textAnchor="middle" fontSize={33} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">SẢN LƯỢNG ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
           {/* ĐƯỜNG KẺ NGANG ở MỌI MỐC để dò giá trị (sếp yêu cầu) — màu TRẮNG, mảnh; cộng 2 vạch TRỤC
               đậm hơn: dọc bên trái + ngang ở mốc 0. Đừng bỏ mấy đường ngang này. */}
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={mL} y1={yOf(t)} x2={W - mR} y2={yOf(t)} stroke={RPC_WHITE} strokeWidth={t === 0 ? 1.6 : 0.9} />
-              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={17} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
+              <text x={mL - 12} y={yOf(t) + 6} textAnchor="end" fontSize={22} fontWeight={600} fill={RPC_WHITE}>{t === 0 ? "-" : dec1(t)}</text>
             </g>
           ))}
           <line x1={mL} y1={mT - 6} x2={mL} y2={y0} stroke={RPC_WHITE} strokeWidth={1.6} />
-          <text transform={`translate(20 ${mT + ih / 2}) rotate(-90)`} textAnchor="middle" fontSize={14} fontWeight={700} fill={RPC_WHITE}>Sản lượng (tỷ đồng)</text>
+          <text transform={`translate(20 ${mT + ih / 2}) rotate(-90)`} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>Sản lượng (tỷ đồng)</text>
           {/* Cột từng tháng + nhãn giá trị */}
           {slots.map((s, i) => {
             const cx = mL + slotW * i + slotW / 2;
             if (s.v == null || !isFinite(s.v)) {
-              return <text key={i} x={cx} y={y0 - 8} textAnchor="middle" fontSize={20} fontWeight={700} fill={RPC_WHITE}>-</text>;
+              return <text key={i} x={cx} y={y0 - 8} textAnchor="middle" fontSize={24} fontWeight={700} fill={RPC_WHITE}>-</text>;
             }
             const top = yOf(Math.max(0, s.v)), h = Math.max(1, y0 - top);
             return (
               <g key={i}>
                 {/* VIỀN TRẮNG quanh cột — tách cột khỏi nền đen, cột nào cũng thấy rõ mép. */}
                 <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={s.color} stroke={RPC_WHITE} strokeWidth={1.2} shapeRendering="crispEdges" />
-                <text x={cx} y={top - 10} textAnchor="middle" fontSize={20} fontWeight={800} fill={RPC_WHITE}>{dec2(s.v)}</text>
+                <text x={cx} y={top - 10} textAnchor="middle" fontSize={25} fontWeight={800} fill={RPC_WHITE}>{dec2(s.v)}</text>
               </g>
             );
           })}
           {/* Nhãn trục X */}
           {slots.map((s, i) => (
-            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={13.5} fontWeight={600} fill={RPC_WHITE}>{s.label}</text>
+            <text key={i} x={mL + slotW * i + slotW / 2} y={H - mB + 22} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>{s.label}</text>
           ))}
-          <text x={mL + iw / 2} y={H - 10} textAnchor="middle" fontSize={14} fontWeight={700} fill={RPC_WHITE}>Tháng</text>
+          <text x={mL + iw / 2} y={H - 10} textAnchor="middle" fontSize={18} fontWeight={700} fill={RPC_WHITE}>Tháng</text>
         </svg>
       </div>
 
-      <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${KDA_LINE}`, fontSize: 11, color: KDA_SOFT, display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${KDA_LINE}`, fontSize: 13, color: KDA_SOFT, display: "flex", gap: 16, flexWrap: "wrap" }}>
         {priorAvg != null && <Legend c={RPC_GREEN} t="2025 — TB năm cũ" />}
         <Legend c={RPC_CYAN} t="Từng tháng = Sản lượng KDA ÷ Tổng nhân sự (đúng bảng SLTB trong file)" />
         {curAvg != null && <Legend c={RPC_RED} t="2026 — TB năm nay (TB các tháng)" />}
