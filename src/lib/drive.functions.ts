@@ -156,11 +156,22 @@ async function ensureDbPath(token: string, env: Env, segments: string[]): Promis
 export const mediaSafe = (s: string): string =>
   (s || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 60);
 
-/** ePMP › Media › <Dự án> › [<Toà>] › <Căn|Khu> › ("Hình ảnh" | "Video").
+/** TÊN THƯ MỤC DỰ ÁN — neo theo **ID CỨNG** (IDCUNG, vd "P0025") chứ không chỉ theo tên:
+ *      "<tên dự án> [P0025]"
+ *  Vì sao: tên dự án đổi được, bị cắt bớt khi dài, và NHIỀU DỰ ÁN có tên/mã CT na ná nhau → neo theo tên
+ *  thì hai dự án khác nhau dễ dùng chung một kho media. ID cứng gán 1 lần, không đổi, không tái dùng.
+ *  Nguồn chưa có cột IDCUNG (hid rỗng) → lùi về tên trần như cũ, không vỡ dữ liệu đang có. */
+export function mediaProjectFolder(project: string, hid?: string): string {
+  const base = mediaSafe(project) || "Khac";
+  const h = (hid || "").trim();
+  return h ? `${base.slice(0, 46)} [${mediaSafe(h)}]` : base;
+}
+
+/** ePMP › Media › <Dự án [ID cứng]> › [<Toà>] › <Căn|Khu> › ("Hình ảnh" | "Video").
  *  Toà rỗng = dự án không chia toà (khu public) → bỏ hẳn cấp đó. */
-export function mediaFolderPath(project: string, toa: string, can: string, kind: "photo" | "video", app = "ePMP"): string[] {
+export function mediaFolderPath(project: string, toa: string, can: string, kind: "photo" | "video", app = "ePMP", hid?: string): string[] {
   const t = mediaSafe(toa);
-  return [app, "Media", mediaSafe(project) || "Khac", ...(t ? [t] : []), mediaSafe(can) || "Khac",
+  return [app, "Media", mediaProjectFolder(project, hid), ...(t ? [t] : []), mediaSafe(can) || "Khac",
     kind === "video" ? "Video" : "Hình ảnh"];
 }
 
@@ -170,12 +181,12 @@ export function mediaFolderPath(project: string, toa: string, can: string, kind:
  *  KHÔNG còn kho ảnh "cấp dự án": ảnh nào cũng phải thuộc một căn/khu thì mới tìm lại được.
  *  `toa` để trống = dự án không chia Toà (khu public) → bỏ luôn cấp đó. Thiếu `can` thì ném lỗi. */
 export async function driveArchiveImages(app: string, projectName: string, dataUris: string[],
-  loc: { toa?: string; can: string; category?: string }): Promise<{ id: string; link: string }[]> {
+  loc: { toa?: string; can: string; category?: string; hid?: string }): Promise<{ id: string; link: string }[]> {
   const env = await getEnv();
   if (!env) throw new Error("Không lấy được env.");
   if (!(loc.can || "").trim()) throw new Error("Thiếu căn/khu — ảnh phải gắn vào một căn hoặc khu.");
   const token = await accessToken(env);
-  const folder = await ensureDbPath(token, env, mediaFolderPath(projectName, loc.toa || "", loc.can, loc.category === "Video" ? "video" : "photo", app));
+  const folder = await ensureDbPath(token, env, mediaFolderPath(projectName, loc.toa || "", loc.can, loc.category === "Video" ? "video" : "photo", app, loc.hid));
   const out: { id: string; link: string }[] = [];
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   for (let i = 0; i < dataUris.length; i++) {

@@ -2246,7 +2246,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // ẢNH DỰ ÁN (PMO gắn thẳng): mở popup ẢNH (imgView) / mở dialog PMO thêm-gỡ ảnh (imgSetup).
   const [imgView, setImgView] = useState<{ key: string; name: string } | null>(null);
   // XEM VIDEO công trường (chỉ Mini Hotel) — mở THẲNG từ dòng dự án, khỏi qua popup ảnh.
-  const [imgSetup, setImgSetup] = useState<{ key: string; name: string } | null>(null);
+  const [imgSetup, setImgSetup] = useState<{ key: string; name: string; hid?: string } | null>(null);
   // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
   const sheetViewsQuery = useQuery({ queryKey: ["sheetviews"], queryFn: () => getSheetViews(), staleTime: 5 * 60 * 1000 });
   const sheetViews = sheetViewsQuery.data?.views ?? {};
@@ -2255,7 +2255,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // vùng + formKey để MtldApp render Y HỆT popup (ma trận live + form đã lưu). Ghi KV để MTLĐ đọc mọi lúc.
   useEffect(() => {
     try {
-      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean }[] = [];
+      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean }[] = [];
       const seenKey = new Set<string>();   // đã xử lý linkKey này chưa (khỏi lặp)
       const seenSig = new Set<string>();   // NỘI DUNG popup đã có chưa (nhiều dự án gắn CÙNG 1 ma trận → 1 thẻ)
       for (const it of data.items) {
@@ -2266,11 +2266,15 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         const cfg = sheetViews[linkKey];
         if (!cfg?.fileId) continue;   // chỉ dự án đã GẮN link (có popup) mới đưa vào
         const formKey = `${cfg.fileId}::${(cfg.sheet || "").trim()}::${(cfg.range || "").trim() || `${(cfg.tl || "").trim()}~${(cfg.br || "").trim()}`}`;
-        const sig = `${cfg.fileId}|${cfg.gid || ""}|${formKey}`;
-        if (seenSig.has(sig)) continue;   // DEDUP theo nội dung: cùng file+tab+vùng+form = cùng 1 ma trận
+        // MỖI DỰ ÁN MỘT THẺ. Trước đây gộp theo nội dung ma trận (cùng file+tab+vùng+form = 1 thẻ) — nhưng
+        // NHIỀU DỰ ÁN KHÁC NHAU vẫn gắn chung 1 ma trận, gộp lại thì Media không phân biệt được kho ảnh của
+        // dự án nào (B6-B9 từng ăn media của B1-B5). Nay giữ đủ, khoá theo ID CỨNG của dự án.
+        // MTLĐ KHÔNG đổi: app đó tự gộp lại bằng `dedupInstall()` (theo sig) lúc render.
+        const sig = `${cfg.fileId}|${cfg.gid || ""}|${formKey}|${it.projHid || linkKey}`;
+        if (seenSig.has(sig)) continue;
         seenSig.add(sig);
         named.push({ fileId: cfg.fileId, gid: cfg.gid, sheet: cfg.sheet, range: cfg.range, tl: cfg.tl, br: cfg.br, formKey, chart: cfg.chart,
-          name: it.projectName, maCT: it.maCT || it.projectCode || "", region: it.region || "", groupDA: it.groupDA || "" });
+          hid: it.projHid, name: it.projectName, maCT: it.maCT || it.projectCode || "", region: it.region || "", groupDA: it.groupDA || "" });
       }
       if (named.length) {
         localStorage.setItem(MTLD_INSTALL_LS, JSON.stringify(named));
@@ -3968,7 +3972,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
       {summaryTarget && <SummaryDialog fileId={summaryTarget.fileId} initSheet={summaryTarget.sheet} initRange={summaryTarget.range} initTl={summaryTarget.tl} initBr={summaryTarget.br} initSnap={summaryTarget.snap} initSnapKey={summaryTarget.snapKey} initChart={summaryTarget.chart} initName={summaryTarget.name} canEdit={canSeeSystem} onClose={() => setSummaryTarget(null)} />}
       {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
       {imgView && <ProjImageDialog imgKey={imgView.key} name={imgView.name} onClose={() => setImgView(null)} />}
-      {imgSetup && <ProjImageSetupDialog projKey={imgSetup.key} projName={imgSetup.name} count={projImgIdx[imgSetup.key]?.n ?? 0} canManage={canSeeSystem} onClose={() => setImgSetup(null)} onSaved={() => void projImgIdxQuery.refetch()} />}
+      {imgSetup && <ProjImageSetupDialog projKey={imgSetup.key} projName={imgSetup.name} projHid={imgSetup.hid} count={projImgIdx[imgSetup.key]?.n ?? 0} canManage={canSeeSystem} onClose={() => setImgSetup(null)} onSaved={() => void projImgIdxQuery.refetch()} />}
 
       {/* Tính năng HỆ THỐNG (đánh giá tuân thủ + nhật ký giám sát) render lên GÓC HEADER
           qua portal, không nằm cạnh bảng. State/dialog vẫn ở đây; menu chỉ đổi chỗ hiển thị. */}
@@ -4037,7 +4041,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         projImgIdx={projImgIdx}
         onOpenImage={(key, name) => setImgView({ key, name })}
         onOpenVideo={(name) => window.dispatchEvent(new CustomEvent("epmp:open-app", { detail: { app: "media", project: name } }))}
-        onSetupImage={(key, name) => setImgSetup({ key, name })}
+        onSetupImage={(key, name, hid) => setImgSetup({ key, name, hid })}
         onExportReport={handleExportReport}
         onExportPdf={handleExportPdf}
         filters={filters}
@@ -4845,8 +4849,8 @@ function ProjImageDialog({ imgKey, name, onClose }: { imgKey: string; name: stri
 
 /** PMO THÊM (nhiều) / XOÁ ảnh cho 1 DỰ ÁN. Chọn nhiều file → nén ở client → xem trước → Lưu (nối vào bộ).
  *  Xoá từng ảnh hoặc xoá hết — LUÔN có. Click ra ngoài KHÔNG tắt (tránh mất ảnh đang chọn). Chỉ ADMIN/PMO. */
-function ProjImageSetupDialog({ projKey, projName, count, canManage, onClose, onSaved }: {
-  projKey: string; projName: string; count: number; canManage?: boolean; onClose: () => void; onSaved: () => void;
+function ProjImageSetupDialog({ projKey, projName, projHid, count, canManage, onClose, onSaved }: {
+  projKey: string; projName: string; projHid?: string; count: number; canManage?: boolean; onClose: () => void; onSaved: () => void;
 }) {
   useEscapeToClose(onClose);
   const qc = useQueryClient();
@@ -4880,7 +4884,7 @@ function ProjImageSetupDialog({ projKey, projName, count, canManage, onClose, on
   const saveAdds = async () => {
     if (!pending.length) return;
     setSaving(true); setErr(null);
-    try { await saveProjImage({ data: { key: projKey, projectName: projName, add: pending, toa: toa.trim(), can: can.trim(), devAs: devAs() } }); setPending([]); await refresh(); }
+    try { await saveProjImage({ data: { key: projKey, projectName: projName, add: pending, toa: toa.trim(), can: can.trim(), hid: projHid, devAs: devAs() } }); setPending([]); await refresh(); }
     catch (e) { setErr((e as Error).message); }
     setSaving(false);
   };
@@ -5333,7 +5337,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   projImgIdx?: ProjImgIdx;
   onOpenImage?: (key: string, name: string) => void;
   onOpenVideo?: (name: string) => void;
-  onSetupImage?: (key: string, name: string) => void;
+  onSetupImage?: (key: string, name: string, hid?: string) => void;
   /** Xuất báo cáo cho 1 dự án — nhận nguyên group để phía cha tra data đầy đủ. Slide = .pptx, Pdf = .pdf. */
   onExportReport?: (g: DueMonthGroup) => void;
   onExportPdf?: (g: DueMonthGroup) => void;
@@ -6073,7 +6077,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                       )}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 print:hidden">
                         {/* THÊM ẢNH: mở cho MỌI NGƯỜI (ai cũng thêm được; xoá/gỡ vẫn chỉ admin/PMO trong dialog). */}
-                        <button type="button" onClick={(e) => { e.stopPropagation(); onSetupImage?.(g.key, g.name); }}
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onSetupImage?.(g.key, g.name, g.items[0]?.projHid); }}
                           className="inline-flex items-center gap-0.5 text-[0.72em] font-medium text-white/70 hover:text-amber-200"
                           title={imgN > 0 ? "Xem / thêm ảnh hiện trường của dự án" : "Thêm ảnh hiện trường cho dự án"}>
                           <ImageIcon className="h-3 w-3" />{imgN > 0 ? `Ảnh (${imgN})` : "Thêm ảnh"}

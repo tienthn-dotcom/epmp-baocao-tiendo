@@ -204,6 +204,9 @@ export const recordSummaryFiles = createServerFn({ method: "POST" })
 const INSTALL_LIST_KEY = "mtld:install:list:v2";
 type InstallListItem = {
   fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
+  /** ID CỨNG của DỰ ÁN (cột "IDCUNG", vd "P0025") — KHOÁ BỀN của dự án: đổi tên / STT trôi / trùng mã CT
+   *  đều không đụng tới nó. Media neo theo cái này để 2 dự án khác nhau KHÔNG bao giờ dùng chung kho. */
+  hid?: string;
   // Vùng + form để render Y HỆT popup "Thi công lắp đặt" (MatrixFormEditor: ma trận live + form đã lưu).
   sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
 };
@@ -211,6 +214,7 @@ export const saveInstallList = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ list: z.array(z.object({
     fileId: z.string().max(120), gid: z.string().max(30).optional(), name: z.string().max(300),
     maCT: z.string().max(120), region: z.string().max(120).optional(), groupDA: z.string().max(300).optional(),
+    hid: z.string().max(40).optional(),
     sheet: z.string().max(200).optional(), range: z.string().max(60).optional(), tl: z.string().max(30).optional(),
     br: z.string().max(30).optional(), formKey: z.string().max(400).optional(), chart: z.boolean().optional(),
   })).max(1000) }).parse(input))

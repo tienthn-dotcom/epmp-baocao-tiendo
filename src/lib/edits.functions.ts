@@ -1182,6 +1182,7 @@ export const saveProjImage = createServerFn({ method: "POST" })
     add: z.array(z.string().max(3_500_000)).max(PROJIMG_MAX).optional(),
     toa: z.string().max(60).optional(),            // Toà (bỏ trống nếu dự án không chia Toà, vd khu public)
     can: z.string().max(80).optional(),            // CĂN / KHU → ảnh đổ vào đúng folder đó trong cây Media
+    hid: z.string().max(40).optional(),            // ID CỨNG dự án → khoá thư mục dự án, khỏi lẫn dự án trùng tên
     removeIdx: z.number().int().min(0).optional(),
     clear: z.boolean().optional(),
     devAs: z.string().nullable().optional(),
@@ -1217,7 +1218,7 @@ export const saveProjImage = createServerFn({ method: "POST" })
         try {
           const drive = await import("@/lib/drive.functions");
           if (await drive.driveIsConfigured())
-            await drive.driveArchiveImages("ePMP", data.projectName || data.key, adds, { toa: data.toa, can: data.can! });
+            await drive.driveArchiveImages("ePMP", data.projectName || data.key, adds, { toa: data.toa, can: data.can!, hid: data.hid });
         } catch (e) { console.warn("[projimg] mirror Drive bỏ qua:", (e as Error).message); }
       }
     }

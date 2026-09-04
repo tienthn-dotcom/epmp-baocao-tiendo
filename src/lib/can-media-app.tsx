@@ -27,8 +27,10 @@ const C = { ink: "#0f172a", sub: "#64748b", teal: "#0d9488", tealD: "#0f766e", n
 const mb = (n: number) => (n / 1048576).toFixed(0);
 
 type InstallProj = { fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
-  sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean };
-const projId = (p: InstallProj) => p.fileId + (p.gid ? "|" + p.gid : "");
+  hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean };
+/** KHOÁ DỰ ÁN — ưu tiên ID CỨNG (IDCUNG, vd "P0025"): đổi tên / trùng mã CT / dùng chung ma trận với dự
+ *  án khác đều không lẫn kho media. Nguồn chưa có cột IDCUNG thì lùi về file+tab (như cũ). */
+const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|" + p.gid : "");
 const isMini = (p: InstallProj) => /mini\s*hotel/i.test(p.name || "");
 
 /** `wantProject` = tên dự án mà chỗ khác (nút "Video" trên dashboard ePMP) muốn mở sẵn. Khớp theo TÊN vì
@@ -42,8 +44,9 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
     const kv = (listQ.data?.list ?? []) as InstallProj[];
     const raw = (kv.length ? kv : lsList);
     // Bỏ trùng theo nội dung popup; Mini Hotel lên đầu (làm trước).
+    // Gộp theo DỰ ÁN (không theo ma trận): 2 dự án dùng chung 1 ma trận vẫn là 2 kho media riêng.
     const seen = new Set<string>(); const out: InstallProj[] = [];
-    for (const p of raw) { const sig = `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`; if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
+    for (const p of raw) { const sig = `${projId(p)}|${p.name}`; if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
     return out.sort((a, b) => (Number(isMini(b)) - Number(isMini(a))) || a.name.localeCompare(b.name, "vi"));
   }, [listQ.data, lsList]);
 
@@ -131,7 +134,9 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         ) : null}
       </div>
 
-      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
+      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} hid={pick.project ? undefined : sel?.hid}
+        projKey={pick.project ? `N:${pick.project}` : (sel ? projId(sel) : "")}
+        initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
     </div>
   );
 }
@@ -277,8 +282,8 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
 
   // CĂN NÀO ĐÃ CÓ MEDIA → chấm dấu lên ô, nhìn ma trận là biết chỗ nào đã có tư liệu, chỗ nào còn trống.
   const mediaQ = useQuery({
-    queryKey: ["projmedia", proj.name],
-    queryFn: () => listProjectMedia({ data: { project: proj.name } }),
+    queryKey: ["projmedia", projId(proj)],
+    queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid } }),
     staleTime: 60_000,
   });
   const marks = useMemo(() => {
@@ -448,7 +453,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   };
 
-  const mediaQ = useQuery({ queryKey: ["projmedia", proj.name], queryFn: () => listProjectMedia({ data: { project: proj.name } }), staleTime: 60_000 });
+  const mediaQ = useQuery({ queryKey: ["projmedia", projId(proj)], queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid } }), staleTime: 60_000 });
   const marks = useMemo(() => {
     const m = new Map<string, { photos: number; videos: number }>();
     for (const c of mediaQ.data?.cans ?? []) if (!c.toa) m.set(c.can, { photos: c.photos, videos: c.videos });
@@ -522,14 +527,14 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
 /** POPUP MEDIA CỦA 1 PHÒNG / KHU — MỘT KHO CHUNG: ảnh và video nằm CÙNG một danh sách.
  *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
-function CanMediaDialog({ project, initialToa, initialCan, scope, onClose }: { project: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
+function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload
   const qc = useQueryClient();
   // NGUỒN: TOÀN BỘ media của DỰ ÁN (1 lượt quét), gộp theo PHÒNG/KHU — mở 1 căn là xem được hết,
   // bấm qua lại giữa các phòng luôn. Dùng chung queryKey với dấu chấm ngoài ma trận nên không gọi thừa.
-  const q = useQuery({ queryKey: ["projmedia", project], queryFn: () => listProjectMedia({ data: { project } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["projmedia", projKey], queryFn: () => listProjectMedia({ data: { project, hid } }), staleTime: 60_000 });
   type Item = { id: string; kind: "photo" | "video"; date?: string; toa: string; can: string };
   const groups = useMemo(() => {
     const gs = (q.data?.cans ?? []).map((c) => ({
@@ -577,14 +582,14 @@ function CanMediaDialog({ project, initialToa, initialCan, scope, onClose }: { p
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
-        const { uploadUrl } = await startCanMediaUpload({ data: { project, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "" } });
+        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "" } });
         try { await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f }); }
         catch { /* iOS CORS: byte vẫn có thể đã lên — refetch xác minh bên dưới */ }
       } catch { /* bỏ file lỗi, tiếp tục */ }
     }
     setBusy(null);
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
-    await qc.invalidateQueries({ queryKey: ["projmedia", project] });
+    await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
   }
 
   const upBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 12px", borderRadius: 8, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };

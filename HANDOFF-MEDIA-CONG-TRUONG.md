@@ -386,6 +386,30 @@ Việc phải làm, có 2 chỗ ĐỘNG tới hệ thống khác nên cần ch�
 2. Thư mục Drive đổi tên thành dạng có RID (vd `<tên dự án> [R<rid>]`) → phải **đổi tên 18 folder dự án
    đang có** + giai đoạn đọc phải fallback về tên cũ, hoặc migrate 1 lần bằng script.
 
+### d8) NEO MEDIA THEO **ID CỨNG DỰ ÁN** (đã code, CHƯA đổi tên folder Drive)
+
+Chủ nhà yêu cầu "cắm vị trí video theo RID". RID là mã CỨNG TỪNG DÒNG; mã cứng CẤP DỰ ÁN tương ứng là
+**IDCUNG** — có sẵn trên mọi dòng con dưới tên `ItemRow.projHid` (vd `"P0025"`, xem types.ts). Dùng cái này.
+
+**Đã làm (an toàn, không đụng dữ liệu Drive):**
+1. `InstallListItem` + zod + `InstallProj` thêm `hid`. `index.tsx` đẩy `hid: it.projHid`.
+2. **Bỏ gộp dự án ở chỗ ĐẨY danh sách.** Trước dedup theo `sig = fileId|gid|formKey` ⇒ *nhiều dự án gắn
+   chung 1 ma trận bị gộp thành 1 thẻ* — chính là gốc của việc B6-B9 ăn media của B1-B5. Nay `sig` kèm
+   `projHid` nên mỗi dự án một thẻ. **MTLĐ KHÔNG đổi hành vi** vì app đó tự gộp lại bằng `dedupInstall()`
+   (theo sig) lúc render — đã kiểm.
+3. `projId()` của Media = `H:<hid>` khi có ID cứng, không thì lùi về `fileId|gid` như cũ. Dropdown Media
+   gộp theo DỰ ÁN chứ không theo ma trận.
+4. `drive.functions` thêm **`mediaProjectFolder(name, hid)`** → thư mục dự án đặt tên `"<tên> [P0025]"`.
+   `mediaFolderPath(..., hid)`; `startCanMediaUpload` · `listCanMedia` · `listProjectMedia` ·
+   `driveArchiveImages` (popup ảnh ePMP) đều nhận `hid`.
+   **Nguồn chưa có cột IDCUNG → hid rỗng → tên thư mục TRẦN như cũ**, nên dữ liệu đang có vẫn đọc bình
+   thường (đã kiểm trên dev: 3 dự án, 71 căn có media hiện đủ).
+
+**CÒN LẠI — cần chủ nhà cho phép mới chạy:** `scripts/media-rename-hid.mjs` đổi tên 18 folder dự án đang
+có sang dạng `"<tên> [ID cứng]"`. CHỈ đổi tên (id thư mục giữ nguyên → link cũ vẫn sống), không dời/xoá
+file. Cần 1 file `map.json` dạng `[{name, hid}]` — lấy từ install list SAU KHI deploy (dashboard mới đẩy
+`hid` lên KV). Trình tự đúng: **deploy → mở ePMP cho dashboard đẩy hid → xuất map.json → chạy dry → --go**.
+
 ### e) Khảo sát Drive
 `scripts/media-survey.mjs` (mới, CHỈ ĐỌC): in cây `Media/<dự án>/<Toà>/<phòng>/(Hình ảnh|Video)` + đếm file.
 Xác nhận 04/09: B1 2 phòng · B2 6 · B3 17 · B4 7 · B5 32; mỗi phòng đủ 2 thư mục.

@@ -27,14 +27,14 @@ const KIND_FOLDER = (kind: string) => (kind === "photo" ? "Hình ảnh" : "Video
 // DATABASE › ePMP › Media › <Dự án> › <Toà> › <tên phòng> › Hình ảnh|Video. Toà có thể rỗng (dự án không chia Toà).
 /** Đường dẫn Media — GỌI THẲNG hàm dùng chung ở drive.functions (đừng dựng lại ở đây: hai bộ chuẩn hoá
  *  khác nhau từng làm ảnh up từ dashboard và ảnh của app Media rơi vào 2 folder khác tên). */
-const mediaPath = (drive: { mediaFolderPath: (p: string, t: string, c: string, k: "photo" | "video") => string[] },
-  project: string, toa: string, can: string, kind: string) =>
-  drive.mediaFolderPath(project, toa, can, kind === "video" ? "video" : "photo");
+const mediaPath = (drive: { mediaFolderPath: (p: string, t: string, c: string, k: "photo" | "video", app?: string, hid?: string) => string[] },
+  project: string, toa: string, can: string, kind: string, hid?: string) =>
+  drive.mediaFolderPath(project, toa, can, kind === "video" ? "video" : "photo", "ePMP", hid);
 const rid6 = () => Math.random().toString(36).slice(2, 8);
 
 /** Cấp PHIÊN UPLOAD 1 file media (ảnh/video) cho 1 PHÒNG (Toà + căn) của 1 DỰ ÁN. Trả { uploadUrl, name }. */
 export const startCanMediaUpload = createServerFn({ method: "POST" })
-  .validator((d: { project: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string }) => d)
+  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
@@ -43,20 +43,20 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
     const name = `${can}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
-    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"));
+    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"));
     return { uploadUrl, name };
   });
 
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
 export const listCanMedia = createServerFn({ method: "POST" })
-  .validator((d: { project: string; toa?: string; can: string }) => d)
+  .validator((d: { project: string; hid?: string; toa?: string; can: string }) => d)
   .handler(async ({ data }): Promise<{ photos: { id: string; name: string; link: string }[]; videos: { id: string; name: string; link: string; date: string }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { photos: [], videos: [] };
     const dateOf = (fname: string) => { const b = fname.replace(/\.[^.]+$/, ""); const m = b.match(/(\d{2}-\d{2}-\d{2})/); return m ? m[1] : ""; };
     const [ph, vd] = await Promise.all([
-      drive.driveListChildrenImpl(mediaPath(drive, data.project, data.toa || "", data.can, "photo")).then((r) => r.files).catch(() => []),
-      drive.driveListChildrenImpl(mediaPath(drive, data.project, data.toa || "", data.can, "video")).then((r) => r.files).catch(() => []),
+      drive.driveListChildrenImpl(mediaPath(drive, data.project, data.toa || "", data.can, "photo", data.hid)).then((r) => r.files).catch(() => []),
+      drive.driveListChildrenImpl(mediaPath(drive, data.project, data.toa || "", data.can, "video", data.hid)).then((r) => r.files).catch(() => []),
     ]);
     const byNew = (a: { name: string }, b: { name: string }) => b.name.localeCompare(a.name);
     return {
@@ -80,11 +80,11 @@ export const readCanMediaB64 = createServerFn({ method: "POST" })
  *  (khu public không chia Toà) — phân biệt bằng: con của nó tên "Hình ảnh"/"Video" thì chính nó là căn/khu.
  *  Quét theo LÔ (driveList*ByParents) nên chỉ tốn ~4 lượt gọi Drive, không phải mỗi phòng một lượt. */
 export const listProjectMedia = createServerFn({ method: "POST" })
-  .validator((d: { project: string }) => d)
+  .validator((d: { project: string; hid?: string }) => d)
   .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; media: { id: string; kind: "photo" | "video"; date: string }[] }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { cans: [] };
-    const project = drive.mediaSafe(data.project) || "Khac";
+    const project = drive.mediaProjectFolder(data.project, data.hid);
     const KIND = new Set(["Hình ảnh", "Video"]);
     const root = await drive.driveListChildrenImpl(["ePMP", "Media", project]);
     const lvl1 = root.folders.filter((f) => !KIND.has(f.name));          // Toà, hoặc Khu (khu public)
