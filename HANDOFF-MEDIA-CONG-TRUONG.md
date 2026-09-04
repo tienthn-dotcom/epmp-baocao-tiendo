@@ -473,3 +473,37 @@ cần cân nhắc kỹ).
 - `feedback-bump-version-on-deploy`: mỗi deploy nhớ tăng APP_VERSION + changelog (chỉ khi deploy).
 - `project-heatmap-standard-colors`: quy ước màu (mục 4).
 - `reference-epmp-github`: repo backup private `tienthn-dotcom/epmp-baocao-tiendo` — commit+push mỗi đợt sửa.
+
+---
+
+## 10. IMPORT BÁO CÁO HIỆU SUẤT TUẦN (app "Hiệu suất dự án") — 04/09/2026
+
+**FILE MẪU CHỦ NHÀ GỬI HÀNG TUẦN:** `Pivot_DoanhThu_NhanSu_theo_Nhom_T1-T7.xlsx`, 6 sheet —
+`Pivot` · **`SLTB (kết quả)`** · `DoanhThu (file#1)` · `NhanSu (file#2)` · `MasterData` · `Danh mục nhóm`.
+
+**Dữ liệu app cần nằm ở đâu:**
+- `Pivot` — mỗi dòng 1 NHÓM DA, cột `DT T1..T7` (tỷ) + `NS T1..T7` (người) → dựng `Proj{name,rev[],ns[]}`.
+- `SLTB (kết quả)` **khối A** (dòng `Chỉ tiêu` → `Sản lượng KDA (tỷ)` / `Tổng nhân sự`) → chuỗi TOÀN KHỐI.
+  Khối B là SLTB từng nhóm (app tự tính lại được từ Pivot nên chưa dùng).
+
+**3 LỖI ĐÃ SỬA (đây là lý do import hay hỏng):**
+1. **Cột tên là "Nhóm DA"**, không có chữ "dự án" → `NAME_RE` cũ trượt ⇒ báo *"Không nhận dạng được dữ
+   liệu"*. Đã thêm `nhóm|nhom` vào `NAME_RE`. (Tái hiện được đúng lỗi trước khi sửa.)
+2. **Đơn vị**: file ghi doanh thu bằng **TỶ** (23.24), app tính bằng **VND** → không quy đổi thì chart ra
+   ~0. `parseFlexible` dò chữ "tỷ" ở tiêu đề cột / 2 dòng đầu sheet → nhân `1e9` (`revScale`).
+3. **Chart đen "Doanh thu đầu người" SAI**: app tự cộng Σdoanh thu ÷ Σnhân sự từ các nhóm, ra
+   `0.51·0.13·1.21·…` trong khi báo cáo là `0.77·0.19·0.98·…`. Lý do: doanh thu KDA đã TRỪ OEM +
+   Loose Export, cộng lại từ nhóm ra số khác. Nay `parseBlockTotals()` đọc THẲNG khối A và lưu vào
+   `PerfData.block`; `blockPerCap` ưu tiên `block`, không có mới lùi về cộng tay.
+   ⚠ `parseBlockTotals` phải tìm dòng **SAU** dòng "Chỉ tiêu" — dòng 0 là tiêu đề sheet *"SẢN LƯỢNG ĐẦU
+   NGƯỜI (SLTB)…"* cũng khớp `/sản lượng/` nên tìm từ đầu sẽ đọc ra toàn số 0.
+   Verify: nạp file thật → `0.77 · 0.19 · 0.98 · 0.82 · 0.75 · 0.67 · 0.63`, khớp 100% dòng SLTB của file.
+
+**LƯU TRỮ FILE NGUỒN LÊN DRIVE** (chủ nhà yêu cầu, để app không ôm dữ liệu): `startPerfSourceUpload()`
+cấp phiên resumable, client PUT byte THẲNG lên Google (không qua Worker, tránh OOM) vào
+`DATABASE › Hiệu suất dự án › Nguồn tuần › <năm> › <YYYY-MM-DD>_<tên file>` — **mỗi tuần 1 file, không ghi
+đè**, có lịch sử đối chiếu. Lỗi/không đủ quyền → bỏ qua, không chặn việc nạp.
+Đã verify trên Drive: `Nguồn tuần/2026/2026-09-04_Pivot_DoanhThu_NhanSu_theo_Nhom_T1-T7.xlsx (108 KB)`.
+
+**MỖI TUẦN CHỦ NHÀ GỬI FILE Y HỆT FORM NÀY** → chỉ cần giữ nguyên tên sheet `Pivot` + `SLTB (kết quả)`,
+tên cột `Nhóm DA` · `DT T*` · `NS T*`, và 2 dòng `Sản lượng KDA (tỷ)` / `Tổng nhân sự` là import chạy thẳng.

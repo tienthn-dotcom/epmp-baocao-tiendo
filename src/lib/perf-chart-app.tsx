@@ -21,7 +21,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X } from "lucide-react";
 import { getSummaryFile } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
-import { getPerfData, savePerfData, fetchUserRoles } from "@/lib/edits.functions";
+import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 
 const MINI_YMIN = -1e9, MINI_YMAX = 4e9;   // thang CHUNG cho mini (so sánh)
@@ -64,12 +64,18 @@ function xlsxCell(r: number, c: number): string {
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
   return s + (r + 1);
 }
+/** File báo cáo tuần ghi doanh thu bằng TỶ ĐỒNG ("Tổng DT (T1-7, tỷ đ)", "DT T1"… giá trị 23.24),
+ *  trong khi cả app tính bằng VND (chia 1e9 khi hiện). Không quy đổi thì chart ra ~0 — đây chính là
+ *  "lỗi khi import". Nhận biết bằng chữ "tỷ / ty / bn / tr.đ" ở TIÊU ĐỀ cột hoặc tiêu đề sheet. */
+const TY_RE = /\b(t[ỷy]|billion|bn)\b|\(t[ỷy]/i;
 const toNum = (v: unknown): number => typeof v === "number" ? v : (typeof v === "string" && v.trim() && !isNaN(Number(v.replace(/,/g, ""))) ? Number(v.replace(/,/g, "")) : 0);
 
 // ───────────────────────────────────────────────── PARSER (dò theo tiêu đề) ──
 const NS_RE = /(^|[^a-z])ns(\s|\d|$)|nhân sự|nhan su|headcount|(^|[^a-z])hc[\s]*\d/i;
 const REV_RE = /(^|[^a-z])(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|doanh thu|revenue|(^|[^a-z])dt[\s]*t?\d|tháng[\s]*\d|thg[\s]*\d|(^|[^a-z])t\d{1,2}(\s|$)/i;
-const NAME_RE = /row labels|dự án|du an|^tên|^ten|các khu|cac khu|công trình|cong trinh|project/i;
+// Cột TÊN — mỗi file gọi một kiểu. File báo cáo tuần (Pivot_DoanhThu_NhanSu_theo_Nhom) đặt là "Nhóm DA",
+// không có chữ "dự án" nên bộ dò cũ trượt → app báo "Không nhận dạng được dữ liệu". Nhận thêm "nhóm".
+const NAME_RE = /row labels|dự án|du an|^tên|^ten|nhóm|nhom|các khu|cac khu|công trình|cong trinh|project/i;
 const STT_RE = /^stt$|số thứ tự|so thu tu|^tt$|^no\.?$|^#$/i;
 
 type Detect = { hr: number; nameCol: number; sttCol: number; revCols: number[]; nsCols: number[]; score: number };
@@ -111,6 +117,9 @@ function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx"))
     }
     const NM = Math.min(d.revCols.length, d.nsCols.length, 12);
     const rc = d.revCols.slice(0, NM), nc = d.nsCols.slice(0, NM);
+    // ĐƠN VỊ doanh thu: tiêu đề cột hoặc 2 dòng đầu sheet có chữ "tỷ" → số đang là TỶ, đổi về VND.
+    const hdrTxt = [...(rows[d.hr] || []), ...(rows[0] || []), ...(rows[1] || [])].map((x) => String(x ?? "")).join(" | ");
+    const revScale = TY_RE.test(hdrTxt) ? 1e9 : 1;
     const projs: Proj[] = [];
     for (let r = d.hr + 1; r < rows.length; r++) {
       const row = rows[r] || []; const nmv = row[d.nameCol];
@@ -119,12 +128,38 @@ function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx"))
       let no: number;
       if (sttCol >= 0) { const sv = row[sttCol]; if (typeof sv !== "number") continue; no = sv; }   // CÓ STT → chỉ dòng có số
       else no = projs.length + 1;
-      projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c])), ns: nc.map((c) => toNum(row[c])) });
+      projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) });
     }
     if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name };   // sheet ưu tiên cao NHẤT parse được
   }
   return null;
 }
+/** Đọc KHỐI A của sheet "SLTB (kết quả)" — bảng tổng của báo cáo tuần:
+ *      Chỉ tiêu | T1 | T2 | …
+ *      Sản lượng KDA (tỷ) | 184.9 | 46.7 | …
+ *      Tổng nhân sự       | 240   | 240  | …
+ *  Lấy THẲNG 2 dòng này làm số TOÀN KHỐI, KHÔNG tự cộng lại từ các nhóm — vì doanh thu khối đã trừ OEM
+ *  và Loose Export, cộng tay sẽ ra số khác báo cáo. Không tìm thấy sheet/dòng → null (app tự cộng như cũ). */
+function parseBlockTotals(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { rev: number[]; ns: number[] } | null {
+  const name = wb.SheetNames.find((n) => /sltb/i.test(n)); if (!name) return null;
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as unknown[][];
+  const txt = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim();
+  const findRow = (re: RegExp, from = 0) => rows.findIndex((r, i) => i >= from && re.test(txt(r?.[0])));
+  const hr = findRow(/^chỉ tiêu$/i); if (hr < 0) return null;
+  // PHẢI tìm SAU dòng "Chỉ tiêu": dòng 0 là TIÊU ĐỀ SHEET ("SẢN LƯỢNG ĐẦU NGƯỜI (SLTB) KHỐI DỰ ÁN 2026")
+  // cũng chứa chữ "sản lượng" → tìm từ đầu sẽ vớ nhầm tiêu đề, đọc ra toàn số 0.
+  const rRev = findRow(/^sản lượng/i, hr + 1), rNs = findRow(/^tổng nhân sự/i, hr + 1);
+  if (rRev < 0 || rNs < 0) return null;
+  // Cột tháng = các cột có tiêu đề "T1".."T12" ở dòng header (bỏ cột TB/tổng).
+  const cols: number[] = [];
+  const hdr = rows[hr] || [];
+  for (let c = 1; c < hdr.length; c++) if (/^t\s*\d{1,2}$/i.test(txt(hdr[c]))) cols.push(c);
+  if (!cols.length) return null;
+  const rev = cols.map((c) => toNum(rows[rRev]?.[c]) * 1e9);   // sheet ghi bằng TỶ
+  const ns = cols.map((c) => toNum(rows[rNs]?.[c]));
+  return rev.some((v) => v) || ns.some((v) => v) ? { rev, ns } : null;
+}
+
 /** Fallback: đọc theo VỊ TRÍ Pivot(2) cũ (A=STT, B=Tên, D-J=DT, K-Q=NS, 7 tháng). */
 function parsePositional(wb: import("xlsx").WorkBook): Proj[] {
   const name = wb.SheetNames.find((n) => /pivot\s*\(?\s*2/i.test(n)) || wb.SheetNames.find((n) => /pivot/i.test(n)) || wb.SheetNames[0];
@@ -420,7 +455,7 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
 
       <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${KDA_LINE}`, fontSize: 11, color: KDA_SOFT, display: "flex", gap: 16, flexWrap: "wrap" }}>
         {priorAvg != null && <Legend c={RPC_GREEN} t="2025 — TB năm cũ" />}
-        <Legend c={RPC_CYAN} t="Từng tháng = Σ doanh thu ÷ Σ nhân sự (từ file)" />
+        <Legend c={RPC_CYAN} t="Từng tháng = Sản lượng KDA ÷ Tổng nhân sự (đúng bảng SLTB trong file)" />
         {curAvg != null && <Legend c={RPC_RED} t="2026 — TB năm nay (TB các tháng)" />}
       </div>
     </div>
@@ -430,6 +465,8 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
 // ─────────────────────────────────────────────────────────────────────── APP ──
 export function PerfChartApp() {
   const [projs, setProjs] = useState<Proj[]>([]);
+  /** TOÀN KHỐI đọc thẳng từ khối A sheet "SLTB (kết quả)" — số CHUẨN của báo cáo tuần. */
+  const [block, setBlock] = useState<{ rev: number[]; ns: number[] } | null>(null);
   const [view, setView] = useState<"trend" | "rank" | "percap">("trend");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -451,6 +488,7 @@ export function PerfChartApp() {
     getPerfData().then((r) => {
       if (off || !r.data) return;
       setProjs(r.data.projects);
+      setBlock(r.data.block ?? null);   // số TOÀN KHỐI của báo cáo (nếu bản lưu có)
       setStatus(`Bản lưu: ${r.data.src || "—"} · ${new Date(r.data.at).toLocaleString("vi-VN")} · bởi ${(r.data.by || "?").split("@")[0]}`);
     }).catch(() => { /* chưa có bản lưu */ });
     return () => { off = true; };
@@ -470,12 +508,19 @@ export function PerfChartApp() {
     .filter((r) => r.v != null)
     .sort((a, b) => (b.v as number) - (a.v as number) || a.name.localeCompare(b.name, "vi", { numeric: true })) as RankRow[],
     [projs, rm]);
-  // DOANH THU ĐẦU NGƯỜI cấp KHỐI theo tháng = Σ doanh thu ÷ Σ nhân sự mỗi tháng (VND/người). Không có nhân sự → null.
+  // DOANH THU ĐẦU NGƯỜI cấp KHỐI theo tháng (VND/người).
+  //  • CÓ khối A của sheet "SLTB (kết quả)" → LẤY THẲNG số của báo cáo. Bắt buộc, vì doanh thu KDA đã
+  //    trừ OEM + Loose Export; tự cộng lại từ các nhóm sẽ RA SỐ KHÁC báo cáo (đúng lỗi đang thấy).
+  //  • Không có → mới lùi về Σ doanh thu ÷ Σ nhân sự như cũ.
   const blockPerCap = useMemo(() => {
+    if (block && block.ns.some((v) => v > 0)) {
+      const n = Math.max(block.rev.length, block.ns.length);
+      return Array.from({ length: n }, (_, m) => (block.ns[m] > 0 ? block.rev[m] / block.ns[m] : null));
+    }
     const rev = Array(nm).fill(0), ns = Array(nm).fill(0);
     projs.forEach((p) => { for (let m = 0; m < nm; m++) { rev[m] += p.rev[m] || 0; ns[m] += p.ns[m] || 0; } });
     return Array.from({ length: nm }, (_, m) => (ns[m] > 0 ? rev[m] / ns[m] : null));
-  }, [projs, nm]);
+  }, [projs, nm, block]);
 
   const rowsN = Math.max(1, Math.ceil(ordered.length / COLS));
   const gridItems = useMemo(() => {
@@ -484,11 +529,12 @@ export function PerfChartApp() {
     return arr;
   }, [ordered, rowsN]);
 
-  async function apply(list: Proj[], src: string) {
+  async function apply(list: Proj[], src: string, blk?: { rev: number[]; ns: number[] } | null) {
     setProjs(list);
+    setBlock(blk ?? null);
     const lnm = nmOf(list); const lm = latestMonth(list, lnm);
     try {
-      await savePerfData({ data: { projects: list, src, devAs: devAsPerf() } });
+      await savePerfData({ data: { projects: list, block: blk ?? undefined, src, devAs: devAsPerf() } });
       setStatus(`Đã nạp & LƯU ${list.length} dự án · ${lnm} tháng · mới nhất tháng ${lm + 1} (giữ đến khi cập nhật file mới)`);
     } catch {
       setStatus(`Đã nạp ${list.length} dự án · ${lnm} tháng — nhưng CHƯA lưu (chỉ PMO/admin mới lưu được)`);
@@ -499,12 +545,22 @@ export function PerfChartApp() {
     const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
     const flex = parseFlexible(wb, XLSX);
     const list = flex && flex.projects.length ? flex.projects : parsePositional(wb);
+    const blk = parseBlockTotals(wb, XLSX);   // khối A "SLTB (kết quả)" (nếu file có)
     if (!list.length) throw new Error('Không nhận dạng được dữ liệu. Cần các cột: Tên dự án · Doanh thu theo tháng · Nhân sự theo tháng. Tải template để làm mẫu.');
-    await apply(list, src);
+    await apply(list, src, blk);
+  }
+  /** LƯU TRỮ file nguồn tuần lên Drive (Hiệu suất dự án › Nguồn tuần › <năm> › <ngày>_<tên file>).
+   *  App KHÔNG giữ byte — client PUT thẳng lên Google. Lỗi/không có quyền → BỎ QUA, không chặn việc nạp. */
+  async function archiveSource(f: File) {
+    try {
+      const { uploadUrl, path } = await startPerfSourceUpload({ data: { name: f.name, mime: f.type || "", devAs: devAsPerf() } });
+      await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+      setStatus((v) => `${v} · đã lưu file nguồn: ${path}`);
+    } catch { /* không có quyền / Drive lỗi → vẫn dùng được dữ liệu vừa nạp */ }
   }
   async function onFile(f?: File | null) {
     if (!f) return; setBusy(true); setErr(null);
-    try { await loadWorkbook(await f.arrayBuffer(), f.name); } catch (e) { setErr((e as Error).message); }
+    try { await loadWorkbook(await f.arrayBuffer(), f.name); await archiveSource(f); } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   }
   async function onLink() {

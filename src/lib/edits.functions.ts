@@ -1231,7 +1231,8 @@ export const saveProjImage = createServerFn({ method: "POST" })
 const PERFDATA_KEY = "perfdata:v1";
 const DEV_PERFDATA_FILE = ".data/pmo-perfdata.json";
 export type PerfProj = { no: number; name: string; rev: number[]; ns: number[] };
-export type PerfData = { projects: PerfProj[]; src: string; at: string; by: string };
+export type PerfBlock = { rev: number[]; ns: number[] };
+export type PerfData = { projects: PerfProj[]; block?: PerfBlock; src: string; at: string; by: string };
 
 async function readPerfData(): Promise<PerfData | null> {
   const kv = await getKv();
@@ -1257,12 +1258,15 @@ export const savePerfData = createServerFn({ method: "POST" })
       no: z.number(), name: z.string().max(120),
       rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24),
     })).max(200),
+    /** TOÀN KHỐI đọc THẲNG từ sheet "SLTB (kết quả)" khối A (không tự cộng lại từ các nhóm) — để chart
+     *  "Doanh thu đầu người Khối dự án" khớp ĐÚNG con số trong báo cáo tuần. */
+    block: z.object({ rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24) }).optional(),
     src: z.string().max(200).optional(),
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ data: PerfData }> => {
     if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được cập nhật dữ liệu hiệu suất.");
-    const d: PerfData = { projects: data.projects, src: (data.src ?? "").slice(0, 200), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
+    const d: PerfData = { projects: data.projects, block: data.block, src: (data.src ?? "").slice(0, 200), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
     await writePerfData(d);
     // MIRROR sang Drive: "Data Source" › DATABASE › Hiệu suất dự án › HieuSuatDuAn_latest.json (ghi đè, bản mới
     // nhất). Best-effort: Drive lỗi/chưa cấu hình → bỏ qua, không chặn KV.
@@ -1271,6 +1275,31 @@ export const savePerfData = createServerFn({ method: "POST" })
       if (await drive.driveIsConfigured()) await drive.driveArchiveJson(["Hiệu suất dự án"], "HieuSuatDuAn_latest.json", JSON.stringify(d, null, 2));
     } catch (e) { console.warn("[perfdata] mirror Drive bỏ qua:", (e as Error).message); }
     return { data: d };
+  });
+
+/** LƯU FILE NGUỒN TUẦN (.xlsx báo cáo hiệu suất) LÊN DRIVE — lưu trữ có hệ thống, app KHÔNG giữ byte:
+ *      "Data Source" › DATABASE › Hiệu suất dự án › Nguồn tuần › <năm> › <YYYY-MM-DD>_<tên file>
+ *  Trả `uploadUrl` (phiên resumable) để CLIENT PUT byte thẳng lên Google — byte không đi qua Worker
+ *  (file vài MB sẽ làm Worker OOM). Mỗi tuần một file, KHÔNG ghi đè → có lịch sử để đối chiếu về sau.
+ *  CHỈ admin/PMO. */
+export const startPerfSourceUpload = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    name: z.string().min(1).max(200),
+    mime: z.string().max(120).optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ uploadUrl: string; path: string }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu file nguồn.");
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive.");
+    const d = new Date(Date.now() + 7 * 3600_000);          // ngày VN (Worker chạy UTC)
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const day = `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+    const path = ["Hiệu suất dự án", "Nguồn tuần", String(d.getUTCFullYear())];
+    const name = `${day}_${data.name}`.slice(0, 180);
+    const { uploadUrl } = await drive.driveCreateResumableSession(path, name,
+      data.mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    return { uploadUrl, path: [...path, name].join(" / ") };
   });
 
 /** LƯU PDF BÁO CÁO TUÂN THỦ lên Drive (để Apps Script trong file gốc đính kèm mail):
