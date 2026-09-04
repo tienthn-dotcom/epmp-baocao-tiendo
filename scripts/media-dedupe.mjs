@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 for (const line of readFileSync(".env","utf8").split(/\r?\n/)){const m=line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);if(m)process.env[m[1]]=m[2];}
 const GO=process.argv.includes("--go");
-const PROJECT=process.argv.find(a=>!a.startsWith("--")&&!a.includes("node")&&!a.includes("media-dedupe")) || "Mini Hotel PQ (B1-B5) Phòng";
+const ONLY=process.argv.find(a=>!a.startsWith("--")&&!a.includes("node")&&!a.includes("media-dedupe"));   // để trống = QUÉT MỌI DỰ ÁN
 const ROOT="1O9VktCpBENaZB1xgABr8MfIbl3YW8hFO", S="supportsAllDrives=true&includeItemsFromAllDrives=true", F="application/vnd.google-apps.folder";
 const KIND=["Hình ảnh","Video"];
 const b=new URLSearchParams({client_id:process.env.GDRIVE_OAUTH_CLIENT_ID,client_secret:process.env.GDRIVE_OAUTH_CLIENT_SECRET,refresh_token:process.env.GDRIVE_OAUTH_REFRESH,grant_type:"refresh_token"});
@@ -24,10 +24,12 @@ const trash=async id=>{ if(!GO) return; await fetch(`https://www.googleapis.com/
 const nFiles=async id=>{ let n=0; for(const k of await ls(id)){ if(k.mimeType!==F) n++; else n+=await nFiles(k.id); } return n; };
 
 let ep=ROOT; for(const s of["DATABASE","ePMP"]) ep=(await fc(ep,s)).id;
-const proj=await fc((await fc(ep,"Media")).id, PROJECT);
-if(!proj){ console.log("Không thấy dự án:",PROJECT); process.exit(0); }
-console.log(GO?"=== GỘP THẬT ===":"=== DRY (thêm --go để làm thật) ===", "·", PROJECT);
+const mediaId=(await fc(ep,"Media")).id;
+const projects=(await ls(mediaId)).filter(f=>f.mimeType===F && (!ONLY || f.name===ONLY));
+if(!projects.length){ console.log("Không thấy dự án nào để quét."); process.exit(0); }
+console.log(GO?"=== GỘP THẬT ===":"=== DRY (thêm --go để làm thật) ===", "·", ONLY||`${projects.length} dự án`);
 let dup=0, moved=0, trashed=0;
+for(const proj of projects){
 for(const toa of await ls(proj.id)){
   if(toa.mimeType!==F || KIND.includes(toa.name)) continue;
   const byName=new Map();
@@ -38,7 +40,7 @@ for(const toa of await ls(proj.id)){
     const counts=await Promise.all(list.map(r=>nFiles(r.id)));
     const keepI=counts.indexOf(Math.max(...counts));
     const keep=list[keepI];
-    console.log(`  ${toa.name}/${name}: ${list.length} folder trùng (số file: ${counts.join(" · ")}) → giữ #${keepI+1}`);
+    console.log(`  ${proj.name} › ${toa.name}/${name}: ${list.length} folder trùng (số file: ${counts.join(" · ")}) → giữ #${keepI+1}`);
     for(let i=0;i<list.length;i++){
       if(i===keepI) continue;
       for(const kind of await ls(list[i].id)){
@@ -52,6 +54,7 @@ for(const toa of await ls(proj.id)){
     }
     for(const k of KIND) await mkdir(keep.id, k);
   }
+}
 }
 console.log(`\n${dup} phòng bị trùng · dời ${moved} file · trash ${trashed} folder rỗng.`);
 console.log(GO?"✅ Xong.":"→ thêm --go để làm thật.");

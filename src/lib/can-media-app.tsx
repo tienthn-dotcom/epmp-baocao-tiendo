@@ -50,15 +50,18 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
   const [selId, setSelId] = useState<string>("");
   const sel = useMemo(() => list.find((p) => projId(p) === selId) || list[0], [list, selId]);
   useEffect(() => { if (!selId && list.length) setSelId(projId(list[0])); }, [list, selId]);
+  // Khớp dự án được yêu cầu (bấm 🎬 Video ở dashboard) — CHỈ khớp CHÍNH XÁC theo tên đã chuẩn hoá.
+  // Khớp "lỏng" (includes) từng làm "Mini Hotel PQ (B6-B9)" rơi về "(B1-B5)" và hiện media của toà khác.
+  const [missProject, setMissProject] = useState<string | null>(null);
   useEffect(() => {
     if (!wantProject || !list.length) return;
     const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
-    const hit = list.find((p) => norm(p.name) === norm(wantProject))
-      || list.find((p) => norm(p.name).includes(norm(wantProject)) || norm(wantProject).includes(norm(p.name)));
-    if (hit) setSelId(projId(hit));
+    const hit = list.find((p) => norm(p.name) === norm(wantProject));
+    if (hit) { setSelId(projId(hit)); setMissProject(null); }
+    else setMissProject(wantProject);       // không có ma trận → báo rõ, KHÔNG hiện nhầm dự án khác
   }, [wantProject, list]);
 
-  const [pick, setPick] = useState<{ project?: string; toa?: string; can: string } | null>(null);   // phòng đang mở popup media
+  const [pick, setPick] = useState<{ project?: string; toa?: string; can: string; scope: "can" | "project" } | null>(null);
 
   // ADMIN/PMO được "chỉnh như Excel" ma trận của màn này (ẩn dòng/cột thừa, cỡ hàng-cột, sửa chữ, tô màu).
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
@@ -95,25 +98,40 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
             </select>
           </label>
+          {/* Lối vào thứ hai: xem TOÀN BỘ media của dự án (vẫn gom theo phòng) — khác với bấm 1 ô ma trận. */}
+          <button type="button" disabled={!sel} onClick={() => sel && setPick({ toa: "", can: "", scope: "project" })}
+            style={{ flexShrink: 0, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.12)", color: "#fff",
+              borderRadius: 9, padding: "9px 13px", fontSize: 12.5, fontWeight: 700, cursor: sel ? "pointer" : "default" }}>
+            🖼 Toàn bộ media dự án
+          </button>
         </div>
       </div>
 
       {/* MA TRẬN LẮP ĐẶT — bấm ô để mở media của căn */}
       <div style={{ maxWidth: PAGE_W, margin: "0 auto", padding: "16px 16px 40px" }}>
-        {listQ.isPending ? (
+        {missProject ? (
+          <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", color: C.sub, fontSize: 13.5, lineHeight: 1.7, boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
+            Dự án <b style={{ color: C.ink }}>{missProject}</b> chưa được gắn link ma trận nên chưa có bảng để bấm.
+            <div style={{ marginTop: 6, fontSize: 12.5 }}>PMO vào ePMP → dòng dự án → “Gắn/Sửa link” để gắn ma trận, hoặc chọn dự án khác ở ô trên.</div>
+            <button type="button" onClick={() => setMissProject(null)}
+              style={{ marginTop: 14, border: "none", borderRadius: 9, padding: "8px 16px", background: C.tealD, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Xem dự án đang chọn
+            </button>
+          </div>
+        ) : listQ.isPending ? (
           <div style={{ padding: 40, textAlign: "center", color: C.sub, fontSize: 13.5 }}>Đang tải danh sách dự án…</div>
         ) : list.length === 0 ? (
-          <ManualEntry onOpen={(project, toa, can) => setPick({ project, toa, can })} />
+          <ManualEntry onOpen={(project, toa, can) => setPick({ project, toa, can, scope: "can" })} />
         ) : sel ? (
           regionQ.isPending
             ? <div style={{ padding: 40, textAlign: "center", color: C.sub, fontSize: 13.5 }}>Đang tải bảng của dự án…</div>
             : isZone
-              ? <ZoneBoard key={projId(sel) + ":z"} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can })} />
-              : <MatrixBoard key={projId(sel)} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can })} />
+              ? <ZoneBoard key={projId(sel) + ":z"} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can, scope: "can" })} />
+              : <MatrixBoard key={projId(sel)} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can, scope: "can" })} />
         ) : null}
       </div>
 
-      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} initialToa={pick.toa ?? ""} initialCan={pick.can} onClose={() => setPick(null)} />}
+      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
     </div>
   );
 }
@@ -313,7 +331,7 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
           <span style={{ position: "relative", display: "inline-block", width: 15, height: 15, borderRadius: 3, background: "#64748b" }}>
             <span style={{ position: "absolute", right: 1, bottom: 1, width: 6, height: 6, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 1.4px rgba(15,23,42,.75)" }} />
           </span>
-          {mediaQ.isPending ? "đang dò căn có media…" : `${marks.size} căn đã có ảnh / video`}
+          {mediaQ.isPending ? "đang dò căn có media…" : mediaQ.isError ? "không đọc được Drive" : `${marks.size} căn đã có ảnh / video`}
         </span>
         {legend.length > 0 && (
           <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginLeft: "auto" }}>
@@ -456,7 +474,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
           <span style={{ position: "relative", display: "inline-block", width: 15, height: 15, borderRadius: 3, background: "#64748b" }}>
             <span style={{ position: "absolute", right: 1, bottom: 1, width: 6, height: 6, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 1.4px rgba(15,23,42,.75)" }} />
           </span>
-          {mediaQ.isPending ? "đang dò khu có media…" : `${marks.size} khu đã có ảnh / video`}
+          {mediaQ.isPending ? "đang dò khu có media…" : mediaQ.isError ? "không đọc được Drive" : `${marks.size} khu đã có ảnh / video`}
         </span>
         {canEdit && names.length > 0 && (
           <span style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
@@ -501,142 +519,176 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
   );
 }
 
-/** POPUP MEDIA CỦA 1 PHÒNG (Toà + căn) — xem ảnh + video, upload nhiều file 1 lượt. Toà & căn sửa tay. */
-function CanMediaDialog({ project, initialToa, initialCan, onClose }: { project: string; initialToa: string; initialCan: string; onClose: () => void }) {
+/** POPUP MEDIA CỦA 1 PHÒNG / KHU — MỘT KHO CHUNG: ảnh và video nằm CÙNG một danh sách.
+ *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
+ *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
+function CanMediaDialog({ project, initialToa, initialCan, scope, onClose }: { project: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload
-  const q = useQuery({ queryKey: ["canmedia", project, toa, can], queryFn: () => listCanMedia({ data: { project, toa: toa.trim(), can: can.trim() } }), enabled: !!can.trim(), staleTime: 15_000 });
-  const photos = q.data?.photos ?? [];
-  const videos = q.data?.videos ?? [];
-  const [playing, setPlaying] = useState<{ id: string; name: string } | null>(null);
-  const [viewImg, setViewImg] = useState<string | null>(null);
+  const qc = useQueryClient();
+  // NGUỒN: TOÀN BỘ media của DỰ ÁN (1 lượt quét), gộp theo PHÒNG/KHU — mở 1 căn là xem được hết,
+  // bấm qua lại giữa các phòng luôn. Dùng chung queryKey với dấu chấm ngoài ma trận nên không gọi thừa.
+  const q = useQuery({ queryKey: ["projmedia", project], queryFn: () => listProjectMedia({ data: { project } }), staleTime: 60_000 });
+  type Item = { id: string; kind: "photo" | "video"; date?: string; toa: string; can: string };
+  const groups = useMemo(() => {
+    const gs = (q.data?.cans ?? []).map((c) => ({
+      toa: c.toa, can: c.can,
+      items: [...c.media].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "photo" ? -1 : 1))
+        .map((x) => ({ ...x, toa: c.toa, can: c.can } as Item)),
+    })).filter((g) => g.items.length);
+    // PHẠM VI: bấm 1 ô ma trận → CHỈ phòng đó; bấm tên dự án → CẢ dự án nhưng vẫn gom theo phòng
+    // (để người khác nhìn là biết ảnh/video thuộc phòng nào).
+    const key = (t: string, c: string) => `${t}\u0000${c}`;
+    const here = key(toa.trim(), can.trim());
+    if (scope === "can") return gs.filter((g) => key(g.toa, g.can) === here);
+    return gs.sort((a, b) => a.toa.localeCompare(b.toa, "vi") || a.can.localeCompare(b.can, "vi", { numeric: true }));
+  }, [q.data, toa, can, scope]);
+  const items = useMemo<Item[]>(() => groups.flatMap((g) => g.items), [groups]);
+  const [sel, setSel] = useState(0);
+  useEffect(() => { setSel(0); }, [project]);
+  const cur = items[Math.min(sel, items.length - 1)];
+  const go = (d: number) => items.length && setSel((v) => (Math.min(v, items.length - 1) + d + items.length) % items.length);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) return;
+      if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1); else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  });
+
+  // Ảnh phải tải BYTE qua Worker (file trong My Drive riêng, không nhúng thẳng được).
+  const imgSrc = useImageUrls(items.filter((x) => x.kind === "photo").map((x) => x.id));
+  const curRoom = cur ? `${cur.toa ? cur.toa + " · " : ""}${cur.can}` : "";
+  // Xem toàn dự án: ô Toà/Phòng chạy theo ảnh/video đang xem → bấm "＋ Tải ảnh" là vào ĐÚNG phòng đó.
+  useEffect(() => {
+    if (scope !== "project" || !cur) return;
+    setToa((v) => (v === cur.toa ? v : cur.toa));
+    setCan((v) => (v === cur.can ? v : cur.can));
+  }, [scope, cur]);
 
   async function onFiles(kind: "photo" | "video", files?: FileList | null) {
     const arr = [...(files ?? [])].filter((f) => (kind === "photo" ? /^image\//.test(f.type) : /^video\//.test(f.type)));
     if (!arr.length || !can.trim()) return;
-    let ok = 0;
     for (let i = 0; i < arr.length; i++) {
       const f = arr[i];
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
         const { uploadUrl } = await startCanMediaUpload({ data: { project, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "" } });
-        try {
-          const put = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
-          if (put.ok) ok++;
-        } catch { /* iOS CORS: byte vẫn có thể đã lên — refetch xác minh bên dưới */ ok++; }
+        try { await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f }); }
+        catch { /* iOS CORS: byte vẫn có thể đã lên — refetch xác minh bên dưới */ }
       } catch { /* bỏ file lỗi, tiếp tục */ }
     }
     setBusy(null);
-    await q.refetch();
-    void ok;
+    // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
+    await qc.invalidateQueries({ queryKey: ["projmedia", project] });
   }
 
-  const imgSrc = useImageUrls(photos.map((p) => p.id));
+  const upBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 12px", borderRadius: 8, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };
+  const arrow: React.CSSProperties = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: "50%", border: "none", background: "rgba(15,23,42,.55)", color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
 
   return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 760, height: "88vh", display: "flex", flexDirection: "column", background: "#eef2f7", borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(2,6,23,.45)" }}>
-        {/* Header + mã căn sửa được */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: `linear-gradient(120deg,${C.navy},#1e3a5f)`, color: "#fff" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(15,23,42,.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 980, height: "90vh", display: "flex", flexDirection: "column", background: "#0f172a", borderRadius: 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(2,6,23,.5)" }}>
+        {/* HEADER — Toà / Phòng sửa tay + nút tải lên */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#152a45", color: "#fff", flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em", opacity: .8, textTransform: "uppercase" }}>📁 Media · {project}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".05em", opacity: .75, textTransform: "uppercase" }}>
+              📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700 }}>Toà</span>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>Toà</span>
               <input value={toa} onChange={(e) => setToa(e.target.value)} placeholder="B1"
-                style={{ height: 30, width: 60, borderRadius: 8, border: "none", padding: "0 9px", fontSize: 14, fontWeight: 800, color: C.ink, background: "#fff" }} />
-              <span style={{ fontSize: 12.5, fontWeight: 700 }}>Phòng</span>
+                style={{ height: 28, width: 62, borderRadius: 7, border: "none", padding: "0 8px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
+              <span style={{ fontSize: 12, fontWeight: 700 }}>Phòng</span>
               <input value={can} onChange={(e) => setCan(e.target.value)} placeholder="609"
-                style={{ height: 30, width: 96, borderRadius: 8, border: "none", padding: "0 10px", fontSize: 14, fontWeight: 800, color: C.ink, background: "#fff" }} />
+                style={{ height: 28, width: 110, borderRadius: 7, border: "none", padding: "0 9px", fontSize: 13.5, fontWeight: 800, color: C.ink, background: "#fff" }} />
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "#cbd5e1", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>×</button>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={upBtn}>＋ Tải ảnh
+              <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
+            <label style={upBtn}>＋ Tải video
+              <input type="file" accept="video/*" multiple style={{ display: "none" }}
+                onChange={(e) => { void onFiles("video", e.target.files); e.currentTarget.value = ""; }} /></label>
+            <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#cbd5e1", fontSize: 24, lineHeight: 1, cursor: "pointer" }}>×</button>
+          </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 18 }}>
-          {busy && <div style={{ fontSize: 13, fontWeight: 600, color: "#475569", background: "#e2e8f0", borderRadius: 10, padding: "9px 12px" }}>⏳ {busy}</div>}
+        {busy && <div style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", background: C.tealD, padding: "7px 14px" }}>⏳ {busy}</div>}
 
-          {/* ẢNH */}
-          <MediaSection title="Ảnh" icon="🖼" count={photos.length} accept="image/*"
-            onFiles={(fl) => onFiles("photo", fl)}>
-            {photos.length === 0 ? <Empty text="Chưa có ảnh cho căn này." />
-              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 8 }}>
-                  {photos.map((p) => (
-                    <button key={p.id} type="button" onClick={() => imgSrc[p.id] && setViewImg(imgSrc[p.id]!)}
-                      style={{ aspectRatio: "1", border: "none", borderRadius: 10, overflow: "hidden", padding: 0, cursor: "pointer", background: "#dbe2ea" }}>
-                      {imgSrc[p.id] ? <img src={imgSrc[p.id]!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : <span style={{ fontSize: 11, color: C.sub }}>…</span>}
-                    </button>
-                  ))}
-                </div>}
-          </MediaSection>
-
-          {/* VIDEO */}
-          <MediaSection title="Video" icon="🎬" count={videos.length} accept="video/*"
-            onFiles={(fl) => onFiles("video", fl)}>
-            {videos.length === 0 ? <Empty text="Chưa có video cho căn này." />
-              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 8 }}>
-                  {videos.map((v) => (
-                    <button key={v.id} type="button" onClick={() => setPlaying(v)}
-                      style={{ position: "relative", aspectRatio: "16/10", border: "none", borderRadius: 10, overflow: "hidden", padding: 0, cursor: "pointer",
-                        background: "linear-gradient(135deg,#334964,#0f172a)", color: "#fff" }}>
-                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>▶</span>
-                      </span>
-                      {v.date && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "6px 8px", background: "linear-gradient(transparent,rgba(0,0,0,.78))", fontSize: 11.5, fontWeight: 700, textAlign: "left" }}>{v.date}</span>}
-                    </button>
-                  ))}
-                </div>}
-          </MediaSection>
+        {/* KHUNG XEM LỚN */}
+        <div style={{ flex: 1, minHeight: 0, position: "relative", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {q.isPending ? (
+            <div style={{ color: "#94a3b8", fontSize: 13.5 }}>Đang tải ảnh / video…</div>
+          ) : scope === "can" && !can.trim() ? (
+            <div style={{ color: "#94a3b8", fontSize: 13.5 }}>Nhập Phòng / Khu để xem media.</div>
+          ) : items.length === 0 ? (
+            <div style={{ color: "#94a3b8", fontSize: 13.5, textAlign: "center", padding: 20 }}>
+              {scope === "can" ? "Phòng / khu này chưa có ảnh hoặc video." : "Dự án này chưa có ảnh hoặc video nào."}<br />
+              <span style={{ fontSize: 12, opacity: .8 }}>Dùng nút “＋ Tải ảnh” / “＋ Tải video” ở trên để thêm.</span>
+            </div>
+          ) : cur?.kind === "video" ? (
+            <iframe key={cur.id} title="video" src={`https://drive.google.com/file/d/${cur.id}/preview`} allow="autoplay; fullscreen" allowFullScreen
+              style={{ width: "100%", height: "100%", border: "none" }} />
+          ) : cur && imgSrc[cur.id] ? (
+            <img src={imgSrc[cur.id]} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          ) : (
+            <div style={{ color: "#94a3b8", fontSize: 13.5 }}>Đang tải ảnh…</div>
+          )}
+          {items.length > 1 && <>
+            <button type="button" onClick={() => go(-1)} style={{ ...arrow, left: 10 }}>‹</button>
+            <button type="button" onClick={() => go(1)} style={{ ...arrow, right: 10 }}>›</button>
+          </>}
+          {items.length > 0 && cur && (
+            <div style={{ position: "absolute", left: 12, top: 10, background: "rgba(15,23,42,.6)", color: "#e2e8f0", borderRadius: 7, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>
+              {cur.kind === "video" ? "🎬 Video" : "🖼 Ảnh"} {Math.min(sel, items.length - 1) + 1}/{items.length}
+              {curRoom ? ` · ${curRoom}` : ""}{cur.date ? ` · ${cur.date}` : ""}
+            </div>
+          )}
         </div>
+
+        {/* DẢI THUMBNAIL CUỘN NGANG — ảnh và video chung một dải, bấm để xem */}
+        {items.length > 0 && (
+          <div style={{ display: "flex", gap: 14, overflowX: "auto", padding: "9px 12px", background: "#152a45" }}>
+            {groups.map((g) => {
+              const at = items.findIndex((x) => x.toa === g.toa && x.can === g.can);
+              const here = g.toa === toa.trim() && g.can === can.trim();
+              return (
+                <div key={`${g.toa}/${g.can}`} style={{ flex: "0 0 auto" }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: here ? C.teal : "#94a3b8", marginBottom: 4, whiteSpace: "nowrap" }}>
+                    {g.toa ? `${g.toa} · ` : ""}{g.can} <span style={{ opacity: .7 }}>({g.items.length})</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {g.items.map((it, k) => {
+                      const i = at + k;
+                      const on = i === Math.min(sel, items.length - 1);
+                      return (
+                        <button key={it.id} type="button" onClick={() => setSel(i)} title={`${g.toa ? g.toa + " · " : ""}${g.can}${it.date ? " · " + it.date : ""}`}
+                          style={{ position: "relative", flex: "0 0 auto", width: 86, height: 60, borderRadius: 8, overflow: "hidden", padding: 0, cursor: "pointer",
+                            border: on ? `2px solid ${C.teal}` : "2px solid transparent", background: "#334964" }}>
+                          {it.kind === "photo" && imgSrc[it.id]
+                            ? <img src={imgSrc[it.id]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: it.kind === "video" ? 17 : 11 }}>
+                                {it.kind === "video" ? "▶" : "…"}
+                              </span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
-
-      {/* Trình phát video nhúng */}
-      {playing && (
-        <div onClick={() => setPlaying(null)} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(2,6,23,.86)", display: "flex", alignItems: "center", justifyContent: "center", padding: 14 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 880, background: "#000", borderRadius: 16, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 15px", background: "#0f172a", color: "#fff" }}>
-              <span style={{ fontWeight: 800, fontSize: 14 }}>Căn {can}</span>
-              <button type="button" onClick={() => setPlaying(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "#cbd5e1", fontSize: 22, cursor: "pointer" }}>×</button>
-            </div>
-            <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#000" }}>
-              <iframe title="video" src={`https://drive.google.com/file/d/${playing.id}/preview`} allow="autoplay; fullscreen" allowFullScreen
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }} />
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Xem ảnh lớn */}
-      {viewImg && (
-        <div onClick={() => setViewImg(null)} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(2,6,23,.86)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <img src={viewImg} alt="" style={{ maxWidth: "96vw", maxHeight: "92vh", borderRadius: 10, objectFit: "contain" }} />
-        </div>
-      )}
     </div>,
     document.body,
   );
-}
-
-/** 1 khu (Ảnh / Video): tiêu đề + nút upload NHIỀU FILE + lưới nội dung. */
-function MediaSection({ title, icon, count, accept, onFiles, children }: { title: string; icon: string; count: number; accept: string; onFiles: (fl: FileList | null) => void; children: React.ReactNode }) {
-  return (
-    <div style={{ background: "#fff", borderRadius: 14, padding: 14, boxShadow: "0 6px 18px rgba(15,23,42,.06)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 14.5, fontWeight: 800, color: C.ink }}>{icon} {title}</span>
-        {count > 0 && <span style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>· {count}</span>}
-        <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 10, background: `linear-gradient(120deg,${C.tealD},${C.teal})`, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-          ＋ Tải {title.toLowerCase()}
-          <input type="file" accept={accept} multiple style={{ display: "none" }}
-            onChange={(e) => { onFiles(e.target.files); e.currentTarget.value = ""; }} />
-        </label>
-      </div>
-      {children}
-    </div>
-  );
-}
-function Empty({ text }: { text: string }) {
-  return <div style={{ border: "1px dashed #cbd5e1", borderRadius: 12, padding: "20px 12px", textAlign: "center", color: C.sub, fontSize: 12.5 }}>{text}</div>;
 }
 
 /** Tải ảnh Drive → data URI (cache theo id) cho lưới ảnh. */

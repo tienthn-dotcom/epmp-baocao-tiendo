@@ -148,6 +148,22 @@ async function ensureDbPath(token: string, env: Env, segments: string[]): Promis
   for (const seg of segments) parent = await ensureFolder(token, safeName(seg) || "khac", parent);
   return parent;
 }
+/** CHUẨN HOÁ TÊN THƯ MỤC MEDIA — **DÙNG CHUNG cho MỌI nơi ghi/đọc cây Media**.
+ *  Trước đây app Media dùng bộ cắt riêng (60 ký tự) còn archive ảnh của dashboard đi qua `safeName`
+ *  (120 ký tự) ⇒ dự án tên dài như "Mini Hotel PQ (B1-B5) Public: Lobby - Gym - Kid - Spa - Restaurants"
+ *  (68 ký tự) bị cắt thành HAI tên khác nhau → ảnh up từ dashboard nằm một folder, app Media đọc folder
+ *  kia nên báo "chưa có ảnh". Mọi đường dẫn Media BẮT BUỘC đi qua đây, đừng tự ghép tay. */
+export const mediaSafe = (s: string): string =>
+  (s || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 60);
+
+/** ePMP › Media › <Dự án> › [<Toà>] › <Căn|Khu> › ("Hình ảnh" | "Video").
+ *  Toà rỗng = dự án không chia toà (khu public) → bỏ hẳn cấp đó. */
+export function mediaFolderPath(project: string, toa: string, can: string, kind: "photo" | "video", app = "ePMP"): string[] {
+  const t = mediaSafe(toa);
+  return [app, "Media", mediaSafe(project) || "Khac", ...(t ? [t] : []), mediaSafe(can) || "Khac",
+    kind === "video" ? "Video" : "Hình ảnh"];
+}
+
 /** Lưu (archive) nhiều dataURI ảnh vào Drive — LUÔN đổ vào cây MEDIA theo ĐÚNG CĂN (hoặc KHU với dự án
  *  khu public), là chuẩn duy nhất cho dữ liệu công trường (xem can-media.functions.ts):
  *    "Data Source" › DATABASE › <App> › Media › <Dự án> › [<Toà>] › <Căn|Khu> › "Hình ảnh" › ảnh
@@ -157,11 +173,9 @@ export async function driveArchiveImages(app: string, projectName: string, dataU
   loc: { toa?: string; can: string; category?: string }): Promise<{ id: string; link: string }[]> {
   const env = await getEnv();
   if (!env) throw new Error("Không lấy được env.");
-  const can = (loc.can || "").trim();
-  if (!can) throw new Error("Thiếu căn/khu — ảnh phải gắn vào một căn hoặc khu.");
-  const toa = (loc.toa || "").trim();
+  if (!(loc.can || "").trim()) throw new Error("Thiếu căn/khu — ảnh phải gắn vào một căn hoặc khu.");
   const token = await accessToken(env);
-  const folder = await ensureDbPath(token, env, [app, "Media", projectName, ...(toa ? [toa] : []), can, loc.category ?? "Hình ảnh"]);
+  const folder = await ensureDbPath(token, env, mediaFolderPath(projectName, loc.toa || "", loc.can, loc.category === "Video" ? "video" : "photo", app));
   const out: { id: string; link: string }[] = [];
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   for (let i = 0; i < dataUris.length; i++) {

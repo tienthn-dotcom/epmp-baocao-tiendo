@@ -344,6 +344,48 @@ T2·T3·T4·T6, B3/205, B1/509, B1/601, B3/208.
   bộ — chờ vài giây rồi kiểm lại.**
 - Verify: mở popup 3 căn trống (B1/201·202·203) → số folder phòng đứng yên 75, dedupe báo 0.
 
+### d7) ĐỢT 6 — POPUP MEDIA MỚI + ĐƯỜNG DẪN DÙNG CHUNG (chưa deploy)
+
+**MỘT KHO CHUNG, 2 PHẠM VI.** `CanMediaDialog` nhận prop `scope`:
+- `"can"` — bấm 1 Ô ma trận → chỉ media của phòng/khu đó.
+- `"project"` — nút **“🖼 Toàn bộ media dự án”** cạnh ô chọn dự án → media CẢ dự án, **vẫn gom theo
+  phòng** (mỗi nhóm có nhãn "B3 · Hanh lang T2 (1)") để người khác nhìn là biết của phòng nào.
+Bố cục: khung xem LỚN (ảnh thì hiện ảnh, video thì phát video) + nút ‹ › + phím ←/→ + dải thumbnail
+CUỘN NGANG ở dưới. Ở phạm vi "project", ô Toà/Phòng **chạy theo item đang xem** → bấm "＋ Tải ảnh" là vào
+đúng phòng đang nhìn; vì thế thứ tự nhóm phải CỐ ĐỊNH (không đẩy "phòng đang mở" lên đầu), nếu không dải
+thumbnail nhảy loạn mỗi lần bấm.
+Nguồn dữ liệu = `listProjectMedia` (1 lượt quét cả dự án, trả kèm ID + ngày), **dùng chung queryKey
+`["projmedia", project]` với dấu chấm ngoài ma trận** → up xong invalidate 1 lần là cả hai cùng cập nhật.
+
+**ĐƯỜNG DẪN MEDIA CHỈ CÒN MỘT NƠI DỰNG.** Trước có 2 bộ chuẩn hoá: app Media cắt **60** ký tự, archive ảnh
+của dashboard đi qua `safeName` cắt **120** ⇒ dự án tên dài (vd "Mini Hotel PQ (B1-B5) Public: Lobby - Gym
+- Kid - Spa - Restaurants", 68 ký tự) rơi vào HAI folder khác tên → up bên dashboard, app Media báo "chưa
+có ảnh". Nay `drive.functions` xuất **`mediaSafe()` + `mediaFolderPath()`**, mọi nơi ghi/đọc đều gọi nó.
+(Bằng chứng lỗi có thật: trên Drive đang có folder tên đúng 60 ký tự
+`"Tây Hồ View - Public (Tháp 4S) (Gym, Spa, Swimming Pool, ADD"`.)
+
+**KHỚP DỰ ÁN PHẢI CHÍNH XÁC.** `wantProject` trước khớp "lỏng" (includes) và không khớp thì im lặng giữ dự
+án đầu danh sách ⇒ bấm 🎬 Video ở "Mini Hotel PQ (B6-B9)" lại hiện media của "(B1-B5)". Nay chỉ khớp
+CHÍNH XÁC theo tên chuẩn hoá; trượt thì hiện thẻ "dự án chưa gắn link ma trận", **không bao giờ hiện
+media của dự án khác**.
+
+**TRẠNG THÁI TẢI.** Đang tải thì ghi "Đang tải ảnh / video…" / "đang dò căn có media…", lỗi thì ghi "không
+đọc được Drive" — KHÔNG được hiện "chưa có" lúc chưa tải xong (gây hiểu lầm là mất dữ liệu).
+
+**`scripts/media-dedupe.mjs` nay quét MỌI dự án** (bỏ tham số = quét hết). Đã gộp thêm
+`Nam Phương Hoàng Hậu Phòng › A/105` và `Mini Hotel › B1/606`.
+
+### ⏭ CÒN NỢ: NEO MEDIA THEO **RID** (chủ nhà yêu cầu, CHƯA làm)
+Hiện thư mục dự án trên Drive đặt theo **TÊN**. Chủ nhà muốn neo theo **RID** (mã cứng từng dòng của
+Master Plan, xem `scripts/stamp-rid.gs`, `types.ts` rid) cho khỏi lẫn khi trùng/đổi tên.
+Việc phải làm, có 2 chỗ ĐỘNG tới hệ thống khác nên cần chốt trước khi làm:
+1. `index.tsx` (~2276) dựng `named[]` cho install list — hiện **DEDUP theo `sig = fileId|gid|formKey`**,
+   nghĩa là *nhiều dự án gắn CÙNG 1 ma trận thì gộp làm 1 thẻ* (đây cũng là lý do B6-B9 không có thẻ
+   riêng). Muốn media tách theo dự án thì phải thêm `rid` vào entry và dedup theo `sig|rid` →
+   **MtldApp sẽ hiện 2 thẻ cho 2 dự án dùng chung 1 ma trận** (đổi hành vi app đang LIVE).
+2. Thư mục Drive đổi tên thành dạng có RID (vd `<tên dự án> [R<rid>]`) → phải **đổi tên 18 folder dự án
+   đang có** + giai đoạn đọc phải fallback về tên cũ, hoặc migrate 1 lần bằng script.
+
 ### e) Khảo sát Drive
 `scripts/media-survey.mjs` (mới, CHỈ ĐỌC): in cây `Media/<dự án>/<Toà>/<phòng>/(Hình ảnh|Video)` + đếm file.
 Xác nhận 04/09: B1 2 phòng · B2 6 · B3 17 · B4 7 · B5 32; mỗi phòng đủ 2 thư mục.
