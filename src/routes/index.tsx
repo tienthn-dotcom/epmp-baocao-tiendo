@@ -524,6 +524,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.89.0", date: "04/09/2026", items: [
+    "Xem trên ĐIỆN THOẠI dùng đủ mọi chức năng: biểu đồ nào vừa màn thì hiện trọn, biểu đồ rộng thì giữ nguyên tỷ lệ cho vuốt ngang — không còn cảnh chữ số bé xíu không đọc nổi. Lưới hiệu suất trên điện thoại xếp 1 cột, thanh chọn tab vuốt được, không tab nào bị cắt chữ.",
+    "Mã màu heatmap giờ nằm trên Drive (Data Source › Mã màu): đổi màu chỉ cần thay file trong thư mục đó, app tự áp — khỏi báo kỹ thuật, khỏi cập nhật app. Đã áp bảng màu mới nhất.",
+    "Media công trường nhận được nhiều kiểu bảng hơn: dự án đánh số căn 1 chữ số (1, 2, 3…) và nhà cao tầng (L6–L22) nay bấm ô được bình thường; dự án khu public tự hiện bảng khu lấy thẳng danh sách khu trong file.",
+    "Bấm 🎬 Media ngay ở dòng dự án để xem TOÀN BỘ ảnh + video của dự án, gom theo từng phòng/khu; ô nào đã có tư liệu thì được chấm dấu sẵn trên ma trận. Nút chỉ hiện ở dự án thật sự có ảnh/video. Tải ảnh/video chỉ làm một chỗ: bấm đúng ô căn trong Media công trường.",
+    "Sửa lỗi ảnh/video của dự án này hiện nhầm sang dự án khác, và lỗi ảnh với video của cùng một phòng bị tách nằm hai nơi.",
+    "Hiệu suất dự án: nhận đúng file báo cáo tuần (Pivot theo Nhóm DA, doanh thu tính bằng tỷ) — trước đây báo “không nhận dạng được dữ liệu”. Biểu đồ “Doanh thu đầu người” lấy thẳng số của bảng SLTB trong file nên khớp báo cáo, thêm cột 2025 để so sánh. Mỗi lần nạp, file nguồn tự lưu lên Drive theo tuần.",
+  ] },
   { v: "3.88.0", date: "04/09/2026", items: [
     "“Media công trường” thay cho “Video tại công trường” — nay là một chỗ duy nhất cho cả ẢNH và VIDEO. Chọn dự án là hiện luôn ma trận lắp đặt; bấm 1 ô căn để xem và tải ảnh/video của căn đó (tải nhiều file một lượt). Nút 🎬 Video ở dòng dự án mở thẳng vào đây.",
     "Nhìn màu là biết tiến độ: ma trận tô theo thang 7 cấp chuẩn (chưa nhận mặt bằng → đang thi công → giao thô → giao tinh → defect → bàn giao vận hành), ẩn mã số cho gọn, có chú giải màu ngay trên bảng. Ô nào ĐÃ CÓ ảnh/video thì có chấm tròn đánh dấu, rê chuột xem có mấy ảnh mấy clip.",
