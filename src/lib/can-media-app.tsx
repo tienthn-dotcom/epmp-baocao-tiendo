@@ -527,7 +527,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
 /** POPUP MEDIA CỦA 1 PHÒNG / KHU — MỘT KHO CHUNG: ảnh và video nằm CÙNG một danh sách.
  *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
-function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
+export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload

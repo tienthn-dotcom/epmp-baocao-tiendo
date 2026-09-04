@@ -410,6 +410,18 @@ có sang dạng `"<tên> [ID cứng]"`. CHỈ đổi tên (id thư mục giữ n
 file. Cần 1 file `map.json` dạng `[{name, hid}]` — lấy từ install list SAU KHI deploy (dashboard mới đẩy
 `hid` lên KV). Trình tự đúng: **deploy → mở ePMP cho dashboard đẩy hid → xuất map.json → chạy dry → --go**.
 
+### d9) LỐI VÀO MEDIA NGAY TRÊN DASHBOARD ePMP
+
+Nút ở dòng dự án đổi từ **"🎬 Video"** (chỉ Mini Hotel, bấm là NHẢY sang app Media) thành **"🎬 Media"**
+(MỌI dự án, mở THẲNG popup tại chỗ). `CanMediaDialog` được `export` để `index.tsx` dùng lại — cùng một
+popup với app Media, chỉ khác `scope`:
+- dashboard / nút "Toàn bộ media dự án" → `scope="project"`: cả dự án, gom theo phòng/khu;
+- bấm 1 ô ma trận trong app Media → `scope="can"`: đúng phòng đó.
+`projKey` = `H:<hid>` (ID cứng) hoặc `N:<tên>` — dùng làm queryKey, chung với dấu chấm ngoài ma trận.
+Verify: bấm ở dòng CT25-038 → 76 media, nhóm "B1 · 609 (1)", "B2 · 508 (1)"…
+Sự kiện `epmp:open-app` (app-shell vẫn nghe) giờ KHÔNG còn ai bắn từ nút này nữa — giữ lại vì là cơ chế
+chung để nhảy app, đừng tưởng chết mà gỡ.
+
 ### e) Khảo sát Drive
 `scripts/media-survey.mjs` (mới, CHỈ ĐỌC): in cây `Media/<dự án>/<Toà>/<phòng>/(Hình ảnh|Video)` + đếm file.
 Xác nhận 04/09: B1 2 phòng · B2 6 · B3 17 · B4 7 · B5 32; mỗi phòng đủ 2 thư mục.

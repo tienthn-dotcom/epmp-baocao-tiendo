@@ -44,6 +44,7 @@ import {
 import { TABLE_FONT_CSS } from "@/lib/table-scale";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { AppShell, MTLD_INSTALL_LS } from "@/lib/app-shell";
+import { CanMediaDialog } from "@/lib/can-media-app";
 import { VersionBanner, useUnsavedGuard, chatDraftStore } from "@/lib/version-guard";
 
 
@@ -2247,6 +2248,8 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   const [imgView, setImgView] = useState<{ key: string; name: string } | null>(null);
   // XEM VIDEO công trường (chỉ Mini Hotel) — mở THẲNG từ dòng dự án, khỏi qua popup ảnh.
   const [imgSetup, setImgSetup] = useState<{ key: string; name: string; hid?: string } | null>(null);
+  /** Xem TOÀN BỘ media (ảnh + video) của 1 dự án — mở thẳng popup tại dashboard, gom theo phòng/khu. */
+  const [mediaView, setMediaView] = useState<{ name: string; hid?: string } | null>(null);
   // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
   const sheetViewsQuery = useQuery({ queryKey: ["sheetviews"], queryFn: () => getSheetViews(), staleTime: 5 * 60 * 1000 });
   const sheetViews = sheetViewsQuery.data?.views ?? {};
@@ -3972,6 +3975,9 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
       {summaryTarget && <SummaryDialog fileId={summaryTarget.fileId} initSheet={summaryTarget.sheet} initRange={summaryTarget.range} initTl={summaryTarget.tl} initBr={summaryTarget.br} initSnap={summaryTarget.snap} initSnapKey={summaryTarget.snapKey} initChart={summaryTarget.chart} initName={summaryTarget.name} canEdit={canSeeSystem} onClose={() => setSummaryTarget(null)} />}
       {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
       {imgView && <ProjImageDialog imgKey={imgView.key} name={imgView.name} onClose={() => setImgView(null)} />}
+      {mediaView && <CanMediaDialog project={mediaView.name} hid={mediaView.hid}
+        projKey={mediaView.hid ? `H:${mediaView.hid}` : `N:${mediaView.name}`}
+        initialToa="" initialCan="" scope="project" onClose={() => setMediaView(null)} />}
       {imgSetup && <ProjImageSetupDialog projKey={imgSetup.key} projName={imgSetup.name} projHid={imgSetup.hid} count={projImgIdx[imgSetup.key]?.n ?? 0} canManage={canSeeSystem} onClose={() => setImgSetup(null)} onSaved={() => void projImgIdxQuery.refetch()} />}
 
       {/* Tính năng HỆ THỐNG (đánh giá tuân thủ + nhật ký giám sát) render lên GÓC HEADER
@@ -4040,7 +4046,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         onSetupLink={(key, name, cfg) => setLinkSetup({ key, name, cfg })}
         projImgIdx={projImgIdx}
         onOpenImage={(key, name) => setImgView({ key, name })}
-        onOpenVideo={(name) => window.dispatchEvent(new CustomEvent("epmp:open-app", { detail: { app: "media", project: name } }))}
+        onOpenVideo={(name, hid) => setMediaView({ name, hid })}
         onSetupImage={(key, name, hid) => setImgSetup({ key, name, hid })}
         onExportReport={handleExportReport}
         onExportPdf={handleExportPdf}
@@ -5336,7 +5342,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** ẢNH DỰ ÁN (PMO gắn): index nhẹ (dòng nào có ảnh); mở popup ảnh; PMO mở dialog thêm-gỡ ảnh. */
   projImgIdx?: ProjImgIdx;
   onOpenImage?: (key: string, name: string) => void;
-  onOpenVideo?: (name: string) => void;
+  onOpenVideo?: (name: string, hid?: string) => void;
   onSetupImage?: (key: string, name: string, hid?: string) => void;
   /** Xuất báo cáo cho 1 dự án — nhận nguyên group để phía cha tra data đầy đủ. Slide = .pptx, Pdf = .pdf. */
   onExportReport?: (g: DueMonthGroup) => void;
@@ -6082,14 +6088,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                           title={imgN > 0 ? "Xem / thêm ảnh hiện trường của dự án" : "Thêm ảnh hiện trường cho dự án"}>
                           <ImageIcon className="h-3 w-3" />{imgN > 0 ? `Ảnh (${imgN})` : "Thêm ảnh"}
                         </button>
-                        {/* XEM VIDEO — chỉ Mini Hotel (đang có clip). Mở THẲNG trình xem, 1 chạm. */}
-                        {/mini\s*hotel/i.test(g.name) && (
-                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name); }}
-                            className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
-                            title="Mở Media công trường: ảnh + video theo từng phòng">
-                            🎬 Video
-                          </button>
-                        )}
+                        {/* MEDIA CÔNG TRƯỜNG — mở THẲNG popup tại đây, xem TOÀN BỘ ảnh + video của dự án
+                            (gom theo phòng/khu). Trước chỉ hiện ở Mini Hotel và phải nhảy sang app khác. */}
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid); }}
+                          className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
+                          title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
+                          🎬 Media
+                        </button>
                       </div>
                     </td>
                     {/* Nhân sự phụ trách: PM của dự án */}
