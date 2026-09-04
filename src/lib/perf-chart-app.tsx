@@ -37,7 +37,7 @@ import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } f
 const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
-  "HYATT HỒ TRÀM", "OLALANI", "CÁT BÀ", "TIẾN BỘ PLAZA",
+  "HYATT HỒ TRÀM", "OLALANI", "COSMO ĐÀ NẴNG", "CÁT BÀ", "TIẾN BỘ PLAZA",
   "HYATT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
   "APEC S4", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
 ];
@@ -197,8 +197,16 @@ function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx"))
       const nameS = nmv == null ? "" : String(nmv).trim(); if (!nameS) continue;
       if (/grand total|tổng cộng|^total$|^tổng$/i.test(nameS)) continue;
       let no: number;
-      if (sttCol >= 0) { const sv = row[sttCol]; if (typeof sv !== "number") continue; no = sv; }   // CÓ STT → chỉ dòng có số
-      else no = projs.length + 1;
+      if (sttCol >= 0) {
+        const sv = row[sttCol];
+        if (typeof sv === "number") no = sv;                       // có STT → lấy theo STT
+        // KHÔNG có STT: bình thường là dòng phụ / dòng tổng → bỏ. NGOẠI LỆ: tên nằm trong PERF_SHOW.
+        // File tuần chỉ đánh STT cho các nhóm ĐANG hiện; muốn thêm dự án mới vào lưới mà phải chờ
+        // người làm file đánh thêm số thì thêm không nổi. Dòng tổng ("TỔNG", "(−) OEM"…) không bao
+        // giờ trùng tên trong PERF_SHOW nên vẫn bị loại.
+        else if (SHOW_KEYS.includes(keyName(nameS))) no = 1000 + projs.length;
+        else continue;
+      } else no = projs.length + 1;
       projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) });
     }
     if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name };   // sheet ưu tiên cao NHẤT parse được
