@@ -1941,7 +1941,11 @@ type GanttRow = {
   name: string;
   pm: string;
   start: string | null;      // ISO Bắt đầu dự án
-  end: string | null;        // ISO Kết thúc/Bàn giao dự án
+  end: string | null;        // ISO Kết thúc/Bàn giao — dòng dự án là mốc dự án, dòng hạng mục là hạn hạng mục
+  /** ISO MỐC BÀN GIAO CỦA DỰ ÁN. Ở chế độ LỌC HẠNG MỤC mỗi dòng là 1 hạng mục nên cột "Ngày kết thúc"
+   *  chỉ nói hạn của hạng mục đó — nhìn cả bảng vẫn không biết dự án bàn giao khi nào. Trường này giữ
+   *  mốc dự án để cột "Ngày bàn giao" hiện được. */
+  projEnd: string | null;
   pct: number | null;        // % thực tế trung bình các giai đoạn
   sxStart: string | null;    // ISO Bắt đầu giai đoạn Sản xuất nhập kho (SX)
   sxEnd: string | null;      // ISO Kết thúc SX
@@ -3495,6 +3499,8 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
     if (ganttFlatStages) {
       // panelActive CỐ Ý bỏ qua lọc Hạng mục (để databar giai đoạn đếm đủ) → ở ĐÂY tự lọc theo
       // filters.stages cho khớp đúng hạng mục đang chọn.
+      // Mốc bàn giao theo DỰ ÁN — pkItem(it) trả về khoá DỰ ÁN của hạng mục nên tra thẳng được.
+      const projEndByKey = new Map(data.projects.map((p) => [pkProj(p), p.deadline ?? null] as const));
       const flat: GanttRow[] = ganttSource.filter((it) => filters.stages.includes(it._stageId)).map((it) => {
         const pk = pkItem(it);
         return {
@@ -3504,6 +3510,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
           name: it.projectName,
           pm: it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm),
           start: it.start, end: it.deadline,
+          projEnd: projEndByKey.get(pk) ?? null,
           pct: clampPct(it.pctActual),
           sxStart: null, sxEnd: null, sxPct: null,
           overdue: it.overdueDays ?? 0,
@@ -3574,7 +3581,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         : 0;
       rows.push({
         key: pk, updateDate: p.updateDate ?? null, maCT: p.maCT || p.code, name: p.name, pm: p.pm,
-        start: p.start, end: p.deadline, pct,
+        start: p.start, end: p.deadline, projEnd: p.deadline ?? null, pct,
         sxStart: sx?.start ?? null, sxEnd: sx?.deadline ?? null, sxPct: sx ? clampPct(sx.pctActual) : null,
         overdue, note: edits[pk]?.note || p.mpReason || "",
         children: childrenByProject.get(pk) ?? [],
@@ -6556,7 +6563,9 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
     { w: 56, label: "Ngày update", al: "center" as const, sticky: true },
     { w: 88, label: "Mã", al: "left" as const, sticky: true },
     { w: 264, label: "Tên dự án / Hạng mục", al: "left" as const, sticky: true },
-    { w: 108, label: "Người phụ trách", al: "left" as const, sticky: false },
+    // NGÀY BÀN GIAO (mốc kết thúc CẤP DỰ ÁN) thay chỗ "Người phụ trách": ở chế độ lọc hạng mục, cột
+    // "Ngày kết thúc" chỉ nói hạn của hạng mục nên nhìn cả bảng vẫn không biết dự án bàn giao khi nào.
+    { w: 92, label: "Ngày bàn giao", al: "center" as const, sticky: false },
     { w: 68, label: "Bắt đầu", al: "center" as const, sticky: false },
     { w: 68, label: "Ngày kết thúc", al: "center" as const, sticky: false },
     { w: 62, label: "% Thực tế", al: "right" as const, sticky: false },
@@ -6770,7 +6779,7 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                     <div className="line-clamp-2 leading-tight">{r.maCT.split(",").map((x, k) => <div key={k} className="whitespace-nowrap">{x.trim()}</div>)}</div>
                   </div>,
               <div className="line-clamp-2 leading-tight" title={r.name}>{r.name}</div>,
-              <div className="truncate" title={r.pm}>{r.pm}</div>,
+              <span className="font-semibold text-slate-700">{fmtDateVN2(r.projEnd)}</span>,
               fmtDateVN2(r.start),
               r.actualEnd
                 ? <span className="leading-tight"><span className="text-slate-400 line-through">{fmtDateVN2(r.end)}</span><br /><span className="font-semibold text-emerald-700" title="Ngày kết thúc thực tế (lần đầu 100%)">{fmtDateVN2(r.actualEnd)}</span></span>
@@ -6844,7 +6853,9 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
                       <span>{c.stageAbbr}</span>
                     </div>,
                     <div className="line-clamp-1 leading-tight text-slate-900" title={c.stageLabel}>{isBlock ? `↳ ${c.stageLabel}` : c.stageLabel}</div>,
-                    <div className="truncate text-slate-900" title={c.pic}>{c.pic}</div>,
+                    // Dòng con lặp lại NGÀY BÀN GIAO của dự án, tông nhạt: dự án nhiều hạng mục thì dòng
+                    // cha trôi khỏi màn, có số ở đây vẫn biết mốc mà không tranh chỗ với hạn hạng mục.
+                    <span className="text-slate-400">{fmtDateVN2(r.projEnd)}</span>,
                     fmtDateVN2(c.start),
                     c.actualEnd
                       ? <span className="leading-tight"><span className="text-slate-400 line-through">{fmtDateVN2(c.end)}</span><br /><span className="font-semibold text-emerald-700" title="Ngày kết thúc thực tế (lần đầu 100%)">{fmtDateVN2(c.actualEnd)}</span></span>
