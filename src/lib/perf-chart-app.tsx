@@ -424,7 +424,7 @@ function FitOrScroll({ min, children }: { min: number; children: React.ReactNode
   );
 }
 
-/** Chart form "Doanh thu đầu người Khối dự án": nền đen — cột cyan từng tháng (từ file) + cột đỏ TB năm nay.
+/** Chart form "Sản lượng đầu người khối dự án": nền đen — cột cyan từng tháng (từ file) + cột đỏ TB năm nay.
  *  priorYearVnd (TB năm cũ, cột xanh) chỉ vẽ khi có nguồn — file perf hiện chỉ có các tháng năm nay nên = null. */
 function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null)[]; priorYearVnd?: number | null }) {
   // LUÔN hiện đủ 12 tháng (01–12/26); tháng chưa có số → null (vẽ dấu "-").
@@ -453,12 +453,12 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
   return (
     <div style={{ fontFamily: SANS, background: "#fff", border: `1px solid ${KDA_LINE}`, borderRadius: 14, padding: "18px 20px 20px", color: KDA_INK }}>
       {/* Tiêu đề + 2 dòng số tính từ file */}
-      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "#111827" }}>Doanh thu đầu người Khối dự án</div>
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "#111827" }}>Sản lượng đầu người khối dự án</div>
 
       {/* Biểu đồ nền đen */}
       <div style={{ background: "#000", borderRadius: 10, padding: 8, marginTop: 14 }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", fontFamily: SANS }}>
-          <text x={W / 2} y={30} textAnchor="middle" fontSize={26} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">DOANH THU ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
+          <text x={W / 2} y={30} textAnchor="middle" fontSize={26} fontWeight={800} fill={RPC_WHITE} letterSpacing="1">SẢN LƯỢNG ĐẦU NGƯỜI KHỐI DỰ ÁN</text>
           {/* ĐƯỜNG KẺ NGANG ở MỌI MỐC để dò giá trị (sếp yêu cầu) — màu TRẮNG, mảnh; cộng 2 vạch TRỤC
               đậm hơn: dọc bên trái + ngang ở mốc 0. Đừng bỏ mấy đường ngang này. */}
           {ticks.map((t, i) => (
@@ -645,7 +645,7 @@ export function PerfChartApp() {
     wsP["!cols"] = [{ wch: 26 }, { wch: 18 }, ...Array(M * 2).fill({ wch: 9 })];
     XLSX.utils.book_append_sheet(wb, wsP, "Pivot");
 
-    // ── Sheet 2: SLTB (kết quả) — khối A là thứ chart "Doanh thu đầu người" đọc ──
+    // ── Sheet 2: SLTB (kết quả) — khối A là thứ chart "Sản lượng đầu người" đọc ──
     const sltb: (string | number)[][] = [
       ["SẢN LƯỢNG ĐẦU NGƯỜI (SLTB) KHỐI DỰ ÁN"],
       ["SLTB = Doanh thu ÷ Số nhân sự. Doanh thu KDA = Tổng claim trình − OEM − Loose Export. Đơn vị: tỷ đồng/người."],
@@ -678,7 +678,7 @@ export function PerfChartApp() {
           <div className="flex h-7 max-w-full shrink-0 items-stretch overflow-x-auto rounded-md border border-slate-300 text-[11.5px] font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button type="button" onClick={() => setView("trend")} className={`flex shrink-0 items-center whitespace-nowrap px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
             <button type="button" onClick={() => setView("rank")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "rank" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người theo dự án</button>
-            <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người</button>
+            <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Sản lượng đầu người</button>
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">

@@ -1259,7 +1259,7 @@ export const savePerfData = createServerFn({ method: "POST" })
       rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24),
     })).max(200),
     /** TOÀN KHỐI đọc THẲNG từ sheet "SLTB (kết quả)" khối A (không tự cộng lại từ các nhóm) — để chart
-     *  "Doanh thu đầu người Khối dự án" khớp ĐÚNG con số trong báo cáo tuần. */
+     *  "Sản lượng đầu người khối dự án" khớp ĐÚNG con số trong báo cáo tuần. */
     block: z.object({ rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24) }).optional(),
     src: z.string().max(200).optional(),
     devAs: z.string().nullable().optional(),
