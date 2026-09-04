@@ -46,7 +46,9 @@ const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
 const SHOW_KEYS = PERF_SHOW.map(keyName);
 
-const MINI_YMIN = -1e9, MINI_YMAX = 4e9;   // thang CHUNG cho mini (so sánh)
+// Thang CHUNG cho mini (để so cao thấp giữa các dự án). ĐÁY = 0: từ khi có nguyên tắc loại trừ
+// tháng âm (absorbNegBack) thì không còn cột âm nào, chừa dải −1→0 chỉ tổ phí 1/5 chiều cao.
+const MINI_YMIN = 0, MINI_YMAX = 4e9;
 const KPI = 1e9;                            // KPI hiệu suất/tháng = 1 tỷ đồng/người (đường mốc)
 const COLS = 5;
 const DEFAULT_NM = 7;
@@ -56,7 +58,13 @@ type Proj = { no: number; name: string; rev: number[]; ns: number[] };
 /** Dự án đã gắn VÙNG (lấy từ ePMP) — chỉ dùng ở tab "Hiệu suất theo tháng" để gom cụm + tô viền. */
 type ProjV = Proj & { vung: string };
 
-const tyf = (v: number | null): string => { if (v == null) return ""; let s = (v / 1e9).toFixed(1); if (s === "-0.0") s = "0.0"; return s.replace(".", ","); };
+/** Số tỷ 1 chữ số thập phân. Riêng SỐ 0 in gọn là "0" (không phải "0,0") — mini chart nhiều ô 0,
+ *  viết ngắn đỡ rối mắt. Dùng cho cả nhãn mốc trục lẫn nhãn trên đầu cột. */
+const tyf = (v: number | null): string => {
+  if (v == null) return "";
+  const s = (v / 1e9).toFixed(1);
+  return s === "0.0" || s === "-0.0" ? "0" : s.replace(".", ",");
+};
 const perfOf = (p: Proj, m: number): number | null => (p.ns[m] > 0 ? p.rev[m] / p.ns[m] : null);
 /** NGUYÊN TẮC LOẠI TRỪ THÁNG ÂM (chỉ áp cho tab "Hiệu suất theo tháng").
  *  Sản lượng âm ở tháng m là phần ĐIỀU CHỈNH/HOÀN của sản lượng đã ghi nhận TRƯỚC đó, nên gánh ngược:
@@ -234,7 +242,7 @@ function MiniChart({ p, nm, w, h }: { p: Proj; nm: number; w: number; h: number 
   const yOf = (v: number) => mT + ih * ((MINI_YMAX - v) / (MINI_YMAX - MINI_YMIN));
   const y0 = yOf(0);
   const bw = iw / nm;
-  const grid = [-1e9, 0, 1e9, 2e9, 3e9, 4e9];
+  const grid = [0, 1e9, 2e9, 3e9, 4e9];
   const perf = Array.from({ length: nm }, (_, m) => perfOf(p, m));
   return (
     <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: "100%", display: "block", fontFamily: SERIF }}>
