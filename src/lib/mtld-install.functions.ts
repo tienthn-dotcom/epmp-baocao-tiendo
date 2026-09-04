@@ -304,3 +304,40 @@ export const getSheetPdf = createServerFn({ method: "POST" })
     if (kv) { try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi kệ */ } }
     return { b64, cached: false };
   });
+
+// ── VÙNG CỦA TỪNG DỰ ÁN — cầu nối ePMP → các app khác ────────────────────────
+// Vùng chỉ có trong file PMP mà ePMP đọc (cột Location của đầu việc). App "Hiệu suất dự án" chạy
+// bằng file Pivot riêng, KHÔNG có cột vùng → ePMP đẩy map này vào KV, app kia đọc thẳng. Nhờ vậy
+// hai bên chia vùng bằng ĐÚNG một nguồn, khỏi ngồi khai lại tay rồi lệch nhau.
+// Khoá = tên dự án đã chuẩn hoá (normProjName trong lib/vung.ts). Giá trị = chữ vùng THÔ của file
+// (vd "North", "PQ") — bên đọc tự chuẩn hoá bằng vungVN, giữ được nguyên văn để còn đối chiếu.
+const PROJ_REGION_KEY = "proj:regions:v1";
+const DEV_PROJ_REGION_FILE = ".data/pmo-proj-regions.json";   // chạy dev không có KV → ghi ra file
+export const saveProjRegions = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    map: z.record(z.string().max(200), z.string().max(120)),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: boolean; n: number }> => {
+    const n = Object.keys(data.map).length;
+    if (!n) return { ok: false, n: 0 };            // map rỗng (ePMP chưa parse xong) → đừng ghi đè bản đang có
+    const kv = await getKv();
+    if (kv) { try { await kv.put(PROJ_REGION_KEY, JSON.stringify(data.map)); } catch { /* KV lỗi → bỏ qua */ } return { ok: true, n }; }
+    try {
+      const fsp = await import("node:fs/promises");
+      await fsp.mkdir(".data", { recursive: true });
+      await fsp.writeFile(DEV_PROJ_REGION_FILE, JSON.stringify(data.map, null, 2), "utf8");
+    } catch { /* dev ghi hụt cũng không sao */ }
+    return { ok: true, n };
+  });
+export const getProjRegions = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ map: Record<string, string> }> => {
+    const kv = await getKv();
+    if (kv) {
+      try { const raw = await kv.get(PROJ_REGION_KEY); return { map: raw ? (JSON.parse(raw) as Record<string, string>) : {} }; }
+      catch { return { map: {} }; }
+    }
+    try {
+      const fsp = await import("node:fs/promises");
+      return { map: JSON.parse(await fsp.readFile(DEV_PROJ_REGION_FILE, "utf8")) as Record<string, string> };
+    } catch { return { map: {} }; }
+  });

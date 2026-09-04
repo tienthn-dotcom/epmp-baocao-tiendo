@@ -53,7 +53,7 @@ import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
 import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
-import { getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList } from "@/lib/mtld-install.functions";
+import { getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -61,6 +61,7 @@ import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { whoami, recordActivity, fetchActivityLog, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
+import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -273,7 +274,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *   v3.26.0 (31/07/2026): ẨN DÒNG THỦ CÔNG (admin) — hạng mục "trong khuôn khổ, không đáng raise" ẩn
  *     khỏi báo cáo (bảng + KPI + PDF + Excel cho MỌI người). Rê chuột dòng item → nút mắt-gạch (admin,
  *     print:hidden) ẩn dòng; toolbar hiện "Dòng đã ẩn (N)" → bật soi lại (làm mờ + nút Bỏ ẩn). Kho KV
- *     `hidden:v1` (edits.functions: fetchHiddenRows/setHiddenRow, chốt quyền ADMIN); lọc ở tầng `enriched`
+ *     `hidden:v1` (edits.functions: fetchHiddenRows/setHiddenRow, chốt quyền ADMIN + PMO); lọc ở tầng `enriched`
  *     (tách enrichedAll cho effect đồng bộ để không xoá nhầm); ghi vết hide_row/unhide_row vào Nhật ký.
  *     LƯU Ý: ẩn HẾT item của 1 dự án → dự án biến khỏi bảng (không còn gì để hiện) — đúng thiết kế.
  *   v3.25.0 (31/07/2026): Mở rộng quyền PMO trong box chat: PMO giờ SỬA + ẨN + XOÁ được comment NGƯỜI
@@ -3176,6 +3177,26 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
     }
     return m;
   }, [data.projects]);
+  // ĐẨY map tên→VÙNG lên KV cho app khác dùng chung: app "Hiệu suất dự án" chạy bằng file Pivot riêng,
+  // không có cột vùng, mà vùng thì chỉ file PMP này mới có → ePMP là nơi duy nhất phát ra. Gửi lại khi
+  // map đổi; gửi hụt cũng không cản gì màn hình.
+  const regionSigRef = useRef("");
+  useEffect(() => {
+    if (!regionByName.size) return;
+    const map: Record<string, string> = {};
+    for (const [k, v] of regionByName) map[k] = v;          // khoá theo TÊN DỰ ÁN
+    // Khoá thêm theo NHÓM DỰ ÁN: app "Hiệu suất dự án" đọc file Pivot gom sẵn theo nhóm ("MINI HOTEL
+    // PQ", "43 ĐTM"…) chứ không có tên dự án đầy đủ. Một nhóm trải nhiều vùng thì lấy vùng gặp trước
+    // — hiếm, và vẫn hơn là để nhóm đó không có vùng.
+    for (const i of data.items) {
+      const g = normProjName(i.groupDA ?? ""), r = (i.region ?? "").trim();
+      if (g && r && !map[g]) map[g] = r;
+    }
+    const sig = JSON.stringify(map);
+    if (regionSigRef.current === sig) return;
+    regionSigRef.current = sig;
+    void saveProjRegions({ data: { map } }).catch(() => {});
+  }, [regionByName, data.items]);
 
   /* ── FACET COUNT cho 2 nút chế độ (Bàn giao tháng này / Top 20) ──
      Con số trên mỗi nút = số DỰ ÁN (mã+tên) khớp tiêu chí nút đó TRONG ngữ cảnh
@@ -5369,8 +5390,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** Bật/tắt "Hiện tất cả đầu việc" (kể cả đã hoàn thành). */
   showDone: boolean;
   onToggleDone: () => void;
-  /** DÒNG ẨN THỦ CÔNG (admin): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang ẩn;
-   *  onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin thấy nút; server vẫn chốt quyền. */
+  /** DÒNG ẨN THỦ CÔNG (admin + PMO): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang
+   *  ẩn; onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin/PMO thấy nút; server vẫn chốt quyền. */
   showHidden: boolean;
   onToggleShowHidden: () => void;
   hiddenCount: number;
@@ -5388,6 +5409,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
     + (filters.query.trim() ? 1 : 0)
     + (filters.mpOnly ? 1 : 0) + (filters.dueThisMonth ? 1 : 0) + (filters.topKey ? 1 : 0);
   const [exporting, setExporting] = useState(false);
+  /** ẨN DÒNG: admin + PMO. PMO rà bảng hằng ngày nên là người biết hạng mục nào trong khuôn khổ,
+   *  không cần raise. Server vẫn chốt quyền lần nữa (setHiddenRow) — nút này chỉ là lớp giao diện. */
+  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
+  const canHideRow = isAdmin || isPmo;
   /** ĐIỆN THOẠI: gấp/mở khối bộ lọc (máy tính luôn mở — nút bật/tắt bị `md:hidden`). */
   const [filterOpen, setFilterOpen] = useState(false);
   /** Số bộ lọc ĐANG BẬT — hiện ngay trên nút để người dùng biết đang lọc gì dù khối đã gấp. */
@@ -5627,11 +5652,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
       <tr className={`group border-b border-slate-100 align-middle ${it._hidden ? "bg-amber-50/60 opacity-60 hover:opacity-100" : (idx % 2 ? "bg-slate-50/40" : "bg-white")} hover:bg-teal-50/40`}
           title={it._hidden ? "Dòng đã ẩn thủ công — bấm 'Bỏ ẩn' để đưa lại vào báo cáo" : undefined}>
         {/* Ngày update — chip nhỏ, thang màu xanh→đỏ theo độ cũ (bảng phẳng). Ô này cũng là chỗ đặt
-            nút ẨN (hiện khi rê chuột, chỉ admin) / BỎ ẨN (khi đang soi dòng ẩn) — print:hidden nên
+            nút ẨN (hiện khi rê chuột, admin + PMO) / BỎ ẨN (khi đang soi dòng ẩn) — print:hidden nên
             KHÔNG lọt vào PDF/Excel. */}
         <td className="border-r border-slate-100 px-1 py-1 text-center">
           {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} />}
-          {isAdmin && (it._hidden ? (
+          {canHideRow && (it._hidden ? (
             <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
               onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, false); }}
               className="mx-auto flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100 print:hidden">
@@ -5855,8 +5880,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
             {showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc"}
           </button>
-          {/* DÒNG ĐÃ ẨN (admin) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
-          {isAdmin && hiddenCount > 0 && (
+          {/* DÒNG ĐÃ ẨN (admin + PMO) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
+          {canHideRow && hiddenCount > 0 && (
             <button type="button" onClick={onToggleShowHidden}
               title="Xem lại các hạng mục đã ẩn thủ công (để bỏ ẩn)"
               className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showHidden ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-300 bg-white text-slate-600 hover:border-amber-400"}`}>
@@ -5987,7 +6012,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
       </div>
 
       {viewMode === "gantt" ? (
-        <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} isAdmin={isAdmin} showHidden={showHidden} onHideRow={onHideRow} />
+        <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} canHide={canHideRow} showHidden={showHidden} onHideRow={onHideRow} />
       ) : (
       <div className="relative min-h-0 flex-1 rounded-md border border-slate-200"
            style={{ containerType: "inline-size" }}>
@@ -6448,7 +6473,7 @@ function AlertBadge({ kind, color }: { kind: AlertKind; color: AlertColor }) {
  *    • Viền trái đỏ = tuần chứa hôm nay. Nền hổ phách = quá hạn.
  * ====================================================================== */
 const GANTT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, isAdmin = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; isAdmin?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
+function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, canHide = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; canHide?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
   const DAY = 86400000;
   // Dropdown Block (Thi công lắp đặt) trong Gantt: tác vụ TC nào đang xổ các Block con.
   const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
@@ -6567,10 +6592,10 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   // truyền xuống qua props. Bấm dự án để xổ.
   const toggle = (k: string) => { const n = new Set(expanded); n.has(k) ? n.delete(k) : n.add(k); setExpanded(n); };
 
-  // Nút ẨN (rê chuột) / BỎ ẨN cho 1 dòng HẠNG MỤC — chỉ admin, print:hidden (không lọt PDF).
+  // Nút ẨN (rê chuột) / BỎ ẨN cho 1 dòng HẠNG MỤC — admin + PMO, print:hidden (không lọt PDF).
   // Đồng bộ với bảng Danh sách: cùng onHideRow(key,label,hide) → cùng kho `hidden:v1`.
   const hideBtn = (hideKey: string | undefined, hidden: boolean, label: string): ReactNode => {
-    if (!isAdmin || !onHideRow || !hideKey) return null;
+    if (!canHide || !onHideRow || !hideKey) return null;
     return hidden ? (
       <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
         onClick={(e) => { e.stopPropagation(); onHideRow(hideKey, label, false); }}
@@ -7587,9 +7612,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
 /** Chuẩn hoá tên dự án để ĐỐI CHIẾU (file tuân thủ ↔ PMP): bỏ dấu, thường hoá, gom khoảng trắng,
  *  bỏ ký tự không phải chữ/số. Khớp bất chấp lệch dấu/hoa-thường/dấu câu; lệch nhiều thì KHÔNG khớp
  *  (thà thiếu badge còn hơn gắn nhầm). */
-function normProjName(s: string): string {
-  return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/đ/g, "d").replace(/[^a-z0-9]+/g, " ").trim();
-}
+// normProjName: xem lib/vung.ts (dùng chung với app Hiệu suất dự án).
 
 function ComplianceMark({ m }: { m: CMark }) {
   // GLYPH ký tự (KHÔNG dùng icon SVG lucide): html2canvas render SVG không ổn định → khi XUẤT PDF
@@ -7644,20 +7667,8 @@ function PmSummaryRow({ pm, avgLabel, avgColor, projects }: {
 // Lớp CSS khối "Cách tính điểm" (rulesRef) — dùng CHUNG cho JSX (view Chi tiết) và khi tạm hiện để chụp bản GỘP.
 const COMPLIANCE_RULES_CLS = "mt-2 flex flex-wrap items-stretch justify-between gap-x-6 gap-y-3 text-[10px] leading-relaxed text-slate-600";
 
-// VÙNG → nhãn Tiếng Việt + thứ tự trình bày (báo cáo tuân thủ gom theo Vùng). Nhận cả tiếng Anh (Middle/South…)
-// lẫn mã/tiếng Việt sẵn có. Lạ → giữ nguyên (xuống cuối).
-const VUNG_ORDER = ["Phú Quốc", "Bắc", "Trung", "Nam", "Nước Ngoài"];
-function vungVN(raw: string): string {
-  const s = (raw || "").trim().toLowerCase();
-  if (!s) return "—";
-  if (/ph[uú]\s*qu[oố]c|^pq$/.test(s)) return "Phú Quốc";
-  if (/oversea|overseas|foreign|n[uư][oớ]c\s*ngo[aà]i|^nn$/.test(s)) return "Nước Ngoài";
-  if (/north|b[aắ]c|^mb$|h[aà]\s*n[oộ]i|hanoi/.test(s)) return "Bắc";
-  if (/middle|central|trung|^mt$|đ[aà]\s*n[aẵ]ng|danang/.test(s)) return "Trung";
-  if (/south|nam|^mn$|h[oồ]\s*ch[ií]|hcm|s[aà]i\s*g[oò]n/.test(s)) return "Nam";
-  return raw.trim();
-}
-const vungRank = (v: string) => { const i = VUNG_ORDER.indexOf(v); return i < 0 ? 99 : i; };
+// VÙNG: chuẩn hoá tên + thứ tự + màu nhận diện nay ở lib/vung.ts — app "Hiệu suất dự án" gom cụm theo
+// vùng bằng ĐÚNG bộ luật này, để hai chỗ không bao giờ chia vùng lệch nhau.
 
 /** So sánh TÊN người Việt theo TÊN GỌI (từ cuối) rồi tới phần còn lại — "Nguyễn Hữu Chí" xếp ở "Chí" (C),
  *  không phải "Nguyễn" (N). Dùng cho cột Người phụ trách xếp A→Z. */

@@ -849,7 +849,9 @@ export const fetchHiddenRows = createServerFn({ method: "GET" }).handler(async (
   return { hidden: await readHidden() };
 });
 
-/** Ẩn / bỏ ẩn 1 dòng — CHỈ ADMIN. hide=true để ẩn, false để bỏ ẩn. */
+/** Ẩn / bỏ ẩn 1 dòng — ADMIN và PMO. hide=true để ẩn, false để bỏ ẩn.
+ *  PMO là người rà bảng hằng ngày, biết hạng mục nào trong khuôn khổ không cần raise — bắt chờ admin
+ *  chỉ làm bảng ứ dòng nhiễu. Mọi lần ẩn/bỏ ẩn đều ghi Nhật ký giám sát (ai · dòng nào · lúc nào). */
 export const setHiddenRow = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
@@ -859,7 +861,7 @@ export const setHiddenRow = createServerFn({ method: "POST" })
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin mới được ẩn / bỏ ẩn dòng.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được ẩn / bỏ ẩn dòng.");
     const map = await readHidden();
     if (data.hide) map[data.key] = { at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
     else delete map[data.key];

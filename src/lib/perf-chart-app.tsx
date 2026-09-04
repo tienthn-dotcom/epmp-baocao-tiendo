@@ -19,12 +19,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X } from "lucide-react";
-import { getSummaryFile, getProjRegions } from "@/lib/mtld-install.functions";
+import { getSummaryFile, getProjRegions, getInstallList } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { useIsNarrow } from "@/lib/use-breakpoint";
-import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion } from "@/lib/vung";
+import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } from "@/lib/vung";
 
 /** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
  *  thứ tự dưới đây đọc theo CỘT của bản in: cột 1 từ trên xuống, rồi cột 2…).
@@ -554,9 +554,26 @@ export function PerfChartApp() {
   const meQ = useQuery({ queryKey: ["perf-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["perf-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
   // VÙNG lấy từ ePMP (file PMP có cột Location; file Pivot của app này thì không) — xem saveProjRegions.
-  // Chưa có map → mọi dự án về "—", lưới vẫn chạy đúng thứ tự PERF_SHOW như trước.
+  // HAI NGUỒN, ghép lại cho chắc:
+  //  · danh sách popup lắp đặt (mtld:install:list) — có sẵn từ lâu, mỗi dòng kèm region + groupDA;
+  //  · map proj:regions ePMP đẩy lên — phủ rộng hơn (mọi dự án, kể cả chưa gắn ma trận) nên ĐÈ LÊN.
+  // Nhờ vậy mở app lần đầu sau khi lên bản mới vẫn có vùng ngay, khỏi chờ ai đó ghé qua ePMP.
   const regionQ = useQuery({ queryKey: ["proj-regions"], queryFn: () => getProjRegions(), staleTime: 10 * 60 * 1000 });
-  const regionMap = regionQ.data?.map ?? {};
+  const installQ = useQuery({ queryKey: ["mtld-install-list"], queryFn: () => getInstallList(), staleTime: 10 * 60 * 1000 });
+  const regionMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const it of installQ.data?.list ?? []) {
+      const r = (it.region ?? "").trim();
+      if (!r) continue;
+      const n = normProjName(it.name ?? ""), g = normProjName(it.groupDA ?? "");
+      if (n && !m[n]) m[n] = r;
+      if (g && !m[g]) m[g] = r;
+    }
+    Object.assign(m, regionQ.data?.map ?? {});
+    return m;
+  }, [installQ.data, regionQ.data]);
+  /** Vùng đã tra xong chưa — chờ rồi mới vẽ lưới, khỏi hiện thứ tự cũ rồi nhảy sang thứ tự vùng. */
+  const regionReady = !regionQ.isPending && !installQ.isPending;
   const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
 
   useEffect(() => {
@@ -811,11 +828,6 @@ export function PerfChartApp() {
             // dọc khi nhiều hàng) thay vì ép nhỏ tí. Chiều cao ô cố định để số luôn to.
             <div style={{ width: "100%" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>HIỆU SUẤT THEO THÁNG · CÁC DỰ ÁN (tỷ đồng/người)</div>
-              {/* Nói rõ nguyên tắc ngay dưới tiêu đề: số ở đây có thể LỆCH file gốc ở tháng có điều
-                  chỉnh âm — không ghi ra thì người xem tưởng app tính sai. */}
-              <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 8, textAlign: "center" }}>
-                Tháng có sản lượng âm được gánh ngược về tháng liền trước (không đủ thì lùi tiếp tháng trước nữa) — tổng cả năm giữ nguyên.
-              </div>
               {/* CHÚ GIẢI VÙNG — nói rõ viền màu nào là vùng nào; vùng lấy từ ePMP nên khỏi khai tay. */}
               {vungShown.length > 1 && (
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14, marginBottom: 10, fontSize: 11.5, color: "#475569" }}>
@@ -830,7 +842,7 @@ export function PerfChartApp() {
               {/* ĐIỆN THOẠI: 1 CỘT — mỗi ô chiếm trọn bề ngang nên đọc thoải mái, cuộn DỌC như đọc danh
                   sách (thứ tự đúng PERF_SHOW). MÁY TÍNH: giữ nguyên lưới 5 cột xếp dọc-rồi-ngang. */}
               <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr)" : `repeat(${COLS}, minmax(300px, 1fr))`, gridAutoRows: "210px", gap: 10 }}>
-                {(narrow ? ordered : gridItems).map((p, i) => (
+                {!regionReady ? null : (narrow ? ordered : gridItems).map((p, i) => (
                   // VIỀN = VÙNG: liếc một cái là biết cụm nào, khỏi phải dò tên dự án. Ô trống (lưới
                   // xếp dọc-rồi-ngang có thể hụt cuối) giữ viền xám nhạt như cũ.
                   <div key={i} style={{
