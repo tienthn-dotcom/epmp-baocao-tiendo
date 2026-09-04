@@ -330,21 +330,22 @@ export async function driveListFoldersByParents(parentIds: string[]): Promise<{ 
 
 /** Liệt kê FILE nằm trong BẤT KỲ folder nào thuộc `parentIds` (query OR nhiều parent, kèm `parent`).
  *  Lấy clip của nhiều thư mục căn cùng lúc, không gọi Drive N lần. HÀM THUẦN. */
-export async function driveListFilesByParents(parentIds: string[]): Promise<{ id: string; name: string; link: string; parent: string }[]> {
+export async function driveListFilesByParents(parentIds: string[]): Promise<{ id: string; name: string; link: string; parent: string; at: string }[]> {
   if (!parentIds.length) return [];
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
-  const out: { id: string; name: string; link: string; parent: string }[] = [];
+  const out: { id: string; name: string; link: string; parent: string; at: string }[] = [];
   for (let i = 0; i < parentIds.length; i += 40) {   // chia lô để query không quá dài
     const chunk = parentIds.slice(i, i + 40);
     const q = `trashed=false and mimeType!='application/vnd.google-apps.folder' and (${chunk.map((id) => `'${id}' in parents`).join(" or ")})`;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents,size)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
-    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[]; size?: string }[] };
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents,size,createdTime)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[]; size?: string; createdTime?: string }[] };
     // BỎ FILE 0 BYTE: upload hụt giữa chừng (rớt mạng, iOS khoá màn) để lại cái vỏ file rỗng trên Drive.
     // Vỏ đó vẫn hiện thành thẻ video, bấm vào thì Google trả lỗi 400. Không liệt kê nữa.
     for (const f of (j.files || [])) {
       if (f.size != null && Number(f.size) === 0) continue;
-      out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "" });
+      // createdTime = GIỜ TẢI LÊN thật (ISO). Tên file chỉ có ngày quay, không đủ để chấm dấu theo giờ.
+      out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "", at: f.createdTime || "" });
     }
   }
   return out;

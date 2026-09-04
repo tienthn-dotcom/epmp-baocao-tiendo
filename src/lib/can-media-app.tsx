@@ -32,6 +32,33 @@ type InstallProj = { fileId: string; gid?: string; name: string; maCT: string; r
 /** KHOÁ DỰ ÁN — ưu tiên ID CỨNG (IDCUNG, vd "P0025"): đổi tên / trùng mã CT / dùng chung ma trận với dự
  *  án khác đều không lẫn kho media. Nguồn chưa có cột IDCUNG thì lùi về file+tab (như cũ). */
 const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|" + p.gid : "");
+
+/**
+ * CHẤM DẤU TRÊN Ô MA TRẬN NÓI LUÔN "TƯ LIỆU MỚI CỠ NÀO".
+ * Nhìn cả bảng là biết hôm nay đội nào đã quay, quay lúc nào — khỏi bấm từng ô.
+ *   · Tải lên HÔM NAY  → rẻ quạt đầy dần theo buổi, màu đi từ sáng sang tối trong ngày:
+ *       trước 12h : 1/4 vòng · xanh lá   (sáng)
+ *       12–18h    : 1/2 vòng · vàng      (chiều)
+ *       sau 18h   : 3/4 vòng · xanh đậm  (tối)
+ *   · Tải lên TỪ HÔM QUA TRỞ VỀ TRƯỚC → chấm XÁM tròn đầy (tư liệu cũ, không cần soi giờ).
+ * Giờ lấy theo máy người xem (giờ VN), mốc là createdTime của Drive — giờ TẢI LÊN thật, không phải
+ * ngày ghi trong tên file. Không đọc được giờ thì coi như cũ → xám.
+ */
+function freshMark(at: string): { color: string; deg: number; label: string } {
+  const OLD = { color: "#94A3B8", deg: 360, label: "tải lên trước hôm nay" };
+  if (!at) return OLD;
+  const d = new Date(at);
+  if (isNaN(d.getTime())) return OLD;
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (!sameDay) return OLD;
+  const h = d.getHours();
+  const gio = `${String(h).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  // Trước 12h gộp chung một buổi: 0–6h gần như không ai tải, tách thêm một mốc chỉ rối.
+  if (h < 12) return { color: "#22C55E", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
+  if (h < 18) return { color: "#EAB308", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
+  return { color: "#1E3A8A", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
+}
 const isMini = (p: InstallProj) => /mini\s*hotel/i.test(p.name || "");
 
 /** `wantProject` = tên dự án mà chỗ khác (nút "Video" trên dashboard ePMP) muốn mở sẵn. Khớp theo TÊN vì
@@ -292,8 +319,8 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
     staleTime: 60_000,
   });
   const marks = useMemo(() => {
-    const m = new Map<string, { photos: number; videos: number }>();
-    for (const c of mediaQ.data?.cans ?? []) m.set(`${c.toa} ${c.can}`, { photos: c.photos, videos: c.videos });
+    const m = new Map<string, { photos: number; videos: number; at: string }>();
+    for (const c of mediaQ.data?.cans ?? []) m.set(`${c.toa} ${c.can}`, { photos: c.photos, videos: c.videos, at: c.at });
     return m;
   }, [mediaQ.data]);
 
@@ -307,7 +334,17 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
         const hit = canAt(td, table);
         const m = hit && marks.get(`${hit.toa} ${hit.can}`);
         td.classList.toggle("has-media", !!m);
-        if (m) td.title = `${hit!.toa ? hit!.toa + " · " : ""}${hit!.can} — ${m.photos} ảnh · ${m.videos} video`;
+        if (m) {
+          // Chấm dấu NÓI LUÔN LÚC NÀO TẢI LÊN: màu + phần rẻ quạt được tô. Đặt bằng biến CSS trên từng
+          // ô, còn phần vẽ để chung một quy tắc ::after (xem khối <style> phía dưới).
+          const k = freshMark(m.at);
+          td.style.setProperty("--mk-color", k.color);
+          td.style.setProperty("--mk-deg", `${k.deg}deg`);
+          td.title = `${hit!.toa ? hit!.toa + " · " : ""}${hit!.can} — ${m.photos} ảnh · ${m.videos} video · ${k.label}`;
+        } else {
+          td.style.removeProperty("--mk-color");
+          td.style.removeProperty("--mk-deg");
+        }
       }
     };
     apply();
@@ -353,7 +390,9 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
       {/* DẤU CÓ MEDIA: chấm tròn góc dưới-phải ô. Dùng ::after nên không đụng chữ/màu nền của ô,
           và không cần sửa renderer — bảng render lại thì MutationObserver chấm lại. */}
       <style>{`.mtx-mark td.has-media{position:relative}
-.mtx-mark td.has-media::after{content:"";position:absolute;right:2px;bottom:2px;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.4px rgba(15,23,42,.75)}`}</style>
+.mtx-mark td.has-media::after{content:"";position:absolute;right:2px;bottom:2px;width:11px;height:11px;border-radius:50%;
+  background:conic-gradient(var(--mk-color,#94A3B8) var(--mk-deg,360deg), #fff 0);
+  box-shadow:0 0 0 1.4px rgba(15,23,42,.8)}`}</style>
       <div ref={wrapRef} onClick={onClick} className="mtx-mark" style={{ cursor: "pointer", minWidth: 0 }}>
         <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }}
           formKey={mediaFormKey(proj)} canEdit={canEdit} natural blendText zoomable boxResize />

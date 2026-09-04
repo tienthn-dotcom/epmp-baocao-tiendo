@@ -81,7 +81,7 @@ export const readCanMediaB64 = createServerFn({ method: "POST" })
  *  Quét theo LÔ (driveList*ByParents) nên chỉ tốn ~4 lượt gọi Drive, không phải mỗi phòng một lượt. */
 export const listProjectMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string }) => d)
-  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; media: { id: string; kind: "photo" | "video"; date: string }[] }[] }> => {
+  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string }[] }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { cans: [] };
     const project = drive.mediaProjectFolder(data.project, data.hid);
@@ -93,12 +93,12 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     const lvl2 = await drive.driveListFoldersByParents(lvl1.map((f) => f.id));
     const name1 = new Map(lvl1.map((f) => [f.id, f.name] as const));
     // Ô "căn/khu" = folder mà con của nó là Hình ảnh/Video. Gom mọi thư mục KIND kèm căn/khu sở hữu.
-    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; media: { id: string; kind: "photo" | "video"; date: string }[] }>();
+    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string }[] }>();
     const kindOwner = new Map<string, { key: string; kind: string }>();
     const keyOf = (toa: string, can: string) => `${toa} ${can}`;
     const own = (toa: string, can: string, kindId: string, kindName: string) => {
       const key = keyOf(toa, can);
-      if (!cans.has(key)) cans.set(key, { toa, can, photos: 0, videos: 0, media: [] });
+      if (!cans.has(key)) cans.set(key, { toa, can, photos: 0, videos: 0, at: "", media: [] });
       kindOwner.set(kindId, { key, kind: kindName });
     };
     // lvl1 chính là căn/khu (không có cấp Toà)
@@ -117,6 +117,8 @@ export const listProjectMedia = createServerFn({ method: "POST" })
       const o = kindOwner.get(f.parent); if (!o) continue;
       const c = cans.get(o.key); if (!c) continue;
       if (o.kind === "Video") c.videos++; else c.photos++;
+      // GIỜ TẢI LÊN GẦN NHẤT của căn — chấm dấu trên ma trận đổi màu / độ đầy theo giờ (xem markStyle).
+      if (f.at && f.at > c.at) c.at = f.at;
       // Giữ luôn ID để popup xem được TOÀN BỘ media của dự án (gộp theo phòng/khu) mà không phải
       // gọi Drive lại từng phòng. Ngày lấy từ đuôi tên file "<căn>_<dd-mm-yy>_<rid>.<ext>".
       const base = f.name.replace(/\.[^.]+$/, "");
