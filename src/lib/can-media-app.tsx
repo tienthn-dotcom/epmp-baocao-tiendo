@@ -571,6 +571,28 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
 
   // Ảnh phải tải BYTE qua Worker (file trong My Drive riêng, không nhúng thẳng được).
   const imgSrc = useImageUrls(items.filter((x) => x.kind === "photo").map((x) => x.id));
+  // CLIP: tai byte QUA APP roi phat bang the <video> cua minh.
+  // Truoc day nhung khung xem cua Google Drive -> tren iPhone hien HAI bo nut chong len nhau (nut cua
+  // trinh phat Drive + nut cua iOS ben trong khung do), ma khung cross-origin nen khong tat bot duoc.
+  // Dung the <video> thi chi con DUNG MOT trinh phat mac dinh cua may. Doi lai: clip tai xong moi
+  // phat duoc (khong vua tai vua xem), nen chi tai clip DANG XEM chu khong tai san ca danh sach.
+  const [vidSrc, setVidSrc] = useState<Record<string, string>>({});
+  const [vidErr, setVidErr] = useState<Record<string, string>>({});
+  const curVid = narrow && cur?.kind === "video" ? cur.id : "";   // chi dien thoai moi tai byte
+  useEffect(() => {
+    if (!curVid || vidSrc[curVid] || vidErr[curVid]) return;
+    let off = false;
+    void (async () => {
+      try {
+        const r = await readCanMediaB64({ data: { id: curVid } });
+        if (!off) setVidSrc((m) => ({ ...m, [curVid]: r.dataUri }));
+      } catch (e) {
+        if (!off) setVidErr((m) => ({ ...m, [curVid]: (e as Error).message || "khong tai duoc" }));
+      }
+    })();
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curVid]);
   const curRoom = cur ? `${cur.toa ? cur.toa + " · " : ""}${cur.can}` : "";
   // Xem toàn dự án: ô Toà/Phòng chạy theo ảnh/video đang xem → bấm "＋ Tải ảnh" là vào ĐÚNG phòng đó.
   useEffect(() => {
@@ -661,8 +683,25 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               </span>
             </div>
           ) : cur?.kind === "video" ? (
-            <iframe key={cur.id} title="video" src={`https://drive.google.com/file/d/${cur.id}/preview`} allow="autoplay; fullscreen" allowFullScreen
-              style={{ width: "100%", height: "100%", border: "none" }} />
+            // MAY TINH: giu khung xem cua Google Drive - vua tai vua xem, khong phai cho tai het, va
+            // tren man rong khong bi chong nut nhu dien thoai.
+            !narrow ? (
+              <iframe key={cur.id} title="video" src={`https://drive.google.com/file/d/${cur.id}/preview`} allow="autoplay; fullscreen" allowFullScreen
+                style={{ width: "100%", height: "100%", border: "none" }} />
+            ) : vidSrc[cur.id] ? (
+              // controls = thanh dieu khien MAC DINH cua may (iOS/Android/desktop), khong ve them gi.
+              // playsInline: iOS khong tu bat toan man hinh, xem ngay trong popup.
+              <video key={cur.id} src={vidSrc[cur.id]} controls playsInline preload="auto"
+                style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
+            ) : vidErr[cur.id] ? (
+              <div style={{ color: "#fca5a5", fontSize: 13, textAlign: "center", padding: 20 }}>
+                Khong tai duoc clip nay.<br /><span style={{ fontSize: 11.5, opacity: .85 }}>{vidErr[cur.id]}</span>
+              </div>
+            ) : (
+              <div style={{ color: "#94a3b8", fontSize: 13.5, textAlign: "center", padding: 20 }}>
+                Dang tai clip…<br /><span style={{ fontSize: 11.5, opacity: .8 }}>clip nang hon anh, doi vai giay</span>
+              </div>
+            )
           ) : cur && imgSrc[cur.id] ? (
             <img src={imgSrc[cur.id]} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
           ) : (

@@ -353,8 +353,14 @@ export async function driveListFilesByParents(parentIds: string[]): Promise<{ id
 export async function driveReadFileB64Impl(fileId: string): Promise<{ mime: string; b64: string }> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
-  const meta = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType&${SHARED}`, { headers: AUTHH(token) });
-  const mj = await meta.json() as { mimeType?: string };
+  const meta = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,size,name&${SHARED}`, { headers: AUTHH(token) });
+  const mj = await meta.json() as { mimeType?: string; size?: string; name?: string };
+  // CHẶN FILE QUÁ TO: hàm này nạp cả file vào bộ nhớ rồi mã hoá base64 (phình thêm ~33%). Worker chỉ có
+  // 128MB — file vài chục MB là đủ làm sập nguyên request, người dùng thấy app "đứng" chứ không thấy lỗi.
+  // 40MB là trần an toàn: clip công trường hiện nay 5–26MB, ảnh thì vài MB.
+  const MAX = 40 * 1024 * 1024;
+  const sz = Number(mj.size ?? 0);
+  if (sz > MAX) throw new Error(`Tệp ${mj.name ?? ""} nặng ${(sz / 1048576).toFixed(0)}MB, vượt mức xem trực tiếp (40MB). Mở bằng Google Drive để xem.`);
   const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&${SHARED}`, { headers: AUTHH(token) });
   if (!r.ok) throw new Error(`Tải ảnh Drive lỗi (mã ${r.status}).`);
   const buf = new Uint8Array(await r.arrayBuffer());

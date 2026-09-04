@@ -524,7 +524,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.91.4", date: "04/09/2026", items: [
+  { v: "3.91.5", date: "04/09/2026", items: [
+    "ĐIỆN THOẠI xem clip: bỏ khung xem của Google Drive, app phát thẳng bằng trình phát sẵn có của máy — hết cảnh HAI bộ nút chồng lên nhau. Clip cần tải xong mới chạy (vài giây), đổi lại xem đúng một trình phát quen thuộc. Máy tính giữ nguyên khung Drive như cũ (vừa tải vừa xem).",
+    "Bỏ thông báo “tự kiểm tra: ĐẠT” bật lên mỗi lần mở app — chỉ báo khi CÓ chuyện; kết quả bình thường xem trong menu Hệ thống.",
     "Xem clip trên điện thoại: popup media mở TRỌN màn hình, clip chạy hết bề ngang máy; app bỏ hết lớp nút của mình khi xem clip (điện thoại đã có sẵn thanh tua / âm lượng / toàn màn hình). Ô Toà · Phòng và 2 nút tải lên thu vào sau nút “＋” — trước đây chúng ăn mất gần một phần tư màn hình. Chỉ có 1 ảnh/clip thì bỏ luôn dải ảnh nhỏ dưới đáy. Máy tính giữ nguyên như cũ.",
     "Sửa lỗi clip báo “tệp quá nhỏ” khi mở: tải lên bị rớt giữa chừng để lại tệp RỖNG trên Drive mà app vẫn báo tải xong. Nay tệp rỗng không hiện ra nữa, và tải lên hụt tệp nào là báo tên tệp đó ngay để tải lại. Đã dọn 60 clip rỗng (up ngày 03/09) — mấy clip đó cần quay lại.",
     "Tổng thể tiến độ — cột “Người phụ trách” đổi thành “NGÀY BÀN GIAO” (mốc kết thúc cấp dự án). Khi lọc theo công đoạn, mỗi dòng là một hạng mục nên cột “Ngày kết thúc” chỉ nói hạn của hạng mục đó; nay nhìn thêm một cột là biết dự án bàn giao ngày nào. Dòng con khi xổ cũng nhắc lại mốc đó ở tông nhạt.",
@@ -3761,14 +3763,17 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
     return [...byKey.values()];
   }, [filters.mpOnly, sortedAlerts, edits]);
 
-  // Audit → toast (góc dưới trái, tự ẩn)
+  // Audit → toast (góc dưới trái, tự ẩn).
+  // CHỬ KHI CÓ CHUYỆN: tự kiểm ĐẠT thì IM. Trước đây lần nào mở app cũng bắn một toast "Đạt" —
+  // ngày nào cũng thấy thì thành tiếng ồn, tới lúc hỏng thật lại không ai buồn đọc. Kết quả đạt vẫn xem
+  // được trong menu Hệ thống.
   const auditSig = useRef<string>("");
   useEffect(() => {
     const sig = `${audit.ok}|${audit.message}`;
     if (sig === auditSig.current) return;
     auditSig.current = sig;
     if (audit.ok) {
-      toast.success(audit.message, { position: "bottom-left", duration: 4000 });
+      // đạt → không báo gì
     } else {
       const extra = [...audit.unjustified, ...audit.missed].slice(0, 5).join(" · ");
       toast.error(audit.message + (extra ? `: ${extra}` : ""), { position: "bottom-left", duration: 4000 });
