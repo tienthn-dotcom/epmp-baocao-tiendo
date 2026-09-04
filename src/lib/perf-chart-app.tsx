@@ -38,9 +38,21 @@ const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
   "HYATT HỒ TRÀM", "OLALANI", "COSMO ĐÀ NẴNG", "CÁT BÀ", "TIẾN BỘ PLAZA",
-  "HYATT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
-  "APEC S4", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
+  "HYATT HẠ LONG", "INTERCONT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
+  "APEC S4", "HILLSIDE PQ", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
 ];
+/** VÙNG KHAI TAY — chỉ cho dự án CÓ trong file tuần nhưng KHÔNG có trên ePMP (nên tra vùng không ra).
+ *  Khai ở đây thì dự án mới không bị luật "rời ePMP thì mang ra" quét mất. ePMP luôn thắng: chỗ này chỉ
+ *  bù vào chỗ trống. Dự án nào xong thì XOÁ dòng của nó khỏi đây lẫn khỏi PERF_SHOW. */
+const PERF_REGION: Record<string, string> = {
+  "intercont ha long": "Bắc",     // Hạ Long, Quảng Ninh
+  "hillside pq": "PQ",            // Phú Quốc
+};
+/** DÒNG GOM, KHÔNG PHẢI DỰ ÁN — cấm lên lưới dù có ai lỡ khai vào PERF_SHOW hay file tuần có đánh STT.
+ *  Chủ nhà chốt: KHÔNG dùng nhóm "OTHERS". Mấy dòng còn lại cùng loại (OEM, Loose Export, công nợ cũ,
+ *  thiết kế, "khác") là các khoản bị TRỪ RA hoặc gom việc lẻ — đưa lên lưới "các dự án" là sai bản chất
+ *  và còn che mất dự án thật. */
+const PERF_EXCLUDE = /^(others?|oem|looses*export|congs*nos*cu|khac|thiets*ke|tong.*|.*claim.*|luys*ke.*)$/i;
 /** So tên nhóm: bỏ dấu + gộp khoảng trắng + không phân biệt hoa thường (file gõ mỗi kỳ một kiểu). */
 const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
@@ -634,10 +646,10 @@ export function PerfChartApp() {
   // HIỆN ĐÚNG 20 DỰ ÁN trong PERF_SHOW, THEO ĐÚNG THỨ TỰ đó (không xếp lại theo số liệu).
   const ordered = useMemo<ProjV[]>(() => {
     const byKey = new Map(projs.map((p) => [keyName(p.name), p] as const));
-    const list = SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p)
+    const list = SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p && !PERF_EXCLUDE.test(keyName(p.name)))
       // Nguyên tắc loại trừ tháng âm — CHỈ ở tab này (xem absorbNegBack). Hai tab kia đọc thẳng
       // projs nên vẫn giữ nguyên số của file.
-      .map((p) => ({ ...p, rev: absorbNegBack(p.rev), vung: vungVN(lookupRegion(regionMap, p.name)) }));
+      .map((p) => ({ ...p, rev: absorbNegBack(p.rev), vung: vungVN(lookupRegion(regionMap, p.name) || PERF_REGION[keyName(p.name)] || "") }));
     // DỰ ÁN ĐÃ RỜI ePMP THÌ MANG RA KHỎI LƯỚI — quy ước vận hành của chủ nhà: chỗ đó để dành cho dự án
     // mới. Không tra được vùng nghĩa là ePMP không còn dòng nào của dự án đó.
     // CHỐT AN TOÀN: chỉ lọc khi bảng vùng còn LÀNH (≥60% số dự án tra ra vùng). Nếu KV vùng rỗng hay
