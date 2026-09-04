@@ -24,8 +24,7 @@ import {
   Settings,
   Tv,
   Users,
-  X,
-} from "lucide-react";
+  X, SlidersHorizontal} from "lucide-react";
 
 import type { BlockChild, CodeCount, DataQualityCheck, ItemRow, ReportData } from "@/lib/types";
 import {
@@ -5389,6 +5388,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
     + (filters.query.trim() ? 1 : 0)
     + (filters.mpOnly ? 1 : 0) + (filters.dueThisMonth ? 1 : 0) + (filters.topKey ? 1 : 0);
   const [exporting, setExporting] = useState(false);
+  /** ĐIỆN THOẠI: gấp/mở khối bộ lọc (máy tính luôn mở — nút bật/tắt bị `md:hidden`). */
+  const [filterOpen, setFilterOpen] = useState(false);
+  /** Số bộ lọc ĐANG BẬT — hiện ngay trên nút để người dùng biết đang lọc gì dù khối đã gấp. */
+  const nFilters = (filters.pms?.length ? 1 : 0) + (filters.pes?.length ? 1 : 0)
+    + (filters.groupDAs?.length ? 1 : 0) + (filters.deadlineMonths?.length ? 1 : 0)
+    + (filters.regions?.length ? 1 : 0) + (filters.mpOnly ? 1 : 0);
   // Cách trình bày bảng: "list" = bảng cảnh báo hiện tại; "gantt" = biểu đồ tổng thể tiến độ.
   const [viewMode, setViewMode] = useState<"list" | "gantt">("list");
   // F7 — nhớ chế độ xem (Danh sách / Tổng thể tiến độ) qua reload. Đọc sau mount, ghi khi đổi.
@@ -5842,7 +5847,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex flex-wrap items-center gap-2 [&>*]:shrink-0 [&_button]:whitespace-nowrap print:hidden">
           {/* NÚT "HIỆN TẤT CẢ ĐẦU VIỆC" (kể cả ĐÃ HOÀN THÀNH) — bên TRÁI "Mở tất cả", cho cả 2 bảng.
               Bật → thêm việc 100% (badge "Đã hoàn thành" xanh lá ở cột Tình trạng). KPI không đổi. */}
           <button type="button" onClick={onToggleDone}
@@ -5922,6 +5927,18 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             </button>
           )}
         </div>
+        {/* ĐIỆN THOẠI: 5 bộ lọc + nút "Cần cập nhật MP" xếp dọc thành 6 hàng, ăn gần hết màn trước khi
+            thấy dữ liệu → gấp lại sau MỘT nút "Bộ lọc (n)". Ô TÌM vẫn luôn hiện (thao tác hay dùng nhất).
+            MÁY TÍNH: `md:hidden` ẩn nút, `md:contents` cho khối lọc tan vào grid → hàng ngang y như cũ. */}
+        <button type="button" onClick={() => setFilterOpen(v => !v)}
+          className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs md:hidden ${nFilters ? "border-teal-600 bg-teal-50 font-semibold text-teal-800" : "border-slate-300 bg-white text-slate-700"}`}>
+          <span className="flex items-center gap-1.5">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Bộ lọc{nFilters ? ` (${nFilters})` : ""}
+          </span>
+          <span className="text-slate-400">{filterOpen ? "Thu gọn ▲" : "Mở ▼"}</span>
+        </button>
+        <div className={`${filterOpen ? "grid" : "hidden"} grid-cols-1 gap-1.5 md:contents`}>
         {/* Bộ lọc "Bộ phận", "Hạng mục", "Nhóm cảnh báo" đã bỏ khỏi thanh lọc:
             lọc theo hạng mục = bấm thẻ giai đoạn ở trên; lọc theo cảnh báo = bấm thẻ KPI ở trên. */}
         <MultiSelect
@@ -5966,6 +5983,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           <span className={`h-2 w-2 rounded-full ${filters.mpOnly ? "bg-blue-600" : "bg-slate-300"}`} />
           Cần cập nhật MP
         </button>
+        </div>
       </div>
 
       {viewMode === "gantt" ? (
