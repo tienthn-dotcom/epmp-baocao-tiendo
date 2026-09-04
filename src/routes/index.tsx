@@ -524,7 +524,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.91.5", date: "04/09/2026", items: [
+  { v: "3.91.6", date: "04/09/2026", items: [
     "ĐIỆN THOẠI xem clip: bỏ khung xem của Google Drive, app phát thẳng bằng trình phát sẵn có của máy — hết cảnh HAI bộ nút chồng lên nhau. Clip cần tải xong mới chạy (vài giây), đổi lại xem đúng một trình phát quen thuộc. Máy tính giữ nguyên khung Drive như cũ (vừa tải vừa xem).",
     "Bỏ thông báo “tự kiểm tra: ĐẠT” bật lên mỗi lần mở app — chỉ báo khi CÓ chuyện; kết quả bình thường xem trong menu Hệ thống.",
     "Xem clip trên điện thoại: popup media mở TRỌN màn hình, clip chạy hết bề ngang máy; app bỏ hết lớp nút của mình khi xem clip (điện thoại đã có sẵn thanh tua / âm lượng / toàn màn hình). Ô Toà · Phòng và 2 nút tải lên thu vào sau nút “＋” — trước đây chúng ăn mất gần một phần tư màn hình. Chỉ có 1 ảnh/clip thì bỏ luôn dải ảnh nhỏ dưới đáy. Máy tính giữ nguyên như cũ.",

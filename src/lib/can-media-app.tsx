@@ -585,7 +585,16 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     void (async () => {
       try {
         const r = await readCanMediaB64({ data: { id: curVid } });
-        if (!off) setVidSrc((m) => ({ ...m, [curVid]: r.dataUri }));
+        // PHAI doi sang blob: URL. iOS Safari KHONG phat duoc video tu "data:" URI (chi anh moi duoc)
+        // -> bam vao la im, khong bao gi. blob: thi Safari coi nhu mot nguon co that, phat binh thuong.
+        const comma = r.dataUri.indexOf(",");
+        const mime = r.dataUri.slice(5, r.dataUri.indexOf(";"));
+        const bin = atob(r.dataUri.slice(comma + 1));
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([buf], { type: mime || "video/mp4" }));
+        if (off) { URL.revokeObjectURL(url); return; }
+        setVidSrc((m) => ({ ...m, [curVid]: url }));
       } catch (e) {
         if (!off) setVidErr((m) => ({ ...m, [curVid]: (e as Error).message || "khong tai duoc" }));
       }
@@ -593,6 +602,10 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curVid]);
+  // Tra bo nho lai cho trinh duyet khi dong popup (moi clip la mot blob vai chuc MB).
+  useEffect(() => () => { for (const u of Object.values(vidSrc)) URL.revokeObjectURL(u); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []);
   const curRoom = cur ? `${cur.toa ? cur.toa + " · " : ""}${cur.can}` : "";
   // Xem toàn dự án: ô Toà/Phòng chạy theo ảnh/video đang xem → bấm "＋ Tải ảnh" là vào ĐÚNG phòng đó.
   useEffect(() => {
@@ -692,10 +705,14 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               // controls = thanh dieu khien MAC DINH cua may (iOS/Android/desktop), khong ve them gi.
               // playsInline: iOS khong tu bat toan man hinh, xem ngay trong popup.
               <video key={cur.id} src={vidSrc[cur.id]} controls playsInline preload="auto"
+                onError={() => setVidErr((m) => ({ ...m, [cur.id]: "May khong phat duoc dinh dang clip nay." }))}
                 style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
             ) : vidErr[cur.id] ? (
               <div style={{ color: "#fca5a5", fontSize: 13, textAlign: "center", padding: 20 }}>
-                Khong tai duoc clip nay.<br /><span style={{ fontSize: 11.5, opacity: .85 }}>{vidErr[cur.id]}</span>
+                Không xem được clip này.<br /><span style={{ fontSize: 11.5, opacity: .85 }}>{vidErr[cur.id]}</span><br />
+                {/* Loi thoat: van mo duoc bang Drive de khong ai bi ket. */}
+                <a href={`https://drive.google.com/file/d/${cur.id}/view`} target="_blank" rel="noreferrer"
+                  style={{ display: "inline-block", marginTop: 10, color: "#7dd3fc", fontWeight: 700, fontSize: 12.5 }}>Mở bằng Google Drive ↗</a>
               </div>
             ) : (
               <div style={{ color: "#94a3b8", fontSize: 13.5, textAlign: "center", padding: 20 }}>
