@@ -16,6 +16,7 @@ import { legendEntries, setStatusColorMap } from "@/lib/summary-render";
 import { getHeatmapColors } from "@/lib/heatmap-colors.functions";
 import { getSheetForms, saveSheetForm, type SheetForm } from "@/lib/edits.functions";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { track } from "@/lib/track";
 
 function devAs(): string | null {
   if (typeof window === "undefined") return null;
@@ -292,7 +293,8 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
 
   const doSave = async () => {
     setSaving(true);
-    try { await saveSheetForm({ data: { key: formKey, spec: { ...spec, zoom } as SheetForm, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setDirty(false); setSavedTick((n) => n + 1); }
+    // Lưu form = MỌI NGƯỜI thấy bảng đổi theo → ghi nhật ký giám sát.
+    try { await saveSheetForm({ data: { key: formKey, spec: { ...spec, zoom } as SheetForm, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setDirty(false); setSavedTick((n) => n + 1); track("matrix_save_form", formKey.slice(0, 120)); }
     catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   };
   const doClearForm = async () => {

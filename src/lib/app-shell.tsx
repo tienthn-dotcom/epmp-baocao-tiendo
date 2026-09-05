@@ -29,6 +29,7 @@ import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { track } from "@/lib/track";
 import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { DetailPlanApp } from "@/lib/detail-plan-app";
@@ -73,6 +74,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
       const d = (e as CustomEvent<{ app?: string; project?: string }>).detail || {};
       if (!d.app) return;
       setActiveApp(d.app); setWantProject(d.project ?? null); setOpen(false);
+      track("open_app", `${d.app}${d.project ? " · " + d.project : ""}`);
       window.scrollTo({ top: 0 });
     };
     window.addEventListener("epmp:open-app", go);
@@ -131,7 +133,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
             {visibleApps.map(a => {
               const active = a.id === activeApp;
               return (
-                <button key={a.id} type="button" onClick={() => { setActiveApp(a.id); setOpen(false); }} title={a.name}
+                <button key={a.id} type="button" onClick={() => { setActiveApp(a.id); setOpen(false); track("open_app", a.name); }} title={a.name}
                   style={{ display: "flex", alignItems: "center", gap: 12, minHeight: isMobile ? 52 : 46, padding: "0 15px",
                     background: active ? "rgba(45,212,191,.14)" : "transparent",
                     borderLeft: active ? "3px solid #2dd4bf" : "3px solid transparent",

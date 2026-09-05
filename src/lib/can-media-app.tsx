@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { track } from "@/lib/track";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getInstallList } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -133,7 +134,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
           {/* Lối vào thứ hai (xem TOÀN BỘ media dự án): ĐIỆN THOẠI bỏ đi cho gọn — vào đây là để bấm ô căn;
               xem cả dự án thì bấm nút “Media” ngay dòng dự án bên ePMP. Máy tính giữ nguyên. */}
           {!narrowTop && (
-          <button type="button" disabled={!sel} onClick={() => sel && setPick({ toa: "", can: "", scope: "project" })}
+          <button type="button" disabled={!sel} onClick={() => { if (!sel) return; setPick({ toa: "", can: "", scope: "project" }); track("media_project", sel.name); }}
             style={{ flexShrink: 0, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.12)", color: "#fff",
               borderRadius: 9, padding: "9px 13px", fontSize: 12.5, fontWeight: 700, cursor: sel ? "pointer" : "default" }}>
             🖼 Toàn bộ media dự án
@@ -161,8 +162,8 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
           regionQ.isPending
             ? <div style={{ padding: 40, textAlign: "center", color: C.sub, fontSize: 13.5 }}>Đang tải bảng của dự án…</div>
             : isZone
-              ? <ZoneBoard key={projId(sel) + ":z"} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can, scope: "can" })} />
-              : <MatrixBoard key={projId(sel)} proj={sel} canEdit={canEdit} onPick={(toa, can) => setPick({ toa, can, scope: "can" })} />
+              ? <ZoneBoard key={projId(sel) + ":z"} proj={sel} canEdit={canEdit} onPick={(toa, can) => { setPick({ toa, can, scope: "can" }); track("media_open", `${sel.name} · ${can}`); }} />
+              : <MatrixBoard key={projId(sel)} proj={sel} canEdit={canEdit} onPick={(toa, can) => { setPick({ toa, can, scope: "can" }); track("media_open", `${sel.name} · ${toa ? toa + " · " : ""}${can}`); }} />
         ) : null}
       </div>
 
@@ -653,17 +654,29 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   async function onFiles(kind: "photo" | "video", files?: FileList | null) {
     const arr = [...(files ?? [])].filter((f) => (kind === "photo" ? /^image\//.test(f.type) : /^video\//.test(f.type)));
     if (!arr.length || !can.trim()) return;
+    const hong: string[] = [];              // tệp tải KHÔNG xong — phải nói ra, không được nuốt
     for (let i = 0; i < arr.length; i++) {
       const f = arr[i];
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
         const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "" } });
-        try { await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f }); }
-        catch { /* iOS CORS: byte vẫn có thể đã lên — refetch xác minh bên dưới */ }
-      } catch { /* bỏ file lỗi, tiếp tục */ }
+        // KHÔNG nuốt lỗi PUT. Trước đây bọc catch rỗng: rớt mạng / iOS khoá màn giữa chừng là Drive
+        // giữ lại cái vỏ tệp 0 byte, app vẫn báo tải xong, tới lúc mở mới lòi lỗi của Google.
+        // (03/09 mất trắng 60 clip đúng kiểu này.) Nay hụt tệp nào báo tên tệp đó ngay.
+        let ok = true;
+        try {
+          const res = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+          ok = res.ok;
+        } catch { ok = false; }
+        if (!ok) hong.push(f.name);
+      } catch { hong.push(f.name); }
     }
     setBusy(null);
+    // Nhật ký giám sát: ai tải, mấy tệp, vào phòng nào — đây là thao tác ĐỔI DỮ LIỆU thật.
+    track("media_upload", `${project}${toa.trim() ? " · " + toa.trim() : ""} · ${can.trim()} — ${arr.length - hong.length}/${arr.length} ${kind === "photo" ? "ảnh" : "clip"}`);
+    if (hong.length) alert("Chưa tải lên được " + hong.length + " tệp:\n· " + hong.join("\n· ")
+      + "\n\nThường do rớt mạng hoặc màn hình tắt giữa chừng. Mở lại và tải lại đúng mấy tệp này.");
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
     await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
   }

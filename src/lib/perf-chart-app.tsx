@@ -24,6 +24,7 @@ import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { useIsNarrow } from "@/lib/use-breakpoint";
+import { track } from "@/lib/track";
 import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } from "@/lib/vung";
 
 /** 20 DỰ ÁN ĐƯỢC HIỆN + ĐÚNG THỨ TỰ chủ nhà chốt (lưới điền TRÊN→XUỐNG rồi mới sang cột kế, nên
@@ -718,6 +719,8 @@ export function PerfChartApp() {
     const blk = parseBlockTotals(wb, XLSX);   // khối A "SLTB (kết quả)" (nếu file có)
     if (!list.length) throw new Error('Không nhận dạng được dữ liệu. Cần các cột: Tên dự án · Doanh thu theo tháng · Nhân sự theo tháng. Tải template để làm mẫu.');
     await apply(list, src, blk);
+    // Nhật ký giám sát: nạp file tuần là thay số cho CẢ KHỐI — phải biết ai nạp, file nào.
+    track("perf_import", `${src} — ${list.length} nhóm dự án`);
   }
   /** LƯU TRỮ file nguồn tuần lên Drive (Hiệu suất dự án › Nguồn tuần › <năm> › <ngày>_<tên file>).
    *  App KHÔNG giữ byte — client PUT thẳng lên Google. Lỗi/không có quyền → BỎ QUA, không chặn việc nạp. */
@@ -850,7 +853,7 @@ export function PerfChartApp() {
                       <Upload className="h-3.5 w-3.5" /> Tải file .xlsx
                       <input type="file" accept=".xlsx,.xls" className="hidden" disabled={busy} onChange={(e) => { void onFile(e.target.files?.[0]); e.currentTarget.value = ""; setSrcOpen(false); }} />
                     </label>
-                    <button onClick={() => void downloadTemplate()} title="Tải file mẫu đúng cấu trúc"
+                    <button onClick={() => { void downloadTemplate(); track("perf_template"); }} title="Tải file mẫu đúng cấu trúc"
                       className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-medium text-slate-700 hover:border-teal-400">
                       <FileDown className="h-3.5 w-3.5" /> Tải template
                     </button>

@@ -40,15 +40,35 @@ export type ActivityRow = {
 
 /** Nhãn tiếng Việt cho từng loại thao tác — hiện trong bảng giám sát. */
 export const ACTION_LABEL: Record<string, string> = {
+  // ── ePMP (Project Master Plan) ──
   view: "Mở app",
+  open_app: "Chuyển app",
   open_compliance: "Xem đánh giá tuân thủ",
   open_criteria: "Xem tiêu chí cảnh báo",
   open_activity: "Xem nhật ký giám sát",
+  open_source: "Mở cài đặt nguồn dữ liệu",
+  open_roles: "Mở phân cấp người dùng",
+  open_datatools: "Mở công cụ dữ liệu",
   export_pdf: "Xuất PDF",
   export_excel: "Xuất Excel",
   save_edit: "Sửa dữ liệu (vướng mắc/PIC/deadline)",
   change_source: "Đổi nguồn dữ liệu",
   switch_view: "Chuyển cách xem bảng",
+  hide_row: "Ẩn đầu việc",
+  unhide_row: "Bỏ ẩn đầu việc",
+  fix_drift: "Đưa ghi chú trôi về đúng chỗ",
+  remap_shift: "Dời khoá theo STT",
+  remap_shift_detail: "Dời khoá theo STT (chi tiết)",
+  audit_recover: "Khôi phục từ nhật ký",
+  // ── Media công trường ──
+  media_open: "Mở kho ảnh/clip của căn",
+  media_project: "Xem toàn bộ media dự án",
+  media_upload: "Tải ảnh/clip lên",
+  // ── Hiệu suất dự án ──
+  perf_import: "Nạp file báo cáo tuần",
+  perf_template: "Tải template hiệu suất",
+  // ── Ma trận lắp đặt ──
+  matrix_save_form: "Lưu form ma trận",
 };
 
 export function actionLabel(a: string): string {
