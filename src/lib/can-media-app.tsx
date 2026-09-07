@@ -39,27 +39,37 @@ const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|
  * CHẤM DẤU TRÊN Ô MA TRẬN NÓI LUÔN "TƯ LIỆU MỚI CỠ NÀO".
  * Nhìn cả bảng là biết hôm nay đội nào đã quay, quay lúc nào — khỏi bấm từng ô.
  *   · Tải lên HÔM NAY  → rẻ quạt đầy dần theo buổi, màu đi từ sáng sang tối trong ngày:
- *       trước 12h : 1/4 vòng · xanh lá   (sáng)
- *       12–18h    : 1/2 vòng · vàng      (chiều)
- *       sau 18h   : 3/4 vòng · xanh đậm  (tối)
- *   · Tải lên TỪ HÔM QUA TRỞ VỀ TRƯỚC → chấm XÁM tròn đầy (tư liệu cũ, không cần soi giờ).
+ *       trước 12h : 1/4 vòng · xanh lá rực (sáng)
+ *       12–18h    : 1/2 vòng · vàng rực    (chiều)
+ *       sau 18h   : 3/4 vòng · tím         (tối)
+ *   · Tải lên HÔM QUA → chấm XÁM ĐẬM tròn đầy (mới, nhưng không phải hôm nay).
+ *   · CŨ HƠN HAI NGÀY → KHÔNG chấm nữa.
+ *
+ * VÌ SAO CHỈ 2 NGÀY: chấm để trả lời "căn nào vừa có người cập nhật", không phải "căn nào từng có
+ * tư liệu". Nhịp quay thực tế khoảng một clip mỗi tuần; giữ dấu mãi thì cả bảng kín chấm, nhìn vào
+ * không còn biết chỗ nào mới. Ảnh/clip cũ vẫn nằm nguyên trong kho, bấm vào ô là xem được.
+ *
+ * MÀU CHỌN ĐỂ NỔI TRÊN Ô, không theo bảng màu heatmap: ô ma trận có cả xanh navy lẫn xanh lá đậm,
+ * chấm mà cùng tông với ô là chìm nghỉm. Tối dùng TÍM chứ không navy vì nền ô nhiều chỗ đã navy.
  * Giờ lấy theo máy người xem (giờ VN), mốc là createdTime của Drive — giờ TẢI LÊN thật, không phải
  * ngày ghi trong tên file. Không đọc được giờ thì coi như cũ → xám.
  */
-function freshMark(at: string): { color: string; deg: number; label: string } {
-  const OLD = { color: "#94A3B8", deg: 360, label: "tải lên trước hôm nay" };
-  if (!at) return OLD;
+function freshMark(at: string): { color: string; deg: number; label: string } | null {
+  if (!at) return null;
   const d = new Date(at);
-  if (isNaN(d.getTime())) return OLD;
+  if (isNaN(d.getTime())) return null;
   const now = new Date();
-  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  if (!sameDay) return OLD;
+  // So theo NGÀY LỊCH: 0 = hôm nay, 1 = hôm qua, ≥2 = cũ (không chấm).
+  const ngay = (x: Date) => Math.floor(new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime() / 86400000);
+  const cach = ngay(now) - ngay(d);
+  if (cach >= 2 || cach < 0) return null;
+  if (cach === 1) return { color: "#334155", deg: 360, label: "tải lên hôm qua" };
   const h = d.getHours();
   const gio = `${String(h).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   // Trước 12h gộp chung một buổi: 0–6h gần như không ai tải, tách thêm một mốc chỉ rối.
-  if (h < 12) return { color: "#22C55E", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
-  if (h < 18) return { color: "#EAB308", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
-  return { color: "#1E3A8A", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
+  if (h < 12) return { color: "#00E676", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
+  if (h < 18) return { color: "#FFC400", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
+  return { color: "#A855F7", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
 }
 const isMini = (p: InstallProj) => /mini\s*hotel/i.test(p.name || "");
 
@@ -335,11 +345,13 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
       for (const td of Array.from(table.querySelectorAll<HTMLTableCellElement>("td[data-c]"))) {
         const hit = canAt(td, table);
         const m = hit && marks.get(`${hit.toa} ${hit.can}`);
-        td.classList.toggle("has-media", !!m);
-        if (m) {
+        // Chỉ chấm căn có tư liệu MỚI (hôm nay / hôm qua). Căn có tư liệu cũ vẫn mở xem được như
+        // thường, chỉ là không đeo dấu nữa — dấu để tìm chỗ VỪA CẬP NHẬT.
+        const k = m ? freshMark(m.at) : null;
+        td.classList.toggle("has-media", !!k);
+        if (m && k) {
           // Chấm dấu NÓI LUÔN LÚC NÀO TẢI LÊN: màu + phần rẻ quạt được tô. Đặt bằng biến CSS trên từng
           // ô, còn phần vẽ để chung một quy tắc ::after (xem khối <style> phía dưới).
-          const k = freshMark(m.at);
           td.style.setProperty("--mk-color", k.color);
           td.style.setProperty("--mk-deg", `${k.deg}deg`);
           td.title = `${hit!.toa ? hit!.toa + " · " : ""}${hit!.can} — ${m.photos} ảnh · ${m.videos} video · ${k.label}`;
@@ -392,9 +404,9 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
       {/* DẤU CÓ MEDIA: chấm tròn góc dưới-phải ô. Dùng ::after nên không đụng chữ/màu nền của ô,
           và không cần sửa renderer — bảng render lại thì MutationObserver chấm lại. */}
       <style>{`.mtx-mark td.has-media{position:relative}
-.mtx-mark td.has-media::after{content:"";position:absolute;right:2px;bottom:2px;width:11px;height:11px;border-radius:50%;
-  background:conic-gradient(var(--mk-color,#94A3B8) var(--mk-deg,360deg), #fff 0);
-  box-shadow:0 0 0 1.4px rgba(15,23,42,.8)}`}</style>
+.mtx-mark td.has-media::after{content:"";position:absolute;right:2px;bottom:2px;width:13px;height:13px;border-radius:50%;
+  background:conic-gradient(var(--mk-color,#334155) var(--mk-deg,360deg), #fff 0);
+  box-shadow:0 0 0 1.6px #fff, 0 0 0 2.8px rgba(15,23,42,.92), 0 1px 3px rgba(2,6,23,.45)}`}</style>
       <div ref={wrapRef} onClick={onClick} className="mtx-mark" style={{ cursor: "pointer", minWidth: 0 }}>
         <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }}
           formKey={mediaFormKey(proj)} canEdit={canEdit} natural blendText zoomable boxResize />
