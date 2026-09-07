@@ -178,7 +178,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         ) : null}
       </div>
 
-      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} hid={pick.project ? undefined : sel?.hid}
+      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} hid={pick.project ? undefined : sel?.hid} maCT={sel?.maCT}
         projKey={pick.project ? `N:${pick.project}` : (sel ? projId(sel) : "")}
         initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
     </div>
@@ -327,7 +327,7 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
   // CĂN NÀO ĐÃ CÓ MEDIA → chấm dấu lên ô, nhìn ma trận là biết chỗ nào đã có tư liệu, chỗ nào còn trống.
   const mediaQ = useQuery({
     queryKey: ["projmedia", projId(proj)],
-    queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid } }),
+    queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid, maCT: proj.maCT } }),
     staleTime: 60_000,
   });
   const marks = useMemo(() => {
@@ -507,7 +507,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   };
 
-  const mediaQ = useQuery({ queryKey: ["projmedia", projId(proj)], queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid } }), staleTime: 60_000 });
+  const mediaQ = useQuery({ queryKey: ["projmedia", projId(proj)], queryFn: () => listProjectMedia({ data: { project: proj.name, hid: proj.hid, maCT: proj.maCT } }), staleTime: 60_000 });
   const marks = useMemo(() => {
     const m = new Map<string, { photos: number; videos: number }>();
     for (const c of mediaQ.data?.cans ?? []) if (!c.toa) m.set(c.can, { photos: c.photos, videos: c.videos });
@@ -578,7 +578,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
 /** POPUP MEDIA CỦA 1 PHÒNG / KHU — MỘT KHO CHUNG: ảnh và video nằm CÙNG một danh sách.
  *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
-export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
+export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; maCT?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
   const narrow = useIsMobile();   // dien thoai: popup chiem tron man, video duoc het be ngang
   // DIEN THOAI: o Toa/Phong + 2 nut tai len an sau nut "+", vi chung an mat 3 dong header (~230px
   // tren man 900px) trong khi xem clip khong dung toi. Bam "+" moi mo ra de tai anh/video.
@@ -594,7 +594,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   const qc = useQueryClient();
   // NGUỒN: TOÀN BỘ media của DỰ ÁN (1 lượt quét), gộp theo PHÒNG/KHU — mở 1 căn là xem được hết,
   // bấm qua lại giữa các phòng luôn. Dùng chung queryKey với dấu chấm ngoài ma trận nên không gọi thừa.
-  const q = useQuery({ queryKey: ["projmedia", projKey], queryFn: () => listProjectMedia({ data: { project, hid } }), staleTime: 60_000 });
+  const q = useQuery({ queryKey: ["projmedia", projKey], queryFn: () => listProjectMedia({ data: { project, hid, maCT } }), staleTime: 60_000 });
   type Item = { id: string; kind: "photo" | "video"; date?: string; toa: string; can: string; desc?: string };
   // Mặc định mỗi căn chỉ nạp 2 mục mới nhất (đủ để đối chiếu bản mới với bản trước). Bấm "Xem thêm"
   // mới gọi Drive lấy đủ của ĐÚNG căn đó — Drive vẫn giữ nguyên toàn bộ, chỉ là không nạp sẵn.
@@ -697,7 +697,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
-        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin, caption: chuThich, devAs: devAsDlg } });
+        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, maCT, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin, caption: chuThich, devAs: devAsDlg } });
         // KHÔNG nuốt lỗi PUT. Trước đây bọc catch rỗng: rớt mạng / iOS khoá màn giữa chừng là Drive
         // giữ lại cái vỏ tệp 0 byte, app vẫn báo tải xong, tới lúc mở mới lòi lỗi của Google.
         // (03/09 mất trắng 60 clip đúng kiểu này.) Nay hụt tệp nào báo tên tệp đó ngay.
@@ -750,7 +750,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     if (themCan[key] || themBusy) return;
     setThemBusy(key);
     try {
-      const r = await listCanMedia({ data: { project, hid, toa: g.toa, can: g.can } });
+      const r = await listCanMedia({ data: { project, hid, maCT, toa: g.toa, can: g.can } });
       const ds: Item[] = [
         ...r.photos.map((x) => ({ id: x.id, kind: "photo" as const, toa: g.toa, can: g.can, desc: x.desc })),
         ...r.videos.map((x) => ({ id: x.id, kind: "video" as const, date: x.date, toa: g.toa, can: g.can, desc: x.desc })),

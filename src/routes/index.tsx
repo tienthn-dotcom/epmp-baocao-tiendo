@@ -2345,7 +2345,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // XEM VIDEO công trường (chỉ Mini Hotel) — mở THẲNG từ dòng dự án, khỏi qua popup ảnh.
   const [imgSetup, setImgSetup] = useState<{ key: string; name: string; hid?: string } | null>(null);
   /** Xem TOÀN BỘ media (ảnh + video) của 1 dự án — mở thẳng popup tại dashboard, gom theo phòng/khu. */
-  const [mediaView, setMediaView] = useState<{ name: string; hid?: string } | null>(null);
+  const [mediaView, setMediaView] = useState<{ name: string; hid?: string; maCT?: string } | null>(null);
   /** Dự án nào THẬT SỰ có ảnh/video trên Drive — chỉ những dự án đó mới hiện nút "🎬 Media".
    *  Quét 1 lần, cache lâu (cây Media đổi chậm). Khớp CẢ tên có ID cứng lẫn tên trần (folder cũ). */
   const mediaProjQuery = useQuery({ queryKey: ["media-projects"], queryFn: () => listMediaProjects(), staleTime: 10 * 60 * 1000 });
@@ -4113,7 +4113,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
       {pdfTarget && <PdfDocDialog id={pdfTarget.id} name={pdfTarget.name} onClose={() => setPdfTarget(null)} />}
       {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} projMa={linkSetup.ma ?? ""} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
       {imgView && <ProjImageDialog imgKey={imgView.key} name={imgView.name} onClose={() => setImgView(null)} />}
-      {mediaView && <CanMediaDialog project={mediaView.name} hid={mediaView.hid}
+      {mediaView && <CanMediaDialog project={mediaView.name} hid={mediaView.hid} maCT={mediaView.maCT}
         projKey={mediaView.hid ? `H:${mediaView.hid}` : `N:${mediaView.name}`}
         initialToa="" initialCan="" scope="project" onClose={() => setMediaView(null)} />}
       {imgSetup && <ProjImageSetupDialog projKey={imgSetup.key} projName={imgSetup.name} projHid={imgSetup.hid} count={projImgIdx[imgSetup.key]?.n ?? 0} canManage={canSeeSystem} onClose={() => setImgSetup(null)} onSaved={() => void projImgIdxQuery.refetch()} />}
@@ -4185,8 +4185,11 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         onSetupLink={(key, name, ma, cfg) => setLinkSetup({ key, name, ma, cfg })}
         projImgIdx={projImgIdx}
         onOpenImage={(key, name) => setImgView({ key, name })}
-        onOpenVideo={(name, hid) => setMediaView({ name, hid })}
-        hasMedia={(name, hid) => mediaProjSet.has(mediaProjectFolder(name, hid)) || mediaProjSet.has(mediaSafe(name))}
+        onOpenVideo={(name, hid, maCT) => setMediaView({ name, hid, maCT })}
+        // Thư mục media nay đặt theo MÃ CT; vẫn nhận cả hai tên cũ (có ID cứng / tên trần) để dự án
+        // chưa kịp đổi tên thư mục vẫn hiện nút Media.
+        hasMedia={(name, hid, maCT) => mediaProjSet.has(mediaProjectFolder(name, hid, maCT))
+          || mediaProjSet.has(mediaProjectFolder(name, hid)) || mediaProjSet.has(mediaSafe(name))}
         onSetupImage={(key, name, hid) => setImgSetup({ key, name, hid })}
         onExportReport={handleExportReport}
         onExportPdf={handleExportPdf}
@@ -5586,8 +5589,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** ẢNH DỰ ÁN (PMO gắn): index nhẹ (dòng nào có ảnh); mở popup ảnh; PMO mở dialog thêm-gỡ ảnh. */
   projImgIdx?: ProjImgIdx;
   onOpenImage?: (key: string, name: string) => void;
-  onOpenVideo?: (name: string, hid?: string) => void;
-  hasMedia?: (name: string, hid?: string) => boolean;
+  onOpenVideo?: (name: string, hid?: string, maCT?: string) => void;
+  hasMedia?: (name: string, hid?: string, maCT?: string) => boolean;
   onSetupImage?: (key: string, name: string, hid?: string) => void;
   /** Xuất báo cáo cho 1 dự án — nhận nguyên group để phía cha tra data đầy đủ. Slide = .pptx, Pdf = .pdf. */
   onExportReport?: (g: DueMonthGroup) => void;
@@ -6422,8 +6425,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                             <button type="button" onClick={() => onOpenImage?.(g.key, g.name)}
                               className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">📷 {projImgIdx?.[g.key]?.n}</button>
                           )}
-                          {hasMedia?.(g.name) && (
-                            <button type="button" onClick={() => onOpenVideo?.(g.name, g.items[0]?.projHid)}
+                          {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
+                            <button type="button" onClick={() => onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT)}
                               className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">🎬 Ảnh/clip</button>
                           )}
                         </div>
@@ -6599,8 +6602,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                         )}
                         {/* MEDIA CÔNG TRƯỜNG — mở THẲNG popup tại đây, xem TOÀN BỘ ảnh + video của dự án
                             (gom theo phòng/khu). Trước chỉ hiện ở Mini Hotel và phải nhảy sang app khác. */}
-                        {hasMedia?.(g.name, g.items[0]?.projHid) && (
-                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid); }}
+                        {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT); }}
                             className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
                             title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
                             🎬 Media
