@@ -239,11 +239,18 @@ export default {
   //  · "0 * * * *"   (mỗi giờ)  — dựng lại PDF báo cáo tuân thủ, để thư mục Drive lúc nào cũng có
   //    bản không quá một giờ tuổi; trigger gửi mail chạy giờ nào cũng vớ được bản mới.
   async scheduled(event, env, ctx) {
-    const hourly = event && event.cron === "0 * * * *";
+    const cron = (event && event.cron) || "";
+    // PDF tuân thủ: dựng lại ở MỌI lượt (kể cả lượt mỗi giờ) — rẻ, mà bảo đảm thư mục Drive lúc nào
+    // cũng có bản không quá một giờ tuổi.
     ctx.waitUntil(backupCompliancePdf(env).then((r) => console.log("compliancePdf:", JSON.stringify(r)))
       .catch((e) => console.error("backupCompliancePdf lỗi:", e)));
-    if (hourly) return;                       // lượt mỗi giờ chỉ lo PDF, khỏi warm lại cả kho
-    ctx.waitUntil(warmAll(env));
+    if (cron === "30 16 * * *") {             // 23:30 VN — chốt ngày: sao lưu nhật ký giám sát
+      ctx.waitUntil(backupAuditLog(env).then((r) => console.log("auditLog:", JSON.stringify(r)))
+        .catch((e) => console.error("backupAuditLog lỗi:", e)));
+      return;
+    }
+    if (cron === "0 * * * *") return;         // lượt mỗi giờ chỉ lo PDF, khỏi warm lại cả kho
+    ctx.waitUntil(warmAll(env));              // 17:30 VN — warm Summary
     ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.

@@ -655,6 +655,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     const arr = [...(files ?? [])].filter((f) => (kind === "photo" ? /^image\//.test(f.type) : /^video\//.test(f.type)));
     if (!arr.length || !can.trim()) return;
     const hong: string[] = [];              // tệp tải KHÔNG xong — phải nói ra, không được nuốt
+    const xong: string[] = [];              // tệp tải XONG — ghi TÊN vào nhật ký, không chỉ đếm
     for (let i = 0; i < arr.length; i++) {
       const f = arr[i];
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
@@ -669,12 +670,18 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
           const res = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
           ok = res.ok;
         } catch { ok = false; }
-        if (!ok) hong.push(f.name);
+        if (ok) xong.push(f.name); else hong.push(f.name);
       } catch { hong.push(f.name); }
     }
     setBusy(null);
     // Nhật ký giám sát: ai tải, mấy tệp, vào phòng nào — đây là thao tác ĐỔI DỮ LIỆU thật.
-    track("media_upload", `${project}${toa.trim() ? " · " + toa.trim() : ""} · ${can.trim()} — ${arr.length - hong.length}/${arr.length} ${kind === "photo" ? "ảnh" : "clip"}`);
+    // Ghi TÊN từng tệp, không chỉ số lượng: admin phải biết đã lên cái gì, và tệp nào hụt.
+    // Cắt 600 ký tự phòng người dùng chọn cả trăm tệp một lượt (chi tiết dài quá thì bảng khó đọc).
+    const noi = (a: string[]) => { const t = a.join(", "); return t.length > 600 ? t.slice(0, 597) + "…" : t; };
+    track("media_upload",
+      `${project}${toa.trim() ? " · " + toa.trim() : ""} · ${can.trim()} — ${kind === "photo" ? "ảnh" : "clip"}`
+      + ` · xong ${xong.length}/${arr.length}${xong.length ? ": " + noi(xong) : ""}`
+      + (hong.length ? ` · HỤT ${hong.length}: ${noi(hong)}` : ""));
     if (hong.length) alert("Chưa tải lên được " + hong.length + " tệp:\n· " + hong.join("\n· ")
       + "\n\nThường do rớt mạng hoặc màn hình tắt giữa chừng. Mở lại và tải lại đúng mấy tệp này.");
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).

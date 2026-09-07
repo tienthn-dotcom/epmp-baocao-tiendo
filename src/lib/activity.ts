@@ -72,6 +72,10 @@ export const ACTION_LABEL: Record<string, string> = {
   media_open: "Mở kho ảnh/clip của căn",
   media_project: "Xem toàn bộ media dự án",
   media_upload: "Tải ảnh/clip lên",
+  // ── DST · Dữ liệu dự án · Trợ lý PMO ──
+  dst_source: "Ghim nguồn dữ liệu DST",
+  ds_publish: "Nhập bộ dữ liệu vào kho",
+  pmoai_import: "Nạp dữ liệu cho Trợ lý PMO",
   // ── Hiệu suất dự án ──
   perf_import: "Nạp file báo cáo tuần",
   perf_template: "Tải template hiệu suất",

@@ -315,3 +315,24 @@ export const backupAuditLogToDrive = createServerFn({ method: "POST" })
     const res = await drive.driveArchiveText(["ePMP", "Nhật ký giám sát"], "nhat-ky-giam-sat.csv", csv, "text/csv");
     return { ok: true, count: rows.length, link: res.link, updated: res.updated };
   });
+
+/* ── ĐỌC NHẬT KÝ TỪ DRIVE (bản lưu trữ đầy đủ) ─────────────────────────────────
+ *  D1 là kho GHI (nhanh, luôn mới); Drive là kho LƯU (đầy đủ, rẻ). Worker sao lưu D1 → Drive
+ *  mỗi ngày 23:30 VN. Xem mốc "Tất cả" thì đọc thẳng CSV trên Drive: app không phải kéo hàng
+ *  chục nghìn dòng qua D1 mỗi lần mở, mà lịch sử vẫn giữ được lâu hơn nhiều.
+ *  Trả về CSV THÔ để CLIENT tự tách dòng — Worker khỏi ôm mảng lớn trong bộ nhớ. */
+export const fetchActivityFromDrive = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ devAs: z.string().max(200).nullish() }).parse(input ?? {}))
+  .handler(async ({ data }): Promise<{ ok: boolean; csv?: string; msg?: string }> => {
+    const me = await currentEmail(data?.devAs);
+    const admins = await readAdmins();
+    if (!isAdminEmail(me, admins ?? DEFAULT_ADMINS)) return { ok: false, msg: "Chỉ admin giám sát mới xem được." };
+
+    const drive = await import("./drive.functions");
+    if (!(await drive.driveIsConfigured())) return { ok: false, msg: "Chưa cấu hình Google Drive." };
+    // CHỈ TÌM, không tạo: chưa có bản lưu thì báo rõ để người xem biết mà lùi về mốc ngắn hơn.
+    const found = await drive.driveNewestFileIn(["ePMP", "Nhật ký giám sát"]);
+    if (!found) return { ok: false, msg: "Chưa có bản lưu trên Drive (worker sao lưu lúc 23:30 mỗi ngày)." };
+    const { text } = await drive.driveReadTextImpl(found.id);
+    return { ok: true, csv: text };
+  });

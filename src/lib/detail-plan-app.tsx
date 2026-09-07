@@ -14,6 +14,7 @@ import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles, getDstSource, saveDstSource } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { parseDetailPlan, type DetailNode, type DetailProject } from "@/lib/detail-plan";
+import { track } from "@/lib/track";
 
 const SAMPLE_FILE = "1a0i1n9rjtrNUGHtGmuhj4MDQUnR4dJX9";   // dev: file mẫu (sau cho PMO cấu hình link)
 const SAMPLE_GID = "452283237";
@@ -304,7 +305,9 @@ export function DetailPlanApp() {
       if (!res?.b64) { setImportErr("Không tải được file — kiểm tra chia sẻ 'Anyone with the link'."); setBusy(false); return; }
       await importBuf(b64ToBuf(res.b64), linkSheet, linkSheet || undefined);
       // DÍNH CỨNG: lưu nguồn vào KV → reload không về file mẫu nữa (đến khi đổi link).
-      try { await saveDstSource({ data: { fileId: m[1], gid, sheet: linkSheet || undefined, full: auto || undefined, devAs } }); await qc.invalidateQueries({ queryKey: ["dst-source"] }); }
+      try { await saveDstSource({ data: { fileId: m[1], gid, sheet: linkSheet || undefined, full: auto || undefined, devAs } }); await qc.invalidateQueries({ queryKey: ["dst-source"] });
+        // Ghim nguồn = MỌI NGƯỜI mở DST sẽ thấy số của file này → phải có vết.
+        track("dst_source", `${m[1]}${gid ? " · gid " + gid : ""}${linkSheet ? " · tab " + linkSheet : ""}`); }
       catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/PMO): " + (e as Error).message); }
     } catch (e) { setImportErr((e as Error).message); setBusy(false); }
   };

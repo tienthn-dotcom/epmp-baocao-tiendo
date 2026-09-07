@@ -12,6 +12,7 @@ import { detailToRecords, toBundle } from "@/lib/etl";
 import { saveEtlRecords } from "@/lib/edits.functions";
 import { diagnoseAll } from "@/lib/ai/pmo-engine";
 import { STAGE_LABEL, type PmoDiagnosis, type AlertLevel } from "@/lib/ai/pmo-skill";
+import { track } from "@/lib/track";
 
 const SAMPLE_FILE = "1a0i1n9rjtrNUGHtGmuhj4MDQUnR4dJX9";   // dev: nguồn "Chi tiết tiến độ" (sau cho cấu hình nhiều nguồn)
 const SAMPLE_GID = "452283237";
@@ -48,6 +49,7 @@ export function PmoAiApp() {
       // ── LOAD (kho ETL) ──
       const at = new Date().toISOString();
       await saveEtlRecords({ data: { source: "detail", bundle: JSON.stringify(toBundle("detail", records, at)) } });
+      track("pmoai_import", `${records.length} dòng từ bảng tiến độ chi tiết`);
       // ── DIAGNOSE (engine) ──
       setRecCount(records.length); setDiags(diagnoseAll(records)); setRanAt(at);
     } catch (e) { setErr((e as Error).message); }

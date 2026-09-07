@@ -23,6 +23,7 @@ import { saveDataset, listDatasets, getDataset, type DatasetMeta } from "@/lib/e
 import type { ProgressRecord } from "@/lib/etl";
 import { diagnoseAll } from "@/lib/ai/pmo-engine";
 import type { PmoDiagnosis, AlertLevel } from "@/lib/ai/pmo-skill";
+import { track } from "@/lib/track";
 
 const SAMPLE_FILE = "1a0i1n9rjtrNUGHtGmuhj4MDQUnR4dJX9";
 const SAMPLE_GID = "452283237";
@@ -249,6 +250,8 @@ export function DataStudioApp() {
         mapping: mapping.filter((m) => m.field).map((m) => ({ raw: m.rawHeader, field: m.field as string, confidence: m.confidence })),
       };
       await saveDataset({ data: { meta: { id: dataset.id, name: dataset.name, domain: dataset.domain, data_type: dataset.data_type, created_at: dataset.created_at, source_file_name: dataset.source_file_name, record_count: dataset.records.length, quality_score: dataset.quality.score, schema_version: dataset.schema_version }, dataset: JSON.stringify(dataset) } });
+      // Nhập kho = thêm dữ liệu dùng chung cho cả app → ghi rõ bộ nào, bao nhiêu dòng, nguồn từ đâu.
+      track("ds_publish", `${dataset.name} · ${dataset.records.length} dòng · nguồn ${srcName}`);
       setPublished(true); setPublishMsg(null); loadLib();
       setHighlightId(dataset.id); setToast(`Đã nhập ${dataset.records.length} dòng vào Kho dữ liệu.`); setView("library");
     } catch (e) { setPublishMsg("Lỗi: " + (e as Error).message); }

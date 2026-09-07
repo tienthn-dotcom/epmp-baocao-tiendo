@@ -58,7 +58,7 @@ import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
-import { whoami, recordActivity, fetchActivityLog, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
+import { whoami, recordActivity, fetchActivityLog, fetchActivityFromDrive, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
@@ -525,7 +525,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.92.2", date: "05/09/2026", items: [
+  { v: "3.93.0", date: "07/09/2026", items: [
+    "Nhật ký giám sát phủ NỐT các app con: DST (ghim nguồn dữ liệu), Dữ liệu dự án (nhập bộ dữ liệu vào kho — ghi rõ tên bộ, số dòng, nguồn), Trợ lý PMO (nạp dữ liệu). Giờ mọi app trong thanh dọc đều để lại vết.",
+    "Tải ảnh/clip lên nay ghi RÕ TÊN TỪNG TỆP đã lên và tệp nào hụt, thay vì chỉ đếm số. Xem nhật ký là biết đã lên đúng cái gì.",
+    "Nhật ký mốc “Tất cả” đọc từ BẢN LƯU TRÊN DRIVE thay vì kéo hết từ kho trong app — mở nhanh hơn và giữ được lịch sử dài hơn. Bản lưu tự chốt lúc 23:30 mỗi ngày; các mốc Hôm nay / 7 / 30 ngày vẫn đọc trực tiếp nên thấy ngay thao tác vừa xảy ra.",
+    "Báo cáo tuân thủ tự dựng PDF lên Drive MỖI GIỜ (thư mục “Báo cáo tuân thủ”) — tối thứ Tư không phải vào bấm tay, lệnh gửi mail chạy giờ nào cũng có sẵn bản mới nhất.",
     "Ẩn được cả DÒNG CON (“↳ Block …”), không riêng dòng hạng mục. Trước đây dòng con không ai ẩn nổi, kể cả admin — mà có ẩn thì nó vẫn nằm nguyên đó vì bộ lọc bỏ sót. PMO và admin đều ẩn / soi lại / bỏ ẩn được.",
     "Nhật ký giám sát ghi thêm các việc quản trị: đổi phân cấp người dùng, tạo và khôi phục bản sao lưu, đổi nguồn dữ liệu, gắn / gỡ ma trận lắp đặt cho dự án, lưu form báo cáo tuân thủ, lưu PDF tuân thủ lên Drive, xoá form ma trận. Ai làm gì cũng có vết.",
     "Nhật ký giám sát nay thấy hoạt động của MỌI app con, không riêng ePMP: chuyển app, mở kho ảnh/clip của căn, xem toàn bộ media dự án, tải ảnh/clip lên (kèm phòng và số tệp), nạp file báo cáo tuần, tải template hiệu suất, lưu form ma trận. Cột Thao tác cũng hết chữ tiếng Anh — mọi loại thao tác đều có nhãn tiếng Việt.",
@@ -7474,6 +7478,8 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [actions, setActions] = useState<string[]>([]); // danh sách loại thao tác (server)
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  /** Đang xem BẢN LƯU TRÊN DRIVE (mốc "Tất cả") hay đọc thẳng D1 — hiện rõ cho người xem biết. */
+  const [fromDrive, setFromDrive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [backing, setBacking] = useState(false);
@@ -7505,10 +7511,56 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
 
   const since = useMemo(() => (sinceMs != null ? new Date(sinceMs).toISOString() : null), [sinceMs]);
 
+  /** Tách CSV bản lưu Drive → dòng nhật ký. Cột: Thời điểm ISO, Người dùng, Thao tác, Chi tiết. */
+  const parseDriveCsv = useCallback((csv: string): ActivityRow[] => {
+    const out: ActivityRow[] = [];
+    const cells: string[] = [];
+    let cur = "", q = false, row0 = true;
+    const push = () => { cells.push(cur); cur = ""; };
+    const endRow = () => {
+      push();
+      if (row0) { row0 = false; cells.length = 0; return; }        // bỏ dòng tiêu đề
+      if (cells.length >= 3 && cells[0]) out.push({ ts: cells[0], email: cells[1], action: cells[2], detail: cells[3] ?? "" } as ActivityRow);
+      cells.length = 0;
+    };
+    const t = csv.replace(/^﻿/, "");
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      if (q) { if (c === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; continue; }
+      if (c === '"') { q = true; continue; }
+      if (c === ",") { push(); continue; }
+      if (c === "\n") { endRow(); continue; }
+      if (c === "\r") continue;
+      cur += c;
+    }
+    if (cur || cells.length) endRow();
+    return out.reverse();                                          // Drive ghi cũ→mới, bảng hiện mới→cũ
+  }, []);
+
   // TRANG ĐẦU — đổi Người/Ngày/Thao tác thì tải lại từ đầu. Server đã lọc sẵn nên client chỉ giữ 1 trang.
+  //  · Mốc "Tất cả" đọc BẢN LƯU TRÊN DRIVE (worker chốt 23:30 mỗi ngày): D1 khỏi phải trả về hàng
+  //    chục nghìn dòng mỗi lần mở, mà lịch sử giữ được lâu hơn nhiều. Drive chưa có bản lưu / lỗi thì
+  //    tự lùi về D1 như cũ, không để người xem nhìn bảng trống.
+  //  · Các mốc ngắn (Hôm nay / 7 / 30 ngày) vẫn đọc D1 — cần thấy thao tác VỪA XẢY RA, mà bản Drive
+  //    chỉ mới tới cuối ngày hôm qua.
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
+      if (days <= 0) {
+        try {
+          const d = await fetchActivityFromDrive({ data: { devAs: devAs() } });
+          if (d.ok && d.csv) {
+            const all = parseDriveCsv(d.csv);
+            const rowsF = all.filter((r) => (!who || r.email === who) && (!actionF || r.action === actionF));
+            setRows(rowsF); setHasMore(false);
+            setUsers([...new Set(all.map((r) => r.email))].filter(Boolean).sort());
+            setActions([...new Set(all.map((r) => r.action))].filter(Boolean).sort());
+            setFromDrive(true);
+            return;
+          }
+        } catch { /* Drive hỏng → lùi về D1 ngay bên dưới */ }
+      }
+      setFromDrive(false);
       const r = await fetchActivityLog({ data: { email: who || null, since, action: actionF || null, before: null, limit: PAGE, devAs: devAs() } });
       if (!r.ok) { setErr("Bạn không có quyền xem nhật ký này."); setRows([]); setHasMore(false); return; }
       setRows(r.rows);
@@ -7520,7 +7572,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
     } finally {
       setLoading(false);
     }
-  }, [who, since, actionF]);
+  }, [who, since, actionF, days, parseDriveCsv]);
   useEffect(() => { void load(); }, [load]);
 
   // TẢI THÊM (cũ hơn) — kéo trang kế theo con trỏ = ts của dòng CŨ NHẤT đang có; cộng dồn vào rows.
@@ -7643,6 +7695,9 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
                   ? `${filtered.length}/${rows.length} lượt đã tải khớp tìm kiếm`
                   : `Đã tải ${rows.length} lượt (mới nhất trên cùng)`}
                 {hasMore && <span className="text-slate-400"> · còn dòng cũ hơn</span>}
+                {/* Nói rõ đang đọc từ đâu: bản Drive gom tới cuối ngày hôm qua, thao tác trong hôm nay
+                    thì xem ở mốc ngắn. Không ghi ra thì người xem tưởng nhật ký sót. */}
+                {fromDrive && <span className="text-slate-400"> · đọc từ bản lưu trên Drive (chốt 23:30 mỗi ngày)</span>}
               </div>
               <table className="w-full border-collapse text-[11.5px]">
                 {/* Sticky đặt Ở TỪNG <th> chứ KHÔNG ở <thead>: nhiều trình duyệt bỏ qua
