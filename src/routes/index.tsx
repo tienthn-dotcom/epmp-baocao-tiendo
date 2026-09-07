@@ -6213,7 +6213,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               Tổng thể tiến độ
             </button>
           </div>
-          {/* ĐIỆN THOẠI: đổi giữa THẺ (dễ đọc) và BẢNG (đủ 11 cột, cuộn ngang). */}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 [&>*]:shrink-0 [&_button]:whitespace-nowrap print:hidden">
+          {/* NÚT "HIỆN TẤT CẢ ĐẦU VIỆC" (kể cả ĐÃ HOÀN THÀNH) — bên TRÁI "Mở tất cả", cho cả 2 bảng.
+              Bật → thêm việc 100% (badge "Đã hoàn thành" xanh lá ở cột Tình trạng). KPI không đổi. */}
+          {/* ĐIỆN THOẠI: đổi giữa THẺ (dễ đọc) và BẢNG (đủ 11 cột, cuộn ngang). Đặt CÙNG HÀNG với
+              mấy nút thao tác — để riêng một dòng thì cụm bé tí nằm chơ vơ, phí một dòng màn hình. */}
           {narrowScreen && viewMode === "list" && (
             <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-[11px] font-medium print:hidden">
               <button type="button" onClick={() => setCardView(true)}
@@ -6222,14 +6227,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                 className={`h-9 border-l border-slate-300 px-3 ${!cardView ? "bg-slate-800 text-white" : "bg-white text-slate-600"}`}>Bảng</button>
             </div>
           )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 [&>*]:shrink-0 [&_button]:whitespace-nowrap print:hidden">
-          {/* NÚT "HIỆN TẤT CẢ ĐẦU VIỆC" (kể cả ĐÃ HOÀN THÀNH) — bên TRÁI "Mở tất cả", cho cả 2 bảng.
-              Bật → thêm việc 100% (badge "Đã hoàn thành" xanh lá ở cột Tình trạng). KPI không đổi. */}
           <button aria-label={"Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"} type="button" onClick={onToggleDone}
             title="Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"
             className={`rounded-md border px-2.5 text-[11px] font-medium ${narrowScreen ? "h-9" : "py-0.5"} ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
-            {showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc"}
+            {narrowScreen ? (showDone ? "✓ Cả việc xong" : "Cả việc xong") : (showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc")}
           </button>
           {/* DÒNG ĐÃ ẨN (admin + PMO) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
           {canHideRow && hiddenCount > 0 && (
@@ -6246,7 +6247,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             <button
               onClick={() => setExpandedGroups(allExpanded ? new Set() : new Set(groups.map(g => g.key)))}
               className={`rounded-md border border-teal-300 bg-teal-50 px-2.5 text-[11px] font-medium text-teal-800 hover:border-teal-500 ${narrowScreen ? "h-9" : "py-0.5"}`}>
-              {allExpanded ? "Thu gọn tất cả" : "Mở tất cả"}
+              {allExpanded ? (narrowScreen ? "Thu gọn" : "Thu gọn tất cả") : (narrowScreen ? "Mở hết" : "Mở tất cả")}
             </button>
           )}
           {viewMode === "gantt" && ganttHasChildren && (
@@ -6323,7 +6324,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           </span>
           <span className="text-slate-400">{filterOpen ? "Thu gọn ▲" : "Mở ▼"}</span>
         </button>
-        <div className={`${filterOpen ? "grid" : "hidden"} grid-cols-1 gap-1.5 md:contents`}>
+        <div className={`${filterOpen ? "grid" : "hidden"} grid-cols-2 gap-1.5 md:contents`}>
         {/* Bộ lọc "Bộ phận", "Hạng mục", "Nhóm cảnh báo" đã bỏ khỏi thanh lọc:
             lọc theo hạng mục = bấm thẻ giai đoạn ở trên; lọc theo cảnh báo = bấm thẻ KPI ở trên. */}
         <MultiSelect
@@ -6363,7 +6364,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         />
         <button type="button"
           onClick={() => setFilters(f => ({ ...f, mpOnly: !f.mpOnly }))}
-          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${filters.mpOnly ? "border-blue-600 bg-blue-50 font-semibold text-blue-800" : "border-slate-300 bg-white text-slate-700"} hover:border-blue-500`}
+          className={`flex h-10 w-full items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] md:h-auto md:w-auto md:px-2 md:py-1 md:text-xs ${filters.mpOnly ? "border-blue-600 bg-blue-50 font-semibold text-blue-800" : "border-slate-300 bg-white text-slate-700"} hover:border-blue-500`}
           title="Chỉ hiện các dự án được đánh dấu Cần cập nhật MP (kể cả không thuộc nhóm cảnh báo)">
           <span className={`h-2 w-2 rounded-full ${filters.mpOnly ? "bg-blue-600" : "bg-slate-300"}`} />
           Cần cập nhật MP
@@ -7341,8 +7342,8 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 rounded-md border bg-white px-2 py-1 text-xs ${count > 0 ? "border-teal-600 text-teal-800" : "border-slate-300 text-slate-700"} hover:border-teal-500`}>
-        <span>{label}</span>
+        className={`flex h-10 w-full items-center justify-between gap-1.5 rounded-md border bg-white px-2.5 text-[12.5px] md:h-auto md:w-auto md:justify-start md:px-2 md:py-1 md:text-xs ${count > 0 ? "border-teal-600 text-teal-800" : "border-slate-300 text-slate-700"} hover:border-teal-500`}>
+        <span className="truncate">{label}</span>
         {count > 0 ? (
           <span className="rounded bg-teal-600 px-1.5 py-0 text-[10px] font-bold text-white tabular-nums">{count}</span>
         ) : (
