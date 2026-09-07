@@ -6384,22 +6384,35 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                   const groupLate = !g.delivered && !!g.deadline && g.deadline.slice(0, 10) < today;
                   return (
                     <div key={g.key} className="overflow-hidden rounded-lg border border-slate-300">
-                      {/* Đầu nhóm = DỰ ÁN. Bấm cả dải để xổ / thu — vùng bấm rộng, ngón tay không trượt. */}
-                      <button type="button" onClick={() => setExpandedGroups((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}
-                        className="flex w-full items-start gap-2 bg-[#1e293b] px-3 py-2 text-left text-white">
-                        <span className={`mt-[3px] shrink-0 text-[10px] transition-transform ${expanded ? "rotate-90" : ""}`}>▶</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-[13px] font-bold leading-snug">{g.name}</span>
-                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-300">
-                            <span className="font-semibold text-slate-200">{g.maCT || "—"}</span>
-                            <span>{g.items.length} hạng mục</span>
-                            <span className={groupLate ? "rounded bg-red-500 px-1.5 font-bold text-white" : ""}>
-                              Bàn giao {fmtDateVN2(g.deadline)}
+                      {/* Đầu nhóm = DỰ ÁN. Bấm cả dải để xổ / thu — vùng bấm rộng, ngón tay không trượt.
+                          Ảnh và media của dự án là NÚT RIÊNG bên phải (không lồng nút trong nút). */}
+                      <div className="flex items-start gap-2 bg-[#1e293b] px-3 py-2 text-white">
+                        <button type="button" onClick={() => setExpandedGroups((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}
+                          className="flex min-w-0 flex-1 items-start gap-2 text-left">
+                          <span className={`mt-[3px] shrink-0 text-[10px] transition-transform ${expanded ? "rotate-90" : ""}`}>▶</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13px] font-bold leading-snug">{g.name}</span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-300">
+                              <span className="font-semibold text-slate-200">{g.maCT || "—"}</span>
+                              <span>{g.items.length} hạng mục</span>
+                              <span className={groupLate ? "rounded bg-red-500 px-1.5 font-bold text-white" : ""}>
+                                Bàn giao {fmtDateVN2(g.deadline)}
+                              </span>
                             </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-slate-400">PM {g.pm || "—"}</span>
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-slate-400">PM {g.pm || "—"}</span>
-                        </span>
-                      </button>
+                        </button>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {(projImgIdx?.[g.key]?.n ?? 0) > 0 && (
+                            <button type="button" onClick={() => onOpenImage?.(g.key, g.name)}
+                              className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">📷 {projImgIdx?.[g.key]?.n}</button>
+                          )}
+                          {hasMedia?.(g.name) && (
+                            <button type="button" onClick={() => onOpenVideo?.(g.name, g.items[0]?.projHid)}
+                              className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">🎬 Ảnh/clip</button>
+                          )}
+                        </div>
+                      </div>
                       {expanded && (
                         <div className="grid gap-2 bg-slate-50 p-2">
                           {g.items.map((it, i) => renderCard(it, i))}

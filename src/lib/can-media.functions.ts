@@ -31,10 +31,18 @@ const mediaPath = (drive: { mediaFolderPath: (p: string, t: string, c: string, k
   project: string, toa: string, can: string, kind: string, hid?: string) =>
   drive.mediaFolderPath(project, toa, can, kind === "video" ? "video" : "photo", "ePMP", hid);
 const rid6 = () => Math.random().toString(36).slice(2, 8);
+/** CHÚ THÍCH ảnh/clip — cắt còn 100 TỪ (chốt với chủ nhà) và bỏ xuống dòng cho gọn một đoạn.
+ *  Chặn ở SERVER chứ không chỉ ở ô nhập: client sửa được, server thì không. */
+const capNgan = (s?: string): string | undefined => {
+  const t = (s || "").replace(/\s+/g, " ").trim();
+  if (!t) return undefined;
+  const tu = t.split(" ");
+  return (tu.length > 100 ? tu.slice(0, 100).join(" ") + "…" : t).slice(0, 1000);
+};
 
 /** Cấp PHIÊN UPLOAD 1 file media (ảnh/video) cho 1 PHÒNG (Toà + căn) của 1 DỰ ÁN. Trả { uploadUrl, name }. */
 export const startCanMediaUpload = createServerFn({ method: "POST" })
-  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string }) => d)
+  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string; caption?: string }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
@@ -43,7 +51,7 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
     const name = `${can}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
-    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin);
+    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin, capNgan(data.caption));
     return { uploadUrl, name };
   });
 
@@ -79,7 +87,7 @@ export const readItemPdf = createServerFn({ method: "POST" })
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
 export const listCanMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string; toa?: string; can: string }) => d)
-  .handler(async ({ data }): Promise<{ photos: { id: string; name: string; link: string }[]; videos: { id: string; name: string; link: string; date: string }[] }> => {
+  .handler(async ({ data }): Promise<{ photos: { id: string; name: string; link: string; desc?: string }[]; videos: { id: string; name: string; link: string; date: string; desc?: string }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { photos: [], videos: [] };
     const dateOf = (fname: string) => { const b = fname.replace(/\.[^.]+$/, ""); const m = b.match(/(\d{2}-\d{2}-\d{2})/); return m ? m[1] : ""; };
@@ -89,8 +97,8 @@ export const listCanMedia = createServerFn({ method: "POST" })
     ]);
     const byNew = (a: { name: string }, b: { name: string }) => b.name.localeCompare(a.name);
     return {
-      photos: ph.slice().sort(byNew).map((f) => ({ id: f.id, name: f.name, link: f.link })),
-      videos: vd.slice().sort(byNew).map((f) => ({ id: f.id, name: f.name, link: f.link, date: dateOf(f.name) })),
+      photos: ph.slice().sort(byNew).map((f) => ({ id: f.id, name: f.name, link: f.link, ...(f.desc ? { desc: f.desc } : {}) })),
+      videos: vd.slice().sort(byNew).map((f) => ({ id: f.id, name: f.name, link: f.link, date: dateOf(f.name), ...(f.desc ? { desc: f.desc } : {}) })),
     };
   });
 
@@ -110,7 +118,7 @@ export const readCanMediaB64 = createServerFn({ method: "POST" })
  *  Quét theo LÔ (driveList*ByParents) nên chỉ tốn ~4 lượt gọi Drive, không phải mỗi phòng một lượt. */
 export const listProjectMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string }) => d)
-  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string }[] }[] }> => {
+  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string }[] }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { cans: [] };
     const project = drive.mediaProjectFolder(data.project, data.hid);
@@ -122,7 +130,7 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     const lvl2 = await drive.driveListFoldersByParents(lvl1.map((f) => f.id));
     const name1 = new Map(lvl1.map((f) => [f.id, f.name] as const));
     // Ô "căn/khu" = folder mà con của nó là Hình ảnh/Video. Gom mọi thư mục KIND kèm căn/khu sở hữu.
-    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string }[] }>();
+    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string }[] }>();
     const kindOwner = new Map<string, { key: string; kind: string }>();
     const keyOf = (toa: string, can: string) => `${toa} ${can}`;
     const own = (toa: string, can: string, kindId: string, kindName: string) => {
@@ -152,7 +160,7 @@ export const listProjectMedia = createServerFn({ method: "POST" })
       // gọi Drive lại từng phòng. Ngày lấy từ đuôi tên file "<căn>_<dd-mm-yy>_<rid>.<ext>".
       const base = f.name.replace(/\.[^.]+$/, "");
       const dm = base.match(/(\d{2}-\d{2}-\d{2})/);
-      c.media.push({ id: f.id, kind: o.kind === "Video" ? "video" : "photo", date: dm ? dm[1] : "" });
+      c.media.push({ id: f.id, kind: o.kind === "Video" ? "video" : "photo", date: dm ? dm[1] : "", ...(f.desc ? { desc: f.desc } : {}) });
     }
     return { cans: [...cans.values()].filter((c) => c.photos || c.videos) };
   });

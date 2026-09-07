@@ -292,21 +292,21 @@ export async function driveListDirImpl(path: string[]): Promise<{ id: string; na
  *  CHỈ ĐỌC — dùng findDbPath (KHÔNG tạo thư mục): xem một căn chưa có gì thì trả rỗng, tuyệt đối không
  *  đẻ folder. Trước đây dùng ensureDbPath nên chỉ mở popup xem cũng tạo folder, và 2 lời gọi song song
  *  (Hình ảnh + Video) còn tạo trùng folder căn. Thư mục chỉ sinh ra lúc UPLOAD thật. */
-export async function driveListChildrenImpl(path: string[]): Promise<{ files: { id: string; name: string; link: string }[]; folders: { id: string; name: string }[] }> {
+export async function driveListChildrenImpl(path: string[]): Promise<{ files: { id: string; name: string; link: string; desc?: string }[]; folders: { id: string; name: string }[] }> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
   const folder = await findDbPath(token, env, path);
   if (!folder) return { files: [], folders: [] };
   const q = `'${folder}' in parents and trashed=false`;
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,size)&orderBy=name&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
-  const j = await r.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string; size?: string }[] };
-  const files: { id: string; name: string; link: string }[] = [];
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink,size,description)&orderBy=name&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+  const j = await r.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string; size?: string; description?: string }[] };
+  const files: { id: string; name: string; link: string; desc?: string }[] = [];
   const folders: { id: string; name: string }[] = [];
   for (const f of (j.files || [])) {
     if (f.mimeType === "application/vnd.google-apps.folder") folders.push({ id: f.id, name: f.name });
     // Bỏ file 0 BYTE ở đây nữa (cùng lý do với driveListFilesByParents): upload hụt để lại vỏ rỗng,
     // mở ra là Google trả lỗi. Lọc cả hai chỗ liệt kê thì vỏ rỗng không lọt vào đâu được.
-    else if (!(f.size != null && Number(f.size) === 0)) files.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view` });
+    else if (!(f.size != null && Number(f.size) === 0)) files.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, ...(f.description ? { desc: f.description } : {}) });
   }
   return { files, folders };
 }
@@ -330,22 +330,22 @@ export async function driveListFoldersByParents(parentIds: string[]): Promise<{ 
 
 /** Liệt kê FILE nằm trong BẤT KỲ folder nào thuộc `parentIds` (query OR nhiều parent, kèm `parent`).
  *  Lấy clip của nhiều thư mục căn cùng lúc, không gọi Drive N lần. HÀM THUẦN. */
-export async function driveListFilesByParents(parentIds: string[]): Promise<{ id: string; name: string; link: string; parent: string; at: string }[]> {
+export async function driveListFilesByParents(parentIds: string[]): Promise<{ id: string; name: string; link: string; parent: string; at: string; desc?: string }[]> {
   if (!parentIds.length) return [];
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
-  const out: { id: string; name: string; link: string; parent: string; at: string }[] = [];
+  const out: { id: string; name: string; link: string; parent: string; at: string; desc?: string }[] = [];
   for (let i = 0; i < parentIds.length; i += 40) {   // chia lô để query không quá dài
     const chunk = parentIds.slice(i, i + 40);
     const q = `trashed=false and mimeType!='application/vnd.google-apps.folder' and (${chunk.map((id) => `'${id}' in parents`).join(" or ")})`;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents,size,createdTime)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
-    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[]; size?: string; createdTime?: string }[] };
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,parents,size,createdTime,description)&pageSize=1000&${SHARED}`, { headers: AUTHH(token) });
+    const j = await r.json() as { files?: { id: string; name: string; webViewLink?: string; parents?: string[]; size?: string; createdTime?: string; description?: string }[] };
     // BỎ FILE 0 BYTE: upload hụt giữa chừng (rớt mạng, iOS khoá màn) để lại cái vỏ file rỗng trên Drive.
     // Vỏ đó vẫn hiện thành thẻ video, bấm vào thì Google trả lỗi 400. Không liệt kê nữa.
     for (const f of (j.files || [])) {
       if (f.size != null && Number(f.size) === 0) continue;
       // createdTime = GIỜ TẢI LÊN thật (ISO). Tên file chỉ có ngày quay, không đủ để chấm dấu theo giờ.
-      out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "", at: f.createdTime || "" });
+      out.push({ id: f.id, name: f.name, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, parent: f.parents?.[0] || "", at: f.createdTime || "", ...(f.description ? { desc: f.description } : {}) });
     }
   }
   return out;
@@ -426,7 +426,7 @@ export async function driveReadTextImpl(fileId: string): Promise<{ text: string 
 /** Mở PHIÊN TẢI LÊN (resumable) rồi trả URL cho TRÌNH DUYỆT tự PUT tệp — tệp KHÔNG đi qua Worker.
  *  `origin`: gửi kèm Origin của trang khi xin phiên thì Google mới cho trình duyệt PUT lên URL đó
  *  (không có Origin → PUT bị chặn CORS, Drive giữ lại cái vỏ tệp 0 byte). */
-export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string, origin?: string): Promise<{ uploadUrl: string }> {
+export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string, origin?: string, description?: string): Promise<{ uploadUrl: string }> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
   const folder = await ensureDbPath(token, env, path);
@@ -437,7 +437,7 @@ export async function driveCreateResumableSession(path: string[], fileName: stri
       ...AUTHH(token), "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mimeType || "video/mp4",
       ...(origin && /^https?:\/\/[^\s]+$/.test(origin) ? { Origin: origin } : {}),
     },
-    body: JSON.stringify({ name, parents: [folder] }),
+    body: JSON.stringify({ name, parents: [folder], ...(description ? { description: description.slice(0, 1000) } : {}) }),
   });
   if (!r.ok) throw new Error("Không tạo được phiên upload Drive: " + (await r.text()).slice(0, 160));
   const loc = r.headers.get("location");

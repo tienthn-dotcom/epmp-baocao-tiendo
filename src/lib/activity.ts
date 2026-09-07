@@ -70,7 +70,7 @@ export const ACTION_LABEL: Record<string, string> = {
   compliance_form_save: "Lưu form báo cáo tuân thủ",
   compliance_pdf: "Lưu PDF tuân thủ lên Drive",
   matrix_reset_form: "Xoá form ma trận",
-  // ── Media công trường ──
+  // ── Hình ảnh mỗi ngày (media công trường) ──
   media_open: "Mở kho ảnh/clip của căn",
   media_project: "Xem toàn bộ media dự án",
   media_upload: "Tải ảnh/clip lên",

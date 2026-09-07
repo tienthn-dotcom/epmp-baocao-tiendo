@@ -56,7 +56,7 @@ const APPS: AppDef[] = [
   // ĐANG DỰNG (dev-only) — Media công trường: chọn dự án → ma trận → click ô căn → xem/tải ảnh+video.
   // GỘP 04/09/2026: app cũ "Video tại công trường" (clipcan) đã BỎ — Media là bản duy nhất, cùng
   // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
-  { id: "media", name: "Media công trường", sub: "Ma trận + ảnh/video theo căn", icon: <Images className="h-5 w-5" />, live: true },
+  { id: "media", name: "Hình ảnh mỗi ngày", sub: "Ma trận + ảnh/video theo căn", icon: <Images className="h-5 w-5" />, live: true },
 ];
 
 export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
