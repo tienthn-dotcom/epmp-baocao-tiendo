@@ -27,7 +27,7 @@ import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
-import { roleOf } from "@/lib/roles";
+import { roleOf, type UserRole } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { track } from "@/lib/track";
 import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
@@ -41,16 +41,18 @@ import { CanMediaApp } from "@/lib/can-media-app";
 const RAIL_W = 52;        // bề rộng thanh khi THU (icon)
 const RAIL_W_OPEN = 214;  // bề rộng khi MỞ (overlay)
 
-type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: boolean; adminPmoOnly?: boolean };
+type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: boolean; adminPmoOnly?: boolean; roleOnly?: UserRole[] };
 // `live: true` = hiện cả trên bản chính thức. Không có = CHỈ hiện ở dev (tính năng đang làm dở).
 // `adminPmoOnly: true` = trên bản live CHỈ admin/PMO thấy (người thường không thấy trong rail).
+// `roleOnly: [...]`    = chỉ người ĐƯỢC PHÂN CẤP trong danh sách đó (+ admin) thấy. Dùng cho số
+//                        sản lượng / doanh thu / hiệu suất nhân sự: không phải ai cũng được xem.
 const APPS: AppDef[] = [
   { id: "epmp", name: "Project Master Plan", sub: "ePMP · PMO", icon: <LayoutDashboard className="h-5 w-5" />, live: true },
   { id: "mtld", name: "MTLĐ", sub: "Biểu đồ tiến độ", icon: <LineChart className="h-5 w-5" />, live: true, adminPmoOnly: true },
   { id: "detail", name: "DST", sub: "Theo dõi tiến độ chi tiết", icon: <ListTree className="h-5 w-5" />, live: true },
   { id: "pmoai", name: "Trợ lý PMO", sub: "Cảnh báo & quyết định", icon: <Brain className="h-5 w-5" /> },
   { id: "datastudio", name: "Dữ liệu dự án", sub: "Nhập & quản lý dữ liệu", icon: <Database className="h-5 w-5" /> },
-  { id: "perf", name: "Hiệu suất dự án", sub: "Doanh thu / Nhân sự", icon: <BarChart3 className="h-5 w-5" />, live: true },
+  { id: "perf", name: "Hiệu suất dự án", sub: "Doanh thu / Nhân sự", icon: <BarChart3 className="h-5 w-5" />, live: true, roleOnly: ["BOD", "PMO", "PM"] },
   // ĐANG DỰNG (dev-only) — Media công trường: chọn dự án → ma trận → click ô căn → xem/tải ảnh+video.
   // GỘP 04/09/2026: app cũ "Video tại công trường" (clipcan) đã BỎ — Media là bản duy nhất, cùng
   // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
@@ -88,9 +90,13 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["shell-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["shell-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
-  // Trên bản chính thức (live) chỉ hiện app có cờ `live`, và app adminPmoOnly chỉ khi là admin/PMO.
-  const visibleApps = APPS.filter((a) => (stage === "live" ? a.live : true) && (!a.adminPmoOnly || canManage));
+  const myRole = meQ.data?.email ? roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) : null;
+  const canManage = !!(meQ.data?.isAdmin || myRole === "PMO");
+  // Trên bản chính thức (live) chỉ hiện app có cờ `live`, app adminPmoOnly chỉ khi là admin/PMO,
+  // app roleOnly chỉ khi cấp của người dùng nằm trong danh sách (admin luôn thấy hết).
+  const visibleApps = APPS.filter((a) => (stage === "live" ? a.live : true)
+    && (!a.adminPmoOnly || canManage)
+    && (!a.roleOnly || meQ.data?.isAdmin || (myRole && a.roleOnly.includes(myRole))));
   // App đang chọn phải nằm trong danh sách được phép; nếu không (vd người thường lỡ ở mtld) → về ePMP.
   const effectiveApp = visibleApps.some((a) => a.id === activeApp) ? activeApp : "epmp";
   // Nội dung = app đang chọn. `epmpApp` LUÔN nằm ở đây (không remount khi bật/tắt thanh).

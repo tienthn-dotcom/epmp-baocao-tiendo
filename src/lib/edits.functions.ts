@@ -806,7 +806,7 @@ export const saveUserRole = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
       email: z.string().email().max(200),
-      role: z.enum(["PMO", "BOD"]).nullable(),
+      role: z.enum(["PMO", "BOD", "PM"]).nullable(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
