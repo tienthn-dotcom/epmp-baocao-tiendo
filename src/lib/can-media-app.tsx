@@ -596,11 +596,17 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   // bấm qua lại giữa các phòng luôn. Dùng chung queryKey với dấu chấm ngoài ma trận nên không gọi thừa.
   const q = useQuery({ queryKey: ["projmedia", projKey], queryFn: () => listProjectMedia({ data: { project, hid } }), staleTime: 60_000 });
   type Item = { id: string; kind: "photo" | "video"; date?: string; toa: string; can: string; desc?: string };
+  // Mặc định mỗi căn chỉ nạp 2 mục mới nhất (đủ để đối chiếu bản mới với bản trước). Bấm "Xem thêm"
+  // mới gọi Drive lấy đủ của ĐÚNG căn đó — Drive vẫn giữ nguyên toàn bộ, chỉ là không nạp sẵn.
+  const [themCan, setThemCan] = useState<Record<string, Item[]>>({});
+  const [themBusy, setThemBusy] = useState<string | null>(null);
   const groups = useMemo(() => {
     const gs = (q.data?.cans ?? []).map((c) => ({
       toa: c.toa, can: c.can,
-      items: [...c.media].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "photo" ? -1 : 1))
-        .map((x) => ({ ...x, toa: c.toa, can: c.can } as Item)),
+      tong: c.tong ?? c.media.length,
+      items: (themCan[`${c.toa}\u0000${c.can}`] ?? [...c.media]
+        .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "photo" ? -1 : 1))
+        .map((x) => ({ ...x, toa: c.toa, can: c.can } as Item))),
     })).filter((g) => g.items.length);
     // PHẠM VI: bấm 1 ô ma trận → CHỈ phòng đó; bấm tên dự án → CẢ dự án nhưng vẫn gom theo phòng
     // (để người khác nhìn là biết ảnh/video thuộc phòng nào).
@@ -608,7 +614,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     const here = key(toa.trim(), can.trim());
     if (scope === "can") return gs.filter((g) => key(g.toa, g.can) === here);
     return gs.sort((a, b) => a.toa.localeCompare(b.toa, "vi") || a.can.localeCompare(b.can, "vi", { numeric: true }));
-  }, [q.data, toa, can, scope]);
+  }, [q.data, toa, can, scope, themCan]);
   const items = useMemo<Item[]>(() => groups.flatMap((g) => g.items), [groups]);
   const [sel, setSel] = useState(0);
   // CHÚ THÍCH = HỘP THOẠI như ô "Vướng mắc / Giải pháp": nhiều người viết, mỗi tin có người viết và
@@ -736,6 +742,22 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
       setCapEditId(null);
     } catch (e) { setCapErr((e as Error).message); }
     setCapBusy(false);
+  }
+
+  /** Nạp ĐỦ ảnh/clip của một căn (bấm "Xem thêm"). Chỉ gọi khi người ta thật sự cần xem bản cũ. */
+  async function napThem(g: { toa: string; can: string }) {
+    const key = `${g.toa}\u0000${g.can}`;
+    if (themCan[key] || themBusy) return;
+    setThemBusy(key);
+    try {
+      const r = await listCanMedia({ data: { project, hid, toa: g.toa, can: g.can } });
+      const ds: Item[] = [
+        ...r.photos.map((x) => ({ id: x.id, kind: "photo" as const, toa: g.toa, can: g.can, desc: x.desc })),
+        ...r.videos.map((x) => ({ id: x.id, kind: "video" as const, date: x.date, toa: g.toa, can: g.can, desc: x.desc })),
+      ];
+      setThemCan((m) => ({ ...m, [key]: ds }));
+    } catch { /* hỏng thì thôi, vẫn còn 2 mục mới nhất */ }
+    setThemBusy(null);
   }
 
   const upBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 8, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 };
@@ -964,8 +986,15 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               const here = g.toa === toa.trim() && g.can === can.trim();
               return (
                 <div key={`${g.toa}/${g.can}`} style={{ flex: "0 0 auto" }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: here ? C.teal : "#94a3b8", marginBottom: 4, whiteSpace: "nowrap" }}>
-                    {g.toa ? `${g.toa} · ` : ""}{g.can} <span style={{ opacity: .7 }}>({g.items.length})</span>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: here ? C.teal : "#94a3b8", marginBottom: 4, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{g.toa ? `${g.toa} · ` : ""}{g.can} <span style={{ opacity: .7 }}>({g.items.length}{g.tong > g.items.length ? `/${g.tong}` : ""})</span></span>
+                    {/* Còn bản cũ chưa nạp → cho bấm lấy thêm. Mặc định chỉ 2 bản mới nhất cho nhẹ. */}
+                    {g.tong > g.items.length && (
+                      <button type="button" onClick={() => void napThem(g)} disabled={!!themBusy}
+                        style={{ border: "none", background: "rgba(255,255,255,.14)", color: "#cbd5e1", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        {themBusy === `${g.toa} ${g.can}` ? "…" : `+${g.tong - g.items.length} cũ`}
+                      </button>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     {g.items.map((it, k) => {

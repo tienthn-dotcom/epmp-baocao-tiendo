@@ -84,6 +84,8 @@ const mediaPath = (drive: { mediaFolderPath: (p: string, t: string, c: string, k
   project: string, toa: string, can: string, kind: string, hid?: string) =>
   drive.mediaFolderPath(project, toa, can, kind === "video" ? "video" : "photo", "ePMP", hid);
 const rid6 = () => Math.random().toString(36).slice(2, 8);
+/** Số mục mới nhất mỗi căn mà màn hình nạp sẵn (Drive vẫn giữ đủ, xem cũ thì bấm "Xem thêm"). */
+const MEDIA_MOI_NHAT = 2;
 /** CHÚ THÍCH ảnh/clip — cắt còn 100 TỪ (chốt với chủ nhà) và bỏ xuống dòng cho gọn một đoạn.
  *  Chặn ở SERVER chứ không chỉ ở ô nhập: client sửa được, server thì không. */
 const capNgan = (s?: string): string | undefined => {
@@ -219,7 +221,7 @@ export const readCanMediaB64 = createServerFn({ method: "POST" })
  *  Quét theo LÔ (driveList*ByParents) nên chỉ tốn ~4 lượt gọi Drive, không phải mỗi phòng một lượt. */
 export const listProjectMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string }) => d)
-  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string }[] }[] }> => {
+  .handler(async ({ data }): Promise<{ cans: { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string }[]; tong: number }[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) return { cans: [] };
     const project = drive.mediaProjectFolder(data.project, data.hid);
@@ -231,12 +233,12 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     const lvl2 = await drive.driveListFoldersByParents(lvl1.map((f) => f.id));
     const name1 = new Map(lvl1.map((f) => [f.id, f.name] as const));
     // Ô "căn/khu" = folder mà con của nó là Hình ảnh/Video. Gom mọi thư mục KIND kèm căn/khu sở hữu.
-    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string }[] }>();
+    const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string }[]; tong: number }>();
     const kindOwner = new Map<string, { key: string; kind: string }>();
     const keyOf = (toa: string, can: string) => `${toa} ${can}`;
     const own = (toa: string, can: string, kindId: string, kindName: string) => {
       const key = keyOf(toa, can);
-      if (!cans.has(key)) cans.set(key, { toa, can, photos: 0, videos: 0, at: "", media: [] });
+      if (!cans.has(key)) cans.set(key, { toa, can, photos: 0, videos: 0, at: "", media: [], tong: 0 });
       kindOwner.set(kindId, { key, kind: kindName });
     };
     // lvl1 chính là căn/khu (không có cấp Toà)
@@ -261,9 +263,19 @@ export const listProjectMedia = createServerFn({ method: "POST" })
       // gọi Drive lại từng phòng. Ngày lấy từ đuôi tên file "<căn>_<dd-mm-yy>_<rid>.<ext>".
       const base = f.name.replace(/\.[^.]+$/, "");
       const dm = base.match(/(\d{2}-\d{2}-\d{2})/);
-      c.media.push({ id: f.id, kind: o.kind === "Video" ? "video" : "photo", date: dm ? dm[1] : "", ...(f.desc ? { desc: f.desc } : {}) });
+      c.media.push({ id: f.id, kind: o.kind === "Video" ? "video" : "photo", date: dm ? dm[1] : "", ...(f.desc ? { desc: f.desc } : {}), ...(f.at ? { at: f.at } : {}) });
     }
-    return { cans: [...cans.values()].filter((c) => c.photos || c.videos) };
+    // CHỈ TRẢ 2 MỤC MỚI NHẤT MỖI CĂN. Một dự án vài chục căn × chục clip là hàng trăm mục nặng
+    // vô ích: xem tiến độ chỉ cần bản mới nhất và bản kế trước để đối chiếu. Drive vẫn giữ nguyên
+    // toàn bộ; muốn xem cũ thì bấm "Xem thêm" trong popup, lúc đó mới gọi listCanMedia lấy đủ.
+    const out = [...cans.values()].filter((c) => c.photos || c.videos);
+    for (const c of out) {
+      c.tong = c.media.length;
+      // Mới nhất trước: ưu tiên giờ tải lên thật (createdTime), thiếu thì lùi về ngày trong tên tệp.
+      c.media.sort((a, b) => (b.at || b.date || "").localeCompare(a.at || a.date || ""));
+      c.media = c.media.slice(0, MEDIA_MOI_NHAT);
+    }
+    return { cans: out };
   });
 
 /** DỰ ÁN NÀO TRONG CÂY MEDIA ĐÃ CÓ ÍT NHẤT 1 FILE — để dashboard ePMP chỉ hiện nút "🎬 Media" ở những

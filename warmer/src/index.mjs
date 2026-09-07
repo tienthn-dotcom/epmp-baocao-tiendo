@@ -210,7 +210,9 @@ async function backupAuditLog(env) {
  * BỎ QUA hai loại khoá: `sfile:` (bản xlsx cache, tải lại được từ Google) và `sheetsnap:` (ảnh HTML
  * dựng lại được từ file gốc) — chúng nặng vài MB mà không phải dữ liệu người dùng nhập.
  */
-const KV_BACKUP_PATH = ["ePMP", "Sao lưu dữ liệu"];
+// PHẢI có "DATABASE" ở đầu như AUDIT_PATH/CPL_PATH — thiếu là file rơi ra ngoài, đẻ thêm một
+// folder "ePMP" lạc ngay dưới "Data Source" trong khi cả app dùng "Data Source › DATABASE › ePMP".
+const KV_BACKUP_PATH = ["DATABASE", "ePMP", "Sao lưu dữ liệu"];
 const KV_SKIP = /^(sfile:|sheetsnap:)/;
 
 async function backupKvData(env) {

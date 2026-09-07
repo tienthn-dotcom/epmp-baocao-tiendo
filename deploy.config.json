@@ -1,0 +1,52 @@
+{
+  "_doc": [
+    "MỌI THỨ GẮN VỚI TÀI KHOẢN / DOMAIN NẰM HẾT Ở ĐÂY — dời nhà chỉ sửa file này rồi deploy lại.",
+    "Trước đây các id này rải trong scripts/patch-wrangler.cjs, warmer/wrangler.toml và mã nguồn,",
+    "dời một chỗ mà quên chỗ kia là app chạy nhưng đọc nhầm kho dữ liệu.",
+    "Ba thứ BÍ MẬT không nằm ở đây (nạp bằng `wrangler secret put`):",
+    "GOOGLE_CLIENT_SECRET, SESSION_SECRET, GDRIVE_OAUTH_CLIENT_SECRET, GDRIVE_OAUTH_REFRESH.",
+    "Xem DI-TRU.md để biết thứ tự các bước khi đổi tài khoản Cloudflare hoặc đổi domain."
+  ],
+
+  "worker": {
+    "app": "baocao-tiendo-pmo",
+    "warmer": "baocao-tiendo-warmer",
+    "compatibilityDate": "2026-09-04"
+  },
+
+  "kv": {
+    "binding": "PMO_EDITS",
+    "id": "2bdbce7b49014e538ee3156728ab9548",
+    "_lay_id": "npx wrangler kv namespace create PMO_EDITS"
+  },
+
+  "d1": {
+    "binding": "PMO_LOG",
+    "database_name": "pmo-audit",
+    "database_id": "ea3aca84-e754-44fb-947f-ca442b3f7b19",
+    "_lay_id": "npx wrangler d1 create pmo-audit"
+  },
+
+  "vars": {
+    "GOOGLE_CLIENT_ID": "40832479653-knnhdr2qmg6ajauk5egmi8ngpo3k9pln.apps.googleusercontent.com",
+    "ALLOWED_HD": "aacorporation.com"
+  },
+
+  "drive": {
+    "rootFolderId": "1O9VktCpBENaZB1xgABr8MfIbl3YW8hFO",
+    "_ghi_chu": "Folder 'Data Source' — mọi thứ app ghi đều nằm trong 'Data Source › DATABASE'.",
+    "complianceSheetId": "15pcqb0ExFQ5uF9CuKSx6O6y9GN4kfiNf6IARN98pJbA",
+    "complianceGid": "490936703"
+  },
+
+  "domain": {
+    "hienTai": "baocao-tiendo-pmo.tienthn.workers.dev",
+    "moi": "",
+    "_ghi_chu": [
+      "Đổi domain KHÔNG cần sửa mã: đường dẫn quay lại của Google (redirect_uri) suy thẳng từ URL",
+      "đang truy cập, và lượt tải tệp lên Drive lấy Origin từ trình duyệt.",
+      "CHỈ cần khai thêm domain mới ở Google Cloud Console › Credentials › Authorized redirect URIs,",
+      "dạng: https://<domain>/auth/callback — giữ luôn cái cũ tới khi chuyển xong hẳn."
+    ]
+  }
+}
