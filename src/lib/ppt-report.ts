@@ -245,6 +245,9 @@ export function analyze(input: PptReportInput) {
   for (const e of input.itemEdits ?? []) {
     const text = latestText(e.noteMsgs);
     if (!text) continue;
+    // Nguồn hay chép ghi chú cấp dự án xuống mọi công đoạn. Nhận nguyên si thì một vướng mắc biến
+    // thành "ảnh hưởng 7 giai đoạn" — nghe như cả dự án tê liệt, trong khi chỉ là một câu bị nhân bản.
+    if (projNote && normText(text) === normText(projNote)) continue;
     const action = latestText(e.actionMsgs);
     const pic = cleanName(e.pic || e.it.owner);
     const dl = e.deadline || e.it.deadline || "";
@@ -437,7 +440,7 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
     // Tiêu đề dẫn bằng TÌNH TRẠNG + tín hiệu rủi ro chính (không để 67% ngầm hiểu là sức khoẻ).
     const title =
       m.health === "HEALTHY"
-        ? `Đúng tiến độ — tổng thể ${m.actualPct}%`
+        ? `Đúng tiến độ — ${m.done}/${m.total} công việc đã xong`
         : `Dự án ${HEALTH_PHRASE[m.health]} — ${m.overdue} việc trễ hạn` +
           (m.critical > 0 ? `, ${m.critical} việc trễ nặng` : "") +
           (m.daysLeft != null && m.daysLeft >= 0 && m.daysLeft <= 30 ? ` · còn ${m.daysLeft} ngày bàn giao` : "");
@@ -448,9 +451,14 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
     const dlVal = dl == null ? "—" : dl < 0 ? `Quá ${Math.abs(dl)} ngày` : `${dl} ngày`;
     const dlTone: Tone = dl == null ? "neutral" : dl < 0 ? "red" : dl <= 14 ? "amber" : "neutral";
     type Tone = "red" | "amber" | "neutral";
+    // KHÔNG bày một con số "% tiến độ dự án". Các giai đoạn KHÔNG có trọng số, nên trung bình cộng
+    // của chúng (LOA 100% và Thi công lắp đặt 10% đứng ngang nhau) cho ra một con số dễ hiểu sai —
+    // "66%" nghe như dự án đi được hai phần ba, trong khi phần nặng nhất mới chạy 10%.
+    // Thay bằng thứ đếm được và không cần trọng số: số việc đã xong, và giai đoạn đang chậm nhất.
     const kpis: { label: string; value: string; sub?: string; tone?: Tone }[] = [
-      { label: "THỰC TẾ", value: `${m.actualPct}%`, sub: "Tiến độ đạt được" },
+      { label: "ĐÃ XONG", value: `${m.done}/${m.total}`, sub: "Công việc hoàn thành" },
     ];
+    if (m.worst) kpis.push({ label: "CHẬM NHẤT", value: `${m.worst.act}%`, sub: clip(m.worst.stage, 22), tone: m.worst.act < 30 ? "red" : "amber" });
     if (m.hasPlan && m.variance != null) {
       kpis.push({ label: "KẾ HOẠCH", value: `${m.planPct}%`, sub: "Theo tiến độ" });
       kpis.push({ label: "CHÊNH LỆCH", value: (m.variance >= 0 ? "+" : "−") + Math.abs(m.variance), sub: "Điểm phần trăm", tone: m.variance < 0 ? "red" : "neutral" });
@@ -480,11 +488,9 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
     const top1 = m.issues[0] ?? null;
     const cards: { kicker: string; accent: string; head: string; headColor: string; body: string; meta: string }[] = [
       {
-        kicker: "TIẾN ĐỘ", accent: C.navy, head: `Đạt ${m.actualPct}%`, headColor: C.navy,
-        body: m.hasPlan && m.variance != null
-          ? `So với kế hoạch ${m.planPct}% → chênh ${m.variance >= 0 ? "+" : "−"}${Math.abs(m.variance)} điểm phần trăm.`
-          : "Nguồn chưa có phần trăm kế hoạch nên chưa so sánh được với tiến độ chuẩn."
-          + (m.worst ? ` Chậm nhất: ${m.worst.stage} (${m.worst.act}%).` : ""),
+        kicker: "TIẾN ĐỘ", accent: C.navy, head: `${m.done}/${m.total} việc xong`, headColor: C.navy,
+        body: (m.worst ? `Chậm nhất: ${m.worst.stage} ${m.worst.act}%` + (m.downstream ? `, kéo theo ${m.downstream.stage} ${m.downstream.act}%.` : ".") : "")
+          + " Các giai đoạn không có trọng số nên không gộp thành một con số phần trăm chung.",
         meta: `${m.done}/${m.total} công việc đã hoàn thành`,
       },
       {
@@ -613,7 +619,7 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
             { text: cleanName(input.pm) || "—", options: gopt() },
             { text: fmtDate(input.start), options: gopt("center") },
             { text: fmtDate(input.deadline), options: gopt("center") },
-            { text: `${m.actualPct}%`, options: gopt("center") },
+            { text: "—", options: gopt("center") },   // cấp dự án KHÔNG có % gộp (giai đoạn không cùng trọng số)
             { text: "", options: gopt("center") },
             { text: clip(projNote, 120), options: gopt() },
           ]);
@@ -621,7 +627,11 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
         const slice = rowsData.slice(pg * PER, pg * PER + PER);
         slice.forEach((it) => {
           const e = editMap.get(it);
-          const note = latestText(e?.noteMsgs) || (it.note || "").trim();
+          // CHỈ vướng mắc CỦA CHÍNH công đoạn này. Nguồn hay chép ghi chú cấp dự án xuống mọi dòng,
+          // đọc bảng thành ra bảy công đoạn cùng một câu — kể cả những việc đã xong 100%.
+          // Trùng nội dung với ghi chú cấp dự án thì coi như dòng đó KHÔNG có vướng mắc.
+          const noteRaw = latestText(e?.noteMsgs) || (it.note || "").trim();
+          const note = noteRaw && normText(noteRaw) === normText(projNote) ? "" : noteRaw;
           const pic = cleanName(e?.pic || it.owner);
           const pct = clampPct(numOf(it.pctActual) ?? 0);
           const od = it.overdueDays ?? 0;
@@ -637,7 +647,7 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
             { text: fmtDate(it.deadline), options: { ...base, align: "center" as const, color: od > 0 ? C.red : C.ink, bold: od > 0 } },
             { text: `${pct}%`, options: { ...base, align: "center" as const, bold: true, color: risk ? C.redInk : pct >= 100 ? C.green : C.ink, ...(risk ? { fill: { color: C.pctRisk } } : {}) } },
             { text: od > 0 ? String(od) : "", options: { ...base, align: "center" as const, bold: od > 0, color: od > 0 ? C.redInk : C.mute, ...(od > 0 ? { fill: { color: C.pctRisk } } : {}) } },
-            { text: note ? clip(note, 130) : "", options: { ...base, fontSize: 8.5, valign: "top" as const } },
+            { text: note ? clip(note, 130) : "—", options: { ...base, fontSize: 8.5, valign: "top" as const, color: note ? C.ink : C.faint } },
           ]);
         });
         const bodyRows = slice.length + (pg === 0 ? 2 : 1);
@@ -649,6 +659,29 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
         footer(s, "Bảng lấy trực tiếp từ dữ liệu dự án (mã · mô tả · phụ trách · ngày · % thực tế · vướng mắc) — không thêm ngoài file.", String(pageNo++));
       }
     }
+  }
+
+  /**
+   * TÁC ĐỘNG CỦA MỘT VƯỚNG MẮC — nói bằng SỐ có trong dữ liệu, không nói suông.
+   * "Điểm nghẽn nghiêm trọng" mà không kèm con số thì người đọc không biết nghiêm trọng cỡ nào và
+   * nghẽn ở đâu. Ghép ba mảnh có thật: quá hạn bao nhiêu ngày → giai đoạn của chính nó đang bao
+   * nhiêu phần trăm → giai đoạn hạ nguồn nào đang bị chặn. Thiếu mảnh nào thì bỏ mảnh đó.
+   */
+  function moTaTacDong(i: { tc2: boolean; overdue: number; deadline: string; stages: string[]; action: string; pic: string }): string {
+    const ve: string[] = [];
+    // Giai đoạn ĐANG YẾU NHẤT trong số giai đoạn dính vướng mắc này — lấy cái đầu danh sách thì ra
+    // câu vô nghĩa kiểu "Phát hành thiết kế mới đạt 100%".
+    const dinh = i.stages.map((x) => m.stages.find((y) => y.stage === x)).filter((x): x is NonNullable<typeof x> => !!x);
+    const gd = dinh.sort((a, b) => a.act - b.act)[0] ?? (i.stages.length ? undefined : m.worst ?? undefined);
+    const st = gd?.stage ?? (i.stages.find((x) => x) || "");
+    if (i.overdue > 0) ve.push(`Quá hạn ${i.overdue} ngày`);
+    else if ((daysFromNow(i.deadline) ?? 99) < 0) ve.push(`Đã qua hạn ${fmtDate(i.deadline)}`);
+    if (gd) ve.push(`${gd.stage} đang ở ${gd.act}%`);   // "mới đạt 98%" đọc ngược nghĩa — dùng từ trung tính
+    else if (st) ve.push(`thuộc ${st}`);
+    if (m.downstream && m.downstream.stage !== st) ve.push(`chặn ${m.downstream.stage} (${m.downstream.act}%)`);
+    if (!ve.length) ve.push(!i.action ? "Chưa có hướng xử lý" : !i.pic ? "Chưa gán người phụ trách" : "Cần theo dõi");
+    if (i.tc2) ve.push("thuộc nhóm trễ nặng");
+    return ve.join(" · ");
   }
 
   /* ── SLIDE 4 — CRITICAL ISSUES ────────────────────────────────────────── */
@@ -702,7 +735,7 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
       s.addShape(pptx.ShapeType.line, { x: cardX + 0.35, y: mY + mH + 0.06, w: cardW - 0.7, h: 0, line: { color: C.line, width: 0.75 } });
       // Ảnh hưởng + Hướng xử lý (nhấn khoảng trống "chưa có")
       const bY = mY + mH + 0.2, bH = cardY + cardH - bY - 0.25, bW = (cardW - 0.7 - 0.25) / 2;
-      const impact = it.tc2 ? "Trễ nặng — rủi ro mốc bàn giao" : it.overdue > 0 ? `Trễ ${it.overdue} ngày — ảnh hưởng tiến độ` : "Cần theo dõi sát";
+      const impact = moTaTacDong(it);
       s.addShape(pptx.ShapeType.roundRect, { x: cardX + 0.35, y: bY, w: bW, h: bH, fill: { color: C.light }, line: { color: C.line, width: 0.75 }, ...round(0.05) });
       s.addText("TÁC ĐỘNG THEO DỮ LIỆU", { x: cardX + 0.55, y: bY + 0.16, w: bW - 0.4, h: 0.24, fontFace: FONT, fontSize: 9.5, bold: true, color: C.mute, charSpacing: 1 });
       s.addText(impact, { x: cardX + 0.55, y: bY + 0.44, w: bW - 0.4, h: bH - 0.6, fontFace: FONT, fontSize: 15, bold: true, color: C.red, valign: "top" });
@@ -712,15 +745,16 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
       s.addText("HƯỚNG XỬ LÝ", { x: ax + 0.2, y: bY + 0.16, w: bW - 0.4, h: 0.24, fontFace: FONT, fontSize: 9.5, bold: true, color: noAction ? C.amberInk : C.mute, charSpacing: 1 });
       s.addText(noAction ? "— CHƯA CÓ —" : clip(it.action, 140), { x: ax + 0.2, y: bY + 0.44, w: bW - 0.4, h: bH - 0.95, fontFace: FONT, fontSize: noAction ? 20 : 15, bold: true, color: noAction ? C.amber : C.ink, valign: "top" });
       if (noAction) s.addText("Cần Ban lãnh đạo chốt người phụ trách và ngày khắc phục.", { x: ax + 0.2, y: bY + bH - 0.42, w: bW - 0.4, h: 0.3, fontFace: FONT, fontSize: 10.5, italic: true, color: C.amberInk });
-      footer(s, "Tác động suy ra từ dữ liệu hiện có — không suy diễn ngoài bằng chứng.", String(pageNo++));
+      footer(s, "Tác động ghép từ số liệu có thật: số ngày quá hạn · phần trăm giai đoạn · giai đoạn hạ nguồn bị chặn.", String(pageNo++));
     } else {
-      const head = ["Mức", "Vấn đề", "Ảnh hưởng", "Hướng xử lý", "Người phụ trách", "Hạn"];
-      const colW = [0.85, 3.5, 2.5, 3.15, 1.5, 1.1];
+      // Bỏ cột "Người phụ trách" và "Hạn" riêng — hai thứ đó gộp vào cột Hướng xử lý cho đỡ băm nhỏ
+      // bảng; cột Ảnh hưởng nay chứa câu có số nên cần rộng hơn hẳn.
+      const head = ["Mức", "Vấn đề", "Ảnh hưởng (theo số liệu)", "Hướng xử lý · người · hạn"];
+      const colW = [0.85, 3.9, 3.55, 3.93];
       const rows: TableRows = [
         head.map((h) => ({ text: h, options: { bold: true, color: C.white, fill: { color: C.navy }, fontSize: 10.5, align: (h === "Mức" || h === "Hạn" ? "center" : "left"), valign: "middle" } })),
       ];
-      const impactOf = (i: (typeof top)[number]) =>
-        i.tc2 ? "Trễ nặng — rủi ro mốc bàn giao" : i.overdue > 0 ? `Trễ ${i.overdue} ngày` : !i.action ? "Chưa có hướng xử lý" : !i.pic ? "Chưa gán người phụ trách" : "Cần theo dõi";
+      const impactOf = moTaTacDong;
       top.forEach((it) => {
         const pc = it.prio === 1 ? C.red : it.prio === 2 ? C.amber : C.mute;
         const dlOver = (daysFromNow(it.deadline) ?? 99) < 0;
@@ -734,18 +768,22 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
         rows.push([
           { text: `Mức ${it.prio}`, options: { align: "center", valign: "middle", bold: true, color: C.white, fill: { color: pc }, fontSize: 10 } },
           { text: problemCell, options: { color: C.ink, fontSize: 10, valign: "middle" } },
-          { text: impactOf(it), options: { color: it.prio === 1 ? C.red : it.prio === 2 ? C.amber : C.mute, fontSize: 10, valign: "middle" } },
-          { text: clip(it.action, 90) || "— chưa có —", options: { color: it.action ? C.ink : C.amber, fontSize: 10, valign: "middle" } },
-          { text: it.pic || "— chưa có —", options: { color: it.pic ? C.ink : C.amber, fontSize: 10, valign: "middle" } },
-          { text: it.deadline ? fmtDate(it.deadline) : "—", options: { align: "center", valign: "middle", bold: dlOver, color: dlOver ? C.red : C.ink, fontSize: 10 } },
+          { text: impactOf(it), options: { color: it.prio === 1 ? C.red : it.prio === 2 ? C.amber : C.mute, fontSize: 9.5, valign: "middle" } },
+          {
+            text: [
+              { text: it.action ? clip(it.action, 90) : "— chưa có hướng xử lý —", options: { color: it.action ? C.ink : C.amber, fontSize: 10, bold: !it.action, breakLine: true } },
+              { text: `${it.pic || "chưa gán người"} · hạn ${it.deadline ? fmtDate(it.deadline) : "chưa có"}`, options: { color: dlOver ? C.red : C.mute, fontSize: 8.5, italic: true } },
+            ],
+            options: { valign: "middle" },
+          },
         ]);
       });
-      const rowH = Math.min(0.75, (7.0 - 1.4) / (top.length + 1));
+      const rowH = Math.min(0.9, (7.0 - 1.4) / (top.length + 1));   // hàng cao hơn: cột Ảnh hưởng nay có câu dài
       s.addTable(rows, {
         x: MX, y: 1.4, w: CW, colW, border: { type: "solid", color: C.line, pt: 0.5 },
         rowH, autoPage: false, valign: "middle", fontFace: FONT,
       });
-      footer(s, "“Ảnh hưởng” suy ra từ dữ liệu hiện có (trễ hạn · trễ nặng · thiếu người phụ trách hoặc hướng xử lý) — không suy diễn ngoài bằng chứng.", String(pageNo++));
+      footer(s, "“Ảnh hưởng” ghép từ số liệu có thật: số ngày quá hạn · phần trăm giai đoạn · giai đoạn hạ nguồn bị chặn.", String(pageNo++));
     }
   }
 
