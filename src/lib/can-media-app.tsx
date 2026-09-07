@@ -20,10 +20,11 @@ import { STD_RAMP } from "@/lib/summary-render";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles, getSheetForms, saveSheetForm } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
+import { parseMediaMsgs, type MediaMsg } from "@/lib/media-msg";
 
 const MTLD_INSTALL_LS = "mtld:install:v2";   // = app-shell.MTLD_INSTALL_LS (không import để tránh vòng phụ thuộc)
 const PAGE_W = 1880;                         // ma trận bàn giao rất rộng (5 Toà × 18-21 căn) → cho trang rộng gần hết màn
-import { startCanMediaUpload, listCanMedia, readCanMediaB64, listProjectMedia, saveMediaCaption } from "@/lib/can-media.functions";
+import { startCanMediaUpload, listCanMedia, readCanMediaB64, listProjectMedia, editMediaMsg } from "@/lib/can-media.functions";
 
 const C = { ink: "#0f172a", sub: "#64748b", teal: "#0d9488", tealD: "#0f766e", navy: "#0f2742" };
 const mb = (n: number) => (n / 1048576).toFixed(0);
@@ -598,16 +599,16 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   }, [q.data, toa, can, scope]);
   const items = useMemo<Item[]>(() => groups.flatMap((g) => g.items), [groups]);
   const [sel, setSel] = useState(0);
-  // CHÚ THÍCH của ĐÚNG ảnh/clip đang xem: nằm ngay dưới khung xem (đọc song song với hình, không
-  // đè lên hình), sửa tại chỗ rồi bấm Lưu — ghi thẳng vào tệp trên Drive. Tối đa 100 từ; server
-  // cắt lại lần nữa vì client sửa được còn server thì không.
-  const [cap, setCap] = useState("");            // nội dung đang gõ
-  const [capEdit, setCapEdit] = useState(false); // đang ở chế độ sửa
+  // CHÚ THÍCH = HỘP THOẠI như ô "Vướng mắc / Giải pháp": nhiều người viết, mỗi tin có người viết và
+  // ngày viết. Nằm ngay dưới khung xem để đọc SONG SONG với hình, không đè lên hình.
+  const [cap, setCap] = useState("");                       // ô nhập tin mới
+  const [capEditId, setCapEditId] = useState<string | null>(null);   // đang sửa tin nào
+  const [capDraft, setCapDraft] = useState("");             // nội dung đang sửa
   const [capBusy, setCapBusy] = useState(false);
   const [capErr, setCapErr] = useState<string | null>(null);
   const capWords = cap.trim() ? cap.trim().split(/\s+/).length : 0;
   useEffect(() => { setSel(0); }, [project]);
-  useEffect(() => { setCapEdit(false); setCapErr(null); }, [sel]);
+  useEffect(() => { setCapEditId(null); setCapErr(null); setCap(""); }, [sel]);
   const cur = items[Math.min(sel, items.length - 1)];
   const go = (d: number) => items.length && setSel((v) => (Math.min(v, items.length - 1) + d + items.length) % items.length);
   useEffect(() => {
@@ -704,14 +705,19 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
 
   // Nút tải lên: chữ KHÔNG được xuống dòng và nút không được co — thêm ô chú thích vào cùng hàng
   // là chỗ này chật, "＋ Tải ảnh" gãy làm hai dòng trên máy tính.
-  async function luuChuThich() {
+  async function thaoTacTin(op: "add" | "edit" | "del", msgId?: string, text?: string) {
     if (!cur) return;
     setCapBusy(true); setCapErr(null);
     try {
-      const r = await saveMediaCaption({ data: { id: cur.id, caption: cap } });
-      track("media_caption", `${project}${cur.toa ? " · " + cur.toa : ""} · ${cur.can} — ${r.caption ? r.caption.slice(0, 120) : "(gỡ chú thích)"}`);
+      await editMediaMsg({ data: { id: cur.id, op, msgId, text, devAs: devAsDlg } });
+      track("media_caption",
+        `${project}${cur.toa ? " · " + cur.toa : ""} · ${cur.can} — `
+        + (op === "add" ? "thêm chú thích: " + (text || "").slice(0, 120)
+          : op === "edit" ? "sửa chú thích: " + (text || "").slice(0, 120)
+          : "xoá một chú thích"));
       await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
-      setCapEdit(false);
+      if (op === "add") setCap("");
+      setCapEditId(null);
     } catch (e) { setCapErr((e as Error).message); }
     setCapBusy(false);
   }
@@ -829,47 +835,71 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
 
         </div>
 
-        {/* CHÚ THÍCH của đúng ảnh/clip đang xem — đọc SONG SONG với hình, không đè lên hình.
-            Admin/PMO bấm "Sửa" là gõ tại chỗ rồi Lưu, ghi thẳng vào tệp trên Drive. */}
-        {cur && (
-          <div style={{ background: "#0f1f33", borderTop: "1px solid rgba(255,255,255,.08)", padding: narrow ? "8px 12px" : "10px 14px", display: "grid", gap: 6 }}>
-            {!capEdit ? (
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: narrow ? 12.5 : 13.5, lineHeight: 1.45, color: cur.desc ? "#e2e8f0" : "#8296ab", whiteSpace: "pre-wrap" }}>
-                  {cur.desc || "Chưa có chú thích cho ảnh/clip này."}
-                </span>
-                {canEditCap && (
-                  <button type="button"
-                    onClick={() => { setCap(cur.desc || ""); setCapErr(null); setCapEdit(true); }}
-                    style={{ flexShrink: 0, height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    {cur.desc ? "Sửa chú thích" : "＋ Chú thích"}
-                  </button>
-                )}
+        {/* CHÚ THÍCH — HỘP THOẠI y như ô "Vướng mắc / Giải pháp" bên ePMP: mỗi tin một bong bóng,
+            có người viết và ngày viết, ai cũng viết được. Nằm DƯỚI khung xem để đọc song song với
+            hình. Sửa / xoá: người viết, admin hoặc PMO. */}
+        {cur && (() => {
+          const msgs = parseMediaMsgs(cur.desc);
+          const suaDuoc = (m: MediaMsg) => canEditCap || (!!meDlg.data?.email && m.author === meDlg.data.email);
+          const gio = (iso: string) => {
+            if (!iso) return "";
+            const d = new Date(iso); if (isNaN(d.getTime())) return "";
+            const p2 = (n: number) => String(n).padStart(2, "0");
+            return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+          };
+          return (
+            <div style={{ background: "#0f1f33", borderTop: "1px solid rgba(255,255,255,.08)", padding: narrow ? "8px 12px 10px" : "10px 14px 12px", display: "grid", gap: 7, maxHeight: narrow ? "34vh" : 240, overflowY: "auto" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "rgba(255,255,255,.5)" }}>
+                Chú thích {msgs.length ? `· ${msgs.length}` : ""}
               </div>
-            ) : (
-              <div style={{ display: "grid", gap: 7 }}>
-                <textarea value={cap} onChange={(e) => setCap(e.target.value)} rows={narrow ? 3 : 2}
-                  placeholder="Ghi ngắn gọn: đang làm tới đâu, vướng gì, cần ai xử lý…"
-                  style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "9px 11px", fontSize: 13, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
+              {msgs.map((m) => capEditId === m.id ? (
+                <div key={m.id} style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, borderTopLeftRadius: 2, padding: 8, display: "grid", gap: 6 }}>
+                  <textarea value={capDraft} onChange={(e) => setCapDraft(e.target.value)} rows={2}
+                    style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 6, border: "1px solid #cbd5e1", padding: "6px 8px", fontSize: 12.5, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <button type="button" onClick={() => setCapEditId(null)}
+                      style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "none", background: "transparent", color: "#64748b", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>Huỷ</button>
+                    <button type="button" disabled={capBusy} onClick={() => { void thaoTacTin("edit", m.id, capDraft); }}
+                      style={{ height: 28, padding: "0 12px", borderRadius: 6, border: "none", background: C.tealD, color: "#fff", fontSize: 11.5, fontWeight: 800, cursor: "pointer", opacity: capBusy ? .6 : 1 }}>Lưu</button>
+                  </div>
+                </div>
+              ) : (
+                <div key={m.id} style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, borderTopLeftRadius: 2, padding: "6px 9px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2, fontSize: 10.5, color: "#334155" }}>
+                    {m.at && <span style={{ background: "#e2e8f0", borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>{gio(m.at)}</span>}
+                    {m.author !== "(cũ)" && <span style={{ fontWeight: 800 }}>{m.author.split("@")[0]}</span>}
+                    {m.author === "(cũ)" && <span style={{ fontStyle: "italic", color: "#64748b" }}>chú thích cũ</span>}
+                    {suaDuoc(m) && (
+                      <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                        <button type="button" onClick={() => { setCapDraft(m.text); setCapEditId(m.id); }}
+                          style={{ border: "none", background: "none", color: "#0f766e", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>Sửa</button>
+                        <button type="button" onClick={() => { if (window.confirm("Xoá chú thích này?")) void thaoTacTin("del", m.id); }}
+                          style={{ border: "none", background: "none", color: "#b91c1c", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>Xoá</button>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "#0f172a", whiteSpace: "pre-wrap" }}>{m.text}</div>
+                </div>
+              ))}
+              {/* Ô viết tin mới — ai đăng nhập cũng viết được, giống box vướng mắc. */}
+              <div style={{ display: "grid", gap: 6 }}>
+                <textarea value={cap} onChange={(e) => setCap(e.target.value)} rows={2}
+                  placeholder={msgs.length ? "Viết thêm chú thích…" : "Ghi ngắn gọn: đang làm tới đâu, vướng gì, cần ai xử lý…"}
+                  style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "8px 10px", fontSize: 12.5, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: capWords > 100 ? "#fca5a5" : "rgba(255,255,255,.55)" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: capWords > 100 ? "#fca5a5" : "rgba(255,255,255,.5)" }}>
                     {capWords}/100 từ{capWords > 100 ? " — sẽ cắt còn 100" : ""}
                   </span>
-                  {capErr && <span style={{ fontSize: 11.5, color: "#fca5a5" }}>{capErr}</span>}
-                  <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                    <button type="button" onClick={() => { setCapEdit(false); setCapErr(null); }}
-                      style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Huỷ</button>
-                    <button type="button" disabled={capBusy}
-                      onClick={() => { void luuChuThich(); }}
-                      style={{ height: 32, padding: "0 16px", borderRadius: 8, border: "none", background: C.tealD, color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: capBusy ? .6 : 1 }}>
-                      {capBusy ? "Đang lưu…" : "Lưu chú thích"}
-                    </button>
-                  </span>
+                  {capErr && <span style={{ fontSize: 11, color: "#fca5a5" }}>{capErr}</span>}
+                  <button type="button" disabled={capBusy || !cap.trim()} onClick={() => { void thaoTacTin("add", undefined, cap); }}
+                    style={{ marginLeft: "auto", height: 32, padding: "0 16px", borderRadius: 8, border: "none", background: C.tealD, color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: capBusy || !cap.trim() ? .5 : 1 }}>
+                    {capBusy ? "Đang gửi…" : "Gửi chú thích"}
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* DẢI THUMBNAIL CUỘN NGANG — ảnh và video chung một dải, bấm để xem.
             CHỈ CÓ 1 MỤC thì bỏ hẳn dải này: không có gì để chuyển qua, mà nó ăn mất ~200px chiều cao

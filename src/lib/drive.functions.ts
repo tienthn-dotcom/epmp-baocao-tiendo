@@ -445,6 +445,16 @@ export async function driveCreateResumableSession(path: string[], fileName: stri
   return { uploadUrl: loc };
 }
 
+/** Đọc phần MÔ TẢ của 1 tệp (chỗ chứa chuỗi tin chú thích ảnh/clip). */
+export async function driveGetDescription(fileId: string): Promise<string> {
+  const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
+  const token = await accessToken(env);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=description&${SHARED}`, { headers: AUTHH(token) });
+  if (!r.ok) return "";
+  const j = await r.json() as { description?: string };
+  return j.description || "";
+}
+
 /** Ghi/xoá phần MÔ TẢ của 1 tệp (đang dùng làm chú thích ảnh/clip công trường). */
 export async function driveSetDescription(fileId: string, description: string): Promise<boolean> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");

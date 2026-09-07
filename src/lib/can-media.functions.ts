@@ -13,6 +13,59 @@
  * sống), app cũ đã gỡ. Đừng dựng lại nhánh đường dẫn cũ.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { parseMediaMsgs, capNganMsg, MEDIA_MSG_MAX, type MediaMsg } from "@/lib/media-msg";
+import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "@/lib/activity";
+import { DEFAULT_ROLES, roleOf, type UserRole } from "@/lib/roles";
+import { SESSION_COOKIE, readCookie, verifySession } from "@/lib/auth";
+
+// LƯU Ý (giống edits.functions.ts): file này BỊ CLIENT IMPORT. Mọi hàm đụng server-only
+// ("@tanstack/react-start/server") phải là hàm NỘI BỘ, không export — export ra là import-protection
+// chặn cả app ("Import denied in client environment").
+async function serverEnv(): Promise<Record<string, unknown>> {
+  try {
+    const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
+    const getEvent = mod.getEvent as undefined | (() => unknown);
+    if (getEvent) {
+      const ev = getEvent() as { context?: { cloudflare?: { env?: Record<string, unknown> } } } | undefined;
+      const env = ev?.context?.cloudflare?.env;
+      if (env) return env;
+    }
+  } catch { /* ngoài ngữ cảnh server */ }
+  const g = globalThis as unknown as Record<string, unknown>;
+  return (g.__env__ ?? g.__cf_env__ ?? {}) as Record<string, unknown>;
+}
+
+/** Email người đang gọi, lấy từ COOKIE PHIÊN đã ký — client không tự khai được là mình là ai. */
+async function nguoiGoi(devAs?: string | null): Promise<string | null> {
+  const env = await serverEnv();
+  const secret = env.SESSION_SECRET as string | undefined;
+  let token: string | null = null;
+  try {
+    const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
+    const getRequest = mod.getRequest as undefined | (() => Request);
+    if (getRequest) token = readCookie(getRequest(), SESSION_COOKIE);
+  } catch { /* ngoài ngữ cảnh request */ }
+  if (secret && token) {
+    const s = await verifySession(token, secret);
+    if (s?.email) return normEmail(s.email);
+  }
+  if (import.meta.env.DEV) return devAs ? normEmail(devAs) : "tienthn@aacorporation.com";
+  return null;
+}
+
+/** Sửa/xoá được chú thích của NGƯỜI KHÁC: admin và PMO — cùng luật với box Vướng mắc bên ePMP. */
+async function laAdminHoacPmo(devAs?: string | null): Promise<boolean> {
+  const email = await nguoiGoi(devAs);
+  if (!email) return false;
+  if (isAdminEmail(email, DEFAULT_ADMINS)) return true;
+  try {
+    const env = await serverEnv();
+    const kv = env.PMO_EDITS as undefined | { get: (k: string) => Promise<string | null> };
+    const raw = kv ? await kv.get("roles:v1") : null;
+    const map = (raw ? JSON.parse(raw) : {}) as Record<string, UserRole>;
+    return roleOf(Object.keys(map).length ? map : DEFAULT_ROLES, email) === "PMO";
+  } catch { return false; }
+}
 
 const cleanExt = (e: string) => (e || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp4";
 const safeCan = (s: string) => (s || "").trim().replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 60);
@@ -84,18 +137,45 @@ export const readItemPdf = createServerFn({ method: "POST" })
     return { b64, mime: mime || "application/pdf" };
   });
 
-/** LƯU CHÚ THÍCH cho 1 ảnh/clip đang xem — ghi thẳng vào phần mô tả của tệp trên Drive.
- *  Sửa được nhiều lần, xoá trắng thì gỡ chú thích. Cắt còn 100 từ như lúc tải lên. */
-export const saveMediaCaption = createServerFn({ method: "POST" })
-  .validator((d: { id: string; caption: string }) => d)
-  .handler(async ({ data }): Promise<{ ok: boolean; caption: string }> => {
+/* ── CHÚ THÍCH ẢNH/CLIP = HỘP THOẠI, KHÔNG PHẢI MỘT DÒNG CHỮ ────────────────────────────────
+   Giống hệt ô "Vướng mắc / Giải pháp" bên ePMP: nhiều người viết được, mỗi tin có NGƯỜI VIẾT và
+   NGÀY VIẾT. Cả chuỗi tin nằm trong phần mô tả của chính tệp trên Drive (JSON) — xoá tệp là mất
+   theo, không phải nuôi thêm một kho riêng rồi lệch nhau.
+   Tin cũ ở dạng một dòng chữ trần (trước 07/09/2026) vẫn đọc được: coi như một tin không rõ người. */
+const rid10 = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+
+/** Thêm / sửa / xoá một tin chú thích của 1 ảnh-clip. Trả về CHUỖI TIN sau khi đổi. */
+export const editMediaMsg = createServerFn({ method: "POST" })
+  .validator((d: { id: string; op: "add" | "edit" | "del"; msgId?: string; text?: string; devAs?: string | null }) => d)
+  .handler(async ({ data }): Promise<{ msgs: MediaMsg[] }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive.");
     if (!/^[a-zA-Z0-9_-]{10,}$/.test(data.id || "")) throw new Error("Thiếu tệp cần ghi chú thích.");
-    const cap = capNgan(data.caption) ?? "";
-    const ok = await drive.driveSetDescription(data.id, cap);
+    const me = await nguoiGoi(data.devAs);
+    if (!me) throw new Error("Cần đăng nhập mới ghi được chú thích.");
+
+    const cur = parseMediaMsgs((await drive.driveGetDescription(data.id)) || "");
+    let msgs = cur;
+    if (data.op === "add") {
+      const t = capNganMsg(data.text);
+      if (!t) throw new Error("Chưa nhập nội dung.");
+      msgs = [...cur, { id: rid10(), text: t, author: me, at: new Date().toISOString() }].slice(-MEDIA_MSG_MAX);
+    } else {
+      const i = cur.findIndex((m) => m.id === data.msgId);
+      if (i < 0) throw new Error("Không thấy tin cần sửa.");
+      // Sửa/xoá: tác giả tự làm được; admin và PMO làm được cho mọi tin (giống bên Vướng mắc).
+      const quyen = cur[i].author === me || (await laAdminHoacPmo(data.devAs));
+      if (!quyen) throw new Error("Chỉ người viết, admin hoặc PMO mới sửa được tin này.");
+      if (data.op === "del") msgs = cur.filter((_, k) => k !== i);
+      else {
+        const t = capNganMsg(data.text);
+        if (!t) throw new Error("Chưa nhập nội dung.");
+        msgs = cur.map((m, k) => (k === i ? { ...m, text: t } : m));
+      }
+    }
+    const ok = await drive.driveSetDescription(data.id, msgs.length ? JSON.stringify(msgs) : "");
     if (!ok) throw new Error("Drive không nhận chú thích (thử lại sau).");
-    return { ok, caption: cap };
+    return { msgs };
   });
 
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
