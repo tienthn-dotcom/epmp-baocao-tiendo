@@ -705,11 +705,15 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
           May tinh giu nguyen khung 980px bo goc nhu cu. */}
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "none" : 980, height: narrow ? "100dvh" : "90vh", display: "flex", flexDirection: "column", background: "#0f172a", borderRadius: narrow ? 0 : 16, overflow: "hidden", boxShadow: "0 24px 70px rgba(2,6,23,.5)" }}>
         {/* HEADER — Toà / Phòng sửa tay + nút tải lên */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#152a45", color: "#fff", flexWrap: "wrap" }}>
+        {/* Popup phủ TRỌN màn trên điện thoại (100dvh) nên mép trên đụng đồng hồ / tai thỏ —
+            chừa đúng phần lề an toàn của máy, và bóp chiều cao lại cho ảnh được nhiều chỗ hơn. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "6px 12px" : "10px 14px", paddingTop: narrow ? "calc(6px + env(safe-area-inset-top))" : 10, background: "#152a45", color: "#fff", flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".05em", opacity: .75, textTransform: "uppercase" }}>
-              📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
-            </div>
+            {!narrow && (
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".05em", opacity: .75, textTransform: "uppercase" }}>
+                📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
+              </div>
+            )}
             <div style={{ display: narrow && scope === "can" && !upOpen ? "none" : "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
               {/* Xem cả dự án = CHỈ XEM: hiện tên phòng/khu của item đang xem, không cho sửa, không cho tải.
                   Muốn thêm ảnh/video thì vào app "Hình ảnh mỗi ngày", bấm đúng ô căn — 1 lối lên duy nhất. */}

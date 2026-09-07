@@ -1588,14 +1588,14 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
           nằm TRÊN CÙNG 1 HÀNG ở desktop, gói gọn trong khoảng chiều cao đó. */}
       {/* 2 vùng: TRÁI (logo AA + logo ePMP + tên) · PHẢI (nguồn + nút). AA logo dời sang
           TRÁI (trước đây ở giữa) theo yêu cầu 20/07. */}
-      <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 items-center gap-x-4 gap-y-1 px-4 py-1 md:grid-cols-[minmax(0,1fr)_auto] 2xl:px-6 print:max-w-none print:px-0 print:py-1">
+      <div className={`mx-auto grid w-full max-w-[1600px] items-center gap-x-3 px-3 md:grid-cols-[minmax(0,1fr)_auto] md:gap-x-4 md:px-4 2xl:px-6 print:max-w-none print:px-0 print:py-1 ${narrowHd ? "grid-cols-[auto_minmax(0,1fr)] gap-y-0 py-1" : "grid-cols-1 gap-y-1 py-1"}`}>
         {/* TRÁI: logo AA · logo ePMP · tên báo cáo */}
         <div id="pdf-title" className={`flex items-center ${narrowHd ? "gap-2 justify-self-start" : "gap-3 justify-self-center md:justify-self-start"}`}>
           <AALogo className={narrowHd ? "h-6 w-auto" : "h-9 w-auto sm:h-10"} />
           {!narrowHd && <span className="h-8 w-px bg-slate-200" />}
           <EpmpLogo />
           <div className="min-w-0">
-            <div className={`truncate font-extrabold leading-tight tracking-tight text-slate-900 ${narrowHd ? "text-[13px]" : "text-base sm:text-lg"}`}>
+            <div className={`truncate font-extrabold leading-tight tracking-tight text-slate-900 ${narrowHd ? "text-[11.5px] max-w-[86px] whitespace-normal" : "text-base sm:text-lg"}`}>
               Project Master Plan
             </div>
             {!narrowHd && (
@@ -1616,7 +1616,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
               vàng trong app này đang MANG NGHĨA "cảnh báo", không được xài làm trang trí. */}
           <button onClick={() => { setTieuChiOpen(true); track("open_criteria"); }}
             title="Xem quy ước chấm cảnh báo"
-            className={`flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 print:hidden ${narrowHd ? "h-10" : "h-7"}`}>
+            className={`flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 print:hidden ${narrowHd ? "h-9" : "h-7"}`}>
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> Tiêu chí cảnh báo
           </button>
           {tieuChiOpen && <AlertCriteriaDialog gapThreshold={gapThreshold} onClose={() => setTieuChiOpen(false)} />}
@@ -1630,7 +1630,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
             <button type="button" onClick={() => setChangelogOpen(true)}
               title="Bấm xem có gì mới trong các phiên bản"
               className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold tracking-normal text-slate-900 hover:bg-slate-200">v{APP_VERSION}</button>
-            <button onClick={onRefresh} disabled={loading} className={`flex items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 ${narrowHd ? "h-10" : "h-7"}`}>
+            <button onClick={onRefresh} disabled={loading} className={`flex items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 ${narrowHd ? "h-9" : "h-7"}`}>
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Làm mới
             </button>
           </div>
@@ -4278,11 +4278,11 @@ function OverviewStrip(p: {
   // THU/PHÓNG ĐỀU cùng bề rộng — màn hẹp không rớt chữ, màn nào cũng cùng bản xem chỉ khác
   // cỡ. Hệ số 0.78cqw ⇒ ~12px ở bề rộng cụm ~1536 (màn 1920). Xem quy tắc ở lib/table-scale.
   return (
-    <section id="pdf-kpi" className="rounded-lg border border-slate-200 bg-white p-2" style={{ containerType: "inline-size" }}>
+    <section id="pdf-kpi" className={`rounded-lg border border-slate-200 bg-white ${narrowKpi ? "p-1.5" : "p-2"}`} style={{ containerType: "inline-size" }}>
       {/* Cỡ chữ theo cqw = tỉ lệ bề ngang KHUNG. Trên màn 375px, 0.78cqw ra 2,6px — chữ nhỏ tới mức
           nhìn như vệt mờ, đúng chỗ chủ nhà báo "element chồng chéo". Điện thoại chốt 12px; máy tính
           giữ nguyên cqw để dải KPI co giãn theo khung như cũ. */}
-      <div className="grid grid-cols-2 gap-[0.66em] sm:grid-cols-6" style={{ fontSize: narrowKpi ? 12 : "0.78cqw" }}>
+      <div className={`grid grid-cols-2 sm:grid-cols-6 ${narrowKpi ? "gap-1" : "gap-[0.66em]"}`} style={{ fontSize: narrowKpi ? 12 : "0.78cqw" }}>
         <KPI label="Dự án hiện hành" value={p.projectCount} tone="slate" />
         <KPI label="Trễ tiến độ" value={p.lateCount} tone="red"
              active={p.activeAlerts.includes("late")} onClick={() => p.onPickKpi("late")} />
@@ -4359,7 +4359,7 @@ function StageBarsPanel({ active, doneCounts, activeStages, onPick }: {
     return { sid, total: stageActive.length + done, red, amber, done, alertTotal: red + amber };
   });
   return (
-    <section id="pdf-stages" className="rounded-lg border border-slate-200 bg-white px-2 py-1.5" style={{ containerType: "inline-size" }}>
+    <section id="pdf-stages" className={`rounded-lg border border-slate-200 bg-white ${narrowKpi ? "px-1.5 py-1" : "px-2 py-1.5"}`} style={{ containerType: "inline-size" }}>
       {/* AUTO-FIT: cỡ chữ theo cqw (đặt trên CẢ hàng legend lẫn grid, cùng một hệ số nên
           hai phần đồng bộ), mọi kích thước con theo em. 0.68cqw ⇒ ~10.5px ở cụm ~1536. */}
       <div className="mb-1 flex flex-wrap items-center justify-end gap-[0.76em]" style={{ fontSize: "0.68cqw" }}>
