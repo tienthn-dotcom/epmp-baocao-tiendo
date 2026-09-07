@@ -1576,6 +1576,9 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
 }) {
   const [tieuChiOpen, setTieuChiOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
+  // ĐIỆN THOẠI: khối tên chiếm 3 dòng (logo to + tên + dòng phụ) = ~64px, mà nội dung thật thì
+  // nằm mãi bên dưới. Rút còn một dòng: logo nhỏ, bỏ vạch ngăn, bỏ dòng phụ.
+  const narrowHd = useIsMobile();
   // 3 vùng: trái (logo ePMP + tên báo cáo) · giữa (logo AA) · phải (nguồn + nút).
   // Grid [1fr auto 1fr] giữ logo AA CHÍNH GIỮA; màn hẹp → xếp dọc (autofit).
   // KHÔNG sticky: lăn xuống header app cuộn đi, chỉ header BẢNG dính lại.
@@ -1587,17 +1590,19 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
           TRÁI (trước đây ở giữa) theo yêu cầu 20/07. */}
       <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 items-center gap-x-4 gap-y-1 px-4 py-1 md:grid-cols-[minmax(0,1fr)_auto] 2xl:px-6 print:max-w-none print:px-0 print:py-1">
         {/* TRÁI: logo AA · logo ePMP · tên báo cáo */}
-        <div id="pdf-title" className="flex items-center gap-3 justify-self-center md:justify-self-start">
-          <AALogo className="h-9 w-auto sm:h-10" />
-          <span className="h-8 w-px bg-slate-200" />
+        <div id="pdf-title" className={`flex items-center ${narrowHd ? "gap-2 justify-self-start" : "gap-3 justify-self-center md:justify-self-start"}`}>
+          <AALogo className={narrowHd ? "h-6 w-auto" : "h-9 w-auto sm:h-10"} />
+          {!narrowHd && <span className="h-8 w-px bg-slate-200" />}
           <EpmpLogo />
           <div className="min-w-0">
-            <div className="truncate text-base font-extrabold leading-tight tracking-tight text-slate-900 sm:text-lg">
+            <div className={`truncate font-extrabold leading-tight tracking-tight text-slate-900 ${narrowHd ? "text-[13px]" : "text-base sm:text-lg"}`}>
               Project Master Plan
             </div>
-            <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-teal-700 sm:text-[10px]">
-              PMO · Bộ phận Project Planning
-            </div>
+            {!narrowHd && (
+              <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-teal-700 sm:text-[10px]">
+                PMO · Bộ phận Project Planning
+              </div>
+            )}
           </div>
         </div>
         {/* PHẢI: dữ liệu tính đến · version · nút — cùng 1 hàng ở desktop, gọn trong khoảng header */}
@@ -1611,7 +1616,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
               vàng trong app này đang MANG NGHĨA "cảnh báo", không được xài làm trang trí. */}
           <button onClick={() => { setTieuChiOpen(true); track("open_criteria"); }}
             title="Xem quy ước chấm cảnh báo"
-            className="flex h-7 items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 print:hidden">
+            className={`flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 print:hidden ${narrowHd ? "h-10" : "h-7"}`}>
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> Tiêu chí cảnh báo
           </button>
           {tieuChiOpen && <AlertCriteriaDialog gapThreshold={gapThreshold} onClose={() => setTieuChiOpen(false)} />}
@@ -1625,7 +1630,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
             <button type="button" onClick={() => setChangelogOpen(true)}
               title="Bấm xem có gì mới trong các phiên bản"
               className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold tracking-normal text-slate-900 hover:bg-slate-200">v{APP_VERSION}</button>
-            <button onClick={onRefresh} disabled={loading} className="flex h-7 items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">
+            <button onClick={onRefresh} disabled={loading} className={`flex items-center gap-1.5 rounded-md bg-teal-700 px-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 ${narrowHd ? "h-10" : "h-7"}`}>
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Làm mới
             </button>
           </div>
@@ -4315,7 +4320,7 @@ function KPI({ label, value, tone, onClick, active }: {
   const inner = (
     <div className="flex h-full items-center justify-between gap-[0.66em]">
       <span className="line-clamp-2 text-[0.83em] font-semibold uppercase leading-tight tracking-wide opacity-70">{label}</span>
-      <span className="shrink-0 text-[1.5em] font-bold leading-none tabular-nums">{value}</span>
+      <span className="shrink-0 text-[1.85em] font-extrabold leading-none tabular-nums sm:text-[1.5em] sm:font-bold">{value}</span>
     </div>
   );
   if (onClick) {
@@ -5799,6 +5804,119 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   const sortedItems = items;
 
   // Render 1 hàng công đoạn — dùng chung cho bảng phẳng và chế độ nhóm.
+
+  // ĐIỆN THOẠI: mặc định xem dạng THẺ (mỗi hạng mục một khối, đọc dọc). Bảng 11 cột vẫn còn
+  // nguyên, bấm "Bảng" là về. Máy tính không đụng tới: luôn là bảng.
+  const [cardView, setCardView] = useState(true);
+  // ĐIỆN THOẠI: Xuất Excel / Xuất PDF / Toàn màn hình là việc thỉnh thoảng mới làm — gấp sau nút "⋯"
+  // để hàng nút đầu bảng còn một dòng, chỗ trống dành cho danh sách.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const useCards = narrowScreen && cardView && viewMode === "list";
+  /**
+   * THẺ DỰ ÁN — BẢN CHO ĐIỆN THOẠI (thay bảng 11 cột).
+   *
+   * Bảng 11 cột trên màn 390px dù đã cuộn ngang vẫn bắt người xem vuốt qua vuốt lại mới ghép đủ
+   * một dòng. Thẻ đảo lại: mỗi hạng mục một khối, đọc từ trên xuống, ngón tay bấm được.
+   * DỮ LIỆU VÀ HÀNH ĐỘNG GIỮ NGUYÊN của bảng (cùng `it`, cùng handler) — đây chỉ là cách bày.
+   * Ai cần đủ 11 cột thì bấm "Bảng" ở thanh trên, bảng cũ còn nguyên.
+   *
+   * Trật tự trong thẻ theo thứ tự người dùng cần: tên hạng mục → tình trạng → % → người phụ trách
+   * → mốc ngày → vướng mắc/giải pháp.
+   */
+  const renderCard = (it: EnrichedItem, idx: number) => {
+    const kind = it._alert;
+    const actual = it.pctActual != null ? Math.round(it.pctActual) : null;
+    const overdue = it.overdueDays || 0;
+    const installFid = it.stage === "Thi công lắp đặt"
+      ? (it.id ? installLinks?.["id:" + it.id] : installLinks?.[it.maCT])
+      : undefined;
+    const linkKey = it.stage === "Thi công lắp đặt"
+      ? stableProjKey(it.maCT, it.projectName)
+      : `${stableProjKey(it.maCT, it.projectName)}::${(it.desc || it._stageLabel || "").trim().toLowerCase().replace(/\s+/g, " ")}`;
+    const linkCfg = linkKey ? sheetViews?.[linkKey] : undefined;
+    const pdfDoc = linkCfg?.pdfFileId ? { id: linkCfg.pdfFileId, name: linkCfg.pdfName || "" } : null;
+    const viewLink = linkCfg?.fileId
+      ? { fileId: linkCfg.gid ? `${linkCfg.fileId}|${linkCfg.gid}` : linkCfg.fileId, sheet: linkCfg.sheet, range: linkCfg.range, tl: linkCfg.tl, br: linkCfg.br, snap: linkCfg.snap, snapKey: linkKey, hideAdmin: true, chart: linkCfg.chart }
+      : (installFid ? { fileId: installFid } : null);
+    const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
+    const doneOn = completedDates[it._key];
+    const xong = actual != null && actual >= 100;
+    // Vệt màu bên trái = mức nghiêm trọng, liếc một cái là biết thẻ nào cần xử lý trước.
+    const via = xong ? "#10b981" : it._alertColor === "red" ? "#dc2626" : it._alertColor === "amber" ? "#f59e0b" : "#cbd5e1";
+    const nMsg = (it._noteMsgs?.length ?? 0) + (it._actionMsgs?.length ?? 0);
+    return (
+      <div key={`c-${it.projectCode}-${it.rawCode}-${idx}`}
+        className={`relative overflow-hidden rounded-lg border bg-white ${it._hidden ? "border-amber-300 bg-amber-50/60 opacity-70" : "border-slate-200"}`}
+        style={{ boxShadow: "0 1px 2px rgba(15,23,42,.06)" }}>
+        <span className="absolute inset-y-0 left-0 w-1" style={{ background: via }} />
+        <div className="grid gap-1.5 py-2 pl-3 pr-2.5">
+          {/* Hàng 1: tên hạng mục (bấm mở ma trận / PDF nếu có) + tình trạng */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              {viewLink || pdfDoc ? (
+                <button type="button"
+                  onClick={() => { if (viewLink) onOpenSummary?.({ ...viewLink, name: groupMode ? it._stageLabel : it.projectName });
+                    else if (pdfDoc) onOpenPdf?.({ id: pdfDoc.id, name: pdfDoc.name || it.projectName }); }}
+                  className="text-left text-[13px] font-bold leading-snug text-teal-800 underline decoration-dotted underline-offset-2">
+                  {groupMode ? it._stageLabel : it.projectName} {viewLink ? "📊" : "📄"}
+                </button>
+              ) : (
+                <div className="text-[13px] font-bold leading-snug text-slate-900">{groupMode ? it._stageLabel : it.projectName}</div>
+              )}
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                <span className="font-semibold text-slate-700">{it.maCT || it.projectCode}</span>
+                <span className="rounded bg-slate-100 px-1.5 py-px font-semibold text-slate-600">{stageAbbrOf(it._stageId)}</span>
+                <UpdateChip date={it.updateDate} today={today} />
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="text-[19px] font-extrabold leading-none tabular-nums text-slate-900">{actual != null ? `${actual}%` : "—"}</div>
+              {overdue > 0 && <div className="mt-1 text-[10.5px] font-semibold text-red-700">trễ {overdue} ngày</div>}
+            </div>
+          </div>
+          {/* Hàng 2: tình trạng + mốc ngày + người phụ trách */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Badge cảnh báo dùng `em` (khổ cho ô bảng) — trong thẻ phải hạ cỡ chữ gốc xuống,
+                không thì một cái badge chiếm gần nửa bề ngang thẻ. */}
+            {xong
+              ? <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Đã hoàn thành</span>
+              : <span className="text-[9px] leading-none"><AlertBadge kind={kind} color={it._alertColor} /></span>}
+            <span className="text-[11px] tabular-nums text-slate-600">
+              {fmtDateVN2(it.start)} → {doneOn
+                ? <><span className="text-slate-400 line-through">{fmtDateVN2(it.deadline)}</span> <b className="text-emerald-700">{fmtDateVN2(doneOn)}</b></>
+                : fmtDateVN2(it.deadline)}
+            </span>
+          </div>
+          <div className="truncate text-[11.5px] text-slate-600" title={picDisplay}>
+            <span className="text-slate-400">PIC </span><PicNames text={picDisplay} />
+          </div>
+          {/* Hàng 3: việc bấm — vướng mắc/giải pháp, media, ẩn dòng */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <button type="button" onClick={() => openEdit(it, "note")}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 text-[11.5px] font-semibold text-slate-700">
+              Vướng mắc{nMsg ? ` · ${nMsg}` : ""}
+            </button>
+            <button type="button" onClick={() => openEdit(it, "action")}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-2.5 text-[11.5px] font-semibold text-slate-700">
+              Giải pháp
+            </button>
+            {viewLink && pdfDoc && (
+              <button type="button" onClick={() => onOpenPdf?.({ id: pdfDoc.id, name: pdfDoc.name || it.projectName })}
+                className="inline-flex h-8 items-center rounded-md border border-sky-300 px-2.5 text-[11.5px] font-semibold text-sky-700">📄 PDF</button>
+            )}
+            {canHideRow && (
+              <button type="button"
+                onClick={() => onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, !it._hidden)}
+                className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-slate-400">
+                {it._hidden ? "Bỏ ẩn" : "Ẩn"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderRow = (it: EnrichedItem, idx: number) => {
     const kind = it._alert;
     const actual = it.pctActual != null ? Math.round(it.pctActual) : null;
@@ -6080,28 +6198,37 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   return (
     <section ref={panelRef} className={`flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-2 ${isFs && viewMode === "list" ? "overflow-auto" : ""}`}>
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <h2 className="text-[12px] font-bold uppercase tracking-wider text-slate-700">
+        <div className={`flex flex-wrap items-center ${narrowScreen ? "gap-1.5" : "gap-3"}`}>
+          <h2 className="whitespace-nowrap text-[12px] font-bold uppercase tracking-wider text-slate-700">
             {viewMode === "gantt" ? "Tổng thể tiến độ" : "Việc cần xử lý"}
           </h2>
           {/* Chuyển cách trình bày: bảng cảnh báo ⇄ biểu đồ Gantt tổng thể tiến độ */}
           <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-[11px] font-medium print:hidden">
             <button type="button" onClick={() => setViewMode("list")}
-              className={`px-2 py-0.5 ${viewMode === "list" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+              className={`px-3 ${narrowScreen ? "h-9" : "px-2 py-0.5"} ${viewMode === "list" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
               Danh sách
             </button>
             <button type="button" onClick={() => setViewMode("gantt")}
-              className={`border-l border-slate-300 px-2 py-0.5 ${viewMode === "gantt" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+              className={`border-l border-slate-300 px-3 ${narrowScreen ? "h-9" : "px-2 py-0.5"} ${viewMode === "gantt" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
               Tổng thể tiến độ
             </button>
           </div>
+          {/* ĐIỆN THOẠI: đổi giữa THẺ (dễ đọc) và BẢNG (đủ 11 cột, cuộn ngang). */}
+          {narrowScreen && viewMode === "list" && (
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-[11px] font-medium print:hidden">
+              <button type="button" onClick={() => setCardView(true)}
+                className={`h-9 px-3 ${cardView ? "bg-slate-800 text-white" : "bg-white text-slate-600"}`}>Thẻ</button>
+              <button type="button" onClick={() => setCardView(false)}
+                className={`h-9 border-l border-slate-300 px-3 ${!cardView ? "bg-slate-800 text-white" : "bg-white text-slate-600"}`}>Bảng</button>
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 [&>*]:shrink-0 [&_button]:whitespace-nowrap print:hidden">
           {/* NÚT "HIỆN TẤT CẢ ĐẦU VIỆC" (kể cả ĐÃ HOÀN THÀNH) — bên TRÁI "Mở tất cả", cho cả 2 bảng.
               Bật → thêm việc 100% (badge "Đã hoàn thành" xanh lá ở cột Tình trạng). KPI không đổi. */}
           <button aria-label={"Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"} type="button" onClick={onToggleDone}
             title="Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"
-            className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
+            className={`rounded-md border px-2.5 text-[11px] font-medium ${narrowScreen ? "h-9" : "py-0.5"} ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
             {showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc"}
           </button>
           {/* DÒNG ĐÃ ẨN (admin + PMO) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
@@ -6118,7 +6245,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           {viewMode === "list" && groupMode && groups.length > 0 && (
             <button
               onClick={() => setExpandedGroups(allExpanded ? new Set() : new Set(groups.map(g => g.key)))}
-              className="rounded-md border border-teal-300 bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800 hover:border-teal-500">
+              className={`rounded-md border border-teal-300 bg-teal-50 px-2.5 text-[11px] font-medium text-teal-800 hover:border-teal-500 ${narrowScreen ? "h-9" : "py-0.5"}`}>
               {allExpanded ? "Thu gọn tất cả" : "Mở tất cả"}
             </button>
           )}
@@ -6145,17 +6272,26 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           {/* "Đánh giá tuân thủ" + "Nhật ký giám sát" KHÔNG còn phơi thẳng trên toolbar —
               gom vào menu "⋯ Thêm" ở cuối (xem <ReportsMenu>), để toolbar gọn và còn chỗ
               mở rộng khi thêm tính năng. Menu render ở cuối, sau các nút xuất file. */}
-          <button onClick={() => { void handleExportClick(); }}
-            disabled={exporting}
-            className="flex items-center gap-1.5 rounded-md border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
-            <FileSpreadsheet className="h-3.5 w-3.5" /> {exporting ? "Đang xuất…" : "Xuất Excel"}
-          </button>
-          <PdfExportMenu onPrint={onPrint} />
-          <button aria-label={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"} onClick={toggleFullscreen}
-            title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
-            className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
-            {isFs ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />} {isFs ? "Thu nhỏ" : "Toàn màn hình"}
-          </button>
+          {/* ĐIỆN THOẠI: gấp 3 nút xuất file / toàn màn hình sau nút "⋯" (không bỏ nút nào). */}
+          {narrowScreen && (
+            <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-label="Thêm lệnh xuất file"
+              className={`flex h-8 items-center rounded-md border px-3 text-[13px] font-bold leading-none ${moreOpen ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-600"}`}>⋯</button>
+          )}
+          {(!narrowScreen || moreOpen) && (
+            <>
+              <button onClick={() => { void handleExportClick(); }}
+                disabled={exporting}
+                className="flex items-center gap-1.5 rounded-md border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+                <FileSpreadsheet className="h-3.5 w-3.5" /> {exporting ? "Đang xuất…" : "Xuất Excel"}
+              </button>
+              <PdfExportMenu onPrint={onPrint} />
+              <button aria-label={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"} onClick={toggleFullscreen}
+                title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
+                className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
+                {isFs ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />} {isFs ? "Thu nhỏ" : "Toàn màn hình"}
+              </button>
+            </>
+          )}
           {/* "Đánh giá tuân thủ" + "Nhật ký giám sát" là TÍNH NĂNG HỆ THỐNG → không nằm cạnh
               bảng nữa, đã chuyển lên góc header (menu "⋯ Hệ thống"). Xem <ReportsMenu> render
               qua <HeaderSlot> trong DashboardBody. */}
@@ -6167,7 +6303,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input value={filters.query} onChange={e => setFilters(f => ({ ...f, query: e.target.value }))}
             placeholder="Tìm công trình, mã CT, PIC hoặc PM…"
-            className={`w-full rounded-md border border-slate-300 pl-7 py-1 text-xs text-slate-900 focus:border-teal-600 focus:outline-none ${filters.query ? "pr-7" : "pr-2"}`} />
+            className={`w-full rounded-md border border-slate-300 pl-7 text-slate-900 focus:border-teal-600 focus:outline-none ${narrowScreen ? "h-11 text-[13px]" : "py-1 text-xs"} ${filters.query ? "pr-7" : "pr-2"}`} />
           {filters.query && (
             <button type="button" onClick={() => setFilters(f => ({ ...f, query: "" }))}
               title="Xoá tìm kiếm" aria-label="Xoá tìm kiếm"
@@ -6180,7 +6316,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             thấy dữ liệu → gấp lại sau MỘT nút "Bộ lọc (n)". Ô TÌM vẫn luôn hiện (thao tác hay dùng nhất).
             MÁY TÍNH: `md:hidden` ẩn nút, `md:contents` cho khối lọc tan vào grid → hàng ngang y như cũ. */}
         <button type="button" onClick={() => setFilterOpen(v => !v)}
-          className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs md:hidden ${nFilters ? "border-teal-600 bg-teal-50 font-semibold text-teal-800" : "border-slate-300 bg-white text-slate-700"}`}>
+          className={`flex h-11 items-center justify-between gap-2 rounded-md border px-2.5 text-[13px] md:hidden ${nFilters ? "border-teal-600 bg-teal-50 font-semibold text-teal-800" : "border-slate-300 bg-white text-slate-700"}`}>
           <span className="flex items-center gap-1.5">
             <SlidersHorizontal className="h-3.5 w-3.5" />
             Bộ lọc{nFilters ? ` (${nFilters})` : ""}
@@ -6235,7 +6371,54 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         </div>
       </div>
 
-      {viewMode === "gantt" ? (
+      {useCards ? (
+        /* DANH SÁCH THẺ (điện thoại) — cùng dữ liệu, cùng bộ lọc, cùng thứ tự sắp xếp với bảng. */
+        <div className="min-h-0 flex-1 overflow-auto">
+          {groupMode ? (
+            groups.length === 0 ? (
+              <div className="px-3 py-10 text-center text-sm text-slate-500">Không có dự án nào khớp bộ lọc hiện tại.</div>
+            ) : (
+              <div className="grid gap-2 pb-3">
+                {groups.map((g) => {
+                  const expanded = expandedGroups.has(g.key);
+                  const groupLate = !g.delivered && !!g.deadline && g.deadline.slice(0, 10) < today;
+                  return (
+                    <div key={g.key} className="overflow-hidden rounded-lg border border-slate-300">
+                      {/* Đầu nhóm = DỰ ÁN. Bấm cả dải để xổ / thu — vùng bấm rộng, ngón tay không trượt. */}
+                      <button type="button" onClick={() => setExpandedGroups((prev) => { const n = new Set(prev); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}
+                        className="flex w-full items-start gap-2 bg-[#1e293b] px-3 py-2 text-left text-white">
+                        <span className={`mt-[3px] shrink-0 text-[10px] transition-transform ${expanded ? "rotate-90" : ""}`}>▶</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-bold leading-snug">{g.name}</span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-300">
+                            <span className="font-semibold text-slate-200">{g.maCT || "—"}</span>
+                            <span>{g.items.length} hạng mục</span>
+                            <span className={groupLate ? "rounded bg-red-500 px-1.5 font-bold text-white" : ""}>
+                              Bàn giao {fmtDateVN2(g.deadline)}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-slate-400">PM {g.pm || "—"}</span>
+                        </span>
+                      </button>
+                      {expanded && (
+                        <div className="grid gap-2 bg-slate-50 p-2">
+                          {g.items.map((it, i) => renderCard(it, i))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            <div className="grid gap-2 pb-3">
+              {sortedItems.length === 0
+                ? <div className="px-3 py-10 text-center text-sm text-slate-500">Không có hạng mục nào khớp bộ lọc hiện tại.</div>
+                : sortedItems.map((it, i) => renderCard(it, i))}
+            </div>
+          )}
+        </div>
+      ) : viewMode === "gantt" ? (
         <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} canHide={canHideRow} showHidden={showHidden} onHideRow={onHideRow} />
       ) : (
       <div className="relative min-h-0 flex-1 rounded-md border border-slate-200"
