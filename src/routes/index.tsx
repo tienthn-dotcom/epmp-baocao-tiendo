@@ -525,7 +525,8 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.93.0", date: "07/09/2026", items: [
+  { v: "3.94.0", date: "07/09/2026", items: [
+    "ĐIỆN THOẠI — bảng “Việc cần xử lý” hết đè chữ: 11 cột ép vào màn 375px làm cột “Quá hạn” chỉ còn 11px, hẹp hơn một chữ số. Nay bảng giữ khổ đọc được rồi CUỘN NGANG trong khung của nó (cột hẹp nhất 38px, chữ 12px) — vuốt ngang để xem đủ cột, trang vẫn không trôi ngang. Máy tính giữ nguyên y như cũ.",
     "Nhật ký giám sát phủ NỐT các app con: DST (ghim nguồn dữ liệu), Dữ liệu dự án (nhập bộ dữ liệu vào kho — ghi rõ tên bộ, số dòng, nguồn), Trợ lý PMO (nạp dữ liệu). Giờ mọi app trong thanh dọc đều để lại vết.",
     "Tải ảnh/clip lên nay ghi RÕ TÊN TỪNG TỆP đã lên và tệp nào hụt, thay vì chỉ đếm số. Xem nhật ký là biết đã lên đúng cái gì.",
     "Nhật ký mốc “Tất cả” đọc từ BẢN LƯU TRÊN DRIVE thay vì kéo hết từ kho trong app — mở nhanh hơn và giữ được lịch sử dài hơn. Bản lưu tự chốt lúc 23:30 mỗi ngày; các mốc Hôm nay / 7 / 30 ngày vẫn đọc trực tiếp nên thấy ngay thao tác vừa xảy ra.",
@@ -5481,6 +5482,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
    *  không cần raise. Server vẫn chốt quyền lần nữa (setHiddenRow) — nút này chỉ là lớp giao diện. */
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const canHideRow = isAdmin || isPmo;
+  /** Màn hẹp (điện thoại) — đổi cách trình bày bảng, KHÔNG đổi dữ liệu hay số cột. */
+  const narrowScreen = useIsMobile();
   /** ĐIỆN THOẠI: gấp/mở khối bộ lọc (máy tính luôn mở — nút bật/tắt bị `md:hidden`). */
   const [filterOpen, setFilterOpen] = useState(false);
   /** Số bộ lọc ĐANG BẬT — hiện ngay trên nút để người dùng biết đang lọc gì dù khối đã gấp. */
@@ -6099,7 +6102,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} canHide={canHideRow} showHidden={showHidden} onHideRow={onHideRow} />
       ) : (
       <div className="relative min-h-0 flex-1 rounded-md border border-slate-200"
-           style={{ containerType: "inline-size" }}>
+           style={{ containerType: "inline-size", overflowX: narrowScreen ? "auto" : undefined,
+                    WebkitOverflowScrolling: "touch" }}>
+        {/* ĐIỆN THOẠI: bảng 11 cột KHÔNG nhét vừa 375px — ép vừa thì cột "Quá hạn" còn 11px, hẹp
+            hơn một chữ số, chữ các cột đè lên nhau. Nay bảng giữ khổ tối thiểu rồi CUỘN NGANG trong
+            khung này: đọc được đủ 11 cột mà trang không cuộn ngang theo.
+            MÁY TÍNH giữ nguyên: bảng vừa khung nên chẳng có thanh cuộn nào hiện ra. */}
         {/* `container-type: inline-size` ở div bọc = MỐC ĐO cho đơn vị `cqw` của bảng. Chỉ
             chứa theo trục NGANG nên chiều cao vẫn nở theo nội dung (flex-1 min-h-0 giữ
             nguyên) và thead sticky vẫn bám viewport.
@@ -6118,8 +6126,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             khiến màn 1280 đè chữ trước đây (sàn cũ 8px). Cũng không cần TRẦN: tỉ lệ cố định
             nên toàn màn hình (bảng rộng hơn) chỉ làm chữ to lên cho dễ đọc, không hỏng gì.
             Hệ số nằm ở lib/table-scale.ts — DÙNG CHUNG với Xuất PDF để hai bên không lệch. */}
+        {/* minWidth trên điện thoại: cột tính theo % nên phải có khổ nền đủ rộng thì % mới ra bề
+            rộng đọc được. 980px = vừa đủ cho 11 cột ở cỡ chữ 12px.
+            Cỡ chữ: máy tính dùng cqw (co giãn theo khung, xem lib/table-scale.ts); điện thoại chốt
+            12px — cqw đo theo khung 375px sẽ ra chữ li ti trong khi bảng đã rộng 980px. */}
         <table id="pdf-table" className="w-full table-fixed border-collapse"
-               style={{ fontSize: TABLE_FONT_CSS }}>
+               style={{ fontSize: narrowScreen ? 12 : TABLE_FONT_CSS, minWidth: narrowScreen ? 980 : undefined }}>
           {/* Độ rộng cột người dùng kéo chỉnh được (mép phải mỗi tiêu đề);
               phần bù trừ lấy từ cột "Vướng mắc / cần xử lý". */}
           <colgroup>
