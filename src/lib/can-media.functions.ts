@@ -95,16 +95,23 @@ const capNgan = (s?: string): string | undefined => {
 
 /** Cấp PHIÊN UPLOAD 1 file media (ảnh/video) cho 1 PHÒNG (Toà + căn) của 1 DỰ ÁN. Trả { uploadUrl, name }. */
 export const startCanMediaUpload = createServerFn({ method: "POST" })
-  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string; caption?: string }) => d)
+  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string; caption?: string; devAs?: string | null }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
     const can = safeCan(data.can);
     if (!can) throw new Error("Thiếu tên phòng.");
+    // CHÚ THÍCH LÀ BẮT BUỘC: tải ảnh/clip lên đồng thời phải nói hiện trạng đang tới đâu. Chặn ở
+    // SERVER chứ không riêng ở nút bấm — người dùng gọi thẳng API vẫn không lách được.
+    const loi = capNganMsg(data.caption);
+    if (!loi) throw new Error("Phải ghi chú thích (báo hiện trạng) trước khi tải lên.");
+    const nguoi = (await nguoiGoi(data.devAs)) || "(không rõ)";
+    // Chú thích thành TIN ĐẦU TIÊN trong hộp thoại của tệp: có người viết, có ngày giờ.
+    const tin = JSON.stringify([{ id: rid6() + Date.now().toString(36).slice(-4), text: loi, author: nguoi, at: new Date().toISOString() }]);
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
     const name = `${can}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
-    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin, capNgan(data.caption));
+    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin, tin);
     return { uploadUrl, name };
   });
 

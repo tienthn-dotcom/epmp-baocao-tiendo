@@ -605,6 +605,10 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   const [capEditId, setCapEditId] = useState<string | null>(null);   // đang sửa tin nào
   const [capDraft, setCapDraft] = useState("");             // nội dung đang sửa
   const [capBusy, setCapBusy] = useState(false);
+  // LÔ ĐANG CHỜ BÁO CÁO: chọn tệp xong chưa tải ngay — phải ghi hiện trạng đã rồi mới cho lên.
+  const [cho, setCho] = useState<{ kind: "photo" | "video"; files: File[] } | null>(null);
+  const [choCap, setChoCap] = useState("");
+  const choWords = choCap.trim() ? choCap.trim().split(/\s+/).length : 0;
   const [capErr, setCapErr] = useState<string | null>(null);
   const capWords = cap.trim() ? cap.trim().split(/\s+/).length : 0;
   useEffect(() => { setSel(0); }, [project]);
@@ -666,9 +670,8 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     setCan((v) => (v === cur.can ? v : cur.can));
   }, [scope, cur]);
 
-  async function onFiles(kind: "photo" | "video", files?: FileList | null) {
-    const arr = [...(files ?? [])].filter((f) => (kind === "photo" ? /^image\//.test(f.type) : /^video\//.test(f.type)));
-    if (!arr.length || !can.trim()) return;
+  async function onFiles(kind: "photo" | "video", arr: File[], chuThich: string) {
+    if (!arr.length || !can.trim() || !chuThich.trim()) return;
     const hong: string[] = [];              // tệp tải KHÔNG xong — phải nói ra, không được nuốt
     const xong: string[] = [];              // tệp tải XONG — ghi TÊN vào nhật ký, không chỉ đếm
     for (let i = 0; i < arr.length; i++) {
@@ -676,7 +679,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
-        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin } });
+        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin, caption: chuThich, devAs: devAsDlg } });
         // KHÔNG nuốt lỗi PUT. Trước đây bọc catch rỗng: rớt mạng / iOS khoá màn giữa chừng là Drive
         // giữ lại cái vỏ tệp 0 byte, app vẫn báo tải xong, tới lúc mở mới lòi lỗi của Google.
         // (03/09 mất trắng 60 clip đúng kiểu này.) Nay hụt tệp nào báo tên tệp đó ngay.
@@ -696,7 +699,8 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     track("media_upload",
       `${project}${toa.trim() ? " · " + toa.trim() : ""} · ${can.trim()} — ${kind === "photo" ? "ảnh" : "clip"}`
       + ` · xong ${xong.length}/${arr.length}${xong.length ? ": " + noi(xong) : ""}`
-      + (hong.length ? ` · HỤT ${hong.length}: ${noi(hong)}` : ""));
+      + (hong.length ? ` · HỤT ${hong.length}: ${noi(hong)}` : "")
+      + ` · chú thích: ${chuThich.trim().slice(0, 150)}`);
     if (hong.length) alert("Chưa tải lên được " + hong.length + " tệp:\n· " + hong.join("\n· ")
       + "\n\nThường do rớt mạng hoặc màn hình tắt giữa chừng. Mở lại và tải lại đúng mấy tệp này.");
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
@@ -762,16 +766,53 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
                 title={upOpen ? "Đóng khung tải lên" : "Tải ảnh / video"}>{upOpen ? "−" : "＋"}</button>
             )}
             {scope === "can" && (!narrow || upOpen) && <>
+              {/* Chọn tệp xong KHÔNG tải ngay: mở hộp "Báo cáo hiện trạng" — ghi một lần cho cả lô. */}
               <label style={upBtn}>＋ Tải ảnh
                 <input type="file" accept="image/*" multiple style={{ display: "none" }}
-                  onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
+                  onChange={(e) => { const fs = [...(e.target.files ?? [])].filter((f) => /^image\//.test(f.type)); e.currentTarget.value = ""; if (fs.length) { setChoCap(""); setCho({ kind: "photo", files: fs }); } }} /></label>
               <label style={upBtn}>＋ Tải video
                 <input type="file" accept="video/*" multiple style={{ display: "none" }}
-                  onChange={(e) => { void onFiles("video", e.target.files); e.currentTarget.value = ""; }} /></label>
+                  onChange={(e) => { const fs = [...(e.target.files ?? [])].filter((f) => /^video\//.test(f.type)); e.currentTarget.value = ""; if (fs.length) { setChoCap(""); setCho({ kind: "video", files: fs }); } }} /></label>
             </>}
             <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#cbd5e1", fontSize: 24, lineHeight: 1, cursor: "pointer" }}>×</button>
           </div>
         </div>
+
+        {/* HỘP BÁO CÁO HIỆN TRẠNG — chặn giữa "chọn tệp" và "tải lên". Tải ảnh/clip về mà không nói
+            hiện trạng thì người xem chỉ thấy hình, không biết đang vướng gì; nên chú thích là BẮT BUỘC,
+            ghi MỘT LẦN cho cả lô vừa chọn (không phải gõ lại từng tệp). */}
+        {cho && (
+          <div style={{ background: "#132842", borderBottom: "1px solid rgba(255,255,255,.1)", padding: narrow ? "10px 12px" : "12px 14px", display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#fff" }}>
+                Báo cáo hiện trạng · {cho.files.length} {cho.kind === "photo" ? "ảnh" : "clip"}
+              </span>
+              <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.6)" }}>
+                {toa.trim() ? toa.trim() + " · " : ""}{can.trim()} — bắt buộc, ghi một lần cho cả lô
+              </span>
+            </div>
+            <textarea autoFocus value={choCap} onChange={(e) => setChoCap(e.target.value)} rows={narrow ? 3 : 2}
+              placeholder="Đang làm tới đâu, vướng gì, cần ai xử lý…"
+              style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "9px 11px", fontSize: 13, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: choWords > 100 ? "#fca5a5" : "rgba(255,255,255,.55)" }}>
+                {choWords}/100 từ{choWords > 100 ? " — sẽ cắt còn 100" : ""}
+              </span>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,.45)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {cho.files.map((f) => f.name).join(", ")}
+              </span>
+              <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <button type="button" onClick={() => { setCho(null); setChoCap(""); }}
+                  style={{ height: 34, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Huỷ</button>
+                <button type="button" disabled={!choCap.trim() || !!busy}
+                  onClick={() => { const b = cho; const t = choCap; setCho(null); setChoCap(""); void onFiles(b.kind, b.files, t); }}
+                  style={{ height: 34, padding: "0 16px", borderRadius: 8, border: "none", background: choCap.trim() ? C.tealD : "rgba(255,255,255,.18)", color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: choCap.trim() ? "pointer" : "not-allowed" }}>
+                  Tải lên {cho.files.length} tệp
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
 
         {busy && <div style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", background: C.tealD, padding: "7px 14px" }}>⏳ {busy}</div>}
 
