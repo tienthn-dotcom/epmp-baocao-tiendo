@@ -1589,7 +1589,10 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
           </div>
         </div>
         {/* PHẢI: dữ liệu tính đến · version · nút — cùng 1 hàng ở desktop, gọn trong khoảng header */}
-        <div className="flex flex-col items-center gap-1 text-[11px] text-slate-500 md:flex-row md:items-center md:justify-end md:justify-self-end">
+        {/* ĐIỆN THOẠI: hàng nút này xếp DỌC (flex-col) nên ăn 127px — gần bằng cả phần còn lại của
+            header cộng lại, đẩy bảng xuống mãi. Nay xếp NGANG rồi cuộn, cao còn ~1 dòng; không bỏ nút
+            nào, vuốt ngang là tới. Máy tính giữ nguyên hàng ngang căn phải như cũ. */}
+        <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap text-[11px] text-slate-500 [&>*]:shrink-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-row md:items-center md:justify-end md:justify-self-end md:gap-1 md:overflow-visible">
           {/* Nút TRA CỨU, không phải hành động → cố tình dùng kiểu VIỀN (amber-50 nền,
               amber-400 viền), KHÔNG dùng vàng đặc. Vàng đặc sẽ tranh chỗ với nút "Làm mới"
               (teal đặc = hành động chính) và với chính badge cảnh báo vàng trong bảng —
@@ -4248,6 +4251,7 @@ function OverviewStrip(p: {
   activeAlerts: AlertK2[];
   onPickKpi: (k: AlertK2) => void;
 }) {
+  const narrowKpi = useIsMobile();   // điện thoại: chốt cỡ chữ px, xem chú thích ở dưới
   // Các thẻ — con số phản ánh ĐÚNG những gì bảng bên dưới đang hiển thị (theo bộ lọc).
   // AUTO-FIT: section = container (container-type inline-size), grid lấy cỡ chữ theo `cqw`
   // = 1% bề rộng section. Mọi kích thước con (padding/gap/chữ/số) theo `em` nên cả cụm
@@ -4255,7 +4259,10 @@ function OverviewStrip(p: {
   // cỡ. Hệ số 0.78cqw ⇒ ~12px ở bề rộng cụm ~1536 (màn 1920). Xem quy tắc ở lib/table-scale.
   return (
     <section id="pdf-kpi" className="rounded-lg border border-slate-200 bg-white p-2" style={{ containerType: "inline-size" }}>
-      <div className="grid grid-cols-2 gap-[0.66em] sm:grid-cols-6" style={{ fontSize: "0.78cqw" }}>
+      {/* Cỡ chữ theo cqw = tỉ lệ bề ngang KHUNG. Trên màn 375px, 0.78cqw ra 2,6px — chữ nhỏ tới mức
+          nhìn như vệt mờ, đúng chỗ chủ nhà báo "element chồng chéo". Điện thoại chốt 12px; máy tính
+          giữ nguyên cqw để dải KPI co giãn theo khung như cũ. */}
+      <div className="grid grid-cols-2 gap-[0.66em] sm:grid-cols-6" style={{ fontSize: narrowKpi ? 12 : "0.78cqw" }}>
         <KPI label="Dự án hiện hành" value={p.projectCount} tone="slate" />
         <KPI label="Trễ tiến độ" value={p.lateCount} tone="red"
              active={p.activeAlerts.includes("late")} onClick={() => p.onPickKpi("late")} />
@@ -4318,6 +4325,7 @@ function StageBarsPanel({ active, doneCounts, activeStages, onPick }: {
   activeStages: StageOrOther[];
   onPick: (sid: StageId) => void;
 }) {
+  const narrowKpi = useIsMobile();   // điện thoại: 1 hàng cuộn ngang + chữ px (xem chú thích dưới)
   // MỌI CON SỐ trên thẻ đều tính từ tập ĐÃ LỌC: chưa bấm lọc = số tổng;
   // bấm lọc (tháng này / bộ phận / nhóm cảnh báo / MP / tìm kiếm) → nhảy theo.
   // Thanh chia theo MÀU (mức nghiêm trọng), KHÔNG theo nhãn: từ 17/07/2026 một việc
@@ -4344,7 +4352,11 @@ function StageBarsPanel({ active, doneCounts, activeStages, onPick }: {
           <LegendChip color="bg-slate-300"   label="Đang triển khai" />
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-[0.38em] md:grid-cols-7" style={{ fontSize: "0.68cqw" }}>
+      {/* ĐIỆN THOẠI: 7 thẻ giai đoạn xếp DỌC mà chữ chỉ 2,26px (cqw đo theo khung 375px) — vừa không
+          đọc được vừa ăn 120px chiều cao. Nay 1 HÀNG CUỘN NGANG, chữ 11px: vuốt ngang xem đủ 7 công
+          đoạn, chiều cao còn hơn phân nửa. Máy tính giữ nguyên lưới 7 cột + cqw. */}
+      <div className={narrowKpi ? "flex gap-2 overflow-x-auto pb-1 [&>*]:min-w-[9.5rem] [&>*]:shrink-0" : "grid grid-cols-1 gap-[0.38em] md:grid-cols-7"}
+           style={{ fontSize: narrowKpi ? 11 : "0.68cqw" }}>
         {rows.map(r => {
           const active = activeStages.includes(r.sid as StageOrOther);
           // Thanh: XANH (mờ, đã xong) dồn TRÁI → ĐỎ (cảnh báo đỏ) → VÀNG (cảnh báo

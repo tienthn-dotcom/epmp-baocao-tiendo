@@ -47,6 +47,24 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
     return { uploadUrl, name };
   });
 
+/** TẢI PDF LÊN CHO 1 HẠNG MỤC — mở phiên upload, client PUT thẳng lên Google (không qua Worker).
+ *  Nhiều công đoạn chỉ cần đính một file PDF chứ không có ma trận Excel; đây là đường cho việc đó.
+ *  Lưu vào: DATABASE › ePMP › Tài liệu hạng mục › <mã CT hoặc khoá dự án> › <tên>.pdf
+ *  Tên file kèm ngày + mã ngẫu nhiên: tải lại nhiều lần không đè mất bản cũ, muốn xem bản nào cũng còn. */
+export const startItemPdfUpload = createServerFn({ method: "POST" })
+  .validator((d: { key: string; label?: string; fileName: string }) => d)
+  .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
+    const folder = (data.label || data.key || "Khac").replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 80) || "Khac";
+    const base = (data.fileName || "tai-lieu").replace(/\.[^.]+$/, "").replace(/[\/:*?"<>|]+/g, "-").trim().slice(0, 60) || "tai-lieu";
+    const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
+    const name = `${base}_${stamp}_${rid6()}.pdf`;
+    const { uploadUrl } = await drive.driveCreateResumableSession(["ePMP", "Tài liệu hạng mục", folder], name, "application/pdf");
+    return { uploadUrl, name };
+  });
+
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
 export const listCanMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string; toa?: string; can: string }) => d)
