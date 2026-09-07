@@ -879,7 +879,7 @@ const DEV_SHEETVIEW_FILE = ".data/pmo-sheetview.json";
 /** pdf=true → ÉP chụp PDF (bỏ tự-nhận-dạng heatmap); sheet/range = tinh chỉnh tab + vùng (tuỳ chọn).
  *  fileId/gid: khi PMO GẮN LINK THẲNG trong app (không qua hyperlink file import) — key = khoá bền dự án
  *  (Mã CT + Tên). Có fileId → dự án đó hiện 📊 cho mọi người, popup chụp PDF từ link này. */
-export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string };
+export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string; ma?: string; ten?: string };
 // pdfFileId/pdfName = TÀI LIỆU PDF gắn thẳng cho hạng mục (id file trên Drive). Nhiều công đoạn chỉ có
 // một bản PDF chứ không có ma trận Excel — đây là ĐỊNH DẠNG THÊM, không thay thế: cấu hình cũ (fileId +
 // sheet + range) vẫn nguyên vẹn, thiếu pdfFileId thì popup chạy y như trước.
@@ -925,6 +925,8 @@ export const saveSheetView = createServerFn({ method: "POST" })
       chart: z.boolean().optional(),                           // mặc định mở BẢN CÓ CHART cho mọi người
       pdfFileId: z.string().max(120).regex(/^[a-zA-Z0-9_-]*$/).optional(),   // PDF gắn thẳng (id trên Drive)
       pdfName: z.string().max(200).regex(/^[^\n\r]*$/).optional(),   // tên file PDF để hiện cho người dùng
+      ma: z.string().max(120).regex(/^[^\n\r]*$/).optional(),      // mã CT — để đọc được file sao lưu trên Drive
+      ten: z.string().max(300).regex(/^[^\n\r]*$/).optional(),     // tên CT (kèm hạng mục nếu là link cấp hạng mục)
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
@@ -939,11 +941,44 @@ export const saveSheetView = createServerFn({ method: "POST" })
     const br = (data.br ?? "").trim();
     const pdfFileId = (data.pdfFileId ?? "").trim();
     const pdfName = (data.pdfName ?? "").trim();
+    const ma = (data.ma ?? "").trim();
+    const ten = (data.ten ?? "").trim();
     if (!data.pdf) delete map[data.key];   // tắt ép PDF / gỡ link → về mặc định (không hiện 📊 nếu là khoá dự án)
-    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}) };
+    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}), ...(ma ? { ma } : {}), ...(ten ? { ten } : {}) };
     await writeSheetViews(map);
+    await backupSheetViewsToDrive(map);   // gắn/sửa/gỡ link xong là sao lưu ngay, khỏi chờ cron
     return { views: map };
   });
+
+/**
+ * SAO LƯU BẢNG LINK LÊN DRIVE — mỗi lần PMO gắn / sửa / gỡ link là ghi đè lại MỘT file duy nhất
+ * "Data Source › DATABASE › ePMP › Sao lưu link › link-hang-muc.csv".
+ *
+ * Vì sao cần: bảng link nằm trong KV. KV mất, hoặc lỡ tay gỡ nhầm, thì công gắn link cả trăm hạng mục
+ * bay sạch mà không có bản nào đọc lại được. File CSV này mở bằng Excel là thấy ngay rid — mã CT —
+ * tên CT — link, dựng lại được bằng tay.
+ *
+ * Sao lưu HỎNG THÌ KỆ: không được phép làm PMO lưu link thất bại chỉ vì Drive trục trặc.
+ */
+async function backupSheetViewsToDrive(map: SheetViewMap): Promise<void> {
+  try {
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) return;
+    const q = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const d = new Date(Date.now() + 7 * 3600_000);
+    const p2 = (n: number) => String(n).padStart(2, "0");
+    const luc = `${p2(d.getUTCDate())}/${p2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+    const head = ["rid", "Mã CT", "Tên CT / hạng mục", "fileId", "gid", "Sheet (tab)", "Vùng", "Marker trên-trái", "Marker dưới-phải", "PDF fileId", "PDF tên", "Bản chart"];
+    const rows = Object.entries(map).map(([key, v]) =>
+      [key, v.ma, v.ten, v.fileId, v.gid, v.sheet, v.range, v.tl, v.br, v.pdfFileId, v.pdfName, v.chart ? "x" : ""].map(q).join(","));
+    // \uFEFF: Excel mở CSV không có BOM là vỡ hết dấu tiếng Việt.
+    const csv = "\uFEFF" + [`Sao lưu lúc ${luc} (giờ VN) — ${rows.length} link`, head.map(q).join(","), ...rows].join("\r\n") + "\r\n";
+    await drive.driveArchiveText(["ePMP", "Sao lưu link"], "link-hang-muc.csv", csv, "text/csv");
+  } catch { /* sao lưu là việc phụ — hỏng thì thôi, KHÔNG chặn thao tác chính */ }
+}
 
 /* ── FORM BÁO CÁO TUÂN THỦ (admin/PMO "chỉnh bảng": kéo rộng cột + cỡ chữ + in đậm) — KV `complianceform:v1`.
    Đọc CÔNG KHAI (mọi người thấy form đã chốt); GHI chỉ ADMIN/PMO. Áp cho cả màn hình lẫn bản in PDF. ── */

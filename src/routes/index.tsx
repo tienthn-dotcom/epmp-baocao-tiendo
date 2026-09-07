@@ -2307,7 +2307,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   }, [JSON.stringify(Object.values(installLinks).sort())]);
   // Popup xem: {fileId, sheet?, range?, hideAdmin?}. Link PMO gắn → hideAdmin (chỉ xem); hyperlink cũ → có box.
   const [summaryTarget, setSummaryTarget] = useState<{ fileId: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; snapKey?: string; hideAdmin?: boolean; chart?: boolean; name?: string } | null>(null);
-  const [linkSetup, setLinkSetup] = useState<{ key: string; name: string; cfg?: SheetViewCfg } | null>(null);
+  const [linkSetup, setLinkSetup] = useState<{ key: string; name: string; ma?: string; cfg?: SheetViewCfg } | null>(null);
   const [pdfTarget, setPdfTarget] = useState<{ id: string; name: string } | null>(null);   // tài liệu PDF gắn cho hạng mục
   // ẢNH DỰ ÁN (PMO gắn thẳng): mở popup ẢNH (imgView) / mở dialog PMO thêm-gỡ ảnh (imgSetup).
   const [imgView, setImgView] = useState<{ key: string; name: string } | null>(null);
@@ -4080,7 +4080,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
       {showActivity && <ActivityLogDialog onClose={() => setShowActivity(false)} />}
       {summaryTarget && <SummaryDialog fileId={summaryTarget.fileId} initSheet={summaryTarget.sheet} initRange={summaryTarget.range} initTl={summaryTarget.tl} initBr={summaryTarget.br} initSnap={summaryTarget.snap} initSnapKey={summaryTarget.snapKey} initChart={summaryTarget.chart} initName={summaryTarget.name} canEdit={canSeeSystem} onClose={() => setSummaryTarget(null)} />}
       {pdfTarget && <PdfDocDialog id={pdfTarget.id} name={pdfTarget.name} onClose={() => setPdfTarget(null)} />}
-      {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
+      {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} projMa={linkSetup.ma ?? ""} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
       {imgView && <ProjImageDialog imgKey={imgView.key} name={imgView.name} onClose={() => setImgView(null)} />}
       {mediaView && <CanMediaDialog project={mediaView.name} hid={mediaView.hid}
         projKey={mediaView.hid ? `H:${mediaView.hid}` : `N:${mediaView.name}`}
@@ -4151,7 +4151,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         onOpenPdf={(t) => { setPdfTarget(t); track("view_item_pdf", t.name); }}
         sheetViews={sheetViews}
         canSetupLink={canSeeSystem}
-        onSetupLink={(key, name, cfg) => setLinkSetup({ key, name, cfg })}
+        onSetupLink={(key, name, ma, cfg) => setLinkSetup({ key, name, ma, cfg })}
         projImgIdx={projImgIdx}
         onOpenImage={(key, name) => setImgView({ key, name })}
         onOpenVideo={(name, hid) => setMediaView({ name, hid })}
@@ -4827,8 +4827,8 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
 
 /** PMO GẮN / SỬA LINK cho 1 dự án (khoá bền Mã CT + Tên). Dán URL Google Sheet + tên sheet + vùng → xem
  *  thử (PDF) → Lưu. Lưu xong: dự án đó hiện 📊 cho mọi người. Xoá link = gỡ 📊. */
-function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
-  projKey: string; projName: string; initCfg?: SheetViewCfg; onClose: () => void; onSaved: () => void;
+function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved }: {
+  projKey: string; projName: string; projMa?: string; initCfg?: SheetViewCfg; onClose: () => void; onSaved: () => void;
 }) {
   useEscapeToClose(onClose);
   const [url, setUrl] = useState(initCfg?.fileId ? `https://docs.google.com/spreadsheets/d/${initCfg.fileId}/edit${initCfg.gid ? `#gid=${initCfg.gid}` : ""}` : "");
@@ -4894,7 +4894,7 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
     setSaving(true); setErr(null);
     try {
       if (parsed) await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
-      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed, chart, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), devAs: devAs() } });
+      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed, chart, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), ma: (projMa || initCfg?.ma || "").slice(0, 120), ten: projName.slice(0, 300), devAs: devAs() } });
       track(parsed ? "link_matrix" : "link_pdf",
         parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
       onSaved(); onClose();
@@ -5551,7 +5551,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   onOpenPdf?: (t: { id: string; name: string }) => void;
   sheetViews?: SheetViewMap;
   canSetupLink?: boolean;
-  onSetupLink?: (key: string, name: string, cfg?: SheetViewCfg) => void;
+  onSetupLink?: (key: string, name: string, ma: string, cfg?: SheetViewCfg) => void;
   /** ẢNH DỰ ÁN (PMO gắn): index nhẹ (dòng nào có ảnh); mở popup ảnh; PMO mở dialog thêm-gỡ ảnh. */
   projImgIdx?: ProjImgIdx;
   onOpenImage?: (key: string, name: string) => void;
@@ -5911,7 +5911,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               )}
               {/* PMO: GẮN / SỬA link hiển thị — cho MỌI hạng mục (khoá bền). Ảnh dự án gắn ở HÀNG DỰ ÁN. */}
               {canSetupLink && linkKey && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); onSetupLink?.(linkKey, it.stage === "Thi công lắp đặt" ? it.projectName : `${it.projectName} · ${it.desc || it._stageLabel || ""}`, linkCfg); }}
+                <button type="button" onClick={(e) => { e.stopPropagation(); onSetupLink?.(linkKey, it.stage === "Thi công lắp đặt" ? it.projectName : `${it.projectName} · ${it.desc || it._stageLabel || ""}`, it.maCT || it.projectCode || "", linkCfg); }}
                   className="mt-0.5 inline-flex items-center gap-0.5 text-[0.72em] font-medium text-slate-400 hover:text-teal-700 print:hidden"
                   title={linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link / tài liệu (PMO)" : "Gắn link hoặc tài liệu PDF cho hạng mục (PMO)"}>
                   <Link2 className="h-3 w-3" />{linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link" : "Gắn link"}
