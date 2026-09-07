@@ -300,7 +300,8 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
   const doClearForm = async () => {
     if (!window.confirm("Xoá FORM đã lưu cho ma trận này? Bảng sẽ về đúng như file gốc.")) return;
     setSaving(true);
-    try { await saveSheetForm({ data: { key: formKey, spec: null, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setSpec({}); setDirty(false); setSelBoxes([]); }
+    // Xoá form = mọi người mất bố cục đang dùng → phải có trong nhật ký giám sát.
+    try { await saveSheetForm({ data: { key: formKey, spec: null, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setSpec({}); setDirty(false); setSelBoxes([]); track("matrix_reset_form", formKey.slice(0, 120)); }
     catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   };
   const resetLocal = () => { setSpec(savedSpec ? structuredClone(savedSpec) : {}); setDirty(false); setSelBoxes([]); };

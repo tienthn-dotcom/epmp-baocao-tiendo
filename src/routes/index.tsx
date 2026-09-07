@@ -525,7 +525,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
-  { v: "3.92.1", date: "05/09/2026", items: [
+  { v: "3.92.2", date: "05/09/2026", items: [
+    "Ẩn được cả DÒNG CON (“↳ Block …”), không riêng dòng hạng mục. Trước đây dòng con không ai ẩn nổi, kể cả admin — mà có ẩn thì nó vẫn nằm nguyên đó vì bộ lọc bỏ sót. PMO và admin đều ẩn / soi lại / bỏ ẩn được.",
+    "Nhật ký giám sát ghi thêm các việc quản trị: đổi phân cấp người dùng, tạo và khôi phục bản sao lưu, đổi nguồn dữ liệu, gắn / gỡ ma trận lắp đặt cho dự án, lưu form báo cáo tuân thủ, lưu PDF tuân thủ lên Drive, xoá form ma trận. Ai làm gì cũng có vết.",
     "Nhật ký giám sát nay thấy hoạt động của MỌI app con, không riêng ePMP: chuyển app, mở kho ảnh/clip của căn, xem toàn bộ media dự án, tải ảnh/clip lên (kèm phòng và số tệp), nạp file báo cáo tuần, tải template hiệu suất, lưu form ma trận. Cột Thao tác cũng hết chữ tiếng Anh — mọi loại thao tác đều có nhãn tiếng Việt.",
     "Tải ảnh/clip lên mà hụt tệp nào thì báo tên tệp đó ngay để tải lại (trước đây lỗi bị nuốt, app vẫn báo xong).",
     "Ma trận Media công trường — chấm dấu “đã có tư liệu” nay TO GẦN GẤP ĐÔI và nói luôn tư liệu mới cỡ nào, nhìn cả bảng là biết hôm nay đội nào đã quay: tải lên trước 12h → 1/4 vòng xanh lá, 12–18h → 1/2 vòng vàng, sau 18h → 3/4 vòng xanh đậm, tải lên từ hôm qua trở về trước → chấm xám tròn đầy. Rê chuột vào ô hiện đúng giờ tải lên.",
@@ -1489,6 +1491,7 @@ function Dashboard() {
                 if (shareDefault) {
                   try {
                     await saveAppConfig({ data: { sheetUrl: c.sheetUrl, devAs: devAs() } });
+                    track("change_source", c.sheetUrl.slice(0, 200));
                     shareMsg = " Đã đặt làm nguồn mặc định cho MỌI NGƯỜI.";
                   } catch (e) {
                     shareMsg = ` LƯU Ý: chưa lưu được mặc định chung (${(e as Error).message}). Chỉ áp dụng trên máy này.`;
@@ -3010,9 +3013,20 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // giữ "số liệu khớp bảng"). Không có dòng ẩn nào → trả nguyên bản (không tốn map).
   const enriched: EnrichedItem[] = useMemo(() => {
     if (hiddenKeys.size === 0) return enrichedAll;
-    return showHidden
+    // DÒNG CON (Block, "↳ …") cũng phải chịu bộ lọc ẩn. Trước đây chỉ xét `it._key` của dòng hạng mục
+    // cha, nên ẩn một dòng con xong nó vẫn nằm nguyên đó — nhìn như tính năng hỏng.
+    const trimBlocks = (it: EnrichedItem): EnrichedItem => {
+      const kids = it._blockItems;
+      if (!kids?.length) return it;
+      const next = showHidden
+        ? kids.map((b) => (hiddenKeys.has(b._key) ? { ...b, _hidden: true } : b))
+        : kids.filter((b) => !hiddenKeys.has(b._key));
+      return next.length === kids.length && !showHidden ? it : { ...it, _blockItems: next };
+    };
+    const base = showHidden
       ? enrichedAll.map((it) => (hiddenKeys.has(it._key) ? { ...it, _hidden: true } : it))
       : enrichedAll.filter((it) => !hiddenKeys.has(it._key));
+    return base.map(trimBlocks);
   }, [enrichedAll, hiddenKeys, showHidden]);
   // Việc ĐÃ HOÀN THÀNH (pct ≥ 100, còn Show) — CHỈ dựng khi bật "Hiện tất cả đầu việc". Enrich y
   // hệt việc đang làm. KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng.
@@ -4786,12 +4800,13 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
     try {
       await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
       await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed.fileId, gid: parsed.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: true, chart, devAs: devAs() } });
+      track("link_matrix", `${projKey} · ${sheet} · ${range || `${tl}~${br}`}`);
       onSaved(); onClose();
     } catch (e) { setErr((e as Error).message); setSaving(false); }
   };
   const remove = async () => {
     setSaving(true); setErr(null);
-    try { await saveSheetView({ data: { key: projKey, pdf: false, devAs: devAs() } }); onSaved(); onClose(); }
+    try { await saveSheetView({ data: { key: projKey, pdf: false, devAs: devAs() } }); track("link_matrix_off", projKey); onSaved(); onClose(); }
     catch (e) { setErr((e as Error).message); setSaving(false); }
   };
   if (typeof document === "undefined") return null;
@@ -5847,9 +5862,25 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         const bOverdue = bit.overdueDays || 0;
         const bPic = bit._picEdited ? bit._pic : picByStageConv(bit.owner, bit._stageId, bit._projectPm);
         return (
-        <tr key={`blk-${blkKey}-${bi}`} className="border-b border-slate-100 bg-teal-50/30 align-middle hover:bg-teal-50/60">
+        <tr key={`blk-${blkKey}-${bi}`} className={`group border-b border-slate-100 align-middle hover:bg-teal-50/60 ${bit._hidden ? "bg-amber-50/60 opacity-60 hover:opacity-100" : "bg-teal-50/30"}`}
+            title={bit._hidden ? "Dòng con đã ẩn thủ công — bấm 'Bỏ ẩn' để đưa lại vào báo cáo" : undefined}>
           <td className="border-r border-slate-100 px-1 py-0.5 text-center">
-            {!groupMode && <UpdateChip date={bit.updateDate} today={today} />}
+            {!groupMode && !bit._hidden && <UpdateChip date={bit.updateDate} today={today} />}
+            {/* ẨN / BỎ ẨN DÒNG CON — trước đây chỉ dòng hạng mục CHA mới có nút này, dòng con
+                ("↳ …") thì không ai ẩn được, kể cả admin. Cùng quyền, cùng kho `hidden:v1`. */}
+            {canHideRow && (bit._hidden ? (
+              <button type="button" title="Bỏ ẩn — đưa dòng con này trở lại báo cáo"
+                onClick={(e) => { e.stopPropagation(); onHideRow(bit._key, `${bit.projectCode} ${bit.projectName} · ${b.code} — ${b.label}`, false); }}
+                className="mx-auto flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100 print:hidden">
+                <RotateCcw className="h-3 w-3" /> Bỏ ẩn
+              </button>
+            ) : (
+              <button type="button" title="Ẩn dòng con này khỏi báo cáo"
+                onClick={(e) => { e.stopPropagation(); onHideRow(bit._key, `${bit.projectCode} ${bit.projectName} · ${b.code} — ${b.label}`, true); }}
+                className="mx-auto flex h-4 w-4 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 print:hidden">
+                <EyeOff className="h-3 w-3" />
+              </button>
+            ))}
           </td>
           <td className={`border-r border-slate-100 px-1 py-0.5 text-[0.85em] font-semibold text-teal-700 whitespace-nowrap${groupMode ? " text-center" : ""}`}>{b.code}</td>
           <td className="border-r border-slate-100 px-2 py-0.5">
@@ -7043,11 +7074,11 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, onAckDrift, onFixDr
   const loadBaks = () => { void listBackups().then((r) => setBaks(r.backups)).catch(() => setBaks([])); };
   useEffect(() => { if (tab === "backup" && baks == null) loadBaks(); }, [tab, baks]);
   const fmt = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  const doBackup = () => { setBusy(true); void backupEdits({ data: { label: "Sao lưu thủ công" } }).then(() => { toast.success("Đã tạo bản sao lưu."); loadBaks(); }).catch((e) => toast.error(`Lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); };
+  const doBackup = () => { setBusy(true); void backupEdits({ data: { label: "Sao lưu thủ công" } }).then(() => { track("backup_create"); toast.success("Đã tạo bản sao lưu."); loadBaks(); }).catch((e) => toast.error(`Lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); };
   const doRestore = (b: Bak) => {
     toast(`Khôi phục về bản ${fmt(b.at)} (${b.counts.edits} ghi chú)? Ghi đè dữ liệu HIỆN TẠI (bản hiện tại tự chụp lại trước).`, {
       duration: 15000,
-      action: { label: "Khôi phục", onClick: () => { setBusy(true); void restoreBackup({ data: { id: b.id } }).then(() => { toast.success("Đã khôi phục — tải lại trang (Ctrl+F5) để thấy."); loadBaks(); }).catch((e) => toast.error(`Khôi phục lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); } },
+      action: { label: "Khôi phục", onClick: () => { setBusy(true); void restoreBackup({ data: { id: b.id } }).then(() => { track("backup_restore", b.label || b.id); toast.success("Đã khôi phục — tải lại trang (Ctrl+F5) để thấy."); loadBaks(); }).catch((e) => toast.error(`Khôi phục lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); } },
     });
   };
   if (typeof document === "undefined") return null;
@@ -7360,6 +7391,7 @@ function RoleManagerDialog({ roleMap, onClose, onSaved }: {
     setBusy(true); setErr(null);
     try {
       const res = await saveUserRole({ data: { email: e, role: r, devAs: devAs() } });
+      track("role_change", `${e} → ${r ?? "gỡ cấp"}`);
       onSaved(res.roles);
       if (r) setEmail("");
     } catch (ex) { setErr((ex as Error).message || "Lưu thất bại."); }
@@ -7903,6 +7935,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
         // CHỈ ADMIN chủ động: cập nhật bản PDF gửi mail lên Drive (ghi đè bản tuần này). KHÔNG dính vào nút Tải.
         if (!dataUri) throw new Error("Không dựng được dữ liệu PDF.");
         const r = await saveComplianceReportPdf({ data: { fileName, dataUri, devAs: devAs() } });
+        track("compliance_pdf", fileName);
         toast.success(`Đã ${r.updated ? "cập nhật (ghi đè)" : "lưu"} bản PDF gửi mail lên Drive — mail tự động sẽ đính kèm bản này.`);
         return;
       }
@@ -8002,6 +8035,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     const lk = nextLocked ?? locked;
     try {
       await saveComplianceForm({ data: { colW, fontPx, bold, colBold, colFontPx, locked: lk, rowH, devAs: devAs() } });
+      track("compliance_form_save", lk ? "khoá form" : "mở khoá form");
       setLocked(lk); setDirty(false); if (nextLocked === true) setEditLayout(false);
       toast.success(nextLocked === true ? "Đã CHỐT & KHOÁ form (áp cho mọi người + bản in)." : nextLocked === false ? "Đã mở khoá — chỉnh tiếp được." : "Đã lưu & chốt form (áp cho mọi người + bản in).");
     }
