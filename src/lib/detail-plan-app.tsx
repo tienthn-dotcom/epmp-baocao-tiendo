@@ -438,8 +438,9 @@ export function DetailPlanApp() {
             <span className="text-emerald-600">· {s.rel}</span>
           </span>
         ); })() : null}
-        {/* Điều khiển hiển thị */}
-        <div className="flex items-center gap-1.5">
+        {/* Điều khiển hiển thị — CHO XUỐNG DÒNG: máy hẹp mà bắt nằm một hàng thì cả trang bị đẩy
+            lệch, cuộn ngang mới thấy hết nút. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-slate-300 text-[11.5px] font-medium">
             <button type="button" title="Mở hết mọi tầng" onClick={() => setExpanded(new Set(allKeys))} className="flex items-center bg-white px-2.5 text-slate-600 hover:bg-slate-50">Mở tất cả</button>
             <button type="button" title="Chỉ hiện dòng khu" onClick={() => setExpanded(new Set())} className="flex items-center border-l border-slate-300 bg-white px-2.5 text-slate-600 hover:bg-slate-50">Thu gọn</button>
@@ -454,7 +455,7 @@ export function DetailPlanApp() {
           <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white pl-2 pr-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dự án</span>
             <select value={projFilter} onChange={(e) => { setProjFilter(e.target.value); setExpanded(null); }}
-              className="max-w-[220px] bg-transparent text-[11.5px] text-slate-700 focus:outline-none">
+              className="max-w-[min(220px,52vw)] bg-transparent text-[11.5px] text-slate-700 focus:outline-none">
               <option value="">Tất cả ({projGroups.length} dự án)</option>
               {projGroups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
             </select>

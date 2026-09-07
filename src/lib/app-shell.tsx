@@ -321,6 +321,7 @@ function MtldApp() {
   const [region, setRegion] = useState("all");
   const [fGroup, setFGroup] = useState("");
   const [fProj, setFProj] = useState("");
+  const narrow = useIsMobile();   // điện thoại: sidebar vùng nằm TRÊN, ô lắp đặt chiếm trọn bề ngang
   const [tile, setTile] = useState(320);   // bề rộng ô tối thiểu (mật độ): to = thưa, nhỏ = dày
   const [openR, setOpenR] = useState<Set<string>>(new Set());   // vùng đang xổ danh sách dự án
   const [detail, setDetail] = useState<InstallProj | null>(null);   // ô đang mở dialog chi tiết
@@ -359,9 +360,10 @@ function MtldApp() {
   const lab = { fontSize: 10, fontWeight: 700 as const, letterSpacing: ".05em", color: MTLD_T.faint, textTransform: "uppercase" as const };
 
   return (
-    <div style={{ height: "100vh", width: "100%", display: "flex", background: MTLD_T.bg, color: MTLD_T.ink, fontFamily: "system-ui,sans-serif" }}>
-      {/* SIDEBAR — Vùng (bám app cũ) */}
-      <aside style={{ width: 228, flexShrink: 0, background: MTLD_T.side, borderRight: `1px solid ${MTLD_T.line}`, display: "flex", flexDirection: "column", padding: "16px 12px", overflow: "auto" }}>
+    <div style={{ height: "100vh", width: "100%", maxWidth: "100%", overflowX: "hidden", display: "flex", flexDirection: narrow ? "column" : "row", background: MTLD_T.bg, color: MTLD_T.ink, fontFamily: "system-ui,sans-serif" }}>
+      {/* SIDEBAR — Vùng (bám app cũ). Máy hẹp: 228px cạnh lưới ô 220px là tràn màn → cho nằm TRÊN,
+          cao tối đa 34% màn rồi tự cuộn, phần còn lại dành hết cho các ô lắp đặt. */}
+      <aside style={{ width: narrow ? "100%" : 228, maxHeight: narrow ? "34vh" : undefined, flexShrink: 0, background: MTLD_T.side, borderRight: narrow ? "none" : `1px solid ${MTLD_T.line}`, borderBottom: narrow ? `1px solid ${MTLD_T.line}` : "none", display: "flex", flexDirection: "column", padding: narrow ? "10px 12px" : "16px 12px", overflow: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#35c281", boxShadow: "0 0 0 3px rgba(53,194,129,.18)" }} />
           <span style={{ fontSize: 14, fontWeight: 700 }}>Theo dõi lắp đặt</span>
@@ -432,7 +434,7 @@ function MtldApp() {
         ) : viewMode === "wall" ? (
           // GOM HẾT: mọi ô vào MỘT lưới liền (không tách vùng) — xem tổng thể như bức tường TV.
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 16px 20px" }}>
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))`, alignContent: "start", alignItems: "start" }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start" }}>
               {shown.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
             </div>
           </div>
@@ -445,7 +447,7 @@ function MtldApp() {
                   <h2 style={{ fontSize: 13.5, fontWeight: 700, margin: 0 }}>{rg}</h2>
                   <span style={{ fontSize: 11, color: MTLD_T.faint, marginLeft: "auto" }}>{items.length} dự án</span>
                 </div>
-                <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
                   {items.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
                 </div>
               </section>
