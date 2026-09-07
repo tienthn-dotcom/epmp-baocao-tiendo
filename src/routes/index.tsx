@@ -525,6 +525,18 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.95.0", date: "07/09/2026", items: [
+    "GẮN PDF CHO HẠNG MỤC — thêm một kiểu tài liệu bên cạnh link Google Sheet. Công đoạn nào chỉ có một bản PDF (hồ sơ nghiệm thu, bản vẽ duyệt, biên bản) thì PMO bấm “Gắn link” → “Tải PDF lên”, khỏi cần dựng ma trận Excel. Tên hạng mục hiện 📄, ai bấm cũng xem được mà không cần quyền Drive: máy tính mở thẳng trong app, điện thoại có nút “Mở PDF” và “Tải về máy”. Hạng mục có cả ma trận lẫn PDF thì hiện cả hai nút.",
+    "SỬA LỖI GỐC LÀM HỎNG MỌI LƯỢT TẢI LÊN DRIVE: xin phiên tải lên mà thiếu một thông tin bắt buộc thì Google chặn ngay lượt gửi tệp, Drive vẫn giữ lại cái vỏ tệp 0 byte và app báo “xong”. Đây đúng là kiểu lỗi làm mất 60 clip hôm 03/09. Nay đã sửa cho CẢ media công trường lẫn PDF hạng mục.",
+    "SAO LƯU LINK RA DRIVE — mỗi lần gắn / sửa / gỡ link là app ghi lại bảng “Sao lưu link › link-hang-muc.csv” trên Drive: rid, mã CT, tên công trình, link, tab, vùng, PDF. Kho trong app có trục trặc thì mở file này ra dựng lại được bằng tay.",
+    "SAO LƯU TOÀN BỘ DỮ LIỆU MỖI ĐÊM — 23:30 hằng ngày app gom hết dữ liệu người dùng nhập (ghi chú vướng mắc, ngày hoàn thành, phân cấp người dùng, dòng đã ẩn, link ma trận, form bảng, nguồn DST, ảnh dự án) thành một file trong “DATABASE › ePMP › Sao lưu dữ liệu”, giữ bản theo từng ngày kèm bản mới nhất.",
+    "CÀI ĐƯỢC RA MÀN HÌNH CHÍNH như một app: Android mở Chrome sẽ hiện “Cài ứng dụng”; iPhone vào Safari › Chia sẻ › Thêm vào MH chính. Mở ra không còn thanh địa chỉ, có icon ePMP riêng. Không mất phí, không phải qua App Store hay CH Play.",
+    "ĐIỆN THOẠI — bảng “Việc cần xử lý” hết cắt chữ: cỡ chữ hạ còn 10,5px nên mã công trình hiện đủ “CT26-060” (trước cắt còn “CT2…”), tên dự án và tên người phụ trách cũng hiện đủ, phần tiêu đề bảng thấp bớt một phần ba nên mỗi màn thấy thêm 2 hàng.",
+    "ĐIỆN THOẠI — DST gom 8 nút điều khiển vào một nút “Lọc” (mở ra mới hiện, có số đếm bộ lọc đang bật). Trước đây chúng xếp thành 4 hàng chiếm gần nửa màn hình, giờ phần đó dành cho bảng tiến độ.",
+    "ĐIỆN THOẠI — MTLĐ (Theo dõi lắp đặt) hết tràn ngang: danh sách vùng chuyển lên trên, các ô lắp đặt chiếm trọn bề ngang máy.",
+    "NHẬT KÝ GIÁM SÁT chi tiết hơn: DST nạp bảng mới ghi rõ nguồn nào, mấy dự án, bao nhiêu dòng; MTLĐ ghi mở ma trận lắp đặt của dự án nào; mục “Mở app” ghi tên app thay vì mã; gắn và xem PDF hạng mục có nhãn tiếng Việt.",
+    "Dọn thư viện giao diện không dùng đến trong mã nguồn (48 tệp) — app nhẹ hơn khi dựng bản mới, không đổi gì về hiển thị.",
+  ] },
   { v: "3.94.0", date: "07/09/2026", items: [
     "ĐIỆN THOẠI — bảng “Việc cần xử lý” hết đè chữ: 11 cột ép vào màn 375px làm cột “Quá hạn” chỉ còn 11px, hẹp hơn một chữ số. Nay bảng giữ khổ đọc được rồi CUỘN NGANG trong khung của nó (cột hẹp nhất 38px, chữ 12px) — vuốt ngang để xem đủ cột, trang vẫn không trôi ngang. Máy tính giữ nguyên y như cũ.",
     "Nhật ký giám sát phủ NỐT các app con: DST (ghim nguồn dữ liệu), Dữ liệu dự án (nhập bộ dữ liệu vào kho — ghi rõ tên bộ, số dòng, nguồn), Trợ lý PMO (nạp dữ liệu). Giờ mọi app trong thanh dọc đều để lại vết.",
