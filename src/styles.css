@@ -548,3 +548,17 @@ body.tv-mode main {
     bottom: auto !important;
   }
 }
+
+/* ── APP CÀI RA MÀN HÌNH CHÍNH (PWA) — CHỪA LỀ AN TOÀN ─────────────────────────
+   Khi chạy dạng app (display:standalone) trên iPhone tai thỏ, trang tràn hết màn
+   (viewport-fit=cover) nên mép trên đụng đồng hồ/tai thỏ, mép dưới đụng thanh
+   home. Chỉ chừa lề TRONG CHẾ ĐỘ APP; mở bằng trình duyệt thì giữ nguyên như cũ,
+   khỏi phải sửa gì trong giao diện. */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}

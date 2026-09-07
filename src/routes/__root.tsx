@@ -77,7 +77,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      // viewport-fit=cover: iPhone tai tho -> app tran vien, khong chua dai trang o tren duoi.
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "theme-color", content: "#182230" },
+      { name: "application-name", content: "ePMP" },
+      // iOS chua doc du manifest: van can bo meta rieng nay thi "Them vao MH chinh" moi mo toan man.
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "ePMP" },
       { title: "Lovable App" },
       {
         name: "description",
@@ -102,6 +110,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7c746ae7-4b3a-402f-ac91-39b895682992/id-preview-217c3e77--a6ef7902-7ce7-43ca-a22a-5247404cac25.lovable.app-1781604710807.png" },
     ],
     links: [
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "icon", type: "image/png", sizes: "192x192", href: "/icon-192.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -134,8 +145,22 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * ĐĂNG KÝ SERVICE WORKER — để app CÀI ĐƯỢC ra màn hình chính (Android: "Cài ứng dụng";
+ * iOS: Safari › Chia sẻ › Thêm vào MH chính). Chỉ chạy ở BẢN THẬT: bật ở dev sẽ ôm mất tệp
+ * của Vite khiến sửa code không thấy đổi. sw.js không cache dữ liệu, chỉ cache tệp tĩnh.
+ */
+function useServiceWorker() {
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    void navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useServiceWorker();
 
   return (
     <QueryClientProvider client={queryClient}>
