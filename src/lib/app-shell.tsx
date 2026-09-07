@@ -293,7 +293,7 @@ function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump:
             style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, background: "#232c3d", color: "#cbd5e1", flexShrink: 0, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>
             {full ? "🗗" : "⛶"}
           </button>
-          <button type="button" onClick={onClose} title="Đóng (Esc)"
+          <button aria-label={"Đóng (Esc)"} type="button" onClick={onClose} title="Đóng (Esc)"
             style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, background: "#232c3d", color: "#cbd5e1", flexShrink: 0, cursor: "pointer" }}>
             <X className="h-4 w-4" />
           </button>

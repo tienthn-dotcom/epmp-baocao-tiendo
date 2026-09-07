@@ -44,7 +44,7 @@ import { TABLE_FONT_CSS } from "@/lib/table-scale";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { AppShell, MTLD_INSTALL_LS } from "@/lib/app-shell";
 import { CanMediaDialog } from "@/lib/can-media-app";
-import { listMediaProjects } from "@/lib/can-media.functions";
+import { listMediaProjects, startItemPdfUpload, readItemPdf } from "@/lib/can-media.functions";
 import { mediaProjectFolder, mediaSafe } from "@/lib/media-path";
 import { VersionBanner, useUnsavedGuard, chatDraftStore } from "@/lib/version-guard";
 
@@ -2308,6 +2308,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
   // Popup xem: {fileId, sheet?, range?, hideAdmin?}. Link PMO gắn → hideAdmin (chỉ xem); hyperlink cũ → có box.
   const [summaryTarget, setSummaryTarget] = useState<{ fileId: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; snapKey?: string; hideAdmin?: boolean; chart?: boolean; name?: string } | null>(null);
   const [linkSetup, setLinkSetup] = useState<{ key: string; name: string; cfg?: SheetViewCfg } | null>(null);
+  const [pdfTarget, setPdfTarget] = useState<{ id: string; name: string } | null>(null);   // tài liệu PDF gắn cho hạng mục
   // ẢNH DỰ ÁN (PMO gắn thẳng): mở popup ẢNH (imgView) / mở dialog PMO thêm-gỡ ảnh (imgSetup).
   const [imgView, setImgView] = useState<{ key: string; name: string } | null>(null);
   // XEM VIDEO công trường (chỉ Mini Hotel) — mở THẲNG từ dòng dự án, khỏi qua popup ảnh.
@@ -4078,6 +4079,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         onClose={() => setShowCompliance(false)} />}
       {showActivity && <ActivityLogDialog onClose={() => setShowActivity(false)} />}
       {summaryTarget && <SummaryDialog fileId={summaryTarget.fileId} initSheet={summaryTarget.sheet} initRange={summaryTarget.range} initTl={summaryTarget.tl} initBr={summaryTarget.br} initSnap={summaryTarget.snap} initSnapKey={summaryTarget.snapKey} initChart={summaryTarget.chart} initName={summaryTarget.name} canEdit={canSeeSystem} onClose={() => setSummaryTarget(null)} />}
+      {pdfTarget && <PdfDocDialog id={pdfTarget.id} name={pdfTarget.name} onClose={() => setPdfTarget(null)} />}
       {linkSetup && <LinkSetupDialog projKey={linkSetup.key} projName={linkSetup.name} initCfg={linkSetup.cfg} onClose={() => setLinkSetup(null)} onSaved={() => void sheetViewsQuery.refetch()} />}
       {imgView && <ProjImageDialog imgKey={imgView.key} name={imgView.name} onClose={() => setImgView(null)} />}
       {mediaView && <CanMediaDialog project={mediaView.name} hid={mediaView.hid}
@@ -4146,6 +4148,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         myEmail={me.email}
         installLinks={installLinks}
         onOpenSummary={setSummaryTarget}
+        onOpenPdf={(t) => { setPdfTarget(t); track("view_item_pdf", t.name); }}
         sheetViews={sheetViews}
         canSetupLink={canSeeSystem}
         onSetupLink={(key, name, cfg) => setLinkSetup({ key, name, cfg })}
@@ -4590,6 +4593,58 @@ async function etlSheetRegion(key: string, fid: string, opts: { sheetName?: stri
   return out;
 }
 
+/**
+ * XEM TÀI LIỆU PDF của một hạng mục (PMO gắn ở nút "Gắn link").
+ * Tải bytes qua server (token của app) rồi dựng blob: — người xem KHÔNG cần quyền Drive, và blob né
+ * được cái tật iOS Safari không đọc `data:`.
+ * Điện thoại: iOS Safari KHÔNG render PDF trong iframe (chỉ ra khung trắng) → đưa nút mở tab mới.
+ */
+function PdfDocDialog({ id, name, onClose }: { id: string; name: string; onClose: () => void }) {
+  useEscapeToClose(onClose);
+  const narrow = useIsMobile();
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let dead = false; let made = "";
+    void readItemPdf({ data: { id } })
+      .then(({ b64, mime }) => {
+        const bin = atob(b64); const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        made = URL.createObjectURL(new Blob([buf], { type: mime || "application/pdf" }));
+        if (dead) { URL.revokeObjectURL(made); return; }
+        setUrl(made);
+      })
+      .catch((e: unknown) => { if (!dead) setErr((e as Error).message); });
+    return () => { dead = true; if (made) URL.revokeObjectURL(made); };
+  }, [id]);
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-2 print:hidden" onClick={onClose}>
+      <div className="flex h-[92vh] w-full max-w-[1100px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-700">Tài liệu PDF</div>
+            <div className="truncate text-sm font-semibold text-slate-900" title={name}>{name}</div>
+          </div>
+          <button aria-label="Đóng" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50">
+          {err ? <div className="px-6 text-center text-sm font-medium text-red-600">Không mở được tài liệu: {err}</div>
+            : !url ? <div className="text-sm text-slate-400">Đang tải tài liệu…</div>
+            : narrow ? (
+              <div className="grid gap-3 px-6 text-center">
+                <div className="text-sm text-slate-600">Trình duyệt điện thoại xem PDF ở tab riêng cho rõ.</div>
+                <a href={url} target="_blank" rel="noreferrer" className="mx-auto rounded bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">Mở PDF</a>
+                <a href={url} download={name || "tai-lieu.pdf"} className="text-[12px] font-medium text-slate-500 underline">Tải về máy</a>
+              </div>
+            ) : <iframe title={name} src={url} className="h-full w-full border-0" />}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap, initSnapKey, initChart, initName, canEdit, onClose }: { fileId: string; initSheet?: string; initRange?: string; initTl?: string; initBr?: string; initSnap?: boolean; initSnapKey?: string; initChart?: boolean; initName?: string; canEdit?: boolean; onClose: () => void }) {
   useEscapeToClose(onClose);
   const [fid, gid] = fileId.split("|");   // "fileId" (dạng phòng) hoặc "fileId|gid" (đúng 1 tab, vd Public Summary)
@@ -4735,7 +4790,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
               title={canEdit && hasOverride && initSnapKey ? "Kéo bản MỚI NHẤT từ link (kể cả khi đổi link / nội dung đổi) → cập nhật lại cho mọi người" : "Bỏ cache, tải bản mới nhất từ sheet ngay"}>
               {updating ? "⏳ Đang cập nhật…" : "↻ Cập nhật lại"}
             </button>
-            <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+            <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
           </div>
         </div>
 
@@ -4784,6 +4839,11 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
   const [tl, setTl] = useState(initCfg?.tl ?? "");     // marker góc trên-trái (tuỳ chọn)
   const [br, setBr] = useState(initCfg?.br ?? "");     // marker góc dưới-phải (tuỳ chọn)
   const [chart, setChart] = useState(!!initCfg?.chart);   // mặc định hiện BẢN CÓ CHART cho mọi người
+  // TÀI LIỆU PDF — ĐỊNH DẠNG THÊM, không thay link Sheet. Nhiều công đoạn (hồ sơ nghiệm thu, bản vẽ
+  // duyệt, biên bản) chỉ có đúng một bản PDF, không có ma trận Excel để render.
+  const [pdfId, setPdfId] = useState(initCfg?.pdfFileId ?? "");
+  const [pdfName, setPdfName] = useState(initCfg?.pdfName ?? "");
+  const [pdfBusy, setPdfBusy] = useState<string | null>(null);
   const [render, setRender] = useState<{ html: string; css: string; range: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -4810,14 +4870,33 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   };
+  // Tải PDF thẳng lên Drive: xin phiên resumable ở server rồi PUT TỪ TRÌNH DUYỆT (không đẩy tệp qua
+  // Worker — Worker chỉ có 128MB, tệp vài chục MB là sập). Lấy `id` trong body Google trả về.
+  const pickPdf = async (f: File | null | undefined) => {
+    if (!f) return;
+    if (!/pdf$/i.test(f.name) && f.type !== "application/pdf") { setErr("Chỉ nhận tệp .pdf."); return; }
+    if (f.size > 40 * 1024 * 1024) { setErr(`Tệp ${(f.size / 1048576).toFixed(0)}MB — vượt mức xem trực tiếp (40MB).`); return; }
+    setErr(null); setPdfBusy(`Đang tải lên (~${(f.size / 1048576).toFixed(1)}MB)…`);
+    try {
+      const { uploadUrl, name } = await startItemPdfUpload({ data: { key: projKey, label: projName, fileName: f.name, origin: window.location.origin } });
+      const res = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: f });
+      if (!res.ok) throw new Error(`Google trả mã ${res.status}.`);
+      const j = await res.json() as { id?: string };
+      if (!j.id) throw new Error("Không nhận được id tệp từ Drive.");
+      setPdfId(j.id); setPdfName(f.name || name);
+    } catch (e) { setErr(`Tải PDF hỏng: ${(e as Error).message}`); }
+    setPdfBusy(null);
+  };
   const save = async () => {
     const parsed = parseSheetUrl(url);
-    if (!parsed) { setErr("Link không hợp lệ."); return; }
+    // Cho phép LƯU CHỈ PDF: hạng mục không có ma trận Excel thì bỏ trống ô link Sheet.
+    if (!parsed && !pdfId) { setErr("Cần link Google Sheet hợp lệ, hoặc tải lên một tệp PDF."); return; }
     setSaving(true); setErr(null);
     try {
-      await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
-      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed.fileId, gid: parsed.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: true, chart, devAs: devAs() } });
-      track("link_matrix", `${projKey} · ${sheet} · ${range || `${tl}~${br}`}`);
+      if (parsed) await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
+      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed, chart, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), devAs: devAs() } });
+      track(parsed ? "link_matrix" : "link_pdf",
+        parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
       onSaved(); onClose();
     } catch (e) { setErr((e as Error).message); setSaving(false); }
   };
@@ -4835,7 +4914,7 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
             <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">PMO · Gắn link hiển thị</div>
             <div className="text-sm font-semibold text-slate-900 line-clamp-1" title={projName}>{projName || "Dự án"}</div>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+          <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
         </div>
         <div className="grid gap-2 border-b border-slate-100 px-5 py-3 text-[12px]">
           <label className="grid gap-1"><span className="font-semibold text-slate-700">Link Google Sheet / Excel</span>
@@ -4867,10 +4946,26 @@ function LinkSetupDialog({ projKey, projName, initCfg, onClose, onSaved }: {
             <input type="checkbox" checked={chart} onChange={(e) => setChart(e.target.checked)} />
             <span>Mặc định hiện <b>bản CÓ CHART</b> (ảnh Google) cho <b>mọi người xem</b> — có chart + màu y hệt (mọi người vẫn đổi được qua bảng lưới). <span className="text-slate-400">Cần dán URL đúng tab (có <code>#gid=</code>) để chụp đúng vùng.</span></span>
           </label>
+          {/* TÀI LIỆU PDF cho hạng mục — dùng riêng hoặc kèm thêm bên cạnh ma trận Sheet. */}
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50/70 px-2 py-1.5">
+            <span className="text-[10.5px] font-medium text-sky-800">Tài liệu PDF <span className="font-normal text-sky-700">(công đoạn chỉ có bản PDF — không cần link Sheet)</span></span>
+            <label className="cursor-pointer rounded bg-sky-700 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-800">
+              {pdfBusy ? "Đang tải…" : pdfId ? "Đổi tệp PDF" : "Tải PDF lên"}
+              <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={!!pdfBusy}
+                onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ""; void pickPdf(f); }} />
+            </label>
+            {pdfBusy && <span className="text-[11px] text-sky-700">{pdfBusy}</span>}
+            {!pdfBusy && pdfId && (
+              <span className="flex items-center gap-1 text-[11px] text-slate-700">
+                📄 <b className="max-w-[260px] truncate" title={pdfName}>{pdfName || "tài liệu.pdf"}</b>
+                <button onClick={() => { setPdfId(""); setPdfName(""); }} className="text-slate-400 hover:text-red-600" title="Bỏ tệp PDF khỏi hạng mục">Bỏ</button>
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => void preview()} disabled={busy} className="rounded bg-slate-700 px-3 py-1 font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{busy ? "Đang tải…" : "Xem thử"}</button>
             <button onClick={() => void save()} disabled={saving} className="rounded bg-teal-700 px-3 py-1 font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{saving ? "Đang lưu…" : "Lưu link"}</button>
-            {initCfg?.fileId && <button onClick={() => void remove()} disabled={saving} className="rounded px-2 py-1 font-medium text-slate-500 hover:text-red-600" title="Gỡ link khỏi dự án">Xoá link</button>}
+            {(initCfg?.fileId || initCfg?.pdfFileId) && <button onClick={() => void remove()} disabled={saving} className="rounded px-2 py-1 font-medium text-slate-500 hover:text-red-600" title="Gỡ link khỏi dự án">Xoá link</button>}
             {render && <span className="text-[11px] font-medium text-teal-700">✓ Vùng: {render.range || "cả sheet"}</span>}
           </div>
           <div className="text-[10.5px] leading-tight text-slate-500">Chọn <b>Sheet</b> rồi đặt <b>2 marker</b>: gõ 2 ký hiệu lạ (vd <code>@TL@</code>, <code>@BR@</code>) vào <b>ô góc trên-trái</b> và <b>ô góc dưới-phải</b> của vùng trong sheet → app tự dò ra vùng (người ta chèn/dời dòng cột vẫn đúng, không dính dòng ghi chú thừa). Bỏ trống marker = hiện cả sheet. App <b>render lại ô màu</b> nên chạy cho cả <b>Google Sheet</b> lẫn <b>.xlsx</b>. Sheet phải chia sẻ “Anyone with the link”.</div>
@@ -4938,7 +5033,7 @@ function ProjImageDialog({ imgKey, name, onClose }: { imgKey: string; name: stri
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button onClick={() => setZoom((z) => !z)} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100" title="Phóng to / thu nhỏ">{zoom ? "⤡ Thu nhỏ" : "⤢ Phóng to"}</button>
-            <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+            <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
           </div>
         </div>
         <div className="relative min-h-0 flex-1 overflow-auto bg-slate-50 p-3">
@@ -5031,7 +5126,7 @@ function ProjImageSetupDialog({ projKey, projName, projHid, count, canManage, on
             <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">PMO · Ảnh dự án · {total}/{PROJIMG_MAX_CLIENT}</div>
             <div className="line-clamp-1 text-sm font-semibold text-slate-900" title={projName}>{projName || "Dự án"}</div>
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
+          <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
         </div>
         <div className="grid gap-2 border-b border-slate-100 px-5 py-3 text-[12px]">
           {/* Ảnh gắn vào CĂN/KHU → Drive xếp đúng folder, khỏi thành kho ảnh chung không ai tìm ra. */}
@@ -5275,7 +5370,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
           <div className="mb-2 flex items-start gap-1.5 rounded-md border-l-2 border-teal-400 bg-teal-50 px-2 py-1.5 text-[11px] text-slate-600">
             <Reply className="mt-0.5 h-3 w-3 shrink-0 -scale-x-100 text-teal-600" />
             <span className="flex-1"><b className="text-teal-700">Trả lời vướng mắc:</b> <span className="line-clamp-2">{reply.text}</span></span>
-            {onClearReply && <button type="button" title="Bỏ trả lời" onClick={onClearReply} className="shrink-0 text-slate-400 hover:text-slate-700"><X className="h-3 w-3" /></button>}
+            {onClearReply && <button aria-label={"Bỏ trả lời"} type="button" title="Bỏ trả lời" onClick={onClearReply} className="shrink-0 text-slate-400 hover:text-slate-700"><X className="h-3 w-3" /></button>}
           </div>
         )}
         <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, CHAT_MSG_MAX))} rows={2}
@@ -5428,7 +5523,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -5452,6 +5547,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** Map maCT → fileId Summary (ô "Thi công lắp đặt" đã hyperlink). Bấm → mở popup. */
   installLinks?: Record<string, string>;
   onOpenSummary?: (t: { fileId: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; snapKey?: string; hideAdmin?: boolean; name?: string }) => void;
+  /** Mở TÀI LIỆU PDF gắn cho hạng mục (định dạng thêm, song song với ma trận Sheet). */
+  onOpenPdf?: (t: { id: string; name: string }) => void;
   sheetViews?: SheetViewMap;
   canSetupLink?: boolean;
   onSetupLink?: (key: string, name: string, cfg?: SheetViewCfg) => void;
@@ -5720,6 +5817,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
       ? stableProjKey(it.maCT, it.projectName)
       : `${stableProjKey(it.maCT, it.projectName)}::${(it.desc || it._stageLabel || "").trim().toLowerCase().replace(/\s+/g, " ")}`;
     const linkCfg = linkKey ? sheetViews?.[linkKey] : undefined;
+    // TÀI LIỆU PDF của hạng mục — độc lập với ma trận Sheet: có cả hai thì hiện cả hai nút.
+    const pdfDoc = linkCfg?.pdfFileId ? { id: linkCfg.pdfFileId, name: linkCfg.pdfName || "" } : null;
     const viewLink = linkCfg?.fileId
       ? { fileId: linkCfg.gid ? `${linkCfg.fileId}|${linkCfg.gid}` : linkCfg.fileId, sheet: linkCfg.sheet, range: linkCfg.range, tl: linkCfg.tl, br: linkCfg.br, snap: linkCfg.snap, snapKey: linkKey, hideAdmin: true, chart: linkCfg.chart }
       : (installFid ? { fileId: installFid } : null);
@@ -5792,16 +5891,30 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                   title="Bấm xem (ảnh PDF vùng đã gắn)">
                   {nameLabel} 📊
                 </button>
+              ) : pdfDoc ? (
+                <button type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenPdf?.({ id: pdfDoc.id, name: pdfDoc.name || nameLabel }); }}
+                  className="line-clamp-3 text-left font-semibold leading-tight text-sky-700 underline decoration-dotted decoration-1 underline-offset-2 hover:text-sky-900"
+                  style={{ wordBreak: "break-word" }}
+                  title={pdfDoc.name ? "Xem tài liệu PDF: " + pdfDoc.name : "Xem tài liệu PDF"}>
+                  {nameLabel} 📄
+                </button>
               ) : (
                 <div className="line-clamp-3 font-semibold text-black leading-tight" style={{ wordBreak: "break-word" }}
                      title={nameLabel}>{nameLabel}</div>
+              )}
+              {/* Có CẢ ma trận lẫn PDF → thêm nút phụ, khỏi phải chọn bỏ cái nào. */}
+              {viewLink && pdfDoc && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpenPdf?.({ id: pdfDoc.id, name: pdfDoc.name || nameLabel }); }}
+                  className="ml-1 text-[0.78em] font-medium text-sky-700 hover:text-sky-900"
+                  title={pdfDoc.name ? "Xem tài liệu PDF: " + pdfDoc.name : "Xem tài liệu PDF"}>📄 PDF</button>
               )}
               {/* PMO: GẮN / SỬA link hiển thị — cho MỌI hạng mục (khoá bền). Ảnh dự án gắn ở HÀNG DỰ ÁN. */}
               {canSetupLink && linkKey && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); onSetupLink?.(linkKey, it.stage === "Thi công lắp đặt" ? it.projectName : `${it.projectName} · ${it.desc || it._stageLabel || ""}`, linkCfg); }}
                   className="mt-0.5 inline-flex items-center gap-0.5 text-[0.72em] font-medium text-slate-400 hover:text-teal-700 print:hidden"
-                  title={linkCfg?.fileId ? "Sửa link hiển thị (PMO)" : "Gắn link hiển thị cho hạng mục (PMO)"}>
-                  <Link2 className="h-3 w-3" />{linkCfg?.fileId ? "Sửa link" : "Gắn link"}
+                  title={linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link / tài liệu (PMO)" : "Gắn link hoặc tài liệu PDF cho hạng mục (PMO)"}>
+                  <Link2 className="h-3 w-3" />{linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link" : "Gắn link"}
                 </button>
               )}
             </div>
@@ -5974,7 +6087,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         <div className="flex flex-wrap items-center gap-2 [&>*]:shrink-0 [&_button]:whitespace-nowrap print:hidden">
           {/* NÚT "HIỆN TẤT CẢ ĐẦU VIỆC" (kể cả ĐÃ HOÀN THÀNH) — bên TRÁI "Mở tất cả", cho cả 2 bảng.
               Bật → thêm việc 100% (badge "Đã hoàn thành" xanh lá ở cột Tình trạng). KPI không đổi. */}
-          <button type="button" onClick={onToggleDone}
+          <button aria-label={"Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"} type="button" onClick={onToggleDone}
             title="Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"
             className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
             {showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc"}
@@ -6026,7 +6139,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             <FileSpreadsheet className="h-3.5 w-3.5" /> {exporting ? "Đang xuất…" : "Xuất Excel"}
           </button>
           <PdfExportMenu onPrint={onPrint} />
-          <button onClick={toggleFullscreen}
+          <button aria-label={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"} onClick={toggleFullscreen}
             title={isFs ? "Thoát toàn màn hình (Esc)" : "Xem table toàn màn hình"}
             className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700">
             {isFs ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />} {isFs ? "Thu nhỏ" : "Toàn màn hình"}
@@ -7504,6 +7617,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [loadingMore, setLoadingMore] = useState(false);
   /** Đang xem BẢN LƯU TRÊN DRIVE (mốc "Tất cả") hay đọc thẳng D1 — hiện rõ cho người xem biết. */
   const [fromDrive, setFromDrive] = useState(false);
+  const narrowAct = useIsMobile();   // điện thoại: bảng nhật ký cuộn ngang cho khỏi cụt cột Chi tiết
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [backing, setBacking] = useState(false);
@@ -7723,7 +7837,9 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
                     thì xem ở mốc ngắn. Không ghi ra thì người xem tưởng nhật ký sót. */}
                 {fromDrive && <span className="text-slate-400"> · đọc từ bản lưu trên Drive (chốt 23:30 mỗi ngày)</span>}
               </div>
-              <table className="w-full border-collapse text-[11.5px]">
+              {/* ĐIỆN THOẠI: cột "Chi tiết" (nay ghi cả tên tệp đã tải) bị cắt cụt ở mép popup.
+                  Giữ khổ tối thiểu rồi cuộn ngang — đọc được trọn chi tiết. */}
+              <table className="w-full border-collapse text-[11.5px]" style={{ minWidth: narrowAct ? 720 : undefined }}>
                 {/* Sticky đặt Ở TỪNG <th> chứ KHÔNG ở <thead>: nhiều trình duyệt bỏ qua
                     position:sticky trên thead/tr, khiến header trôi vào giữa và các dòng đè
                     lên (lỗi đã gặp). Nền trắng + z-10 để dòng cuộn XUỐNG DƯỚI header; viền
@@ -7845,6 +7961,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
   regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; mpDeadlineByName: Map<string, string>; today: string; canManage?: boolean; canEdit?: boolean; onRetry: () => void; onClose: () => void;
 }) {
+  const narrowCpl = useIsMobile();   // điện thoại: bảng giữ khổ đọc được rồi cuộn ngang
   void canManage;
   useEscapeToClose(onClose);
   // SỐ TUẦN cờ "Cần cập nhật MP / trình BOD" tồn tại (0 = tuần đầu/không cờ). Nền cho trừ điểm + tô màu.
@@ -8262,7 +8379,10 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               </div>
             );
           })()}
-          <table ref={tableRef} className="w-full table-fixed border-collapse [&_tbody_td]:border-b [&_tbody_td]:border-slate-300" style={{ fontSize: `${fontPx}px`, fontWeight: bold ? 600 : undefined }}>
+          {/* ĐIỆN THOẠI: 11 cột ép vào 301px (bề ngang popup) → mỗi cột ~27px, chữ đè nhau y như
+              bảng chính trước đây. Giữ khổ đọc được rồi cuộn ngang trong khung popup.
+              Không đụng cỡ chữ: fontPx là cỡ PMO tự chỉnh và dùng chung với bản in PDF. */}
+          <table ref={tableRef} className="w-full table-fixed border-collapse [&_tbody_td]:border-b [&_tbody_td]:border-slate-300" style={{ fontSize: `${fontPx}px`, fontWeight: bold ? 600 : undefined, minWidth: narrowCpl ? 1100 : undefined }}>
             <colgroup>{colW.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
             <thead className="text-white">
               <tr>

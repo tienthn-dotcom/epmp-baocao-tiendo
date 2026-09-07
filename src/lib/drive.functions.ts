@@ -423,14 +423,20 @@ export async function driveReadTextImpl(fileId: string): Promise<{ text: string 
 
 /** Tạo PHIÊN UPLOAD TRỰC TIẾP (resumable) vào 1 folder DATABASE → trả session URL để TRÌNH DUYỆT PUT
  *  file THẲNG lên Google (byte KHÔNG qua Worker → hết lo OOM/giới hạn, file lớn vẫn được). HÀM THUẦN. */
-export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string): Promise<{ uploadUrl: string }> {
+/** Mở PHIÊN TẢI LÊN (resumable) rồi trả URL cho TRÌNH DUYỆT tự PUT tệp — tệp KHÔNG đi qua Worker.
+ *  `origin`: gửi kèm Origin của trang khi xin phiên thì Google mới cho trình duyệt PUT lên URL đó
+ *  (không có Origin → PUT bị chặn CORS, Drive giữ lại cái vỏ tệp 0 byte). */
+export async function driveCreateResumableSession(path: string[], fileName: string, mimeType: string, origin?: string): Promise<{ uploadUrl: string }> {
   const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
   const token = await accessToken(env);
   const folder = await ensureDbPath(token, env, path);
   const name = safeName(fileName) || "clip.mp4";
   const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink&${SHARED}`, {
     method: "POST",
-    headers: { ...AUTHH(token), "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mimeType || "video/mp4" },
+    headers: {
+      ...AUTHH(token), "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mimeType || "video/mp4",
+      ...(origin && /^https?:\/\/[^\s]+$/.test(origin) ? { Origin: origin } : {}),
+    },
     body: JSON.stringify({ name, parents: [folder] }),
   });
   if (!r.ok) throw new Error("Không tạo được phiên upload Drive: " + (await r.text()).slice(0, 160));

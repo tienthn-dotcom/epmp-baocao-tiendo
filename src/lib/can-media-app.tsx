@@ -661,7 +661,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
-        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "" } });
+        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin } });
         // KHÔNG nuốt lỗi PUT. Trước đây bọc catch rỗng: rớt mạng / iOS khoá màn giữa chừng là Drive
         // giữ lại cái vỏ tệp 0 byte, app vẫn báo tải xong, tới lúc mở mới lòi lỗi của Google.
         // (03/09 mất trắng 60 clip đúng kiểu này.) Nay hụt tệp nào báo tên tệp đó ngay.

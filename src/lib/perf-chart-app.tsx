@@ -821,7 +821,7 @@ export function PerfChartApp() {
             </label>
           )}
           {projs.length > 0 && (
-            <button type="button" onClick={toggleFull} title="Toàn màn hình (chiếu 16:9)"
+            <button aria-label={"Toàn màn hình (chiếu 16:9)"} type="button" onClick={toggleFull} title="Toàn màn hình (chiếu 16:9)"
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11.5px] font-medium text-slate-600 hover:border-slate-400">
               {full ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}{full ? "Thu" : "Chiếu"}
             </button>

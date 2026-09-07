@@ -34,7 +34,7 @@ const rid6 = () => Math.random().toString(36).slice(2, 8);
 
 /** Cấp PHIÊN UPLOAD 1 file media (ảnh/video) cho 1 PHÒNG (Toà + căn) của 1 DỰ ÁN. Trả { uploadUrl, name }. */
 export const startCanMediaUpload = createServerFn({ method: "POST" })
-  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string }) => d)
+  .validator((d: { project: string; hid?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
@@ -43,7 +43,7 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
     const name = `${can}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
-    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"));
+    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin);
     return { uploadUrl, name };
   });
 
@@ -52,7 +52,7 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
  *  Lưu vào: DATABASE › ePMP › Tài liệu hạng mục › <mã CT hoặc khoá dự án> › <tên>.pdf
  *  Tên file kèm ngày + mã ngẫu nhiên: tải lại nhiều lần không đè mất bản cũ, muốn xem bản nào cũng còn. */
 export const startItemPdfUpload = createServerFn({ method: "POST" })
-  .validator((d: { key: string; label?: string; fileName: string }) => d)
+  .validator((d: { key: string; label?: string; fileName: string; origin?: string }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
@@ -61,8 +61,19 @@ export const startItemPdfUpload = createServerFn({ method: "POST" })
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
     const name = `${base}_${stamp}_${rid6()}.pdf`;
-    const { uploadUrl } = await drive.driveCreateResumableSession(["ePMP", "Tài liệu hạng mục", folder], name, "application/pdf");
+    const { uploadUrl } = await drive.driveCreateResumableSession(["ePMP", "Tài liệu hạng mục", folder], name, "application/pdf", data.origin);
     return { uploadUrl, name };
+  });
+
+/** ĐỌC TÀI LIỆU PDF của hạng mục → base64 (client dựng blob rồi xem).
+ *  Đi qua token của app nên NGƯỜI XEM KHÔNG CẦN quyền Drive — ai vào được app là xem được, giống
+ *  ảnh/clip công trường. Hàm dùng chung đã chặn tệp >40MB (Worker chỉ có 128MB bộ nhớ). */
+export const readItemPdf = createServerFn({ method: "POST" })
+  .validator((d: { id: string }) => d)
+  .handler(async ({ data }): Promise<{ b64: string; mime: string }> => {
+    const drive = await import("@/lib/drive.functions");
+    const { mime, b64 } = await drive.driveReadFileB64Impl(data.id);
+    return { b64, mime: mime || "application/pdf" };
   });
 
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
