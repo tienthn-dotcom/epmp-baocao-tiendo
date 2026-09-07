@@ -87,6 +87,16 @@ const DRIVE_SHARED = "supportsAllDrives=true&includeItemsFromAllDrives=true";
 const AUDIT_PATH = ["DATABASE", "ePMP", "Nhật ký giám sát"];   // KHỚP ensureDbPath của app (DATABASE + segments)
 const AUDIT_FILE = "nhat-ky-giam-sat.csv";
 
+/* ── BÁO CÁO TUÂN THỦ → PDF (tự động, không cần ai bật máy) ────────────────────
+ *  Bảng tuân thủ nằm trong Google Sheet nên Google tự xuất PDF được — worker chỉ
+ *  cần gọi đường /export rồi ghi thẳng vào Drive. KHÔNG cần trình duyệt, khác với
+ *  nút "Xuất PDF" trên app (nút đó chụp lại giao diện nên phải có trình duyệt thật).
+ *  Đặt tên TRÙNG KHUÔN bản app xuất tay để chỗ gửi mail "lấy PDF mới nhất" khỏi sửa. */
+const CPL_PATH = ["DATABASE", "ePMP", "Báo cáo tuân thủ"];
+const CPL_SHEET_ID = "15pcqb0ExFQ5uF9CuKSx6O6y9GN4kfiNf6IARN98pJbA";
+const CPL_GID = "490936703";
+const CPL_PREFIX = "BaoCaoTuanThu_MP_";
+
 async function driveToken(env) {
   const body = new URLSearchParams({
     client_id: env.GDRIVE_OAUTH_CLIENT_ID, client_secret: env.GDRIVE_OAUTH_CLIENT_SECRET,
@@ -162,17 +172,86 @@ async function backupAuditLog(env) {
   return { rows: rows.length, updated: !!existing };
 }
 
+/** Xuất PDF báo cáo tuân thủ từ Google Sheet → ghi đè vào Drive (1 file / 1 ngày). */
+async function backupCompliancePdf(env) {
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+  const token = await driveToken(env);
+  const AUTH = { Authorization: `Bearer ${token}` };
+
+  // Khổ ngang A3, vừa bề ngang, bỏ lưới + mấy thứ Google chèn thêm.
+  const url = `https://docs.google.com/spreadsheets/d/${CPL_SHEET_ID}/export?format=pdf&gid=${CPL_GID}`
+    + "&portrait=false&size=A3&scale=4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false"
+    + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.30&right_margin=0.30";
+  const pr = await fetch(url, { headers: AUTH });
+  if (!pr.ok) return { error: `export ${pr.status}` };
+  const bytes = new Uint8Array(await pr.arrayBuffer());
+  // Google trả trang lỗi HTML với status 200 khi thiếu quyền → kiểm chữ ký %PDF- cho chắc.
+  if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
+    return { error: "nội dung trả về không phải PDF (nhiều khả năng thiếu quyền đọc file)" };
+  }
+
+  // Ngày theo GIỜ VN (worker chạy UTC) — tên file phải là ngày của người dùng.
+  const vn = new Date(Date.now() + 7 * 3600_000);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const name = `${CPL_PREFIX}${vn.getUTCFullYear()}-${p2(vn.getUTCMonth() + 1)}-${p2(vn.getUTCDate())}.pdf`;
+
+  const root = env.GDRIVE_ROOT || DRIVE_ROOT_DEFAULT;
+  let folder = root;
+  for (const seg of CPL_PATH) folder = await driveEnsureFolder(token, seg, folder);
+
+  const q = `name='${name}' and '${folder}' in parents and trashed=false`;
+  const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${DRIVE_SHARED}`, { headers: AUTH });
+  const fj = await fr.json();
+  const existing = fj.files && fj.files[0] && fj.files[0].id;
+
+  if (existing) {
+    // GHI ĐÈ đúng file cũ (PATCH) thay vì xoá rồi tạo: không có khoảnh khắc nào thư mục thiếu file,
+    // phòng đúng lúc đó bên gửi mail đang quét.
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing}?uploadType=media&fields=id&${DRIVE_SHARED}`, {
+      method: "PATCH", headers: { ...AUTH, "Content-Type": "application/pdf" }, body: bytes,
+    });
+  } else {
+    const boundary = "warmerCpl" + Date.now();
+    const enc = new TextEncoder();
+    const meta = JSON.stringify({ name, parents: [folder] });
+    const pre = enc.encode(`--${boundary}
+Content-Type: application/json; charset=UTF-8
+
+${meta}
+--${boundary}
+Content-Type: application/pdf
+
+`);
+    const post = enc.encode(`
+--${boundary}--`);
+    const body = new Uint8Array(pre.length + bytes.length + post.length);
+    body.set(pre, 0); body.set(bytes, pre.length); body.set(post, pre.length + bytes.length);
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&${DRIVE_SHARED}`, {
+      method: "POST", headers: { ...AUTH, "Content-Type": `multipart/related; boundary=${boundary}` }, body,
+    });
+  }
+  return { name, kb: Math.round(bytes.length / 1024), updated: !!existing };
+}
+
 export default {
-  // Cron 17:30 VN — warm Summary + SAO LƯU nhật ký giám sát ra Drive.
-  async scheduled(_event, env, ctx) {
+  // HAI lịch (xem wrangler.toml):
+  //  · "30 10 * * *" (17:30 VN) — warm Summary + sao lưu nhật ký giám sát.
+  //  · "0 * * * *"   (mỗi giờ)  — dựng lại PDF báo cáo tuân thủ, để thư mục Drive lúc nào cũng có
+  //    bản không quá một giờ tuổi; trigger gửi mail chạy giờ nào cũng vớ được bản mới.
+  async scheduled(event, env, ctx) {
+    const hourly = event && event.cron === "0 * * * *";
+    ctx.waitUntil(backupCompliancePdf(env).then((r) => console.log("compliancePdf:", JSON.stringify(r)))
+      .catch((e) => console.error("backupCompliancePdf lỗi:", e)));
+    if (hourly) return;                       // lượt mỗi giờ chỉ lo PDF, khỏi warm lại cả kho
     ctx.waitUntil(warmAll(env));
     ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(_req, env) {
     const warm = await warmAll(env);
-    let audit;
+    let audit, pdf;
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
-    return new Response(JSON.stringify({ warm, audit }, null, 2), { headers: { "content-type": "application/json" } });
+    try { pdf = await backupCompliancePdf(env); } catch (e) { pdf = { error: String(e) }; }
+    return new Response(JSON.stringify({ warm, audit, pdf }, null, 2), { headers: { "content-type": "application/json" } });
   },
 };

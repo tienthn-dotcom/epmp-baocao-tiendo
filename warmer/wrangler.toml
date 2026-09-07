@@ -4,10 +4,13 @@ name = "baocao-tiendo-warmer"
 main = "src/index.mjs"
 compatibility_date = "2024-09-23"
 
-# Cron: 10:30 UTC = 17:30 giờ VN mỗi ngày. (Cloudflare cron chạy theo UTC.)
-# PHẢI KHỚP mốc REFRESH_HOUR_VN/REFRESH_MIN_VN trong src/lib/mtld-install.functions.ts.
+# HAI lịch (Cloudflare cron chạy theo UTC):
+#  · "30 10 * * *" = 17:30 VN — warm Summary + sao lưu nhật ký giám sát.
+#    PHẢI KHỚP mốc REFRESH_HOUR_VN/REFRESH_MIN_VN trong src/lib/mtld-install.functions.ts.
+#  · "0 * * * *"   = mỗi giờ  — dựng lại PDF báo cáo tuân thủ vào Drive, để thư mục lúc nào cũng
+#    có bản không quá một giờ tuổi (trigger gửi mail tối thứ Tư chạy giờ nào cũng vớ được bản mới).
 [triggers]
-crons = ["30 10 * * *"]
+crons = ["30 10 * * *", "0 * * * *"]
 
 # KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
 [[kv_namespaces]]
