@@ -12,8 +12,12 @@ const CACHE_TTL_S = 3 * 86_400;
 
 async function fetchXlsxById(id) {
   const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx&_ts=${Date.now()}`;
+  // KHÔNG dùng `cache: "no-store"`: Cloudflare Workers CHƯA cài field này, đặt vào là fetch ném lỗi
+  // ngay ("The 'cache' field on 'RequestInitializerDict' is not implemented") — cả 24 lượt warm hỏng
+  // sạch mà log thì nuốt lỗi nên không ai hay. Chống cache đã có `_ts` trên URL + header Cache-Control,
+  // và cf.cacheTtl = 0 để chính Cloudflare không giữ bản cũ.
   const r = await fetch(url, {
-    redirect: "follow", cache: "no-store",
+    redirect: "follow", cf: { cacheTtl: 0, cacheEverything: false },
     headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP-warmer/1.0)", Accept: "*/*", "Cache-Control": "no-cache, no-store" },
   });
   if (!r.ok) throw new Error(`HTTP ${r.status} khi tải ${id}`);
@@ -64,16 +68,34 @@ async function warmOne(kv, id) {
   await kv.put(`sfile:${id}`, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S });
 }
 
-async function warmAll(env) {
+/* WARM THEO LÔ, XOAY VÒNG.
+   Warm cả 24 file trong MỘT lượt là vượt hạn mức Worker (Error 1102): mỗi file phải tải ~2MB,
+   giải nén, tách sheet rồi nén lại — cộng lại quá sức một request. Nay mỗi lượt chỉ làm vài file,
+   nhớ vị trí ở KV `sfile:cursor` rồi lần sau làm tiếp từ đó. Cache giữ 3 ngày nên vài ngày là
+   phủ hết danh sách, và ngày nào cũng có phần được làm mới. */
+const WARM_MOI_LUOT = 6;
+
+async function warmAll(env, soLuong = WARM_MOI_LUOT) {
   const kv = env.PMO_EDITS;
   if (!kv) return { ok: 0, fail: 0, note: "thiếu KV PMO_EDITS" };
   let ids = [];
   try { const raw = await kv.get("sfile:index"); ids = raw ? JSON.parse(raw) : []; } catch { /* registry rỗng */ }
+  if (!ids.length) return { ok: 0, fail: 0, total: 0 };
+
+  let tu = 0;
+  try { tu = Number(await kv.get("sfile:cursor")) || 0; } catch { tu = 0; }
+  if (tu >= ids.length) tu = 0;
+  const lo = [];
+  for (let i = 0; i < Math.min(soLuong, ids.length); i++) lo.push(ids[(tu + i) % ids.length]);
+
   let ok = 0, fail = 0;
-  for (const id of ids) {
-    try { await warmOne(kv, id); ok++; } catch { fail++; }
+  const lyDo = [];   // giữ vài lỗi đầu để còn biết vì sao hỏng — nuốt sạch lỗi thì chẩn đoán bằng gì
+  for (const id of lo) {
+    try { await warmOne(kv, id); ok++; }
+    catch (e) { fail++; if (lyDo.length < 3) lyDo.push(`${id}: ${String(e).slice(0, 120)}`); }
   }
-  return { ok, fail, total: ids.length };
+  try { await kv.put("sfile:cursor", String((tu + lo.length) % ids.length)); } catch { /* kệ */ }
+  return { ok, fail, lam: lo.length, total: ids.length, tu, ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -346,8 +368,10 @@ export default {
     ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
-  async fetch(_req, env) {
-    const warm = await warmAll(env);
+  async fetch(req, env) {
+    // Bấm tay: mặc định warm ÍT (2 file) cho nhẹ; muốn nhiều thì thêm ?n=… vào URL.
+    const n = Math.max(0, Math.min(12, Number(new URL(req.url).searchParams.get("n")) || 2));
+    const warm = await warmAll(env, n);
     let audit, pdf, kvbak;
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
     try { pdf = await backupCompliancePdf(env); } catch (e) { pdf = { error: String(e) }; }

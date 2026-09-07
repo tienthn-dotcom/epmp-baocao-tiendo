@@ -525,6 +525,20 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.96.0", date: "07/09/2026", items: [
+    "TẢI ẢNH / CLIP LÊN NAY BẮT BUỘC KÈM BÁO CÁO HIỆN TRẠNG. Chọn tệp xong app hỏi “đang làm tới đâu, vướng gì” — ghi một lần cho cả lô, chưa ghi thì nút tải lên còn khoá. Nội dung đó thành chú thích đầu tiên của từng tệp, kèm tên người và giờ gửi.",
+    "CHÚ THÍCH ẢNH / CLIP GIỜ LÀ HỘP THOẠI như ô Vướng mắc / Giải pháp: nhiều người viết được vào cùng một ảnh, mỗi tin có ngày giờ và người viết; người viết, admin và PMO sửa hoặc xoá được. Hộp nằm ngay dưới khung xem nên đọc song song với hình.",
+    "CHẤM “ĐÃ CÓ TƯ LIỆU” TRÊN MA TRẬN CHỈ CÒN BÁO CĂN MỚI CẬP NHẬT trong vòng 2 ngày, thay vì đánh dấu mọi căn từng có ảnh — nhìn bảng là biết hôm nay đội nào vừa quay. Chấm to hơn, viền trắng-đen, màu rực (sáng xanh lá · chiều cam · tối xanh dương · hôm qua xanh cyan) nên không còn chìm vào màu ô. Ảnh/clip cũ vẫn xem bình thường khi bấm vào ô.",
+    "“Media công trường” đổi tên thành “HÌNH ẢNH MỖI NGÀY”.",
+    "THÊM CẤP PM trong Hệ thống › Phân cấp người dùng (gán email như PMO và BOD). App “Hiệu suất dự án” từ nay chỉ BOD, PMO và PM xem được.",
+    "NHẬT KÝ GIÁM SÁT lọc được theo cấp: PMO · BOD · PM · chưa phân cấp, mỗi nhóm kèm số lượt thao tác. Nhật ký cũng ghi chi tiết hơn: DST nạp bảng mới ghi rõ nguồn nào / mấy dự án / bao nhiêu dòng, MTLĐ ghi mở ma trận của dự án nào, mục “Mở app” ghi tên app thay vì mã.",
+    "GẮN PDF CHO HẠNG MỤC — công đoạn nào chỉ có một bản PDF (hồ sơ nghiệm thu, bản vẽ duyệt) thì PMO bấm “Gắn link” → “Tải PDF lên”, khỏi cần dựng ma trận Excel. Ai cũng xem được mà không cần quyền Drive.",
+    "ĐIỆN THOẠI — bảng “Việc cần xử lý” đổi sang DẠNG THẺ: mỗi hạng mục một khối đọc dọc (tên, mã, % lớn bên phải, số ngày trễ, tình trạng, mốc ngày, người phụ trách, nút vướng mắc / giải pháp). Cần đủ 11 cột thì bấm “Bảng” ở đầu bảng.",
+    "ĐIỆN THOẠI — phần đầu màn thấp hơn hẳn: header gộp một hàng, dải KPI và dải cảnh báo thu gọn; danh sách dự án hiện ngay từ giữa màn thay vì phải cuộn hai màn. Bộ lọc xếp lưới hai cột đều nhau, các nút đủ to để bấm bằng ngón tay.",
+    "CÀI ĐƯỢC RA MÀN HÌNH CHÍNH như một app: Android mở Chrome sẽ hiện “Cài ứng dụng”; iPhone vào Safari › Chia sẻ › Thêm vào MH chính. Không mất phí, không qua App Store.",
+    "SỬA LỖI GỐC LÀM HỎNG MỌI LƯỢT TẢI LÊN DRIVE — xin phiên tải lên thiếu một thông tin bắt buộc nên Google chặn lượt gửi tệp, Drive giữ lại vỏ tệp 0 byte mà app vẫn báo xong (đúng kiểu mất 60 clip hôm 03/09). Đã sửa cho cả ảnh/clip lẫn PDF.",
+    "SAO LƯU HẰNG ĐÊM RA DRIVE: 23:30 mỗi ngày app gom toàn bộ dữ liệu người dùng nhập (ghi chú, ngày hoàn thành, phân cấp, dòng đã ẩn, link ma trận, form bảng, nguồn DST) thành một file trong “DATABASE › ePMP › Sao lưu dữ liệu”, giữ bản theo từng ngày. Bảng link cũng được ghi lại mỗi lần gắn / sửa / gỡ.",
+  ] },
   { v: "3.95.0", date: "07/09/2026", items: [
     "GẮN PDF CHO HẠNG MỤC — thêm một kiểu tài liệu bên cạnh link Google Sheet. Công đoạn nào chỉ có một bản PDF (hồ sơ nghiệm thu, bản vẽ duyệt, biên bản) thì PMO bấm “Gắn link” → “Tải PDF lên”, khỏi cần dựng ma trận Excel. Tên hạng mục hiện 📄, ai bấm cũng xem được mà không cần quyền Drive: máy tính mở thẳng trong app, điện thoại có nút “Mở PDF” và “Tải về máy”. Hạng mục có cả ma trận lẫn PDF thì hiện cả hai nút.",
     "SỬA LỖI GỐC LÀM HỎNG MỌI LƯỢT TẢI LÊN DRIVE: xin phiên tải lên mà thiếu một thông tin bắt buộc thì Google chặn ngay lượt gửi tệp, Drive vẫn giữ lại cái vỏ tệp 0 byte và app báo “xong”. Đây đúng là kiểu lỗi làm mất 60 clip hôm 03/09. Nay đã sửa cho CẢ media công trường lẫn PDF hạng mục.",
