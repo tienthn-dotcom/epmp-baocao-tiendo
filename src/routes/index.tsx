@@ -7823,6 +7823,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const [days, setDays] = useState<number>(7);     // 0 = toàn bộ
   const [q, setQ] = useState<string>("");          // ô tìm kiếm tự do (client-side, trên phần đã tải)
   const [actionF, setActionF] = useState<string>(""); // "" = mọi loại thao tác (lọc Ở SERVER)
+  const [capF, setCapF] = useState<string>("");       // "" = mọi cấp; PMO/BOD/PM/KHAC (lọc ở CLIENT)
   const [users, setUsers] = useState<string[]>([]);    // danh sách người (server, cho dropdown)
   const [actions, setActions] = useState<string[]>([]); // danh sách loại thao tác (server)
   const [hasMore, setHasMore] = useState(false);
@@ -7959,11 +7960,25 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
   const whoOpts = users;       // danh sách người từ server (không còn cascading — lọc thẳng ở D1)
   const actionOpts = actions;  // danh sách loại thao tác từ server
+  // LỌC THEO CẤP (PMO · BOD · PM · chưa phân cấp): cấp nằm ở kho phân cấp người dùng chứ không nằm
+  // trong bảng nhật ký, nên tra tại client trên các trang đã tải — cùng bảng RolesCtx mà badge dùng,
+  // đổi cấp một người là danh sách này đổi theo, khỏi sửa hai nơi.
+  const rolesMapAct = useContext(RolesCtx);
+  const capCua = (email: string): string => roleOf(rolesMapAct, email) ?? "KHAC";
   const filtered = useMemo(() => {
     const nq = norm(q.trim());
-    if (!nq) return rows;
-    return rows.filter((r) => norm(`${r.email} ${actionLabel(r.action)} ${r.detail || ""}`).includes(nq));
-  }, [rows, q]);
+    let out = capF ? rows.filter((r) => capCua(r.email) === capF) : rows;
+    if (nq) out = out.filter((r) => norm(`${r.email} ${actionLabel(r.action)} ${r.detail || ""}`).includes(nq));
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, q, capF, rolesMapAct]);
+  // Đếm số dòng theo từng cấp để hiện ngay trên nút (biết nhóm nào đang hoạt động nhiều).
+  const demCap = useMemo(() => {
+    const d: Record<string, number> = { PMO: 0, BOD: 0, PM: 0, KHAC: 0 };
+    for (const r of rows) d[capCua(r.email)] = (d[capCua(r.email)] ?? 0) + 1;
+    return d;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, rolesMapAct]);
 
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -7995,6 +8010,16 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
               <button key={d.v} onClick={() => setDays(d.v)}
                 className={`rounded-md border px-2 py-1 text-[11px] font-medium ${days === d.v ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600 hover:border-indigo-400"}`}>
                 {d.l}
+              </button>
+            ))}
+          </div>
+          {/* Lọc theo CẤP người dùng — xem riêng hoạt động của từng nhóm. */}
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] font-medium text-slate-500">Cấp:</span>
+            {([["", "Tất cả"], ["PMO", "PMO"], ["BOD", "BOD"], ["PM", "PM"], ["KHAC", "Chưa phân cấp"]] as const).map(([v, l]) => (
+              <button key={v || "all"} onClick={() => setCapF(v)}
+                className={`rounded-md border px-2 py-1 text-[11px] font-medium ${capF === v ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600 hover:border-indigo-400"}`}>
+                {l}{v && demCap[v] ? ` (${demCap[v]})` : ""}
               </button>
             ))}
           </div>

@@ -39,18 +39,18 @@ const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|
  * CHẤM DẤU TRÊN Ô MA TRẬN NÓI LUÔN "TƯ LIỆU MỚI CỠ NÀO".
  * Nhìn cả bảng là biết hôm nay đội nào đã quay, quay lúc nào — khỏi bấm từng ô.
  *   · Tải lên HÔM NAY  → rẻ quạt đầy dần theo buổi, màu đi từ sáng sang tối trong ngày:
- *       trước 12h : 1/4 vòng · xanh lá rực (sáng)
- *       12–18h    : 1/2 vòng · vàng rực    (chiều)
- *       sau 18h   : 3/4 vòng · tím         (tối)
- *   · Tải lên HÔM QUA → chấm XÁM ĐẬM tròn đầy (mới, nhưng không phải hôm nay).
+ *       trước 12h : 1/4 vòng · xanh lá  #5CFF5C (sáng)
+ *       12–18h    : 1/2 vòng · cam      #F5A623 (chiều)
+ *       sau 18h   : 3/4 vòng · xanh dương #4A86E8 (tối)
+ *   · Tải lên HÔM QUA → tròn đầy · cyan #6FF0FF (mới, nhưng không phải hôm nay).
  *   · CŨ HƠN HAI NGÀY → KHÔNG chấm nữa.
  *
  * VÌ SAO CHỈ 2 NGÀY: chấm để trả lời "căn nào vừa có người cập nhật", không phải "căn nào từng có
  * tư liệu". Nhịp quay thực tế khoảng một clip mỗi tuần; giữ dấu mãi thì cả bảng kín chấm, nhìn vào
  * không còn biết chỗ nào mới. Ảnh/clip cũ vẫn nằm nguyên trong kho, bấm vào ô là xem được.
  *
- * MÀU CHỌN ĐỂ NỔI TRÊN Ô, không theo bảng màu heatmap: ô ma trận có cả xanh navy lẫn xanh lá đậm,
- * chấm mà cùng tông với ô là chìm nghỉm. Tối dùng TÍM chứ không navy vì nền ô nhiều chỗ đã navy.
+ * MÀU LẤY TỪ BẢNG MÃ MÀU CHỦ NHÀ GỬI (xanh lá · cam · xanh dương · cyan) — đều là tông SÁNG RỰC nên
+ * bật lên trên nền ô, khác hẳn bảng màu heatmap của chính ô (navy, xanh lá đậm, xanh nhạt).
  * Giờ lấy theo máy người xem (giờ VN), mốc là createdTime của Drive — giờ TẢI LÊN thật, không phải
  * ngày ghi trong tên file. Không đọc được giờ thì coi như cũ → xám.
  */
@@ -63,13 +63,13 @@ function freshMark(at: string): { color: string; deg: number; label: string } | 
   const ngay = (x: Date) => Math.floor(new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime() / 86400000);
   const cach = ngay(now) - ngay(d);
   if (cach >= 2 || cach < 0) return null;
-  if (cach === 1) return { color: "#334155", deg: 360, label: "tải lên hôm qua" };
+  if (cach === 1) return { color: "#6FF0FF", deg: 360, label: "tải lên hôm qua" };
   const h = d.getHours();
   const gio = `${String(h).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   // Trước 12h gộp chung một buổi: 0–6h gần như không ai tải, tách thêm một mốc chỉ rối.
-  if (h < 12) return { color: "#00E676", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
-  if (h < 18) return { color: "#FFC400", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
-  return { color: "#A855F7", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
+  if (h < 12) return { color: "#5CFF5C", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
+  if (h < 18) return { color: "#F5A623", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
+  return { color: "#4A86E8", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
 }
 const isMini = (p: InstallProj) => /mini\s*hotel/i.test(p.name || "");
 
