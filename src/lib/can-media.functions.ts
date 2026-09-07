@@ -84,6 +84,20 @@ export const readItemPdf = createServerFn({ method: "POST" })
     return { b64, mime: mime || "application/pdf" };
   });
 
+/** LƯU CHÚ THÍCH cho 1 ảnh/clip đang xem — ghi thẳng vào phần mô tả của tệp trên Drive.
+ *  Sửa được nhiều lần, xoá trắng thì gỡ chú thích. Cắt còn 100 từ như lúc tải lên. */
+export const saveMediaCaption = createServerFn({ method: "POST" })
+  .validator((d: { id: string; caption: string }) => d)
+  .handler(async ({ data }): Promise<{ ok: boolean; caption: string }> => {
+    const drive = await import("@/lib/drive.functions");
+    if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive.");
+    if (!/^[a-zA-Z0-9_-]{10,}$/.test(data.id || "")) throw new Error("Thiếu tệp cần ghi chú thích.");
+    const cap = capNgan(data.caption) ?? "";
+    const ok = await drive.driveSetDescription(data.id, cap);
+    if (!ok) throw new Error("Drive không nhận chú thích (thử lại sau).");
+    return { ok, caption: cap };
+  });
+
 /** Liệt kê media của 1 PHÒNG (Toà + căn) → { photos, videos }. */
 export const listCanMedia = createServerFn({ method: "POST" })
   .validator((d: { project: string; hid?: string; toa?: string; can: string }) => d)

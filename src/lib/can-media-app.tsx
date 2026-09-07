@@ -23,7 +23,7 @@ import { roleOf } from "@/lib/roles";
 
 const MTLD_INSTALL_LS = "mtld:install:v2";   // = app-shell.MTLD_INSTALL_LS (không import để tránh vòng phụ thuộc)
 const PAGE_W = 1880;                         // ma trận bàn giao rất rộng (5 Toà × 18-21 căn) → cho trang rộng gần hết màn
-import { startCanMediaUpload, listCanMedia, readCanMediaB64, listProjectMedia } from "@/lib/can-media.functions";
+import { startCanMediaUpload, listCanMedia, readCanMediaB64, listProjectMedia, saveMediaCaption } from "@/lib/can-media.functions";
 
 const C = { ink: "#0f172a", sub: "#64748b", teal: "#0d9488", tealD: "#0f766e", navy: "#0f2742" };
 const mb = (n: number) => (n / 1048576).toFixed(0);
@@ -570,6 +570,11 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   // DIEN THOAI: o Toa/Phong + 2 nut tai len an sau nut "+", vi chung an mat 3 dong header (~230px
   // tren man 900px) trong khi xem clip khong dung toi. Bam "+" moi mo ra de tai anh/video.
   const [upOpen, setUpOpen] = useState(false);
+  // Quyền sửa chú thích = admin / PMO, cùng chuẩn với quyền chỉnh ma trận ở màn ngoài.
+  const devAsDlg = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
+  const meDlg = useQuery({ queryKey: ["media-whoami", devAsDlg], queryFn: () => whoami({ data: { devAs: devAsDlg } }) });
+  const rolesDlg = useQuery({ queryKey: ["media-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
+  const canEditCap = !!(meDlg.data?.isAdmin || (meDlg.data?.email && roleOf(rolesDlg.data?.roles ?? {}, meDlg.data.email) === "PMO"));
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload
@@ -593,13 +598,16 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
   }, [q.data, toa, can, scope]);
   const items = useMemo<Item[]>(() => groups.flatMap((g) => g.items), [groups]);
   const [sel, setSel] = useState(0);
-  // CHÚ THÍCH: gõ trước, áp cho cả lô ảnh/clip chọn ngay sau đó (một buổi chụp thường cùng một ý).
-  // Tối đa 100 từ — server cắt lại lần nữa, client sửa được chứ server thì không.
-  const [cap, setCap] = useState("");
-  const [capOpen, setCapOpen] = useState(false);   // ảnh đang xem có mở phần chú thích hay chưa
+  // CHÚ THÍCH của ĐÚNG ảnh/clip đang xem: nằm ngay dưới khung xem (đọc song song với hình, không
+  // đè lên hình), sửa tại chỗ rồi bấm Lưu — ghi thẳng vào tệp trên Drive. Tối đa 100 từ; server
+  // cắt lại lần nữa vì client sửa được còn server thì không.
+  const [cap, setCap] = useState("");            // nội dung đang gõ
+  const [capEdit, setCapEdit] = useState(false); // đang ở chế độ sửa
+  const [capBusy, setCapBusy] = useState(false);
+  const [capErr, setCapErr] = useState<string | null>(null);
   const capWords = cap.trim() ? cap.trim().split(/\s+/).length : 0;
   useEffect(() => { setSel(0); }, [project]);
-  useEffect(() => { setCapOpen(false); }, [sel]);   // đổi ảnh thì gập lại — không click thì không thấy
+  useEffect(() => { setCapEdit(false); setCapErr(null); }, [sel]);
   const cur = items[Math.min(sel, items.length - 1)];
   const go = (d: number) => items.length && setSel((v) => (Math.min(v, items.length - 1) + d + items.length) % items.length);
   useEffect(() => {
@@ -667,7 +675,7 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
       setBusy(`Đang tải ${kind === "photo" ? "ảnh" : "video"} ${i + 1}/${arr.length} (~${mb(f.size)}MB)…`);
       try {
         const ext = (f.name.split(".").pop() || (kind === "photo" ? "jpg" : "mp4"));
-        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin, caption: cap.trim() || undefined } });
+        const { uploadUrl } = await startCanMediaUpload({ data: { project, hid, toa: toa.trim(), can: can.trim(), kind, ext, mime: f.type || "", origin: window.location.origin } });
         // KHÔNG nuốt lỗi PUT. Trước đây bọc catch rỗng: rớt mạng / iOS khoá màn giữa chừng là Drive
         // giữ lại cái vỏ tệp 0 byte, app vẫn báo tải xong, tới lúc mở mới lòi lỗi của Google.
         // (03/09 mất trắng 60 clip đúng kiểu này.) Nay hụt tệp nào báo tên tệp đó ngay.
@@ -687,16 +695,28 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
     track("media_upload",
       `${project}${toa.trim() ? " · " + toa.trim() : ""} · ${can.trim()} — ${kind === "photo" ? "ảnh" : "clip"}`
       + ` · xong ${xong.length}/${arr.length}${xong.length ? ": " + noi(xong) : ""}`
-      + (hong.length ? ` · HỤT ${hong.length}: ${noi(hong)}` : "")
-      + (cap.trim() ? ` · chú thích: ${cap.trim().slice(0, 120)}` : ""));
-    if (xong.length) setCap("");   // tải xong thì dọn ô chú thích, tránh dính sang lô sau
+      + (hong.length ? ` · HỤT ${hong.length}: ${noi(hong)}` : ""));
     if (hong.length) alert("Chưa tải lên được " + hong.length + " tệp:\n· " + hong.join("\n· ")
       + "\n\nThường do rớt mạng hoặc màn hình tắt giữa chừng. Mở lại và tải lại đúng mấy tệp này.");
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
     await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
   }
 
-  const upBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 12px", borderRadius: 8, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };
+  // Nút tải lên: chữ KHÔNG được xuống dòng và nút không được co — thêm ô chú thích vào cùng hàng
+  // là chỗ này chật, "＋ Tải ảnh" gãy làm hai dòng trên máy tính.
+  async function luuChuThich() {
+    if (!cur) return;
+    setCapBusy(true); setCapErr(null);
+    try {
+      const r = await saveMediaCaption({ data: { id: cur.id, caption: cap } });
+      track("media_caption", `${project}${cur.toa ? " · " + cur.toa : ""} · ${cur.can} — ${r.caption ? r.caption.slice(0, 120) : "(gỡ chú thích)"}`);
+      await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
+      setCapEdit(false);
+    } catch (e) { setCapErr((e as Error).message); }
+    setCapBusy(false);
+  }
+
+  const upBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 8, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 };
   const arrow: React.CSSProperties = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: "50%", border: "none", background: "rgba(15,23,42,.55)", color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
 
   return createPortal(
@@ -729,22 +749,13 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               </>}
             </div>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
             {scope === "can" && narrow && (
               <button type="button" onClick={() => setUpOpen((v) => !v)}
                 style={{ ...upBtn, width: 34, padding: 0, justifyContent: "center", fontSize: 18 }}
                 title={upOpen ? "Đóng khung tải lên" : "Tải ảnh / video"}>{upOpen ? "−" : "＋"}</button>
             )}
             {scope === "can" && (!narrow || upOpen) && <>
-              {/* Chú thích cho lô sắp tải: gõ trước rồi mới chọn tệp. Bỏ trống cũng được. */}
-              <input value={cap} onChange={(e) => setCap(e.target.value)}
-                placeholder="Chú thích (tuỳ chọn, tối đa 100 từ)"
-                style={{ height: 30, minWidth: 0, flex: narrow ? "1 1 100%" : "0 1 240px", borderRadius: 8, border: "none", padding: "0 10px", fontSize: 12.5, color: C.ink, background: "#fff" }} />
-              {capWords > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: capWords > 100 ? "#fca5a5" : "rgba(255,255,255,.7)" }}>
-                  {capWords}/100 từ{capWords > 100 ? " — sẽ cắt còn 100" : ""}
-                </span>
-              )}
               <label style={upBtn}>＋ Tải ảnh
                 <input type="file" accept="image/*" multiple style={{ display: "none" }}
                   onChange={(e) => { void onFiles("photo", e.target.files); e.currentTarget.value = ""; }} /></label>
@@ -815,23 +826,50 @@ export function CanMediaDialog({ project, hid, projKey, initialToa, initialCan, 
               {curRoom ? ` · ${curRoom}` : ""}{cur.date ? ` · ${cur.date}` : ""}
             </div>
           )}
-          {/* CHÚ THÍCH — mặc định GẬP LẠI, có chú thích mới hiện cái nút nhỏ; bấm mới bung chữ ra.
-              Ảnh công trường xem để nhìn hiện trạng, chữ đè lên ảnh mọi lúc là che mất thứ cần xem. */}
-          {cur?.desc && (
-            <div style={{ position: "absolute", left: 12, right: 12, bottom: 12, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
-              {capOpen && (
-                <div onClick={() => setCapOpen(false)}
-                  style={{ maxHeight: "38%", overflowY: "auto", background: "rgba(15,23,42,.86)", color: "#f1f5f9", borderRadius: 10, padding: "9px 12px", fontSize: 13, lineHeight: 1.45, cursor: "pointer", boxShadow: "0 8px 24px rgba(2,6,23,.5)" }}>
-                  {cur.desc}
-                </div>
-              )}
-              <button type="button" onClick={() => setCapOpen((v) => !v)}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 999, border: "none", background: capOpen ? "rgba(13,148,136,.95)" : "rgba(15,23,42,.72)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                💬 {capOpen ? "Ẩn chú thích" : "Chú thích"}
-              </button>
-            </div>
-          )}
+
         </div>
+
+        {/* CHÚ THÍCH của đúng ảnh/clip đang xem — đọc SONG SONG với hình, không đè lên hình.
+            Admin/PMO bấm "Sửa" là gõ tại chỗ rồi Lưu, ghi thẳng vào tệp trên Drive. */}
+        {cur && (
+          <div style={{ background: "#0f1f33", borderTop: "1px solid rgba(255,255,255,.08)", padding: narrow ? "8px 12px" : "10px 14px", display: "grid", gap: 6 }}>
+            {!capEdit ? (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: narrow ? 12.5 : 13.5, lineHeight: 1.45, color: cur.desc ? "#e2e8f0" : "#8296ab", whiteSpace: "pre-wrap" }}>
+                  {cur.desc || "Chưa có chú thích cho ảnh/clip này."}
+                </span>
+                {canEditCap && (
+                  <button type="button"
+                    onClick={() => { setCap(cur.desc || ""); setCapErr(null); setCapEdit(true); }}
+                    style={{ flexShrink: 0, height: 30, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {cur.desc ? "Sửa chú thích" : "＋ Chú thích"}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 7 }}>
+                <textarea value={cap} onChange={(e) => setCap(e.target.value)} rows={narrow ? 3 : 2}
+                  placeholder="Ghi ngắn gọn: đang làm tới đâu, vướng gì, cần ai xử lý…"
+                  style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "9px 11px", fontSize: 13, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: capWords > 100 ? "#fca5a5" : "rgba(255,255,255,.55)" }}>
+                    {capWords}/100 từ{capWords > 100 ? " — sẽ cắt còn 100" : ""}
+                  </span>
+                  {capErr && <span style={{ fontSize: 11.5, color: "#fca5a5" }}>{capErr}</span>}
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button type="button" onClick={() => { setCapEdit(false); setCapErr(null); }}
+                      style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Huỷ</button>
+                    <button type="button" disabled={capBusy}
+                      onClick={() => { void luuChuThich(); }}
+                      style={{ height: 32, padding: "0 16px", borderRadius: 8, border: "none", background: C.tealD, color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: capBusy ? .6 : 1 }}>
+                      {capBusy ? "Đang lưu…" : "Lưu chú thích"}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* DẢI THUMBNAIL CUỘN NGANG — ảnh và video chung một dải, bấm để xem.
             CHỈ CÓ 1 MỤC thì bỏ hẳn dải này: không có gì để chuyển qua, mà nó ăn mất ~200px chiều cao

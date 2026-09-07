@@ -445,6 +445,17 @@ export async function driveCreateResumableSession(path: string[], fileName: stri
   return { uploadUrl: loc };
 }
 
+/** Ghi/xoá phần MÔ TẢ của 1 tệp (đang dùng làm chú thích ảnh/clip công trường). */
+export async function driveSetDescription(fileId: string, description: string): Promise<boolean> {
+  const env = await getEnv(); if (!env) throw new Error("Không lấy được env.");
+  const token = await accessToken(env);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?${SHARED}&fields=id`, {
+    method: "PATCH", headers: { ...AUTHH(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ description: description.slice(0, 1000) }),
+  });
+  return r.ok;
+}
+
 /** Xoá (đưa vào thùng rác Drive) 1 file theo id. */
 export const driveDelete = createServerFn({ method: "POST" })
   .validator((d: { id: string }) => d)

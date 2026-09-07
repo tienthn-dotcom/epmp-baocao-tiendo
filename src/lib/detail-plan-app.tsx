@@ -475,14 +475,15 @@ export function DetailPlanApp() {
           <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white pl-2 pr-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dự án</span>
             <select value={projFilter} onChange={(e) => { setProjFilter(e.target.value); setExpanded(null); }}
-              className="max-w-[min(220px,52vw)] bg-transparent text-[11.5px] text-slate-700 focus:outline-none">
+              style={{ maxWidth: narrow ? "52vw" : 240 }}
+              className="min-w-0 bg-transparent text-[11.5px] text-slate-700 focus:outline-none">
               <option value="">Tất cả ({projGroups.length} dự án)</option>
               {projGroups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
             </select>
           </label>
         </div>
         {/* Cụm phải: khoảng thời gian + nhập dữ liệu + làm mới — gap đều để xếp cân. */}
-        <div className={`flex flex-wrap items-center gap-1.5 ${narrow ? "basis-full" : "ml-auto"} ${narrow && !barOpen ? "hidden" : ""}`}>
+        <div className={`flex flex-wrap items-center gap-1.5 ${narrow ? "basis-full" : ""} ${narrow && !barOpen ? "hidden" : ""}`}>
         {/* Khoảng thời gian — nhãn gọn M/YYYY (8/2026) thay vì "August 2026" của ô month gốc. */}
         <div className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 leading-none">
           <span className="text-[10px] font-semibold uppercase leading-none tracking-wide text-slate-400">Khoảng</span>
