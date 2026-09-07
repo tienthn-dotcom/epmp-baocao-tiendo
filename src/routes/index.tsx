@@ -6254,9 +6254,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         {/* minWidth trên điện thoại: cột tính theo % nên phải có khổ nền đủ rộng thì % mới ra bề
             rộng đọc được. 980px = vừa đủ cho 11 cột ở cỡ chữ 12px.
             Cỡ chữ: máy tính dùng cqw (co giãn theo khung, xem lib/table-scale.ts); điện thoại chốt
-            12px — cqw đo theo khung 375px sẽ ra chữ li ti trong khi bảng đã rộng 980px. */}
+            10,5px — cqw đo theo khung 375px sẽ ra chữ li ti trong khi bảng đã rộng 980px.
+            Vì sao 10,5 chứ không phải 12: ở 12px mã "CT26-060" cần 50px mà cột chỉ có 45px nên bị
+            cắt còn "CT2…", tiêu đề wrap 3 dòng đẩy header cao 76px — nhìn trên máy đúng kiểu chữ
+            chồng chữ. 10,5px: mã hiện đủ, header còn 52px, mỗi màn thêm được 2 hàng. */}
         <table id="pdf-table" className="w-full table-fixed border-collapse"
-               style={{ fontSize: narrowScreen ? 12 : TABLE_FONT_CSS, minWidth: narrowScreen ? 980 : undefined }}>
+               style={{ fontSize: narrowScreen ? 10.5 : TABLE_FONT_CSS, minWidth: narrowScreen ? 980 : undefined }}>
           {/* Độ rộng cột người dùng kéo chỉnh được (mép phải mỗi tiêu đề);
               phần bù trừ lấy từ cột "Vướng mắc / cần xử lý". */}
           <colgroup>

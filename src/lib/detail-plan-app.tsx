@@ -8,13 +8,14 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink } from "lucide-react";
+import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink, SlidersHorizontal } from "lucide-react";
 import { getSummaryFile, listSheetTabs } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles, getDstSource, saveDstSource } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { parseDetailPlan, type DetailNode, type DetailProject } from "@/lib/detail-plan";
 import { track } from "@/lib/track";
+import { useIsMobile } from "@/lib/use-breakpoint";
 
 const SAMPLE_FILE = "1a0i1n9rjtrNUGHtGmuhj4MDQUnR4dJX9";   // dev: file mẫu (sau cho PMO cấu hình link)
 const SAMPLE_GID = "452283237";
@@ -279,6 +280,10 @@ export function DetailPlanApp() {
       const tag = importProj.trim();
       setReal(tag ? p.map((x) => ({ ...x, groupDA: tag })) : p);
       setImportName(label || sheetName || "Đã nhập"); setExpanded(null); setProjFilter(""); setImportOpen(false); setErr(null);
+      // Nạp bảng mới = số của MỌI NGƯỜI xem DST đổi theo → nhật ký phải ghi rõ nạp cái gì, bao nhiêu.
+      const nHang = p.reduce((n, x) => n + countAll(x), 0);
+      track("dst_import", `${label || sheetName || "không tên"}${sheetName && label ? " · tab " + sheetName : ""}`
+        + ` · ${p.length} dự án · ${nHang} dòng${tag ? " · gộp về “" + tag + "”" : ""}`);
     } catch (e) { setImportErr((e as Error).message); } finally { setBusy(false); }
   };
   const onFile = (f?: File) => { if (f) f.arrayBuffer().then((b) => importBuf(b, f.name.replace(/\.(xlsx|xls)$/i, ""))); };
@@ -321,6 +326,10 @@ export function DetailPlanApp() {
   // Lọc theo DỰ ÁN: các dòng SỐ NGUYÊN là KHU của 1 dự án. Khoá dự án = Group DA (tên dự án) → Mã CT → tên.
   // Chọn 1 dự án → hiện ĐỦ các khu của nó. (Sau nối ePMP để lấy tên+mã dự án chuẩn.)
   const [projFilter, setProjFilter] = useState("");
+  // ĐIỆN THOẠI: 8 nút điều khiển xếp hết ra thanh trên chiếm gần nửa màn (đo trên iPhone: 4 hàng,
+  // ~330px) — bảng còn lại có mấy dòng. Gom vào một nút "Lọc", mặc định đóng, mở ra mới hiện.
+  const narrow = useIsMobile();
+  const [barOpen, setBarOpen] = useState(false);
   // MỘT FILE = MỘT DỰ ÁN: các dòng số nguyên là KHU (không phải dự án riêng). Khu thường KHÔNG có cột Nhóm
   // DA / Mã CT riêng → GỘP CHUNG về 1 dự án: tên nhập tay (importProj) → tên file → mặc định pilot. Nhờ vậy
   // 6 khu "Nam Phương Hoàng Hậu: Lobby" không bị đếm nhầm thành "6 dự án". (KHÔNG fallback theo tên khu nữa.)
@@ -433,14 +442,25 @@ export function DetailPlanApp() {
         {!usingMock && q.data?.ts ? (() => { const s = stampInfo(q.data.ts); return (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10.5px]" title={`Dữ liệu lấy lúc ${s.abs}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span className="font-semibold uppercase tracking-wide text-emerald-700">Dữ liệu tính đến</span>
+            {!narrow && <span className="font-semibold uppercase tracking-wide text-emerald-700">Dữ liệu tính đến</span>}
             <span className="font-bold tabular-nums text-slate-800">{s.abs}</span>
             <span className="text-emerald-600">· {s.rel}</span>
           </span>
         ); })() : null}
+        {/* Nút gom bộ điều khiển — chỉ có trên máy hẹp. Số bên cạnh = mấy bộ lọc đang bật, để
+            đóng lại rồi vẫn biết bảng đang bị lọc chứ không tưởng là đang xem đủ. */}
+        {narrow && (() => {
+          const nOn = [showOverdue, showIssues, hideDone, !!projFilter].filter(Boolean).length;
+          return (
+            <button type="button" onClick={() => setBarOpen((v) => !v)}
+              className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11.5px] font-semibold ${barOpen || nOn ? "border-teal-500 bg-teal-50 text-teal-800" : "border-slate-300 bg-white text-slate-600"}`}>
+              <SlidersHorizontal className="h-3.5 w-3.5" /> Lọc{nOn ? ` · ${nOn}` : ""} {barOpen ? "▴" : "▾"}
+            </button>
+          );
+        })()}
         {/* Điều khiển hiển thị — CHO XUỐNG DÒNG: máy hẹp mà bắt nằm một hàng thì cả trang bị đẩy
             lệch, cuộn ngang mới thấy hết nút. */}
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <div className={`flex min-w-0 flex-wrap items-center gap-1.5 ${narrow ? "basis-full" : ""} ${narrow && !barOpen ? "hidden" : ""}`}>
           <div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-slate-300 text-[11.5px] font-medium">
             <button type="button" title="Mở hết mọi tầng" onClick={() => setExpanded(new Set(allKeys))} className="flex items-center bg-white px-2.5 text-slate-600 hover:bg-slate-50">Mở tất cả</button>
             <button type="button" title="Chỉ hiện dòng khu" onClick={() => setExpanded(new Set())} className="flex items-center border-l border-slate-300 bg-white px-2.5 text-slate-600 hover:bg-slate-50">Thu gọn</button>
@@ -462,7 +482,7 @@ export function DetailPlanApp() {
           </label>
         </div>
         {/* Cụm phải: khoảng thời gian + nhập dữ liệu + làm mới — gap đều để xếp cân. */}
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className={`flex flex-wrap items-center gap-1.5 ${narrow ? "basis-full" : "ml-auto"} ${narrow && !barOpen ? "hidden" : ""}`}>
         {/* Khoảng thời gian — nhãn gọn M/YYYY (8/2026) thay vì "August 2026" của ô month gốc. */}
         <div className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 leading-none">
           <span className="text-[10px] font-semibold uppercase leading-none tracking-wide text-slate-400">Khoảng</span>

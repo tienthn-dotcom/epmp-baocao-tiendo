@@ -74,7 +74,9 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
       const d = (e as CustomEvent<{ app?: string; project?: string }>).detail || {};
       if (!d.app) return;
       setActiveApp(d.app); setWantProject(d.project ?? null); setOpen(false);
-      track("open_app", `${d.app}${d.project ? " · " + d.project : ""}`);
+      // Ghi TÊN app chứ không phải mã ("media" → "Media công trường"): nhật ký để người đọc, không phải máy.
+      const ten = APPS.find((a) => a.id === d.app)?.name ?? d.app;
+      track("open_app", `${ten}${d.project ? " · " + d.project : ""}`);
       window.scrollTo({ top: 0 });
     };
     window.addEventListener("epmp:open-app", go);
@@ -435,7 +437,7 @@ function MtldApp() {
           // GOM HẾT: mọi ô vào MỘT lưới liền (không tách vùng) — xem tổng thể như bức tường TV.
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 16px 20px" }}>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start" }}>
-              {shown.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
+              {shown.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
             </div>
           </div>
         ) : (
@@ -448,7 +450,7 @@ function MtldApp() {
                   <span style={{ fontSize: 11, color: MTLD_T.faint, marginLeft: "auto" }}>{items.length} dự án</span>
                 </div>
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
-                  {items.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => setDetail(p)} />)}
+                  {items.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
                 </div>
               </section>
             ))}

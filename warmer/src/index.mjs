@@ -172,6 +172,96 @@ async function backupAuditLog(env) {
   return { rows: rows.length, updated: !!existing };
 }
 
+
+/**
+ * SAO LƯU TOÀN BỘ DỮ LIỆU APP (KV) RA DRIVE — mỗi ngày một lần.
+ *
+ * Mọi thứ người dùng gõ vào app đều nằm trong KV: ghi chú vướng mắc, ngày hoàn thành, phân cấp
+ * người dùng, dòng đã ẩn, link ma trận, form bảng, nguồn DST, ảnh dự án… KV chỉ có MỘT bản. Hỏng
+ * hoặc lỡ tay xoá là mất trắng, không có chỗ nào đọc lại.
+ *
+ * Nay mỗi ngày gom hết thành một file JSON đặt ở:
+ *   Data Source › DATABASE › ePMP › Sao lưu dữ liệu ›
+ *     · epmp-du-lieu-YYYY-MM-DD.json  (một bản mỗi ngày — lần ngược lại được)
+ *     · epmp-du-lieu-latest.json      (bản mới nhất, ghi đè — chỗ để lấy khi cần phục hồi)
+ *
+ * BỎ QUA hai loại khoá: `sfile:` (bản xlsx cache, tải lại được từ Google) và `sheetsnap:` (ảnh HTML
+ * dựng lại được từ file gốc) — chúng nặng vài MB mà không phải dữ liệu người dùng nhập.
+ */
+const KV_BACKUP_PATH = ["ePMP", "Sao lưu dữ liệu"];
+const KV_SKIP = /^(sfile:|sheetsnap:)/;
+
+async function backupKvData(env) {
+  const kv = env.PMO_EDITS;
+  if (!kv) return { skip: "thiếu KV PMO_EDITS" };
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+
+  // Duyệt hết khoá (KV trả theo trang 1000 khoá).
+  const keys = [];
+  let cursor;
+  do {
+    const page = await kv.list(cursor ? { cursor } : {});
+    for (const k of page.keys) if (!KV_SKIP.test(k.name)) keys.push(k.name);
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+
+  const data = {};
+  let bo = 0;
+  for (const k of keys) {
+    const raw = await kv.get(k);
+    if (raw == null) { bo++; continue; }
+    // Giữ nguyên dạng: JSON thì lồng thẳng vào (đọc bằng mắt được), còn lại để chuỗi.
+    try { data[k] = JSON.parse(raw); } catch { data[k] = raw; }
+  }
+
+  const now = new Date(Date.now() + 7 * 3600_000);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const ngay = `${now.getUTCFullYear()}-${p2(now.getUTCMonth() + 1)}-${p2(now.getUTCDate())}`;
+  const json = JSON.stringify({
+    app: "ePMP", luc: now.toISOString().replace("Z", "+07:00 (giờ VN)"), soKhoa: keys.length, boQua: bo, data,
+  }, null, 1);
+  const bytes = new TextEncoder().encode(json);
+
+  const token = await driveToken(env);
+  const root = env.GDRIVE_ROOT || DRIVE_ROOT_DEFAULT;
+  let folder = root;
+  for (const seg of KV_BACKUP_PATH) folder = await driveEnsureFolder(token, seg, folder);
+
+  for (const name of [`epmp-du-lieu-${ngay}.json`, "epmp-du-lieu-latest.json"]) {
+    await driveUpsertFile(token, folder, name, "application/json", bytes);
+  }
+  return { keys: keys.length, bytes: bytes.length, ngay };
+}
+
+/** Ghi 1 file vào folder Drive: có sẵn thì đè nội dung, chưa có thì tạo mới. */
+async function driveUpsertFile(token, folder, name, mime, bytes) {
+  const AUTH = { Authorization: `Bearer ${token}` };
+  const q = `name='${name.replace(/'/g, "\\'")}' and '${folder}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
+  const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${DRIVE_SHARED}`, { headers: AUTH });
+  const fj = await fr.json();
+  const existing = fj.files && fj.files[0] && fj.files[0].id;
+  if (existing) {
+    const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing}?uploadType=media&fields=id&${DRIVE_SHARED}`, {
+      method: "PATCH", headers: { ...AUTH, "Content-Type": mime }, body: bytes,
+    });
+    if (!r.ok) throw new Error(`Ghi đè ${name} lỗi ${r.status}`);
+    return existing;
+  }
+  const boundary = "warmerUp" + Date.now();
+  const enc = new TextEncoder();
+  const meta = JSON.stringify({ name, parents: [folder] });
+  const pre = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`);
+  const post = enc.encode(`\r\n--${boundary}--`);
+  const body = new Uint8Array(pre.length + bytes.length + post.length);
+  body.set(pre, 0); body.set(bytes, pre.length); body.set(post, pre.length + bytes.length);
+  const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&${DRIVE_SHARED}`, {
+    method: "POST", headers: { ...AUTH, "Content-Type": `multipart/related; boundary=${boundary}` }, body,
+  });
+  const j = await r.json();
+  if (!j.id) throw new Error(`Tạo ${name} lỗi: ` + (j.error?.message || "?"));
+  return j.id;
+}
+
 /** Xuất PDF báo cáo tuân thủ từ Google Sheet → ghi đè vào Drive (1 file / 1 ngày). */
 async function backupCompliancePdf(env) {
   if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
@@ -245,9 +335,11 @@ export default {
         .catch((e) => console.error("backupCompliancePdf lỗi:", e)));
       return;
     }
-    if (cron === "30 16 * * *") {             // 23:30 VN — chốt ngày: sao lưu nhật ký giám sát
+    if (cron === "30 16 * * *") {             // 23:30 VN — chốt ngày: nhật ký giám sát + TOÀN BỘ dữ liệu KV
       ctx.waitUntil(backupAuditLog(env).then((r) => console.log("auditLog:", JSON.stringify(r)))
         .catch((e) => console.error("backupAuditLog lỗi:", e)));
+      ctx.waitUntil(backupKvData(env).then((r) => console.log("kvData:", JSON.stringify(r)))
+        .catch((e) => console.error("backupKvData lỗi:", e)));
       return;
     }
     ctx.waitUntil(warmAll(env));              // 17:30 VN — warm Summary
@@ -256,9 +348,10 @@ export default {
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(_req, env) {
     const warm = await warmAll(env);
-    let audit, pdf;
+    let audit, pdf, kvbak;
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
     try { pdf = await backupCompliancePdf(env); } catch (e) { pdf = { error: String(e) }; }
-    return new Response(JSON.stringify({ warm, audit, pdf }, null, 2), { headers: { "content-type": "application/json" } });
+    try { kvbak = await backupKvData(env); } catch (e) { kvbak = { error: String(e) }; }
+    return new Response(JSON.stringify({ warm, audit, pdf, kvbak }, null, 2), { headers: { "content-type": "application/json" } });
   },
 };

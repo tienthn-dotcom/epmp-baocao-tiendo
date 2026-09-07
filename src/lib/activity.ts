@@ -65,6 +65,8 @@ export const ACTION_LABEL: Record<string, string> = {
   backup_restore: "Khôi phục bản sao lưu",
   link_matrix: "Gắn ma trận lắp đặt cho dự án",
   link_matrix_off: "Gỡ ma trận lắp đặt",
+  link_pdf: "Gắn tài liệu PDF cho hạng mục",
+  view_item_pdf: "Xem tài liệu PDF của hạng mục",
   compliance_form_save: "Lưu form báo cáo tuân thủ",
   compliance_pdf: "Lưu PDF tuân thủ lên Drive",
   matrix_reset_form: "Xoá form ma trận",
@@ -74,6 +76,7 @@ export const ACTION_LABEL: Record<string, string> = {
   media_upload: "Tải ảnh/clip lên",
   // ── DST · Dữ liệu dự án · Trợ lý PMO ──
   dst_source: "Ghim nguồn dữ liệu DST",
+  dst_import: "Nạp bảng tiến độ chi tiết mới",
   ds_publish: "Nhập bộ dữ liệu vào kho",
   pmoai_import: "Nạp dữ liệu cho Trợ lý PMO",
   // ── Hiệu suất dự án ──
@@ -81,6 +84,7 @@ export const ACTION_LABEL: Record<string, string> = {
   perf_template: "Tải template hiệu suất",
   // ── Ma trận lắp đặt ──
   matrix_save_form: "Lưu form ma trận",
+  mtld_open: "Mở ma trận lắp đặt của dự án",
 };
 
 export function actionLabel(a: string): string {
