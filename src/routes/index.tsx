@@ -526,6 +526,16 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.97.0", date: "08/09/2026", items: [
+    "CỘT “NGÀY UPDATE” NAY LÀ NGÀY SỐ LIỆU THẬT SỰ ĐỔI, không còn là ngày người ta gõ tay trong nguồn. App tự chấm một mã rút gọn cho từng dòng (phần trăm thực tế, phần trăm dự kiến, số mã từng loại, số liệu Block, mốc bắt đầu / kết thúc, người phụ trách); lần nạp sau mã khác đi mới tính là có người sửa. Gõ lại ngày mà không sửa gì thì chip đứng yên. Dòng nào nguồn khai ngày mới mà số liệu đứng yên từ 7 ngày trở lên thì chip đeo viền cam và dấu ⌀; rê chuột thấy cả hai mốc.",
+    "MÁY TỰ CHẤM DẤU VÂN TAY FILE NGUỒN MỖI ĐÊM — hỏi thẳng Drive mã kiểm tra và giờ sửa của chính file Master Plan, nên trả lời được “hôm nay có ai đụng vào file không” mà không phụ thuộc ô ngày do PM tự điền.",
+    "SỬA LỖI ÂM THẦM LÀM MẤT NGÀY HOÀN THÀNH — một nhịp nạp trang rơi về dữ liệu mẫu (5 dự án) trong khi dữ liệu thật đã sẵn 549 dòng; các hàm đồng bộ chạy trúng nhịp đó sẽ xoá ngày lần đầu đạt 100% của cả bảng rồi ghi lại theo hôm nay. Nay mọi hàm ghi vào kho dùng chung đều khoá cổng khi app đang ở dữ liệu mẫu.",
+    "DST — NGUỒN DỮ LIỆU THÀNH DANH SÁCH, KHÔNG CÒN ĐÈ NHAU. Trước đây app chỉ ghim một nguồn nên ai nhập sau đè lên người trước, file test lỡ ghim là cả công ty thấy số test mà không có đường gỡ. Nay các nguồn cộng dồn vào cùng bảng, admin và PMO xoá được từng nguồn (có ghi nhật ký giám sát), tối đa 12 nguồn.",
+    "DST — BẤM “MỞ FILE GỐC” RA ĐÚNG FILE ĐANG XEM. Mỗi nguồn có link riêng; nguồn để “Tự động” hiện thêm tên tab app đã dò. Mốc “dữ liệu tính đến” lấy theo nguồn cũ nhất, vì bảng chỉ tươi bằng nguồn ì nhất. Panel nhập dữ liệu trên điện thoại trước đây lòi ra ngoài màn 151px, nay bám hai mép.",
+    "POPUP ẢNH / CLIP CHỈ NẠP 2 BẢN MỚI NHẤT MỖI CĂN để đối chiếu trước – sau, phần còn lại bấm mới nạp thêm; kho Drive vẫn giữ đủ.",
+    "THƯ MỤC ẢNH / CLIP ĐẶT THEO MÃ CT thay vì tên dự án, các dự án chung mã dùng chung một thư mục (đã đổi tên 16 thư mục và gộp 1 thư mục trên Drive).",
+    "SLIDE BÁO CÁO TỪNG DỰ ÁN — bỏ con số phần trăm gộp của dự án (các công đoạn không có trọng số nên số đó vô nghĩa); công đoạn không có vướng mắc thì để trống thay vì chép ghi chú cấp dự án xuống; phần “điểm nghẽn” nói bằng số ngày quá hạn, phần trăm công đoạn và công đoạn hạ nguồn đang bị chặn.",
+  ] },
   { v: "3.96.0", date: "07/09/2026", items: [
     "TẢI ẢNH / CLIP LÊN NAY BẮT BUỘC KÈM BÁO CÁO HIỆN TRẠNG. Chọn tệp xong app hỏi “đang làm tới đâu, vướng gì” — ghi một lần cho cả lô, chưa ghi thì nút tải lên còn khoá. Nội dung đó thành chú thích đầu tiên của từng tệp, kèm tên người và giờ gửi.",
     "CHÚ THÍCH ẢNH / CLIP GIỜ LÀ HỘP THOẠI như ô Vướng mắc / Giải pháp: nhiều người viết được vào cùng một ảnh, mỗi tin có ngày giờ và người viết; người viết, admin và PMO sửa hoặc xoá được. Hộp nằm ngay dưới khung xem nên đọc song song với hình.",
@@ -2955,15 +2965,24 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     // MỘT khoá nk() có thể ứng với NHIỀU dòng (dòng trùng mã giai đoạn). Gộp hết rồi mới băm —
     // ghi lẻ từng dòng thì hai dòng thay nhau ghi đè và client gửi lại vô tận.
     const gom: Record<string, string[]> = {};
+    const ngayKhai: Record<string, string> = {};
     for (const p of data.projects) for (const it of (p.allItems ?? p.items ?? [])) {
       const k = nk(it);
-      if (k) (gom[k] ??= []).push(oCoNghia(it));
+      if (!k) continue;
+      (gom[k] ??= []).push(oCoNghia(it));
+      // Ngày nguồn khai cho dòng này — dùng làm MỐC BAN ĐẦU, xem chỗ đặt `at` bên dưới.
+      const nk2 = (it.updateDate ?? p.updateDate ?? "").slice(0, 10);
+      if (nk2 && (!ngayKhai[k] || nk2 > ngayKhai[k])) ngayKhai[k] = nk2;
     }
     const entries: Record<string, { h: string; at: string }> = {};
     for (const [k, arr] of Object.entries(gom)) {
       const h = bam(arr.sort().join("|~|"));
       const cu = itemFp[k];
-      if (!cu || cu.h !== h) entries[k] = { h, at: today };
+      // LẦN ĐẦU thấy một dòng thì chưa biết nó đổi hôm nào, lấy ngày nguồn khai làm mốc tạm —
+      // lấy hôm nay là cả bảng hoá ra "vừa cập nhật" trong ngày bật tính năng, mất sạch tín hiệu.
+      // Từ lần sau, mã đổi mới ghi hôm nay, và đó mới là ngày số liệu thật sự đổi.
+      if (!cu) entries[k] = { h, at: ngayKhai[k] || today };
+      else if (cu.h !== h) entries[k] = { h, at: today };
     }
     const remove = Object.keys(itemFp).filter((k) => !gom[k]);
     const keys = Object.keys(entries);
@@ -7786,29 +7805,31 @@ function fmtDateTimeVN(iso: string | null | undefined): string {
  *  `date` là ngày người ta gõ tay trong nguồn. Hai thứ lệch nhau chính là chỗ cần nhìn: khai vừa
  *  cập nhật mà số không nhúc nhích thì chip đeo thêm dấu ⌀ và nói rõ trong chú thích. */
 function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; today: string; fpAt?: string }) {
-  if (!date) return <span className="text-[9px] text-slate-300">—</span>;
-  const d = Math.round(
+  if (!date && !fpAt) return <span className="text-[9px] text-slate-300">—</span>;
+  const cachNgay = (iso: string) => Math.round(
     (Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) -
-     Date.UTC(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10))) / 86400000,
+     Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))) / 86400000,
   );
+  /* NGÀY HIỆN RA LÀ NGÀY SỐ LIỆU THẬT SỰ ĐỔI (app tự chấm), không phải ngày người ta gõ tay
+     trong nguồn. Gõ lại ngày mà không sửa gì thì chip đứng yên — đó là điểm của cả tính năng.
+     Chưa chấm được dòng nào (nguồn mới, chưa qua lượt đối chiếu) thì lùi về ngày nguồn khai. */
+  const hien = fpAt || date!;
+  const d = cachNgay(hien);
   const tone =
     d <= 7  ? "bg-emerald-100 text-emerald-800"   // còn trong chu kỳ → đạt
     : d <= 14 ? "bg-amber-100 text-amber-800"     // lỡ 1 chu kỳ
     : d <= 21 ? "bg-orange-200 text-orange-900"   // lỡ 2 chu kỳ
     :           "bg-red-500 text-white";          // bỏ bê ≥3 chu kỳ
-  const dFp = fpAt
-    ? Math.round((Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) -
-        Date.UTC(+fpAt.slice(0, 4), +fpAt.slice(5, 7) - 1, +fpAt.slice(8, 10))) / 86400000)
-    : null;
-  // Khai ngày mới (≤7 ngày) nhưng số liệu đứng yên lâu hơn hẳn → đánh dấu để rà.
-  const khaiSuong = dFp != null && d <= 7 && dFp - d >= 7;
-  const chuThich = `Ngày ghi trong nguồn: ${fmtDateVN2(date)} (${d} ngày trước)`
-    + (dFp != null ? ` · Số liệu thật sự đổi lần cuối: ${fmtDateVN2(fpAt!)} (${dFp} ngày trước)` : "")
+  // Nguồn khai ngày mới hơn hẳn ngày số liệu đổi → đánh dấu để rà: chiếu lên mà không ai cập nhật.
+  const dKhai = date ? cachNgay(date) : null;
+  const khaiSuong = !!fpAt && dKhai != null && dKhai <= 7 && d - dKhai >= 7;
+  const chuThich = `Số liệu thật sự đổi lần cuối: ${fmtDateVN2(hien)} (${d} ngày trước)`
+    + (date && fpAt ? ` · Ngày ghi trong nguồn: ${fmtDateVN2(date)} (${dKhai} ngày trước)` : "")
     + (khaiSuong ? " — ghi ngày mới nhưng số liệu không đổi" : "");
   return (
-    <span className={`inline-block whitespace-nowrap rounded px-0.5 text-[9px] font-bold tabular-nums ${khaiSuong ? "bg-slate-200 text-slate-700 ring-1 ring-amber-400" : tone}`}
+    <span className={`inline-block whitespace-nowrap rounded px-0.5 text-[9px] font-bold tabular-nums ${khaiSuong ? "ring-1 ring-amber-400 " : ""}${tone}`}
           title={chuThich}>
-      {fmtDayMonth(date)}{khaiSuong ? " ⌀" : ""}
+      {fmtDayMonth(hien)}{khaiSuong ? " ⌀" : ""}
     </span>
   );
 }
