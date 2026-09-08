@@ -101,8 +101,12 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
+    /* KHÔNG có tên phòng = ảnh của CẢ DỰ ÁN (dự án chưa có ma trận nên không có căn để dắt về).
+       Khi đó tệp nằm thẳng trong thư mục dự án: <MÃ CT> › Hình ảnh | Video. Trước đây chặn cứng ở
+       đây nên mấy dự án chưa có ma trận không có đường đưa ảnh lên. */
     const can = safeCan(data.can);
-    if (!can) throw new Error("Thiếu tên phòng.");
+    const caDuAn = !can;
+    const tienTo = can || (data.maCT || "").split(/[,;/]/)[0].replace(/\s+/g, "").toUpperCase() || "DuAn";
     // CHÚ THÍCH LÀ BẮT BUỘC: tải ảnh/clip lên đồng thời phải nói hiện trạng đang tới đâu. Chặn ở
     // SERVER chứ không riêng ở nút bấm — người dùng gọi thẳng API vẫn không lách được.
     const loi = capNganMsg(data.caption);
@@ -112,8 +116,8 @@ export const startCanMediaUpload = createServerFn({ method: "POST" })
     const tin = JSON.stringify([{ id: rid6() + Date.now().toString(36).slice(-4), text: loi, author: nguoi, at: new Date().toISOString() }]);
     const d = new Date(Date.now() + 7 * 3600_000); const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${p2(d.getUTCDate())}-${p2(d.getUTCMonth() + 1)}-${String(d.getUTCFullYear()).slice(2)}`;
-    const name = `${can}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
-    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, data.toa || "", can, data.kind, data.hid, data.maCT), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin, tin);
+    const name = `${tienTo}_${stamp}_${rid6()}.${cleanExt(data.ext)}`;   // rand → up nhiều file 1 lượt không trùng tên
+    const { uploadUrl } = await drive.driveCreateResumableSession(mediaPath(drive, data.project, caDuAn ? "" : (data.toa || ""), can, data.kind, data.hid, data.maCT), name, data.mime || (data.kind === "photo" ? "image/jpeg" : "video/mp4"), data.origin, tin);
     return { uploadUrl, name };
   });
 

@@ -129,6 +129,10 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
   }, [wantProject, list]);
 
   const [pick, setPick] = useState<{ project?: string; toa?: string; can: string; scope: "can" | "project" } | null>(null);
+  /* Dự án chưa có ma trận: không có bảng để bấm, nên mở THẲNG kho ảnh của dự án — trong đó đã có sẵn
+     nút tải ảnh và tải video. Khác dự án có ma trận đúng một chỗ: không dắt về từng căn.
+     Chỉ tự mở khi ĐỔI dự án, để đóng popup lại rồi thì không bị mở đè liên tục. */
+  const daMoRef = useRef<string>("");
 
   // ADMIN/PMO được "chỉnh như Excel" ma trận của màn này (ẩn dòng/cột thừa, cỡ hàng-cột, sửa chữ, tô màu).
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
@@ -147,6 +151,15 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
     enabled: !!sel, staleTime: 5 * 60 * 1000,
   });
   const isZone = !!regionQ.data && zonesOfSheet(regionQ.data.sh, regionQ.data.range).length > 0;
+
+  useEffect(() => {
+    if (!chiXem) { daMoRef.current = ""; return; }
+    const ten = selKmt?.name || sel?.name || "";
+    if (!ten || daMoRef.current === selId) return;
+    daMoRef.current = selId;
+    setPick({ toa: "", can: "", scope: "project" });
+    track("media_project", ten);
+  }, [chiXem, selId, selKmt, sel]);
 
   const narrowTop = useIsMobile();   // dien thoai: thanh tren thu gon, bo nut phu
   return (
@@ -205,12 +218,12 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
           <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
             <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{selKmt?.name || sel?.name}</div>
             <div style={{ marginTop: 6, fontSize: 13, color: C.sub, lineHeight: 1.7 }}>
-              Dự án chưa có ma trận lắp đặt nên không có bảng để bấm về từng căn.
-              <br />Ảnh và clip của dự án gom chung một kho — vẫn bắt buộc kèm báo cáo hiện trạng khi tải lên.
+              Kho ảnh của dự án đang mở sẵn. Dự án chưa có ma trận nên ảnh và clip gom chung một kho,
+              không chia theo từng căn — mọi thứ còn lại giống hệt, vẫn bắt buộc kèm báo cáo hiện trạng khi tải lên.
             </div>
             <button type="button" onClick={() => { const ten = selKmt?.name || sel?.name || ""; setPick({ toa: "", can: "", scope: "project" }); track("media_project", ten); }}
               style={{ marginTop: 16, border: "none", borderRadius: 10, padding: "11px 20px", background: C.tealD, color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}>
-              🖼 Mở kho ảnh của dự án
+              🖼 Mở lại kho ảnh của dự án
             </button>
           </div>
         ) : listQ.isPending ? (
@@ -226,7 +239,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         ) : null}
       </div>
 
-      {pick && <CanMediaDialog project={pick.project ?? selKmt?.name ?? sel?.name ?? ""}
+      {pick && <CanMediaDialog choTaiCaDuAn={chiXem && pick.scope === "project"} project={pick.project ?? selKmt?.name ?? sel?.name ?? ""}
         hid={pick.project ? undefined : (selKmt?.hid ?? sel?.hid)} maCT={selKmt?.maCT ?? sel?.maCT}
         projKey={pick.project ? `N:${pick.project}` : (selKmt ? kmtId(selKmt) : (sel ? projId(sel) : ""))}
         initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
@@ -627,7 +640,10 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
 /** POPUP MEDIA CỦA 1 PHÒNG / KHU — MỘT KHO CHUNG: ảnh và video nằm CÙNG một danh sách.
  *  Bố cục: khung xem LỚN ở trên (ảnh thì hiện ảnh, video thì phát video) + dải thumbnail CUỘN NGANG ở
  *  dưới, bấm qua lại từng cái; có nút ‹ › và phím ←/→. Toà + Phòng vẫn sửa tay được để không gắn nhầm. */
-export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initialCan, scope, onClose }: { project: string; hid?: string; maCT?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project"; onClose: () => void }) {
+export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initialCan, scope, choTaiCaDuAn, onClose }: { project: string; hid?: string; maCT?: string; projKey: string; initialToa: string; initialCan: string; scope: "can" | "project";
+  /** Dự án CHƯA CÓ ma trận: cho tải ảnh/video ngay ở mức DỰ ÁN (không có căn để dắt về).
+   *  Dự án có ma trận vẫn giữ nguyên luật cũ — muốn thêm thì bấm đúng ô căn, một lối lên duy nhất. */
+  choTaiCaDuAn?: boolean; onClose: () => void }) {
   const narrow = useIsMobile();   // dien thoai: popup chiem tron man, video duoc het be ngang
   // DIEN THOAI: o Toa/Phong + 2 nut tai len an sau nut "+", vi chung an mat 3 dong header (~230px
   // tren man 900px) trong khi xem clip khong dung toi. Bam "+" moi mo ra de tai anh/video.
@@ -739,7 +755,8 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
   }, [scope, cur]);
 
   async function onFiles(kind: "photo" | "video", arr: File[], chuThich: string) {
-    if (!arr.length || !can.trim() || !chuThich.trim()) return;
+    // Dự án chưa có ma trận thì KHÔNG có tên phòng — vẫn cho tải, tệp nằm ở mức dự án.
+    if (!arr.length || (!can.trim() && !choTaiCaDuAn) || !chuThich.trim()) return;
     const hong: string[] = [];              // tệp tải KHÔNG xong — phải nói ra, không được nuốt
     const xong: string[] = [];              // tệp tải XONG — ghi TÊN vào nhật ký, không chỉ đếm
     for (let i = 0; i < arr.length; i++) {
@@ -825,7 +842,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
           <div style={{ minWidth: 0 }}>
             {!narrow && (
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".05em", opacity: .75, textTransform: "uppercase" }}>
-                📁 {scope === "can" ? "Media phòng" : "Toàn bộ media dự án"} · {project}
+                📁 {scope === "can" ? "Media phòng" : choTaiCaDuAn ? "Ảnh & clip của dự án" : "Toàn bộ media dự án"} · {project}
               </div>
             )}
             <div style={{ display: narrow && scope === "can" && !upOpen ? "none" : "flex", alignItems: "center", gap: 7, marginTop: 3, flexWrap: "wrap" }}>
@@ -844,12 +861,12 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
             </div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
-            {scope === "can" && narrow && (
+            {(scope === "can" || choTaiCaDuAn) && narrow && (
               <button type="button" onClick={() => setUpOpen((v) => !v)}
                 style={{ ...upBtn, width: 34, padding: 0, justifyContent: "center", fontSize: 18 }}
                 title={upOpen ? "Đóng khung tải lên" : "Tải ảnh / video"}>{upOpen ? "−" : "＋"}</button>
             )}
-            {scope === "can" && (!narrow || upOpen) && <>
+            {(scope === "can" || choTaiCaDuAn) && (!narrow || upOpen) && <>
               {/* Chọn tệp xong KHÔNG tải ngay: mở hộp "Báo cáo hiện trạng" — ghi một lần cho cả lô. */}
               <label style={upBtn}>＋ Tải ảnh
                 <input type="file" accept="image/*" multiple style={{ display: "none" }}
@@ -872,7 +889,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
                 Báo cáo hiện trạng · {cho.files.length} {cho.kind === "photo" ? "ảnh" : "clip"}
               </span>
               <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.6)" }}>
-                {toa.trim() ? toa.trim() + " · " : ""}{can.trim()} — bắt buộc, ghi một lần cho cả lô
+                {toa.trim() ? toa.trim() + " · " : ""}{can.trim() || project} — bắt buộc, ghi một lần cho cả lô
               </span>
             </div>
             <textarea autoFocus value={choCap} onChange={(e) => setChoCap(e.target.value)} rows={narrow ? 3 : 2}
@@ -910,7 +927,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
             <div style={{ color: "#94a3b8", fontSize: 13.5, textAlign: "center", padding: 20 }}>
               {scope === "can" ? "Phòng / khu này chưa có ảnh hoặc video." : "Dự án này chưa có ảnh hoặc video nào."}<br />
               <span style={{ fontSize: 12, opacity: .8 }}>
-                {scope === "can" ? "Dùng nút “＋ Tải ảnh” / “＋ Tải video” ở trên để thêm."
+                {scope === "can" || choTaiCaDuAn ? "Dùng nút “＋ Tải ảnh” / “＋ Tải video” ở trên để thêm."
                   : "Thêm ảnh / video ở app “Hình ảnh mỗi ngày” — bấm đúng ô căn trên ma trận."}
               </span>
             </div>
