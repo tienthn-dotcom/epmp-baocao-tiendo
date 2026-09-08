@@ -1497,7 +1497,7 @@ function Dashboard() {
       <DataModeToast mode={dataMode} freshAt={freshAt} error={error?.message ?? null} />
       <main className="mx-auto w-full max-w-[1600px] px-3 py-3 2xl:px-6 print:p-0 print:max-w-none">
         <h1 className="sr-only">Báo cáo tổng hợp tình trạng phối hợp</h1>
-        {data && <DashboardBody data={data} thresholds={thresholds} onOpenSource={() => setSettingsOpen(true)} />}
+        {data && <DashboardBody data={data} dataMode={dataMode} thresholds={thresholds} onOpenSource={() => setSettingsOpen(true)} />}
       </main>
 
 
@@ -2309,7 +2309,10 @@ function DataQualityBody({ checks, stats }: { checks: DataQualityCheck[]; stats?
   );
 }
 
-function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; thresholds: Thresholds; onOpenSource: () => void }) {
+/** `dataMode` — đang xem dữ liệu THẬT (live/cache) hay DEMO. Mọi effect ghi vào kho dùng chung
+ *  phải chặn ở "demo": app có nhịp render rơi về demo giữa chừng, ghi trúng nhịp đó là hỏng dữ liệu
+ *  của mọi người (đo được 549 → 5 → 549 dự án trong một lần nạp trang). */
+function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: ReportData; dataMode: "live" | "cache" | "demo"; thresholds: Thresholds; onOpenSource: () => void }) {
   const today = data.refDate || todayIso();
 
   // BẢN chạy (live/dev). Bắt đầu là "live" (SSR + lần render đầu → ẩn tính năng dở, kể cả
@@ -2891,6 +2894,11 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
 
   useEffect(() => {
     if (!remapReady) return; // chờ di trú khoá xong mới sync (tránh XOÁ nhầm khoá tên cũ)
+    /* CỔNG DỮ LIỆU THẬT (08/09). App có nhịp render rơi về DEMO (5 dự án) giữa lúc dữ liệu thật
+       549 dòng đã sẵn — đo được bằng log: 549 → 5 → 549. Effect này XOÁ mọi khoá không thấy trong
+       data.projects, nên chạy trúng nhịp demo là xoá sạch ngày kết thúc thực tế của 549 dòng rồi
+       ghi lại theo ngày hôm nay. Chỉ đồng bộ khi đang xem dữ liệu thật (live hoặc cache). */
+    if (dataMode === "demo") return;
     if (completedQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {};
     const seenDone = new Set<string>();
@@ -2908,7 +2916,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         queryClient.setQueryData(["completedDates"], r.completed);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [remapReady, data.projects, completedDates, completedQuery.isLoading, today, queryClient, nk]);
+  }, [remapReady, dataMode, data.projects, completedDates, completedQuery.isLoading, today, queryClient, nk]);
 
   /* ── VÂN TAY ĐẦU VIỆC — "dòng này lần cuối THẬT SỰ đổi là ngày nào" ─────────────────
      Cột "Ngày update" do người ta tự gõ trong nguồn; gõ lại ngày mà không sửa gì thì app vẫn tưởng
@@ -2927,6 +2935,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
 
   useEffect(() => {
     if (!remapReady || fpQuery.isLoading || !data.projects.length) return;
+    if (dataMode === "demo") return;   // xem [[dataMode]] ngay dưới — tuyệt đối không ghi từ dữ liệu demo
     if (fpSoLuot.current >= 3) return;
 
     /** Băm 32-bit (FNV-1a) — đủ phân biệt, gọn để nhét cả nghìn dòng vào KV. */
@@ -2970,7 +2979,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         queryClient.setQueryData(["itemFp"], r.fps);
       } catch { /* chấm vân tay là việc phụ — hỏng thì bảng vẫn chạy như thường */ }
     })();
-  }, [remapReady, fpQuery.isLoading, data.projects, itemFp, today, queryClient, nk]);
+  }, [remapReady, dataMode, fpQuery.isLoading, data.projects, itemFp, today, queryClient, nk]);
 
   /* ── ÁP CHỈNH SỬA vào dữ liệu TRƯỚC mọi phép tính (lọc/phân loại/bảng/PDF
      đều tiêu thụ effectiveItems — sửa Deadline sẽ tự tính lại Quá hạn,
