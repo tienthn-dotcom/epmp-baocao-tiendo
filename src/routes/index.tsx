@@ -55,6 +55,7 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
+import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -2909,6 +2910,68 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
     })();
   }, [remapReady, data.projects, completedDates, completedQuery.isLoading, today, queryClient, nk]);
 
+  /* ── VÂN TAY ĐẦU VIỆC — "dòng này lần cuối THẬT SỰ đổi là ngày nào" ─────────────────
+     Cột "Ngày update" do người ta tự gõ trong nguồn; gõ lại ngày mà không sửa gì thì app vẫn tưởng
+     vừa cập nhật. Ở đây chấm mã rút gọn của từng dòng, lần nạp sau mã khác mới tính là có người sửa.
+     Xem [[project-mp-update-deadline-logic]] và khối itemfp:v1 trong edits.functions.ts. */
+  const fpQuery = useQuery({
+    queryKey: ["itemFp"],
+    queryFn: async (): Promise<ItemFpMap> => (await fetchItemFp()).fps ?? {},
+    staleTime: 60_000,
+  });
+  const itemFp: ItemFpMap = useMemo(() => fpQuery.data ?? {}, [fpQuery.data]);
+  // Hai cái chốt chống lặp (08/09 đã đo hơn 500 lượt gọi trong một phiên): nhớ MỌI chữ ký đã gửi,
+  // và trần số lượt gửi mỗi phiên. Vòng so sánh không hội tụ thì dừng hẳn, thay vì nện KV.
+  const fpDaGui = useRef<Set<string>>(new Set());
+  const fpSoLuot = useRef(0);
+
+  useEffect(() => {
+    if (!remapReady || fpQuery.isLoading || !data.projects.length) return;
+    if (fpSoLuot.current >= 3) return;
+
+    /** Băm 32-bit (FNV-1a) — đủ phân biệt, gọn để nhét cả nghìn dòng vào KV. */
+    const bam = (raw: string) => {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+      return (h >>> 0).toString(36);
+    };
+    /** Chỉ lấy ô phản ánh tiến độ thật. Sửa mô tả hay đổi thứ tự dòng KHÔNG tính là cập nhật. */
+    const oCoNghia = (it: ItemRow) => [
+      it.pctActual ?? "", it.pctPlan ?? "",
+      (it.codeCounts ?? []).map((c) => `${c.label}:${c.done}/${c.total}`).sort().join(","),
+      (it.blocks ?? []).map((b) => `${b.code}:${b.pctActual ?? ""}`).sort().join(","),
+      it.start ?? "", it.deadline ?? "", it.owner ?? "",
+    ].join("|");
+
+    // MỘT khoá nk() có thể ứng với NHIỀU dòng (dòng trùng mã giai đoạn). Gộp hết rồi mới băm —
+    // ghi lẻ từng dòng thì hai dòng thay nhau ghi đè và client gửi lại vô tận.
+    const gom: Record<string, string[]> = {};
+    for (const p of data.projects) for (const it of (p.allItems ?? p.items ?? [])) {
+      const k = nk(it);
+      if (k) (gom[k] ??= []).push(oCoNghia(it));
+    }
+    const entries: Record<string, { h: string; at: string }> = {};
+    for (const [k, arr] of Object.entries(gom)) {
+      const h = bam(arr.sort().join("|~|"));
+      const cu = itemFp[k];
+      if (!cu || cu.h !== h) entries[k] = { h, at: today };
+    }
+    const remove = Object.keys(itemFp).filter((k) => !gom[k]);
+    const keys = Object.keys(entries);
+    if (!keys.length && !remove.length) return;
+
+    const chuKy = bam(`${keys.sort().map((k) => `${k}=${entries[k].h}`).join("|")}#${remove.sort().join("|")}`);
+    if (fpDaGui.current.has(chuKy)) return;   // đã gửi đúng lô này rồi mà vẫn thấy lệch → dừng
+    fpDaGui.current.add(chuKy);
+    fpSoLuot.current += 1;
+    void (async () => {
+      try {
+        const r = await syncItemFp({ data: { entries, remove } });
+        queryClient.setQueryData(["itemFp"], r.fps);
+      } catch { /* chấm vân tay là việc phụ — hỏng thì bảng vẫn chạy như thường */ }
+    })();
+  }, [remapReady, fpQuery.isLoading, data.projects, itemFp, today, queryClient, nk]);
+
   /* ── ÁP CHỈNH SỬA vào dữ liệu TRƯỚC mọi phép tính (lọc/phân loại/bảng/PDF
      đều tiêu thụ effectiveItems — sửa Deadline sẽ tự tính lại Quá hạn,
      % dự kiến và nhãn Tình trạng theo đúng luật hiện hành). ── */
@@ -4204,6 +4267,7 @@ function DashboardBody({ data, thresholds, onOpenSource }: { data: ReportData; t
         hiddenCount={hiddenKeys.size}
         onHideRow={onHideRow}
         completedDates={completedDates}
+        itemFp={itemFp}
         onMsgOp={msgOp}
         onPrint={(o, mode) => { void doPrint(o, mode); }}
         onExportExcel={async () => {
@@ -5557,7 +5621,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -5610,6 +5674,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   onHideRow: (key: string, label: string, hide: boolean) => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
+  /** Vân tay đầu việc — ngày SỐ LIỆU của dòng thật sự đổi lần cuối (chip ngày update đọc ở đây). */
+  itemFp: ItemFpMap;
   onPrint: (orientation: "landscape" | "portrait", mode: "download" | "preview") => void;
   onExportExcel: () => void | Promise<void>;
   /** Lưu chỉnh sửa (Vướng mắc/PIC/Deadline) lên backend dùng chung. */
@@ -5984,7 +6050,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             nút ẨN (hiện khi rê chuột, admin + PMO) / BỎ ẨN (khi đang soi dòng ẩn) — print:hidden nên
             KHÔNG lọt vào PDF/Excel. */}
         <td className="border-r border-slate-100 px-1 py-1 text-center">
-          {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} />}
+          {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} fpAt={itemFp[it._key]?.at} />}
           {canHideRow && (it._hidden ? (
             <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
               onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, false); }}
@@ -6144,7 +6210,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         <tr key={`blk-${blkKey}-${bi}`} className={`group border-b border-slate-100 align-middle hover:bg-teal-50/60 ${bit._hidden ? "bg-amber-50/60 opacity-60 hover:opacity-100" : "bg-teal-50/30"}`}
             title={bit._hidden ? "Dòng con đã ẩn thủ công — bấm 'Bỏ ẩn' để đưa lại vào báo cáo" : undefined}>
           <td className="border-r border-slate-100 px-1 py-0.5 text-center">
-            {!groupMode && !bit._hidden && <UpdateChip date={bit.updateDate} today={today} />}
+            {!groupMode && !bit._hidden && <UpdateChip date={bit.updateDate} today={today} fpAt={itemFp[bit._key]?.at} />}
             {/* ẨN / BỎ ẨN DÒNG CON — trước đây chỉ dòng hạng mục CHA mới có nút này, dòng con
                 ("↳ …") thì không ai ẩn được, kể cả admin. Cùng quyền, cùng kho `hidden:v1`. */}
             {canHideRow && (bit._hidden ? (
@@ -7707,7 +7773,10 @@ function fmtDateTimeVN(iso: string | null | undefined): string {
 /** Chip NGÀY UPDATE — thông tin phụ, hiện nhỏ như badge ✎ bên cột Vướng mắc.
  *  Thang màu xanh lá → đỏ theo ĐỘ CŨ, chia theo CHU KỲ TUẦN (7 ngày) cho khớp luật
  *  tuân thủ ("quá 7 ngày = không cập nhật"): càng nhiều chu kỳ bỏ lỡ càng đỏ. */
-function UpdateChip({ date, today }: { date: string | null | undefined; today: string }) {
+/** Chip ngày update. `fpAt` = ngày SỐ LIỆU thật sự đổi (app tự chấm bằng vân tay dòng), khác với
+ *  `date` là ngày người ta gõ tay trong nguồn. Hai thứ lệch nhau chính là chỗ cần nhìn: khai vừa
+ *  cập nhật mà số không nhúc nhích thì chip đeo thêm dấu ⌀ và nói rõ trong chú thích. */
+function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; today: string; fpAt?: string }) {
   if (!date) return <span className="text-[9px] text-slate-300">—</span>;
   const d = Math.round(
     (Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) -
@@ -7718,10 +7787,19 @@ function UpdateChip({ date, today }: { date: string | null | undefined; today: s
     : d <= 14 ? "bg-amber-100 text-amber-800"     // lỡ 1 chu kỳ
     : d <= 21 ? "bg-orange-200 text-orange-900"   // lỡ 2 chu kỳ
     :           "bg-red-500 text-white";          // bỏ bê ≥3 chu kỳ
+  const dFp = fpAt
+    ? Math.round((Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) -
+        Date.UTC(+fpAt.slice(0, 4), +fpAt.slice(5, 7) - 1, +fpAt.slice(8, 10))) / 86400000)
+    : null;
+  // Khai ngày mới (≤7 ngày) nhưng số liệu đứng yên lâu hơn hẳn → đánh dấu để rà.
+  const khaiSuong = dFp != null && d <= 7 && dFp - d >= 7;
+  const chuThich = `Ngày ghi trong nguồn: ${fmtDateVN2(date)} (${d} ngày trước)`
+    + (dFp != null ? ` · Số liệu thật sự đổi lần cuối: ${fmtDateVN2(fpAt!)} (${dFp} ngày trước)` : "")
+    + (khaiSuong ? " — ghi ngày mới nhưng số liệu không đổi" : "");
   return (
-    <span className={`inline-block whitespace-nowrap rounded px-0.5 text-[9px] font-bold tabular-nums ${tone}`}
-          title={`Cập nhật gần nhất: ${fmtDateVN2(date)} (${d} ngày trước)`}>
-      {fmtDayMonth(date)}
+    <span className={`inline-block whitespace-nowrap rounded px-0.5 text-[9px] font-bold tabular-nums ${khaiSuong ? "bg-slate-200 text-slate-700 ring-1 ring-amber-400" : tone}`}
+          title={chuThich}>
+      {fmtDayMonth(date)}{khaiSuong ? " ⌀" : ""}
     </span>
   );
 }

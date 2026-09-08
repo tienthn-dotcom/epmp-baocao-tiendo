@@ -501,6 +501,73 @@ export const syncCompletedDates = createServerFn({ method: "POST" })
     return { completed: map, changed };
   });
 
+/* ══ VÂN TAY ĐẦU VIỆC — "dòng này lần cuối THẬT SỰ đổi là ngày nào" ══
+   Cột "Ngày update" trong nguồn do người ta tự gõ, gõ lại ngày mà không sửa gì thì app vẫn tưởng
+   vừa cập nhật. Ở đây app chấm một mã rút gọn từ các ô có nghĩa (phần trăm, số mã, mốc ngày…);
+   lần nạp sau mã khác đi mới tính là có người sửa thật.
+
+   Chấm ở CLIENT vì client vốn đã mở file nguồn — worker mở .xlsx là chắc chắn Error 1102. Server
+   chỉ giữ giùm và chỉ ghi phần đổi.
+
+   BÀI HỌC 08/09: một khoá nk() có thể ứng với NHIỀU dòng (dòng con, dòng trùng mã). Nếu mỗi lượt
+   chỉ ghi mã của MỘT dòng thì hai dòng thay nhau ghi đè, client thấy "khác" mãi và gửi vô tận —
+   đã đo hơn 500 lượt gọi trong một phiên. Vì vậy client PHẢI gộp mọi dòng cùng khoá thành một mã
+   duy nhất trước khi gửi, và server chốt thêm trần số khoá. */
+export type ItemFpMap = Record<string, { h: string; at: string }>;
+const ITEMFP_KEY = "itemfp:v1";
+const DEV_ITEMFP_FILE = ".data/pmo-itemfp.json";
+const ITEMFP_MAX = 8000;   // trần số dòng theo dõi — quá thì bỏ phần cũ nhất, khỏi phình KV
+
+async function readItemFp(): Promise<ItemFpMap> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(ITEMFP_KEY); return raw ? (JSON.parse(raw) as ItemFpMap) : {}; }
+  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_ITEMFP_FILE, "utf8")) as ItemFpMap; }
+  catch { return {}; }
+}
+async function writeItemFp(map: ItemFpMap): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(ITEMFP_KEY, JSON.stringify(map)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_ITEMFP_FILE, JSON.stringify(map, null, 2), "utf8");
+}
+
+export const fetchItemFp = createServerFn({ method: "GET" }).handler(async () => {
+  return { fps: await readItemFp() };
+});
+
+/** Ghi vân tay đổi + xoá dòng đã biến mất. Trả về TOÀN BỘ bản đồ để client khỏi đoán. */
+export const syncItemFp = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      entries: z.record(z.string().min(1).max(600), z.object({
+        h: z.string().min(1).max(24),
+        at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })).refine((o) => Object.keys(o).length <= 4000, "quá nhiều dòng trong một lượt"),
+      remove: z.array(z.string().min(1).max(600)).max(4000).optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const map = await readItemFp();
+    let changed = 0;
+    for (const [k, v] of Object.entries(data.entries)) {
+      const cu = map[k];
+      // Lần đầu thấy dòng: ghi mã, lấy hôm nay làm mốc. Mã đổi: dời mốc sang hôm nay.
+      if (!cu) { map[k] = v; changed++; }
+      else if (cu.h !== v.h) { map[k] = v; changed++; }
+    }
+    for (const k of data.remove ?? []) if (map[k]) { delete map[k]; changed++; }
+    const keys = Object.keys(map);
+    if (keys.length > ITEMFP_MAX) {
+      // Bỏ phần có mốc cũ nhất — dòng lâu không đổi thì cũng hết ý nghĩa theo dõi.
+      keys.sort((a, b) => (map[a].at < map[b].at ? -1 : 1));
+      for (const k of keys.slice(0, keys.length - ITEMFP_MAX)) delete map[k];
+      changed++;
+    }
+    if (changed > 0) await writeItemFp(map);
+    return { fps: map, changed };
+  });
+
 /* ── MỎ NEO NOTE (chống & phát hiện "trôi" note) ──
    Mỗi note (vướng mắc/giải pháp) NHỚ nó đang gắn ở ĐÂU: "maCT||tên dự án||giai đoạn||mô tả".
    Ghi LẦN ĐẦU (baseline) rồi giữ. Mỗi lần nạp nguồn, client so mỏ neo đã nhớ với vị trí HIỆN TẠI của
