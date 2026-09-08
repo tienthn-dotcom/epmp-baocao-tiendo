@@ -24,7 +24,9 @@ export type DetailNode = {
   week: string[];         // lưới tuần (giá trị từng cột tuần)
   children: DetailNode[];
 };
-export type DetailProject = DetailNode & { maCT: string; groupDA: string; location: string };
+/** `srcId` — nguon (file) da sinh ra du an nay. DST gop nhieu nguon vao mot bang nen moi dong phai
+ *  nho minh tu dau ra: xoa mot nguon la go dung phan cua nguon do, va nut "Mo file goc" tro dung file. */
+export type DetailProject = DetailNode & { maCT: string; groupDA: string; location: string; srcId?: string };
 export type DetailPlan = { weeks: string[]; projects: DetailProject[] };
 
 type Row = (string | number | null)[];

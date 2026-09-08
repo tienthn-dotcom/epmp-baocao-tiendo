@@ -1121,6 +1121,80 @@ export const saveDstSource = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+
+/* ══ DANH SÁCH NGUỒN DST — mỗi lần nhập link là THÊM một nguồn, dữ liệu các nguồn cộng dồn ══
+   Trước 08/09 DST chỉ ghim ĐÚNG MỘT nguồn (`dst:source:v1`): ai nhập sau đè lên người nhập trước,
+   file test ghim nhầm là cả công ty thấy số test và không có đường gỡ. Nay giữ một DANH SÁCH; admin
+   và PMO xoá được từng nguồn (nút thùng rác trong bảng "Nguồn dữ liệu").
+
+   Nguồn cũ (`dst:source:v1`) tự chuyển thành phần tử đầu của danh sách ở lần đọc đầu tiên, nên link
+   đang ghim không mất. Đọc CÔNG KHAI; THÊM/XOÁ chỉ ADMIN/PMO. */
+export type DstSourceItem = { id: string; fileId: string; gid?: string; sheet?: string; full?: boolean; tag?: string; addedAt: string; addedBy?: string };
+const DST_SOURCES_KEY = "dst:sources:v1";
+const DEV_DSTSOURCES_FILE = ".data/pmo-dst-sources.json";
+const DST_MAX_SOURCES = 12;   // mỗi nguồn là một file .xlsx tải + parse ở client — nhiều quá là treo máy người xem
+
+async function readDstSources(): Promise<DstSourceItem[]> {
+  const kv = await getKv();
+  let list: DstSourceItem[] = [];
+  if (kv) { const raw = await kv.get(DST_SOURCES_KEY); if (raw) { try { list = JSON.parse(raw) as DstSourceItem[]; } catch { list = []; } } }
+  else {
+    try { const fs = await import("node:fs/promises"); list = JSON.parse(await fs.readFile(DEV_DSTSOURCES_FILE, "utf8")) as DstSourceItem[]; } catch { list = []; }
+  }
+  if (list.length) return list;
+  // Chưa có danh sách → nâng nguồn đơn đời cũ lên thành phần tử đầu (không ghi lại, để lần THÊM sau tự ghi).
+  const cu = await readDstSource();
+  return cu ? [{ id: "cu", fileId: cu.fileId, gid: cu.gid, sheet: cu.sheet, full: cu.full, addedAt: "" }] : [];
+}
+async function writeDstSources(list: DstSourceItem[]): Promise<void> {
+  const kv = await getKv();
+  if (kv) { await kv.put(DST_SOURCES_KEY, JSON.stringify(list)); return; }
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(".data", { recursive: true });
+  await fs.writeFile(DEV_DSTSOURCES_FILE, JSON.stringify(list, null, 2), "utf8");
+}
+
+export const listDstSources = createServerFn({ method: "GET" }).handler(async (): Promise<{ sources: DstSourceItem[] }> => ({ sources: await readDstSources() }));
+
+/** THÊM một nguồn vào danh sách (trùng fileId + sheet + gid thì cập nhật tại chỗ, không nhân bản). */
+export const addDstSource = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/),
+    gid: z.string().max(30).regex(/^\d*$/).optional(),
+    sheet: z.string().max(120).regex(/^[^\n\r]*$/).optional(),
+    full: z.boolean().optional(),
+    tag: z.string().max(120).optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ sources: DstSourceItem[] }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được thêm nguồn DST.");
+    const list = await readDstSources();
+    const same = (x: DstSourceItem) => x.fileId === data.fileId && (x.sheet ?? "") === (data.sheet ?? "") && (x.gid ?? "") === (data.gid ?? "");
+    const moi: DstSourceItem = {
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      fileId: data.fileId,
+      ...(data.gid ? { gid: data.gid } : {}), ...(data.sheet ? { sheet: data.sheet } : {}),
+      ...(data.full ? { full: true } : {}), ...(data.tag ? { tag: data.tag } : {}),
+      addedAt: new Date().toISOString(), addedBy: (await callerEmail(data.devAs)) ?? undefined,
+    };
+    const i = list.findIndex(same);
+    if (i >= 0) list[i] = { ...moi, id: list[i].id };
+    else list.push(moi);
+    if (list.length > DST_MAX_SOURCES) throw new Error(`Tối đa ${DST_MAX_SOURCES} nguồn — xoá bớt nguồn cũ rồi thêm.`);
+    await writeDstSources(list);
+    return { sources: list };
+  });
+
+/** XOÁ một nguồn khỏi danh sách — đường gỡ dữ liệu test đã lỡ nhập. */
+export const deleteDstSource = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ id: z.string().min(1).max(60), devAs: z.string().nullable().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ sources: DstSourceItem[] }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được xoá nguồn DST.");
+    const list = (await readDstSources()).filter((x) => x.id !== data.id);
+    await writeDstSources(list);
+    return { sources: list };
+  });
+
 /* ── FORM MA TRẬN (admin "chỉnh như Excel") — kho KV `sheetform:v1` = { [formKey]: FormSpec }. FORM = bố cục
    người dùng (độ rộng cột / cao dòng), màu theo MÃ + theo Ô, chữ đè, ẩn cột/dòng — ĐÈ lên dữ liệu SỐNG. Lưu
    1 form / 1 link (formKey = "fid::sheet::range") → số liệu đổi vẫn giữ nguyên bố cục ("bê form lên data khác").

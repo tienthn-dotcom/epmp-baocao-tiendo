@@ -8,10 +8,10 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink, SlidersHorizontal, Trash2 } from "lucide-react";
 import { getSummaryFile, listSheetTabs } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
-import { fetchUserRoles, getDstSource, saveDstSource } from "@/lib/edits.functions";
+import { fetchUserRoles, listDstSources, addDstSource, deleteDstSource, type DstSourceItem } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { parseDetailPlan, type DetailNode, type DetailProject } from "@/lib/detail-plan";
 import { track } from "@/lib/track";
@@ -216,13 +216,29 @@ function stampInfo(ts: number): { abs: string; rel: string } {
 export function DetailPlanApp() {
   const qc = useQueryClient();
   const [refreshN, setRefreshN] = useState(0);
-  // NGUỒN đã lưu (KV) — link PMO import DÍNH CỨNG đến khi đổi link; chưa lưu gì → về file mẫu.
-  const srcQuery = useQuery({ queryKey: ["dst-source"], queryFn: () => getDstSource(), staleTime: 5 * 60 * 1000 });
-  const saved = srcQuery.data?.source ?? null;
-  const activeSrc = saved ?? { fileId: SAMPLE_FILE, gid: SAMPLE_GID as string | undefined, sheet: undefined as string | undefined, full: undefined as boolean | undefined };
+  /* NGUỒN (KV `dst:sources:v1`) — DANH SÁCH, mỗi lần nhập link là thêm một nguồn và dữ liệu các nguồn
+     CỘNG DỒN vào cùng bảng. Trước đây chỉ ghim một nguồn nên ai nhập sau đè lên người nhập trước, file
+     test lỡ ghim là không có đường gỡ. Chưa có nguồn nào → về file mẫu. */
+  const srcQuery = useQuery({ queryKey: ["dst-sources"], queryFn: () => listDstSources(), staleTime: 5 * 60 * 1000 });
+  const sources: DstSourceItem[] = useMemo(() => srcQuery.data?.sources ?? [], [srcQuery.data]);
+  const activeList: DstSourceItem[] = useMemo(
+    () => (sources.length ? sources : [{ id: "mau", fileId: SAMPLE_FILE, gid: SAMPLE_GID, addedAt: "" }]),
+    [sources],
+  );
+  const srcKey = activeList.map((x) => `${x.fileId}|${x.gid ?? ""}|${x.sheet ?? ""}|${x.full ? 1 : 0}`).join(";");
   const q = useQuery({
-    queryKey: ["detail-plan", activeSrc.fileId, activeSrc.gid ?? "", activeSrc.sheet ?? "", activeSrc.full ?? false, refreshN],
-    queryFn: () => getSummaryFile({ data: { fileId: activeSrc.fileId, gid: activeSrc.gid, sheet: activeSrc.sheet, full: activeSrc.full || undefined, force: refreshN > 0 || undefined } }),
+    queryKey: ["detail-plan", srcKey, refreshN],
+    // Tải LẦN LƯỢT (không song song): mỗi nguồn là một file .xlsx vài MB, bắn cùng lúc là nghẽn.
+    queryFn: async () => {
+      const out: { src: DstSourceItem; b64: string; ts: number }[] = [];
+      for (const x of activeList) {
+        try {
+          const r = await getSummaryFile({ data: { fileId: x.fileId, gid: x.gid, sheet: x.sheet, full: x.full || undefined, force: refreshN > 0 || undefined } });
+          if (r?.b64) out.push({ src: x, b64: r.b64, ts: r.ts ?? Date.now() });
+        } catch { /* một nguồn hỏng KHÔNG được làm mất các nguồn còn lại */ }
+      }
+      return out;
+    },
     enabled: !srcQuery.isPending,
     staleTime: 5 * 60 * 1000, retry: 1,
   });
@@ -239,7 +255,27 @@ export function DetailPlanApp() {
   const meQ = useQuery({ queryKey: ["dst-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["dst-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
   const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
-  const sourceUrl = `https://docs.google.com/spreadsheets/d/${activeSrc.fileId}/edit${activeSrc.gid ? `#gid=${activeSrc.gid}` : ""}`;
+  /** Link tới ĐÚNG file của MỘT nguồn. Không còn một link dùng chung cho cả bảng — bảng gộp nhiều
+   *  nguồn thì một link chung chắc chắn lệch với phần lớn số đang hiện. */
+  const linkOf = (x: { fileId: string; gid?: string }) => `https://docs.google.com/spreadsheets/d/${x.fileId}/edit${x.gid ? `#gid=${x.gid}` : ""}`;
+  const [xoaBusy, setXoaBusy] = useState<string | null>(null);
+  // Nguồn để "Tự động" thì app tự dò sheet nhiều dữ liệu nhất — nhớ lại tên tab đó để bảng nguồn
+  // nói rõ số đang lấy từ tab nào (link Google chỉ mở được tab mặc định của file).
+  const [tabDo, setTabDo] = useState<Record<string, string>>({});
+  const xoaNguon = async (x: DstSourceItem) => {
+    const nhan = x.tag || x.sheet || x.fileId.slice(0, 12) + "…";
+    if (!window.confirm(`Xoá nguồn "${nhan}" khỏi DST?
+
+Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. File gốc trên Google Drive không bị đụng tới.`)) return;
+    setXoaBusy(x.id);
+    try {
+      await deleteDstSource({ data: { id: x.id, devAs } });
+      await qc.invalidateQueries({ queryKey: ["dst-sources"] });
+      setImportName(null); setReal(null);   // buộc dựng lại bảng từ danh sách nguồn mới
+      track("dst_source_xoa", `${nhan} · ${x.fileId}${x.sheet ? " · tab " + x.sheet : ""}`);
+    } catch (e) { setImportErr("Không xoá được nguồn: " + (e as Error).message); }
+    finally { setXoaBusy(null); }
+  };
   const [colW, setColW] = useState<number[]>(COL_W0);      // độ rộng cột (co giãn được)
   const [importName, setImportName] = useState<string | null>(null);
   const [importProj, setImportProj] = useState("");
@@ -264,10 +300,24 @@ export function DetailPlanApp() {
 
   useEffect(() => {
     if (importName) return;
-    const b64 = q.data?.b64; if (!b64) return; let off = false;
+    const files = q.data; if (!files?.length) return; let off = false;
     (async () => {
-      try { const { projects: p } = await xlsxToProjects(b64ToBuf(b64)); if (!off) { setReal(p); setErr(null); } }
-      catch (e) { if (!off) setErr((e as Error).message); }
+      const gom: DetailProject[] = [];
+      const loi: string[] = [];
+      const tabs: Record<string, string> = {};
+      for (const f of files) {
+        try {
+          const { projects: p, sheetName } = await xlsxToProjects(b64ToBuf(f.b64), f.src.sheet);
+          if (sheetName) tabs[f.src.id] = sheetName;
+          // Nhãn nguồn đi theo từng dự án → bảng "Nguồn dữ liệu" xoá đúng phần của nguồn đó, và
+          // người xem biết dòng này đến từ file nào (trước đây mọi dòng chung một link, nhìn là lệch).
+          for (const x of p) gom.push({ ...x, srcId: f.src.id, groupDA: f.src.tag || x.groupDA });
+        } catch (e) { loi.push((e as Error).message); }
+      }
+      if (off) return;
+      setTabDo(tabs);
+      setReal(gom);
+      setErr(gom.length ? null : (loi[0] ?? null));
     })();
     return () => { off = true; };
   }, [q.data, importName]);
@@ -309,17 +359,22 @@ export function DetailPlanApp() {
       const res = await getSummaryFile({ data: { fileId: m[1], sheet: linkSheet || undefined, gid, full: auto || undefined, force: true } });
       if (!res?.b64) { setImportErr("Không tải được file — kiểm tra chia sẻ 'Anyone with the link'."); setBusy(false); return; }
       await importBuf(b64ToBuf(res.b64), linkSheet, linkSheet || undefined);
-      // DÍNH CỨNG: lưu nguồn vào KV → reload không về file mẫu nữa (đến khi đổi link).
-      try { await saveDstSource({ data: { fileId: m[1], gid, sheet: linkSheet || undefined, full: auto || undefined, devAs } }); await qc.invalidateQueries({ queryKey: ["dst-source"] });
+      // THÊM vào danh sách nguồn (KV) → mọi người mở DST đều thấy, reload không về file mẫu.
+      try { await addDstSource({ data: { fileId: m[1], gid, sheet: linkSheet || undefined, full: auto || undefined, tag: importProj.trim() || undefined, devAs } }); await qc.invalidateQueries({ queryKey: ["dst-sources"] });
         // Ghim nguồn = MỌI NGƯỜI mở DST sẽ thấy số của file này → phải có vết.
-        track("dst_source", `${m[1]}${gid ? " · gid " + gid : ""}${linkSheet ? " · tab " + linkSheet : ""}`); }
+        track("dst_source", `${m[1]}${gid ? " · gid " + gid : ""}${linkSheet ? " · tab " + linkSheet : ""}`);
+        // Ghim xong thì BỎ bản xem tạm, để bảng dựng lại từ DANH SÁCH NGUỒN. Nhờ vậy cái đang hiện và
+        // các link "Mở file gốc" luôn là một — trước đây bảng hiện file vừa dán mà link trỏ nguồn cũ.
+        setImportName(null); setReal(null); setLinkVal(""); setLinkSheet(""); }
       catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/PMO): " + (e as Error).message); }
     } catch (e) { setImportErr((e as Error).message); setBusy(false); }
   };
   // LÀM MỚI = tải lại DỮ LIỆU MỚI từ NGUỒN ĐANG XEM với force (nguồn = link đã ghim ở KV, hoặc file mẫu).
-  //  Xoá importName + real để parse effect chạy lại trên bản mới của activeSrc.
+  //  Xoá importName + real để parse effect chạy lại trên bản mới của danh sách nguồn.
   const doRefresh = () => { setImportErr(null); setImportName(null); setReal(null); setRefreshN((n) => n + 1); };
 
+  // Mốc "dữ liệu tính đến" của bảng gộp = nguồn CŨ NHẤT: bảng chỉ tươi bằng nguồn ì nhất.
+  const dataTs = useMemo(() => (q.data?.length ? Math.min(...q.data.map((f) => f.ts)) : 0), [q.data]);
   const usingMock = !real || real.length === 0;
   const projects = usingMock ? MOCK : real!;
 
@@ -439,7 +494,7 @@ export function DetailPlanApp() {
             : null}
         </div>
         {/* Mốc dữ liệu — pill gọn kiểu ePMP (chấm xanh + giờ + "x phút trước"). */}
-        {!usingMock && q.data?.ts ? (() => { const s = stampInfo(q.data.ts); return (
+        {!usingMock && dataTs ? (() => { const s = stampInfo(dataTs); return (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10.5px]" title={`Dữ liệu lấy lúc ${s.abs}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             {!narrow && <span className="font-semibold uppercase tracking-wide text-emerald-700">Dữ liệu tính đến</span>}
@@ -503,16 +558,48 @@ export function DetailPlanApp() {
             <Upload className="h-3.5 w-3.5" /> Nhập dữ liệu
           </button>
           {importOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 330, background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(2,6,23,.32)", padding: 14, zIndex: 50 }}>
+            /* ĐIỆN THOẠI: panel 330px neo phải nút — nút nằm giữa thanh nên mép trái panel lọt ra
+               ngoài màn (đo trên 375px: left = −151px, mất hẳn cột trái). Trên máy nhỏ cho panel bám
+               hai mép màn hình; trên máy tính giữ nguyên popover neo dưới nút như cũ. */
+            <div style={narrow
+              ? { position: "fixed", top: 64, left: 12, right: 12, maxHeight: "calc(100vh - 88px)", overflowY: "auto", background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(2,6,23,.32)", padding: 14, zIndex: 50 }
+              : { position: "absolute", top: "calc(100% + 6px)", right: 0, width: 330, background: "#fff", color: "#0f172a", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(2,6,23,.32)", padding: 14, zIndex: 50 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <strong style={{ fontSize: 13 }}>Nhập dữ liệu chi tiết</strong>
                 <button onClick={() => setImportOpen(false)} style={{ color: "#94a3b8", display: "inline-flex" }}><X className="h-4 w-4" /></button>
               </div>
-              {/* Link file gốc — chỉ admin/PMO thấy panel này nên link an toàn hiển thị ở đây. */}
-              <a href={sourceUrl} target="_blank" rel="noreferrer"
-                style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, border: "1px solid #99f6e4", background: "#f0fdfa", color: "#0f766e", borderRadius: 6, padding: "6px 8px", fontSize: 11.5, fontWeight: 600, textDecoration: "none" }}>
-                <ExternalLink className="h-3.5 w-3.5" /> Mở file gốc (Google Sheet)
-              </a>
+              {/* NGUỒN ĐANG DÙNG — mỗi dòng một file: mở đúng file đó, hoặc gỡ hẳn khỏi DST.
+                  Chỉ admin/PMO thấy panel này nên link an toàn hiển thị ở đây. */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginBottom: 5 }}>
+                  Nguồn dữ liệu {sources.length ? `(${sources.length})` : "— chưa có, đang xem file mẫu"}
+                </div>
+                <div style={{ display: "grid", gap: 5, maxHeight: 148, overflowY: "auto" }}>
+                  {activeList.map((x) => {
+                    const laMau = !sources.length;
+                    return (
+                      <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #99f6e4", background: "#f0fdfa", borderRadius: 6, padding: "5px 7px" }}>
+                        <a href={linkOf(x)} target="_blank" rel="noreferrer" title={`Mở đúng file của nguồn này
+${x.fileId}`}
+                          style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flex: 1, color: "#0f766e", fontSize: 11.5, fontWeight: 600, textDecoration: "none" }}>
+                          <ExternalLink className="h-3.5 w-3.5" style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {x.tag || (laMau ? "File mẫu" : x.fileId.slice(0, 14) + "…")}
+                            {x.sheet ? ` · tab ${x.sheet}` : tabDo[x.id] ? ` · tab ${tabDo[x.id]} (tự dò)` : ""}
+                          </span>
+                        </a>
+                        {!laMau && (
+                          <button onClick={() => void xoaNguon(x)} disabled={xoaBusy === x.id} title="Gỡ nguồn này khỏi DST (không đụng file gốc)"
+                            style={{ display: "inline-flex", color: "#b91c1c", opacity: xoaBusy === x.id ? 0.4 : 1, flexShrink: 0 }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {importName && <div style={{ marginTop: 5, fontSize: 10.5, color: "#b45309", lineHeight: 1.4 }}>Bảng đang hiện file vừa mở tại máy anh (<b>{importName}</b>), chưa phải các nguồn trên. Bấm “Làm mới” để về nguồn chung.</div>}
+              </div>
               <label style={{ display: "block", fontSize: 11, color: "#64748b", fontWeight: 600, marginBottom: 4 }}>Tên dự án (các khu gộp về 1 dự án)</label>
               <input value={importProj} onChange={(e) => setImportProj(e.target.value)} placeholder="VD: Nam Phương Hoàng Hậu: Lobby"
                 style={{ width: "100%", boxSizing: "border-box", marginBottom: 10, border: "1px solid #cbd5e1", borderRadius: 6, padding: "6px 8px", fontSize: 12, color: "#0f172a" }} />
