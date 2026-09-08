@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { track } from "@/lib/track";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getInstallList } from "@/lib/mtld-install.functions";
+import { getInstallList, getMediaProjects } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { loadRegion } from "@/lib/region-load";
 import * as XLSXNS from "xlsx";
@@ -31,7 +31,9 @@ const C = { ink: "#0f172a", sub: "#64748b", teal: "#0d9488", tealD: "#0f766e", n
 const mb = (n: number) => (n / 1048576).toFixed(0);
 
 type InstallProj = { fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
-  hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean };
+  hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
+  /** PMO tick "chưa có ma trận" ở ô Gắn link → ảnh gom chung dự án, không dắt về từng căn. */
+  noMx?: boolean };
 /** KHOÁ DỰ ÁN — ưu tiên ID CỨNG (IDCUNG, vd "P0025"): đổi tên / trùng mã CT / dùng chung ma trận với dự
  *  án khác đều không lẫn kho media. Nguồn chưa có cột IDCUNG thì lùi về file+tab (như cũ). */
 const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|" + p.gid : "");
@@ -76,6 +78,9 @@ const isMini = (p: InstallProj) => /mini\s*hotel/i.test(p.name || "");
 
 /** `wantProject` = tên dự án mà chỗ khác (nút "Video" trên dashboard ePMP) muốn mở sẵn. Khớp theo TÊN vì
  *  bên gọi chỉ có tên hiển thị; không khớp được thì cứ giữ dự án đầu danh sách. */
+/** ID của dự án CHƯA CÓ ma trận trong ô chọn — ưu tiên ID cứng, không có thì mã CT + tên. */
+const kmtId = (p: { hid?: string; maCT: string; name: string }) => `kmt:${p.hid || `${p.maCT}|${p.name}`}`;
+
 export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {}) {
   // NGUỒN dự-án-có-ma-trận: localStorage (dashboard ePMP ghi khi mở, cùng máy) LÀM MỒI, KV là nguồn thật.
   const [lsList, setLsList] = useState<InstallProj[]>([]);
@@ -91,8 +96,26 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
     return out.sort((a, b) => (Number(isMini(b)) - Number(isMini(a))) || a.name.localeCompare(b.name, "vi"));
   }, [listQ.data, lsList]);
 
+  /* MỌI DỰ ÁN — kể cả dự án CHƯA CÓ ma trận. Công trường vẫn chụp ảnh mỗi ngày, nên dự án nào
+     cũng phải có kho ảnh riêng. Dự án có ma trận thì bấm ô để về đúng căn; chưa có thì ảnh gom
+     chung cả dự án (vẫn tách kho theo ID cứng nên không lẫn dự án khác). */
+  const allQ = useQuery({ queryKey: ["media-all-projects"], queryFn: () => getMediaProjects(), staleTime: 60_000 });
+  const khongMaTran = useMemo(() => {
+    const coRoi = new Set(list.map((p) => `${(p.maCT || "").trim()}|${p.name.trim()}`));
+    return (allQ.data?.list ?? [])
+      .filter((p) => !coRoi.has(`${(p.maCT || "").trim()}|${p.name.trim()}`))
+      .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  }, [allQ.data, list]);
+
   const [selId, setSelId] = useState<string>("");
-  const sel = useMemo(() => list.find((p) => projId(p) === selId) || list[0], [list, selId]);
+  const sel = useMemo(() => list.find((p) => projId(p) === selId) || (selId.startsWith("kmt:") ? undefined : list[0]), [list, selId]);
+  // Dự án chưa có ma trận đang chọn (id dạng "kmt:<hid|maCT|tên>").
+  const selKmt = useMemo(() => {
+    if (!selId.startsWith("kmt:")) return null;
+    return khongMaTran.find((p) => kmtId(p) === selId) ?? null;
+  }, [selId, khongMaTran]);
+  // Dự án có link nhưng PMO đã tick "chưa có ma trận" → cũng đi lối gom ảnh chung.
+  const chiXem = !!selKmt || !!sel?.noMx;
   useEffect(() => { if (!selId && list.length) setSelId(projId(list[0])); }, [list, selId]);
   // Khớp dự án được yêu cầu (bấm 🎬 Video ở dashboard) — CHỈ khớp CHÍNH XÁC theo tên đã chuẩn hoá.
   // Khớp "lỏng" (includes) từng làm "Mini Hotel PQ (B6-B9)" rơi về "(B1-B5)" và hiện media của toà khác.
@@ -138,16 +161,25 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               đẩy rộng cả trang, sinh cuộn ngang toàn màn. */}
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flex: "1 1 220px", minWidth: 0, maxWidth: 460 }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .85, textTransform: "uppercase", letterSpacing: ".04em", flexShrink: 0 }}>Dự án</span>
-            <select value={sel ? projId(sel) : ""} onChange={(e) => setSelId(e.target.value)}
+            <select value={selKmt ? selId : (sel ? projId(sel) : "")} onChange={(e) => setSelId(e.target.value)}
               style={{ height: 40, borderRadius: 10, border: "none", padding: "0 12px", fontSize: 14, fontWeight: 700, color: C.ink, background: "#fff", flex: 1, minWidth: 0, maxWidth: "100%" }}>
-              {list.length === 0 && <option value="">(chưa có dự án gắn ma trận)</option>}
-              {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
+              {list.length === 0 && khongMaTran.length === 0 && <option value="">(chưa có dự án nào)</option>}
+              {list.length > 0 && (
+                <optgroup label="Có ma trận lắp đặt">
+                  {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
+                </optgroup>
+              )}
+              {khongMaTran.length > 0 && (
+                <optgroup label="Chưa có ma trận — ảnh gom chung dự án">
+                  {khongMaTran.map((p) => <option key={kmtId(p)} value={kmtId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
+                </optgroup>
+              )}
             </select>
           </label>
           {/* Lối vào thứ hai (xem TOÀN BỘ media dự án): ĐIỆN THOẠI bỏ đi cho gọn — vào đây là để bấm ô căn;
               xem cả dự án thì bấm nút “Media” ngay dòng dự án bên ePMP. Máy tính giữ nguyên. */}
           {!narrowTop && (
-          <button type="button" disabled={!sel} onClick={() => { if (!sel) return; setPick({ toa: "", can: "", scope: "project" }); track("media_project", sel.name); }}
+          <button type="button" disabled={!sel && !selKmt} onClick={() => { const ten = selKmt?.name || sel?.name; if (!ten) return; setPick({ toa: "", can: "", scope: "project" }); track("media_project", ten); }}
             style={{ flexShrink: 0, border: "1px solid rgba(255,255,255,.35)", background: "rgba(255,255,255,.12)", color: "#fff",
               borderRadius: 9, padding: "9px 13px", fontSize: 12.5, fontWeight: 700, cursor: sel ? "pointer" : "default" }}>
             🖼 Toàn bộ media dự án
@@ -167,6 +199,20 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               Xem dự án đang chọn
             </button>
           </div>
+        ) : chiXem ? (
+          /* CHƯA CÓ MA TRẬN — không có bảng để bấm, nên mở thẳng kho ảnh chung của dự án.
+             Ảnh vẫn tách kho theo từng dự án, chỉ là không chia theo căn. */
+          <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{selKmt?.name || sel?.name}</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: C.sub, lineHeight: 1.7 }}>
+              Dự án chưa có ma trận lắp đặt nên không có bảng để bấm về từng căn.
+              <br />Ảnh và clip của dự án gom chung một kho — vẫn bắt buộc kèm báo cáo hiện trạng khi tải lên.
+            </div>
+            <button type="button" onClick={() => { const ten = selKmt?.name || sel?.name || ""; setPick({ toa: "", can: "", scope: "project" }); track("media_project", ten); }}
+              style={{ marginTop: 16, border: "none", borderRadius: 10, padding: "11px 20px", background: C.tealD, color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}>
+              🖼 Mở kho ảnh của dự án
+            </button>
+          </div>
         ) : listQ.isPending ? (
           <div style={{ padding: 40, textAlign: "center", color: C.sub, fontSize: 13.5 }}>Đang tải danh sách dự án…</div>
         ) : list.length === 0 ? (
@@ -180,8 +226,9 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         ) : null}
       </div>
 
-      {pick && <CanMediaDialog project={pick.project ?? sel?.name ?? ""} hid={pick.project ? undefined : sel?.hid} maCT={sel?.maCT}
-        projKey={pick.project ? `N:${pick.project}` : (sel ? projId(sel) : "")}
+      {pick && <CanMediaDialog project={pick.project ?? selKmt?.name ?? sel?.name ?? ""}
+        hid={pick.project ? undefined : (selKmt?.hid ?? sel?.hid)} maCT={selKmt?.maCT ?? sel?.maCT}
+        projKey={pick.project ? `N:${pick.project}` : (selKmt ? kmtId(selKmt) : (sel ? projId(sel) : ""))}
         initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
     </div>
   );

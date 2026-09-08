@@ -209,6 +209,9 @@ type InstallListItem = {
   hid?: string;
   // Vùng + form để render Y HỆT popup "Thi công lắp đặt" (MatrixFormEditor: ma trận live + form đã lưu).
   sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
+  /** Dự án CHƯA CÓ MA TRẬN — link chỉ để mở ra xem; app Hình ảnh mỗi ngày gom ảnh chung cả dự án,
+   *  không dắt về từng căn. Xem cờ noMx trong SheetViewCfg. */
+  noMx?: boolean;
 };
 export const saveInstallList = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ list: z.array(z.object({
@@ -217,6 +220,7 @@ export const saveInstallList = createServerFn({ method: "POST" })
     hid: z.string().max(40).optional(),
     sheet: z.string().max(200).optional(), range: z.string().max(60).optional(), tl: z.string().max(30).optional(),
     br: z.string().max(30).optional(), formKey: z.string().max(400).optional(), chart: z.boolean().optional(),
+    noMx: z.boolean().optional(),
   })).max(1000) }).parse(input))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
     const kv = await getKv();
@@ -404,4 +408,51 @@ export const getLinksUpdatedAt = createServerFn({ method: "POST" })
       } catch { /* Drive lỗi → trả về phần đã có */ }
     }
     return { map };
+  });
+
+/* ── DANH SÁCH MỌI DỰ ÁN CHO APP HÌNH ẢNH MỖI NGÀY ──────────────────────────────────────────
+   Danh sách ở trên chỉ gồm dự án ĐÃ GẮN LINK ma trận, nên dự án chưa có ma trận không vào được
+   app ảnh — mà công trường vẫn chụp ảnh mỗi ngày như thường. Kho này gom MỌI dự án đang chạy
+   (ePMP đẩy lên khi có người mở dashboard), để app ảnh liệt kê đủ: có ma trận thì bấm về từng
+   căn, chưa có thì gom ảnh chung cả dự án. */
+const MEDIA_PROJ_KEY = "media:projects:v1";
+const DEV_MEDIA_PROJ_FILE = ".data/pmo-media-projects.json";
+export type MediaProjItem = { hid?: string; maCT: string; name: string; region?: string; groupDA?: string; coMaTran?: boolean };
+
+export const saveMediaProjects = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    list: z.array(z.object({
+      hid: z.string().max(40).optional(),
+      maCT: z.string().max(120),
+      name: z.string().max(300),
+      region: z.string().max(120).optional(),
+      groupDA: z.string().max(300).optional(),
+      coMaTran: z.boolean().optional(),
+    })).max(2000),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: boolean; n: number }> => {
+    const kv = await getKv();
+    if (kv) { try { await kv.put(MEDIA_PROJ_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
+    else {
+      // DEV không có KV — ghi ra tệp để thử được ngay trên máy, y như các kho khác của app.
+      try {
+        const fsp = await import("node:fs/promises");
+        await fsp.mkdir(".data", { recursive: true });
+        await fsp.writeFile(DEV_MEDIA_PROJ_FILE, JSON.stringify(data.list, null, 2), "utf8");
+      } catch { /* ghi hụt ở dev cũng không sao */ }
+    }
+    return { ok: true, n: data.list.length };
+  });
+
+export const getMediaProjects = createServerFn({ method: "POST" })
+  .handler(async (): Promise<{ list: MediaProjItem[] }> => {
+    const kv = await getKv();
+    if (kv) {
+      try { const raw = await kv.get(MEDIA_PROJ_KEY); return { list: raw ? (JSON.parse(raw) as MediaProjItem[]) : [] }; }
+      catch { return { list: [] }; }
+    }
+    try {
+      const fsp = await import("node:fs/promises");
+      return { list: JSON.parse(await fsp.readFile(DEV_MEDIA_PROJ_FILE, "utf8")) as MediaProjItem[] };
+    } catch { return { list: [] }; }
   });

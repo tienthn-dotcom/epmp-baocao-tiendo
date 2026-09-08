@@ -36,6 +36,10 @@ export function mediaProjectFolder(project: string, hid?: string, maCT?: string)
 export function mediaFolderPath(project: string, toa: string, can: string, kind: "photo" | "video",
   app = "ePMP", hid?: string, maCT?: string): string[] {
   const t = mediaSafe(toa);
-  return [app, "Media", mediaProjectFolder(project, hid, maCT), ...(t ? [t] : []), mediaSafe(can) || "Khac",
+  const c = mediaSafe(can);
+  // KHÔNG có căn/khu (dự án chưa có ma trận, hoặc ảnh chụp chung cả công trường) → ảnh nằm THẲNG
+  // trong thư mục dự án: <MÃ CT> › Hình ảnh | Video. Trước đây dồn vào một thư mục tên "Khac",
+  // nhìn trên Drive không ai hiểu đó là ảnh của cả dự án.
+  return [app, "Media", mediaProjectFolder(project, hid, maCT), ...(t ? [t] : []), ...(c ? [c] : []),
     kind === "video" ? "Video" : "Hình ảnh"];
 }

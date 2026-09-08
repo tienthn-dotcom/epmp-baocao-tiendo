@@ -228,9 +228,13 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     const KIND = new Set(["Hình ảnh", "Video"]);
     const root = await drive.driveListChildrenImpl(["ePMP", "Media", project]);
     const lvl1 = root.folders.filter((f) => !KIND.has(f.name));          // Toà, hoặc Khu (khu public)
-    if (!lvl1.length) return { cans: [] };
+    // ẢNH CỦA CẢ DỰ ÁN — nằm THẲNG trong <MÃ CT> › Hình ảnh | Video (dự án chưa có ma trận thì
+    // không có cấp căn để chia). Trước đây vòng quét bỏ qua hai thư mục này nên up lên rồi mà
+    // popup báo trống. Gom thành một mục có toa/can rỗng, popup hiện là "Cả dự án".
+    const goc = root.folders.filter((f) => KIND.has(f.name));
+    if (!lvl1.length && !goc.length) return { cans: [] };
 
-    const lvl2 = await drive.driveListFoldersByParents(lvl1.map((f) => f.id));
+    const lvl2 = lvl1.length ? await drive.driveListFoldersByParents(lvl1.map((f) => f.id)) : [];
     const name1 = new Map(lvl1.map((f) => [f.id, f.name] as const));
     // Ô "căn/khu" = folder mà con của nó là Hình ảnh/Video. Gom mọi thư mục KIND kèm căn/khu sở hữu.
     const cans = new Map<string, { toa: string; can: string; photos: number; videos: number; at: string; media: { id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string }[]; tong: number }>();
@@ -241,6 +245,7 @@ export const listProjectMedia = createServerFn({ method: "POST" })
       if (!cans.has(key)) cans.set(key, { toa, can, photos: 0, videos: 0, at: "", media: [], tong: 0 });
       kindOwner.set(kindId, { key, kind: kindName });
     };
+    for (const f of goc) own("", "", f.id, f.name);   // ảnh chung cả dự án
     // lvl1 chính là căn/khu (không có cấp Toà)
     for (const f of lvl2) if (KIND.has(f.name)) own("", name1.get(f.parent) || "", f.id, f.name);
     // còn lại: lvl1 = Toà, lvl2 = căn → cần thêm 1 tầng nữa

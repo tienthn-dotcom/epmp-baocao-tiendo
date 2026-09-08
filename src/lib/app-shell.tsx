@@ -210,6 +210,8 @@ type InstallProj = {
   fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
   // Vùng + form để render Y HỆT popup "Thi công lắp đặt" (MatrixFormEditor).
   sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
+  /** Chưa có ma trận — chỉ gắn link để xem (app Hình ảnh mỗi ngày gom ảnh chung cả dự án). */
+  noMx?: boolean;
 };
 // ID DUY NHẤT 1 ma trận = fileId + gid (nhiều dự án chung file, khác tab) — dùng cho React key + bộ lọc.
 const projId = (p: InstallProj) => p.fileId + (p.gid ? "|" + p.gid : "");

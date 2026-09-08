@@ -53,7 +53,7 @@ import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
 import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
-import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveProjRegions } from "@/lib/mtld-install.functions";
+import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
@@ -2378,7 +2378,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // vùng + formKey để MtldApp render Y HỆT popup (ma trận live + form đã lưu). Ghi KV để MTLĐ đọc mọi lúc.
   useEffect(() => {
     try {
-      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean }[] = [];
+      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean; noMx?: boolean }[] = [];
       const seenKey = new Set<string>();   // đã xử lý linkKey này chưa (khỏi lặp)
       const seenSig = new Set<string>();   // NỘI DUNG popup đã có chưa (nhiều dự án gắn CÙNG 1 ma trận → 1 thẻ)
       for (const it of data.items) {
@@ -2396,13 +2396,29 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         const sig = `${cfg.fileId}|${cfg.gid || ""}|${formKey}|${it.projHid || linkKey}`;
         if (seenSig.has(sig)) continue;
         seenSig.add(sig);
-        named.push({ fileId: cfg.fileId, gid: cfg.gid, sheet: cfg.sheet, range: cfg.range, tl: cfg.tl, br: cfg.br, formKey, chart: cfg.chart,
+        named.push({ fileId: cfg.fileId, gid: cfg.gid, sheet: cfg.sheet, range: cfg.range, tl: cfg.tl, br: cfg.br, formKey, chart: cfg.chart, noMx: cfg.noMx,
           hid: it.projHid, name: it.projectName, maCT: it.maCT || it.projectCode || "", region: it.region || "", groupDA: it.groupDA || "" });
       }
       if (named.length) {
         localStorage.setItem(MTLD_INSTALL_LS, JSON.stringify(named));
         void saveInstallList({ data: { list: named } }).catch(() => {});
       }
+      /* DANH SÁCH CHO APP ẢNH — gồm MỌI dự án đang chạy, không riêng dự án đã gắn ma trận.
+         Công trường vẫn chụp ảnh mỗi ngày ở dự án chưa có ma trận, nên app ảnh phải liệt kê đủ:
+         có ma trận thì bấm về từng căn, chưa có thì gom ảnh chung cả dự án. */
+      const coMx = new Set(named.map((x) => `${x.maCT}|${x.name}`));
+      const moiDuAn: { hid?: string; maCT: string; name: string; region?: string; groupDA?: string; coMaTran?: boolean }[] = [];
+      const daCo = new Set<string>();
+      for (const p of data.projects) {
+        const ten = (p.name || "").trim();
+        const ma = (p.maCT || p.code || "").trim();
+        if (!ten) continue;
+        const k = `${ma}|${ten}`;
+        if (daCo.has(k)) continue;
+        daCo.add(k);
+        moiDuAn.push({ hid: p.hid, maCT: ma, name: ten, groupDA: p.groupDA || "", coMaTran: coMx.has(k) });
+      }
+      if (moiDuAn.length) void saveMediaProjects({ data: { list: moiDuAn } }).catch(() => {});
     } catch { /* bỏ qua */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(sheetViews), data.items.length]);
@@ -4993,6 +5009,9 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
   const [tl, setTl] = useState(initCfg?.tl ?? "");     // marker góc trên-trái (tuỳ chọn)
   const [br, setBr] = useState(initCfg?.br ?? "");     // marker góc dưới-phải (tuỳ chọn)
   const [chart, setChart] = useState(!!initCfg?.chart);   // mặc định hiện BẢN CÓ CHART cho mọi người
+  // DỰ ÁN CHƯA CÓ MA TRẬN — vẫn gắn link để mở ra xem, nhưng app Hình ảnh mỗi ngày sẽ KHÔNG dắt về
+  // từng căn (không có bảng để bấm), mà mở thẳng kho ảnh chung của dự án.
+  const [noMx, setNoMx] = useState(!!initCfg?.noMx);
   // TÀI LIỆU PDF — ĐỊNH DẠNG THÊM, không thay link Sheet. Nhiều công đoạn (hồ sơ nghiệm thu, bản vẽ
   // duyệt, biên bản) chỉ có đúng một bản PDF, không có ma trận Excel để render.
   const [pdfId, setPdfId] = useState(initCfg?.pdfFileId ?? "");
@@ -5047,8 +5066,9 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
     if (!parsed && !pdfId) { setErr("Cần link Google Sheet hợp lệ, hoặc tải lên một tệp PDF."); return; }
     setSaving(true); setErr(null);
     try {
-      if (parsed) await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
-      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed, chart, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), ma: (projMa || initCfg?.ma || "").slice(0, 120), ten: projName.slice(0, 300), devAs: devAs() } });
+      // Chưa có ma trận thì KHÔNG dựng snapshot: không có vùng ma trận để render, chạy chỉ tổ lỗi.
+      if (parsed && !noMx) await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
+      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed && !noMx, chart, noMx, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), ma: (projMa || initCfg?.ma || "").slice(0, 120), ten: projName.slice(0, 300), devAs: devAs() } });
       track(parsed ? "link_matrix" : "link_pdf",
         parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
       onSaved(); onClose();
@@ -5096,6 +5116,10 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
             <label className="grid gap-1"><span className="font-semibold text-teal-800">DƯỚI-PHẢI</span>
               <input value={br} onChange={(e) => setBr(e.target.value.slice(0, 40))} placeholder="vd @BR@" className="w-28 rounded border border-teal-300 px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" /></label>
           </div>
+          <label className="flex cursor-pointer items-center gap-2 rounded-md bg-sky-50/70 px-2 py-1.5 text-[12px] text-slate-700">
+            <input type="checkbox" checked={noMx} onChange={(e) => setNoMx(e.target.checked)} />
+            <span><b>Dự án chưa có ma trận</b> — chỉ gắn link để mở ra xem. Trong “Hình ảnh mỗi ngày”, dự án vẫn có kho ảnh riêng nhưng <b>không dắt về từng căn</b>, ảnh gom chung cả dự án. <span className="text-slate-400">Có ma trận rồi thì bỏ tick, ảnh cũ vẫn còn nguyên.</span></span>
+          </label>
           <label className="flex cursor-pointer items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 text-[12px] text-slate-700">
             <input type="checkbox" checked={chart} onChange={(e) => setChart(e.target.checked)} />
             <span>Mặc định hiện <b>bản CÓ CHART</b> (ảnh Google) cho <b>mọi người xem</b> — có chart + màu y hệt (mọi người vẫn đổi được qua bảng lưới). <span className="text-slate-400">Cần dán URL đúng tab (có <code>#gid=</code>) để chụp đúng vùng.</span></span>
@@ -6570,10 +6594,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                             <button type="button" onClick={() => onOpenImage?.(g.key, g.name)}
                               className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">📷 {projImgIdx?.[g.key]?.n}</button>
                           )}
-                          {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
+                          {/* Nút Ảnh/clip hiện ở MỌI dự án, kể cả dự án chưa có ma trận và chưa có tư liệu —
+                              công trường nào cũng chụp ảnh mỗi ngày, phải có chỗ đưa lên. Chưa có gì thì nút mờ. */}
+                          {(() => { const coTL = hasMedia?.(g.name, g.items[0]?.projHid, g.maCT); return (
                             <button type="button" onClick={() => onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT)}
-                              className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">🎬 Ảnh/clip</button>
-                          )}
+                              title={coTL ? "Xem ảnh và clip của dự án" : "Chưa có ảnh — bấm để thêm"}
+                              className={`rounded-md px-2 py-1 text-[11px] font-semibold ${coTL ? "bg-white/15" : "bg-white/5 opacity-70"}`}>🎬 Ảnh/clip</button>
+                          ); })()}
                         </div>
                       </div>
                       {expanded && (
@@ -6747,13 +6774,15 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                         )}
                         {/* MEDIA CÔNG TRƯỜNG — mở THẲNG popup tại đây, xem TOÀN BỘ ảnh + video của dự án
                             (gom theo phòng/khu). Trước chỉ hiện ở Mini Hotel và phải nhảy sang app khác. */}
-                        {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
+                        {/* MỌI dự án đều có chữ Media, kể cả dự án chưa có ma trận: công trường nào cũng
+                            chụp ảnh mỗi ngày. Chưa có tư liệu thì chữ mờ đi, bấm vào vẫn thêm được. */}
+                        {(() => { const coTL = hasMedia?.(g.name, g.items[0]?.projHid, g.maCT); return (
                           <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT); }}
-                            className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
-                            title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
+                            className={`inline-flex items-center gap-0.5 text-[0.72em] font-semibold hover:text-white ${coTL ? "text-teal-200" : "text-slate-400"}`}
+                            title={coTL ? "Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)" : "Chưa có ảnh nào — bấm để thêm cho dự án này"}>
                             🎬 Media
                           </button>
-                        )}
+                        ); })()}
                       </div>
                     </td>
                     {/* Nhân sự phụ trách: PM của dự án */}

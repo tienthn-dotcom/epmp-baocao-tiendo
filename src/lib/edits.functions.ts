@@ -946,7 +946,9 @@ const DEV_SHEETVIEW_FILE = ".data/pmo-sheetview.json";
 /** pdf=true → ÉP chụp PDF (bỏ tự-nhận-dạng heatmap); sheet/range = tinh chỉnh tab + vùng (tuỳ chọn).
  *  fileId/gid: khi PMO GẮN LINK THẲNG trong app (không qua hyperlink file import) — key = khoá bền dự án
  *  (Mã CT + Tên). Có fileId → dự án đó hiện 📊 cho mọi người, popup chụp PDF từ link này. */
-export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string; ma?: string; ten?: string };
+export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string; ma?: string; ten?: string; noMx?: boolean };
+// noMx=true → dự án CHƯA CÓ MA TRẬN: link chỉ để mở ra xem, app Hình ảnh mỗi ngày KHÔNG dắt về từng
+// căn mà mở thẳng kho ảnh chung của dự án. Có cờ này thì dự án vẫn vào được danh sách media.
 // pdfFileId/pdfName = TÀI LIỆU PDF gắn thẳng cho hạng mục (id file trên Drive). Nhiều công đoạn chỉ có
 // một bản PDF chứ không có ma trận Excel — đây là ĐỊNH DẠNG THÊM, không thay thế: cấu hình cũ (fileId +
 // sheet + range) vẫn nguyên vẹn, thiếu pdfFileId thì popup chạy y như trước.
@@ -990,6 +992,7 @@ export const saveSheetView = createServerFn({ method: "POST" })
       br: z.string().max(40).regex(/^[^\n\r]*$/).optional(),   // marker góc dưới-phải
       snap: z.boolean().optional(),                            // đã có snapshot HTML lưu ở sheetsnap:<key>
       chart: z.boolean().optional(),                           // mặc định mở BẢN CÓ CHART cho mọi người
+      noMx: z.boolean().optional(),                            // dự án chưa có ma trận — chỉ để xem, không dắt về căn
       pdfFileId: z.string().max(120).regex(/^[a-zA-Z0-9_-]*$/).optional(),   // PDF gắn thẳng (id trên Drive)
       pdfName: z.string().max(200).regex(/^[^\n\r]*$/).optional(),   // tên file PDF để hiện cho người dùng
       ma: z.string().max(120).regex(/^[^\n\r]*$/).optional(),      // mã CT — để đọc được file sao lưu trên Drive
@@ -1011,7 +1014,7 @@ export const saveSheetView = createServerFn({ method: "POST" })
     const ma = (data.ma ?? "").trim();
     const ten = (data.ten ?? "").trim();
     if (!data.pdf) delete map[data.key];   // tắt ép PDF / gỡ link → về mặc định (không hiện 📊 nếu là khoá dự án)
-    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}), ...(ma ? { ma } : {}), ...(ten ? { ten } : {}) };
+    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}), ...(ma ? { ma } : {}), ...(ten ? { ten } : {}), ...(data.noMx ? { noMx: true } : {}) };
     await writeSheetViews(map);
     await backupSheetViewsToDrive(map);   // gắn/sửa/gỡ link xong là sao lưu ngay, khỏi chờ cron
     return { views: map };
