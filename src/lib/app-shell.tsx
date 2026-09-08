@@ -29,6 +29,7 @@ import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf, type UserRole } from "@/lib/roles";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { track } from "@/lib/track";
 import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -90,8 +91,22 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["shell-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["shell-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const myRole = meQ.data?.email ? roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) : null;
-  const canManage = !!(meQ.data?.isAdmin || myRole === "PMO");
+  const xemNhuUser = useXemNhuUser();
+  const myRoleThat = meQ.data?.email ? roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) : null;
+  const canManageThat = !!(meQ.data?.isAdmin || myRoleThat === "PMO");
+  // Đang xem như người thường thì rail cũng phải giấu app riêng, kẻo vẫn thấy MTLĐ với Hiệu suất.
+  const myRole = xemNhuUser ? null : myRoleThat;
+  const canManage = !xemNhuUser && canManageThat;
+  /* Bật chế độ này thì menu quản trị biến mất theo, nên phải chừa một lối ra. Pill nhỏ, mờ,
+     nằm góc dưới trái, và print:hidden nên không lọt vào ảnh chụp hay bản PDF xuất ra. */
+  const chotThoat = xemNhuUser && canManageThat ? (
+    <button type="button" onClick={() => datXemNhuUser(false)}
+      title="Đang xem bằng con mắt người dùng thường — bấm để trở lại quyền quản trị"
+      className="fixed bottom-3 left-3 z-[70] inline-flex items-center gap-1.5 rounded-full border border-sky-300 bg-sky-50/95 px-2.5 py-1 text-[11px] font-semibold text-sky-800 shadow-sm hover:bg-sky-100 print:hidden">
+      <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+      Đang xem như người dùng thường · Thoát
+    </button>
+  ) : null;
   // Trên bản chính thức (live) chỉ hiện app có cờ `live`, app adminPmoOnly chỉ khi là admin/PMO,
   // app roleOnly chỉ khi cấp của người dùng nằm trong danh sách (admin luôn thấy hết).
   const visibleApps = APPS.filter((a) => (stage === "live" ? a.live : true)
@@ -112,6 +127,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
     // Cờ TẮT (live) → không style: 2 div bọc thành block TRONG SUỐT, app ePMP render y hệt như
     // cũ. Cờ BẬT (dev) → flex để chừa chỗ cho rail. Cấu trúc div KHÔNG đổi → app KHÔNG remount.
     <div style={shellOn ? { display: "flex", minHeight: "100vh" } : undefined}>
+      {chotThoat}
       {/* THANH RAIL + backdrop: PORTAL ra document.body để THOÁT khỏi flex container này —
           nằm trong flex, `width` của rail bị co về bề rộng nội dung (quirk), nên phải portal
           (giống cách app xử lý modal). SSR không có document → bỏ qua (rail vốn chỉ hiện ở client). */}

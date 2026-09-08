@@ -341,3 +341,67 @@ export const getProjRegions = createServerFn({ method: "GET" })
       return { map: JSON.parse(await fsp.readFile(DEV_PROJ_REGION_FILE, "utf8")) as Record<string, string> };
     } catch { return { map: {} }; }
   });
+
+/* ── NGÀY CẬP NHẬT THẬT CỦA FILE SAU LINK ────────────────────────────────────────────────
+   Popup ma trận hiện một dòng "Ngày cập nhật: dd/mm/yyyy". Ngày này KHÔNG lấy từ bảng (cột đó
+   do người ta gõ tay) mà hỏi thẳng Google: mỗi lần file đổi, Drive tự ghi lại giờ sửa, không ai
+   sửa được con số đó. Chỉ hỏi metadata nên nhẹ, và cache 10 phút cho khỏi gọi lại mỗi lần mở.
+   Chưa cấu hình Drive hoặc tài khoản không thấy file thì trả null, popup lặng lẽ giấu dòng đó. */
+export const getLinkUpdatedAt = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/),
+    force: z.boolean().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ modifiedTime: string | null; nguoiSua: string }> => {
+    const kv = await getKv();
+    const key = `fmeta:${data.fileId}`;
+    if (kv && !data.force) {
+      const hit = await kv.get(key);
+      if (hit) { try { return JSON.parse(hit) as { modifiedTime: string | null; nguoiSua: string }; } catch { /* cache hỏng → hỏi lại */ } }
+    }
+    let ra: { modifiedTime: string | null; nguoiSua: string } = { modifiedTime: null, nguoiSua: "" };
+    try {
+      const drive = await import("@/lib/drive.functions");
+      const m = await drive.driveFileMetaImpl(data.fileId);
+      if (m) ra = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
+    } catch { /* Drive lỗi → coi như chưa biết, KHÔNG làm hỏng popup */ }
+    if (kv && ra.modifiedTime) { try { await kv.put(key, JSON.stringify(ra), { expirationTtl: 600 }); } catch { /* bỏ qua */ } }
+    return ra;
+  });
+
+/** NHIỀU FILE MỘT LƯỢT — bảng chính có mấy chục dòng gắn link, hỏi từng file là mấy chục lượt gọi.
+ *  Dùng chung cache `fmeta:` với getLinkUpdatedAt nên mở popup rồi thì bảng lấy ngay khỏi hỏi lại. */
+export const getLinksUpdatedAt = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    fileIds: z.array(z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/)).max(80),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ map: Record<string, { modifiedTime: string; nguoiSua: string }> }> => {
+    const kv = await getKv();
+    const map: Record<string, { modifiedTime: string; nguoiSua: string }> = {};
+    const conThieu: string[] = [];
+    for (const id of [...new Set(data.fileIds)]) {
+      if (!kv) { conThieu.push(id); continue; }
+      const hit = await kv.get(`fmeta:${id}`);
+      if (hit) {
+        try {
+          const j = JSON.parse(hit) as { modifiedTime: string | null; nguoiSua: string };
+          if (j.modifiedTime) { map[id] = { modifiedTime: j.modifiedTime, nguoiSua: j.nguoiSua }; continue; }
+        } catch { /* cache hỏng → hỏi lại */ }
+      }
+      conThieu.push(id);
+    }
+    if (conThieu.length) {
+      try {
+        const drive = await import("@/lib/drive.functions");
+        // Hỏi tuần tự: mỗi lượt là một lời gọi nhẹ (chỉ metadata), bắn song song vài chục lượt
+        // là Google chặn vì quá nhanh. Chỗ nào hỏi hụt thì bỏ qua, bảng chỉ khuyết dòng đó.
+        for (const id of conThieu) {
+          const m = await drive.driveFileMetaImpl(id);
+          if (!m) continue;
+          map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
+          if (kv) { try { await kv.put(`fmeta:${id}`, JSON.stringify(m), { expirationTtl: 600 }); } catch { /* bỏ qua */ } }
+        }
+      } catch { /* Drive lỗi → trả về phần đã có */ }
+    }
+    return { map };
+  });

@@ -20,6 +20,7 @@ import { STD_RAMP } from "@/lib/summary-render";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles, getSheetForms, saveSheetForm } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
+import { useXemNhuUser } from "@/lib/view-as";
 import { parseMediaMsgs, type MediaMsg } from "@/lib/media-msg";
 
 const MTLD_INSTALL_LS = "mtld:install:v2";   // = app-shell.MTLD_INSTALL_LS (không import để tránh vòng phụ thuộc)
@@ -110,7 +111,8 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["media-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["shell-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const canEdit = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  const xemNhuUser = useXemNhuUser();
+  const canEdit = !xemNhuUser && !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
 
   // KIỂU HIỂN THỊ TỰ CHỌN THEO FILE — không bắt người dùng bấm chuyển:
   //   · sheet có cột "Các khu" (dự án khu public, là BẢNG BÁO CÁO)  → BẢNG KHU (lưới ô, mỗi ô 1 khu);
@@ -587,7 +589,8 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
   const devAsDlg = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meDlg = useQuery({ queryKey: ["media-whoami", devAsDlg], queryFn: () => whoami({ data: { devAs: devAsDlg } }) });
   const rolesDlg = useQuery({ queryKey: ["media-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const canEditCap = !!(meDlg.data?.isAdmin || (meDlg.data?.email && roleOf(rolesDlg.data?.roles ?? {}, meDlg.data.email) === "PMO"));
+  const xemNhuUserDlg = useXemNhuUser();
+  const canEditCap = !xemNhuUserDlg && !!(meDlg.data?.isAdmin || (meDlg.data?.email && roleOf(rolesDlg.data?.roles ?? {}, meDlg.data.email) === "PMO"));
   const [toa, setToa] = useState(initialToa);
   const [can, setCan] = useState(initialCan);
   const [busy, setBusy] = useState<null | string>(null);   // thông báo tiến trình upload

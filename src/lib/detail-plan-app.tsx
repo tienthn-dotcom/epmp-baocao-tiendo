@@ -16,6 +16,7 @@ import { roleOf } from "@/lib/roles";
 import { parseDetailPlan, type DetailNode, type DetailProject } from "@/lib/detail-plan";
 import { track } from "@/lib/track";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { useXemNhuUser } from "@/lib/view-as";
 
 const SAMPLE_FILE = "1a0i1n9rjtrNUGHtGmuhj4MDQUnR4dJX9";   // dev: file mẫu (sau cho PMO cấu hình link)
 const SAMPLE_GID = "452283237";
@@ -221,10 +222,16 @@ export function DetailPlanApp() {
      test lỡ ghim là không có đường gỡ. Chưa có nguồn nào → về file mẫu. */
   const srcQuery = useQuery({ queryKey: ["dst-sources"], queryFn: () => listDstSources(), staleTime: 5 * 60 * 1000 });
   const sources: DstSourceItem[] = useMemo(() => srcQuery.data?.sources ?? [], [srcQuery.data]);
+  /* Chưa ghim nguồn nào: bản DEV lùi về file mẫu cho dễ thử; bản THẬT thì để TRỐNG.
+     Trước đây bản thật cũng lùi về file mẫu, nên xoá sạch nguồn xong vẫn thấy đầy số của file
+     mẫu — nhìn y như dữ liệu demo không chịu biến mất, không ai biết đường nào mà lần. */
   const activeList: DstSourceItem[] = useMemo(
-    () => (sources.length ? sources : [{ id: "mau", fileId: SAMPLE_FILE, gid: SAMPLE_GID, addedAt: "" }]),
+    () => (sources.length
+      ? sources
+      : (import.meta.env.DEV ? [{ id: "mau", fileId: SAMPLE_FILE, gid: SAMPLE_GID, addedAt: "" }] : [])),
     [sources],
   );
+  const chuaCoNguon = !sources.length && !activeList.length;
   const srcKey = activeList.map((x) => `${x.fileId}|${x.gid ?? ""}|${x.sheet ?? ""}|${x.full ? 1 : 0}`).join(";");
   const q = useQuery({
     queryKey: ["detail-plan", srcKey, refreshN],
@@ -254,7 +261,8 @@ export function DetailPlanApp() {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["dst-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["dst-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  const xemNhuUser = useXemNhuUser();   // admin/PMO đang soi bằng con mắt người thường
+  const canManage = !xemNhuUser && !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
   /** Link tới ĐÚNG file của MỘT nguồn. Không còn một link dùng chung cho cả bảng — bảng gộp nhiều
    *  nguồn thì một link chung chắc chắn lệch với phần lớn số đang hiện. */
   const linkOf = (x: { fileId: string; gid?: string }) => `https://docs.google.com/spreadsheets/d/${x.fileId}/edit${x.gid ? `#gid=${x.gid}` : ""}`;
@@ -639,6 +647,17 @@ ${x.fileId}`}
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: 12 }}>
+        {chuaCoNguon ? (
+          /* Chưa ghim nguồn nào thì nói thẳng là chưa có, thay vì bày một bảng số không rõ của ai. */
+          <div style={{ maxWidth: 460, margin: "56px auto 0", textAlign: "center" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>Chưa có nguồn dữ liệu</div>
+            <div style={{ fontSize: 12.5, color: "#64748b", margin: "8px 0 0", lineHeight: 1.6 }}>
+              {canManage
+                ? "Bấm “Nhập dữ liệu” ở thanh trên, dán link Google Sheet và chọn tab để ghim nguồn cho cả công ty cùng xem."
+                : "PMO chưa ghim link tiến độ chi tiết. Nhờ PMO nhập nguồn rồi mở lại trang này."}
+            </div>
+          </div>
+        ) : <>
         {usingMock && err && <div style={{ marginBottom: 8, fontSize: 11, color: "#b45309" }}>Chưa đọc được file thật ({err}) — đang hiện DỮ LIỆU MẪU.</div>}
         <div ref={scrollRef} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", overflow: "auto", height: "100%" }}>
           <div style={{ display: "grid", gridTemplateColumns: gridTemplate, fontSize: 12.5, minWidth: "max-content" }}>
@@ -745,6 +764,7 @@ ${x.fileId}`}
             })}
           </div>
         </div>
+        </>}
       </div>
     </div>
   );

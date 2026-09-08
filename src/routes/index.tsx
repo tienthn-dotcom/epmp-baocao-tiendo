@@ -13,7 +13,7 @@ import {
   Link2,
   Maximize2,
   Minimize2,
-  MoreHorizontal,
+  Eye, MoreHorizontal,
   Pencil,
   Printer,
   RefreshCw,
@@ -53,7 +53,7 @@ import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
 import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
-import { getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveProjRegions } from "@/lib/mtld-install.functions";
+import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
@@ -64,6 +64,7 @@ import { actionLabel, type ActivityRow } from "@/lib/activity";
 import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
 import { useIsMobile } from "@/lib/use-breakpoint";
+import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -2336,7 +2337,12 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
   // AI ĐANG XEM + có phải admin giám sát không (quyết định hiện nút "Nhật ký giám sát").
   // Ghi luôn 1 lượt "Mở app" ngay khi vào — nền tảng cho nhật ký. Xem lib/activity.ts.
-  const [me, setMe] = useState<{ email: string | null; isAdmin: boolean }>({ email: null, isAdmin: false });
+  const [meThat, setMe] = useState<{ email: string | null; isAdmin: boolean }>({ email: null, isAdmin: false });
+  /* XEM NHƯ NGƯỜI DÙNG THƯỜNG — admin/PMO bật để thấy đúng những gì người thường thấy (kiểm phân
+     quyền, hoặc chụp báo cáo cho đỡ vướng nút). Chỉ che GIAO DIỆN, quyền thật ở server không đổi.
+     Che ngay tại đây nên mọi nhánh phía dưới ăn theo, khỏi phải sửa từng chỗ. */
+  const xemNhuUser = useXemNhuUser();
+  const me = useMemo(() => (xemNhuUser ? { email: meThat.email, isAdmin: false } : meThat), [xemNhuUser, meThat]);
   const [showActivity, setShowActivity] = useState(false);
 
   // Popup "Thi công lắp đặt": map maCT→fileId Summary — ĐỌC Ở CLIENT (trong data, xem gQuery), KHÔNG
@@ -4175,7 +4181,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // Cảnh báo chất lượng dữ liệu (STT trùng/trống…) — KHÔNG bày ngoài trang; rút vào menu "Hệ thống"
   // cho PMO xem (chỉ hiện khi có cảnh báo + là admin/PMO). Đếm số mục ≠ ok để gắn badge.
   const dataQualityBad = useMemo(() => (data.quality?.checks ?? []).filter((c) => c.level !== "ok"), [data.quality]);
-  const canSeeSystem = me.isAdmin || roleOf(roleMap, me.email ?? "") === "PMO";
+  const canSeeSystem = !xemNhuUser && (me.isAdmin || roleOf(roleMap, me.email ?? "") === "PMO");
 
   return (
     <RolesCtx.Provider value={roleMap}>
@@ -4217,6 +4223,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           complianceBadge={complianceReport.duAnTong - complianceReport.duAnDungHan}
           onOpenCompliance={() => { setShowCompliance(true); track("open_compliance"); }}
           isAdmin={me.isAdmin}
+          canXemNhuUser={meThat.isAdmin || roleOf(roleMap, meThat.email ?? "") === "PMO"}
+          onXemNhuUser={() => { datXemNhuUser(true); track("xem_nhu_user", "bật"); }}
           onOpenActivity={() => { setShowActivity(true); track("open_activity"); }}
           onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
           qualityIssues={dataQualityBad.length + noteDrift.length}
@@ -4883,6 +4891,19 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
     doRefresh();
   };
 
+  /* NGÀY CẬP NHẬT THẬT của chính file sau link — hỏi Drive, không lấy từ bảng. Bấm "Cập nhật lại"
+     thì hỏi lại (force) để thấy ngay kết quả sau khi ai đó vừa sửa file. */
+  const metaQ = useQuery({
+    queryKey: ["link-updated", fid, refreshN],
+    queryFn: () => getLinkUpdatedAt({ data: { fileId: fid, force: refreshN > 0 || undefined } }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!fid,
+  });
+  const ngaySua = (() => {
+    const m = metaQ.data?.modifiedTime?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+  })();
+
   const loading = !hasOverride && (q.isPending || (!!q.data && !render && !parseErr && !pdfB64));
   const err = (!hasOverride && q.isError) ? (q.error as Error).message : (hasOverride ? null : parseErr);
   return createPortal(
@@ -4892,6 +4913,13 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
           <div className="min-w-0">
             <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-teal-700" title={initName || "Ma trận lắp đặt"}>{initName || "Ma trận lắp đặt"}</div>
             <div className="truncate text-sm font-semibold text-slate-900">{ov?.sheet ? `Tab: ${ov.sheet}` : "Tiến độ bàn giao"}</div>
+            {/* Ngày Google ghi lại lần sửa cuối của chính file này — không ai gõ tay được. */}
+            {ngaySua && (
+              <div className="truncate text-[11px] text-slate-500" title={metaQ.data?.nguoiSua ? `Người sửa gần nhất: ${metaQ.data.nguoiSua}` : undefined}>
+                Ngày cập nhật: <b className="text-slate-700 tabular-nums">{ngaySua}</b>
+                {metaQ.data?.nguoiSua ? <span className="text-slate-400"> · {metaQ.data.nguoiSua}</span> : null}
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {!hasOverride && (
@@ -5719,6 +5747,26 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
    *  không cần raise. Server vẫn chốt quyền lần nữa (setHiddenRow) — nút này chỉ là lớp giao diện. */
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const canHideRow = isAdmin || isPmo;
+
+  /* NGÀY SỬA THẬT CỦA TỪNG FILE ĐANG GẮN LINK — hỏi Drive một lượt cho mọi link đang có.
+     Lọc theo hạng mục xong, nhìn cột Ngày update ở dòng con là biết số trong link đó mới hay cũ,
+     khỏi phải mở từng popup. Cột ngày cấp dự án vẫn là ngày của bảng, hai thứ khác nhau. */
+  const linkFileIds = useMemo(() => {
+    const ds = new Set<string>();
+    for (const cfg of Object.values(sheetViews ?? {})) {
+      const id = (cfg as SheetViewCfg)?.fileId;
+      if (id) ds.add(id);
+    }
+    for (const id of Object.values(installLinks ?? {})) if (id) ds.add(String(id).split("|")[0]);
+    return [...ds].slice(0, 80);
+  }, [sheetViews, installLinks]);
+  const linkMetaQ = useQuery({
+    queryKey: ["links-updated", linkFileIds.join(",")],
+    queryFn: () => getLinksUpdatedAt({ data: { fileIds: linkFileIds } }),
+    enabled: linkFileIds.length > 0,
+    staleTime: 10 * 60 * 1000,
+  });
+  const linkMeta = linkMetaQ.data?.map ?? {};
   /** Màn hẹp (điện thoại) — đổi cách trình bày bảng, KHÔNG đổi dữ liệu hay số cột. */
   const narrowScreen = useIsMobile();
   /** ĐIỆN THOẠI: gấp/mở khối bộ lọc (máy tính luôn mở — nút bật/tắt bị `md:hidden`). */
@@ -6079,6 +6127,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             KHÔNG lọt vào PDF/Excel. */}
         <td className="border-r border-slate-100 px-1 py-1 text-center">
           {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} fpAt={itemFp[it._key]?.at} />}
+          {/* Dòng con CÓ LINK: ngày file sau link được sửa lần cuối. Cố ý KHÔNG dùng badge màu như
+              dòng cấp dự án — chỉ chữ trơn, quá 14 ngày thì đỏ — để hai loại ngày không lẫn nhau. */}
+          {viewLink && <LinkDate meta={linkMeta[viewLink.fileId.split("|")[0]]} today={today} />}
           {canHideRow && (it._hidden ? (
             <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
               onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, false); }}
@@ -7698,7 +7749,10 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, onAckDrift, onFixDr
   );
 }
 
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, canXemNhuUser, onXemNhuUser, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
+  /** Quyền THẬT (không bị che) — để còn hiện mục "Xem như người dùng thường". */
+  canXemNhuUser?: boolean;
+  onXemNhuUser?: () => void;
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
@@ -7732,6 +7786,7 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
   if (isAdmin && onOpenSource) items.push({ icon: <Settings className="h-4 w-4 text-slate-500" />, label: "Nguồn dữ liệu", onClick: onOpenSource });
+  if (canXemNhuUser && onXemNhuUser) items.push({ icon: <Eye className="h-4 w-4 text-sky-600" />, label: "Xem như người dùng thường", onClick: onXemNhuUser });
   // Trình chiếu TV — CHO MỌI NGƯỜI (không riêng admin): fullscreen cả app + phóng lấp đầy màn TV.
   items.push({ icon: <Tv className="h-4 w-4 text-violet-600" />, label: tvMode ? "Tắt trình chiếu TV" : "Trình chiếu TV", active: tvMode, onClick: onToggleTv });
   if (items.length === 0) return null;
@@ -7831,6 +7886,23 @@ function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; to
           title={chuThich}>
       {fmtDayMonth(hien)}{khaiSuong ? " ⌀" : ""}
     </span>
+  );
+}
+
+/** NGÀY CỦA FILE SAU LINK — chữ trơn dd/mm, quá 14 ngày không ai đụng thì đỏ. Không badge, không
+ *  nền, để phân biệt với chip ngày update cấp dự án. Chưa hỏi được Drive thì không hiện gì. */
+function LinkDate({ meta, today }: { meta?: { modifiedTime: string; nguoiSua: string }; today: string }) {
+  if (!meta?.modifiedTime) return null;
+  const ngay = meta.modifiedTime.slice(0, 10);
+  const d = Math.round(
+    (Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) -
+     Date.UTC(+ngay.slice(0, 4), +ngay.slice(5, 7) - 1, +ngay.slice(8, 10))) / 86400000,
+  );
+  return (
+    <div className={`whitespace-nowrap text-[9px] font-semibold tabular-nums ${d > 14 ? "text-red-600" : "text-slate-700"}`}
+         title={`Dữ liệu trong link sửa lần cuối: ${fmtDateVN2(ngay)} (${d} ngày trước)${meta.nguoiSua ? ` · ${meta.nguoiSua}` : ""}`}>
+      {fmtDayMonth(ngay)}
+    </div>
   );
 }
 

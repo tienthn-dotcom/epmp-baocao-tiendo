@@ -118,6 +118,25 @@ async function updateFileMedia(token: string, fileId: string, uri: string): Prom
 }
 
 // ── HELPER THUẦN (luồng server khác gọi trực tiếp, không qua createServerFn) ──
+/** NGÀY SỬA THẬT của một file trên Drive (hỏi metadata, KHÔNG tải file).
+ *  Dùng cho dòng "Ngày cập nhật" trong popup ma trận: ngày này do Google ghi mỗi lần file đổi,
+ *  nên không ai gõ tay được — khác hẳn cột ngày trong bảng. Trả null khi chưa cấu hình OAuth
+ *  hoặc tài khoản không thấy file (link chưa chia sẻ), để giao diện lặng lẽ ẩn dòng đó đi. */
+export async function driveFileMetaImpl(fileId: string): Promise<{ modifiedTime: string; nguoiSua: string } | null> {
+  const env = await getEnv();
+  if (!env || !(env as Env).GDRIVE_OAUTH_CLIENT_ID || !(env as Env).GDRIVE_OAUTH_REFRESH) return null;
+  try {
+    const token = await accessToken(env as Env);
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime,lastModifyingUser(displayName,emailAddress)&${SHARED}`,
+      { headers: AUTHH(token) });
+    if (!r.ok) return null;
+    const j = await r.json() as { modifiedTime?: string; lastModifyingUser?: { displayName?: string; emailAddress?: string } };
+    if (!j.modifiedTime) return null;
+    return { modifiedTime: j.modifiedTime, nguoiSua: j.lastModifyingUser?.displayName || j.lastModifyingUser?.emailAddress || "" };
+  } catch { return null; }
+}
+
 /** true nếu đã đủ cấu hình OAuth để dùng Drive. */
 export async function driveIsConfigured(): Promise<boolean> {
   const env = await getEnv();
