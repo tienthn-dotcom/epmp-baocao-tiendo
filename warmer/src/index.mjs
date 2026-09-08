@@ -286,6 +286,65 @@ async function driveUpsertFile(token, folder, name, mime, bytes) {
   return j.id;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  DẤU VÂN TAY FILE NGUỒN — trả lời câu "hôm nay có ai đụng vào file không?"
+ *
+ *  Cột "Ngày update" trong báo cáo là do PM tự gõ, nên gõ cho có cũng thành "vừa cập nhật".
+ *  Ở đây hỏi thẳng Drive mã kiểm tra (md5) và giờ sửa của CHÍNH file nguồn: đổi md5 nghĩa là
+ *  nội dung thật sự khác đi, không đổi nghĩa là cả ngày không ai sửa gì — bất kể ô ngày ghi gì.
+ *
+ *  KHÔNG tải và KHÔNG mở file: chỉ hỏi metadata, tốn một lượt gọi nhẹ. Đây cũng là lý do việc
+ *  này nằm ở worker chứ không ở app — chạy mỗi đêm, không cần ai mở app.
+ *  (Muốn biết DÒNG NÀO đổi thì phải mở file — việc đó để app làm lúc nó vốn đã mở file sẵn,
+ *  vì mở file .xlsx 2MB trên worker là cách chắc chắn dẫn tới Error 1102.)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const SRC_FP_KEY = "srcfp:v1";   // { fileId, md5, modifiedTime, doiLuc: [ngày…] }
+
+async function chamVanTayNguon(env) {
+  const kv = env.PMO_EDITS;
+  if (!kv) return { skip: "thiếu KV PMO_EDITS" };
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+
+  let cfg = {};
+  try { cfg = JSON.parse((await kv.get("config:v1")) || "{}"); } catch { /* config hỏng */ }
+  const url = cfg.sheetUrl || "";
+  const fileId = (url.match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1];
+  if (!fileId) return { skip: "chưa cấu hình link nguồn" };
+
+  const token = await driveToken(env);
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=md5Checksum,modifiedTime,size,name,lastModifyingUser(displayName,emailAddress)&${DRIVE_SHARED}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return { loi: `Drive trả mã ${r.status}` };
+  const j = await r.json();
+
+  let cu = {};
+  try { cu = JSON.parse((await kv.get(SRC_FP_KEY)) || "{}"); } catch { /* lần đầu */ }
+  const now = new Date(Date.now() + 7 * 3600_000);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const ngay = `${now.getUTCFullYear()}-${p2(now.getUTCMonth() + 1)}-${p2(now.getUTCDate())}`;
+
+  // md5 chỉ có với file tải lên (xlsx). Google Sheet gốc không có md5 → lùi về modifiedTime.
+  const dau = j.md5Checksum || j.modifiedTime || "";
+  const doi = !!cu.dau && dau !== cu.dau;
+  const lichSu = Array.isArray(cu.doiLuc) ? cu.doiLuc : [];
+  if (doi && !lichSu.includes(ngay)) lichSu.push(ngay);
+
+  const moi = {
+    fileId, dau,
+    ten: j.name || "",
+    modifiedTime: j.modifiedTime || "",
+    nguoiSua: j.lastModifyingUser?.displayName || j.lastModifyingUser?.emailAddress || "",
+    // Ngày GẦN NHẤT thấy nội dung đổi thật. Lần đầu chấm thì lấy luôn hôm nay làm mốc.
+    doiGanNhat: doi || !cu.dau ? ngay : cu.doiGanNhat || ngay,
+    doiLuc: lichSu.slice(-180),   // giữ nửa năm gần nhất, đủ để đếm nhịp cập nhật
+    chamLuc: now.toISOString(),
+  };
+  await kv.put(SRC_FP_KEY, JSON.stringify(moi));
+  return { doi, doiGanNhat: moi.doiGanNhat, modifiedTime: moi.modifiedTime, nguoiSua: moi.nguoiSua, soLanDoi: lichSu.length };
+}
+
 /** Xuất PDF báo cáo tuân thủ từ Google Sheet → ghi đè vào Drive (1 file / 1 ngày). */
 async function backupCompliancePdf(env) {
   if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
@@ -364,6 +423,8 @@ export default {
         .catch((e) => console.error("backupAuditLog lỗi:", e)));
       ctx.waitUntil(backupKvData(env).then((r) => console.log("kvData:", JSON.stringify(r)))
         .catch((e) => console.error("backupKvData lỗi:", e)));
+      ctx.waitUntil(chamVanTayNguon(env).then((r) => console.log("vanTayNguon:", JSON.stringify(r)))
+        .catch((e) => console.error("chamVanTayNguon lỗi:", e)));
       return;
     }
     ctx.waitUntil(warmAll(env));              // 17:30 VN — warm Summary
@@ -378,6 +439,8 @@ export default {
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
     try { pdf = await backupCompliancePdf(env); } catch (e) { pdf = { error: String(e) }; }
     try { kvbak = await backupKvData(env); } catch (e) { kvbak = { error: String(e) }; }
-    return new Response(JSON.stringify({ warm, audit, pdf, kvbak }, null, 2), { headers: { "content-type": "application/json" } });
+    let nguon;
+    try { nguon = await chamVanTayNguon(env); } catch (e) { nguon = { error: String(e) }; }
+    return new Response(JSON.stringify({ warm, audit, pdf, kvbak, nguon }, null, 2), { headers: { "content-type": "application/json" } });
   },
 };
