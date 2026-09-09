@@ -257,7 +257,10 @@ function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?
       const gom: { id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string; toa: string; can: string }[] = [];
       for (const c of cans) {
         const r = await listCanMedia({ data: { project: ten, hid, maCT, toa: c.toa, can: c.can } });
-        for (const p of r.photos) gom.push({ id: p.id, kind: "photo", date: "", desc: p.desc, toa: c.toa, can: c.can });
+        // Ngày nằm trong tên tệp "<căn|mã CT>_<dd-mm-yy>_<rid>.<ext>" — lấy ra để ô ảnh còn ghi ngày,
+        // không thì nạp hết xong mọi ô mất ngày, nhìn không biết tấm nào chụp hôm nào.
+        const ngayCuaTen = (ten: string) => (ten.replace(/\.[^.]+$/, "").match(/(\d{2}-\d{2}-\d{2})/) || ["", ""])[1];
+        for (const p of r.photos) gom.push({ id: p.id, kind: "photo", date: ngayCuaTen(p.name), desc: p.desc, toa: c.toa, can: c.can });
         for (const v of r.videos) gom.push({ id: v.id, kind: "video", date: v.date, desc: v.desc, toa: c.toa, can: c.can });
       }
       setDuBan(gom);
@@ -270,6 +273,15 @@ function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?
   );
   const tong = cans.reduce((n, c) => n + (c.tong || c.media.length), 0);
   const urls = useImageUrls(items.filter((m) => m.kind === "photo").slice(0, 60).map((m) => m.id));
+  /* Server chỉ trả 2 bản mới nhất mỗi kho — luật đó sinh ra cho popup ma trận, nơi một dự án có vài
+     chục căn nên nạp hết là ì. Màn này là THƯ MỤC ẢNH của một dự án, kho nhỏ thì bày hết cho xong,
+     khỏi bắt bấm "Xem thêm". Kho lớn (>30) mới chờ bấm. */
+  useEffect(() => {
+    if (duBan || themBusy || !cans.length) return;
+    const conThieu = tong - cans.reduce((n, c) => n + c.media.length, 0);
+    if (conThieu > 0 && tong <= 30) void napHet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cans, duBan, themBusy, tong]);
 
   const nen: React.CSSProperties = { background: "#fff", borderRadius: 14, boxShadow: "0 10px 30px rgba(15,23,42,.08)" };
   return (
@@ -309,8 +321,9 @@ function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?
               {m.kind === "photo" && urls[m.id] ? (
                 <img src={urls[m.id]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: m.kind === "video" ? 26 : 12 }}>
-                  {m.kind === "video" ? "▶" : "…"}
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                  background: m.kind === "video" ? "#0f172a" : "#e9eef5", color: m.kind === "video" ? "#e2e8f0" : "#94a3b8", fontSize: m.kind === "video" ? 26 : 11 }}>
+                  {m.kind === "video" ? "▶" : "đang tải…"}
                 </div>
               )}
               <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "linear-gradient(transparent, rgba(2,6,23,.75))", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "12px 6px 4px", textAlign: "left" }}>
@@ -1178,10 +1191,14 @@ function useImageUrls(ids: string[]): Record<string, string> {
   useEffect(() => {
     let off = false;
     (async () => {
-      for (const id of ids) {
-        if (map[id]) continue;
-        try { const r = await readCanMediaB64({ data: { id } }); if (!off) setMap((m) => ({ ...m, [id]: r.dataUri })); }
-        catch { /* bỏ ảnh lỗi */ }
+      // Tải theo LÔ 4 tấm: tuần tự thì lưới 12 tấm phải chờ 12 lượt gọi nối đuôi nhau, nhìn như treo.
+      const canTai = ids.filter((id) => !map[id]);
+      for (let i = 0; i < canTai.length; i += 4) {
+        if (off) return;
+        await Promise.all(canTai.slice(i, i + 4).map(async (id) => {
+          try { const r = await readCanMediaB64({ data: { id } }); if (!off) setMap((m) => ({ ...m, [id]: r.dataUri })); }
+          catch { /* bỏ ảnh lỗi */ }
+        }));
       }
     })();
     return () => { off = true; };
