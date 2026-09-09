@@ -836,7 +836,8 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
   useEffect(() => () => { for (const u of Object.values(vidSrc)) URL.revokeObjectURL(u); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
-  const curRoom = cur ? `${cur.toa ? cur.toa + " · " : ""}${cur.can}` : "";
+  // Ảnh của CẢ DỰ ÁN không có tên phòng — gọi thẳng là "Cả dự án", đừng để trống rồi hiện dấu "—".
+  const curRoom = cur ? (`${cur.toa ? cur.toa + " · " : ""}${cur.can}`.trim() || "Cả dự án") : "";
   // Xem toàn dự án: ô Toà/Phòng chạy theo ảnh/video đang xem → bấm "＋ Tải ảnh" là vào ĐÚNG phòng đó.
   useEffect(() => {
     if (scope !== "project" || !cur) return;
@@ -1147,7 +1148,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
               return (
                 <div key={`${g.toa}/${g.can}`} style={{ flex: "0 0 auto" }}>
                   <div style={{ fontSize: 10.5, fontWeight: 700, color: here ? C.teal : "#94a3b8", marginBottom: 4, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span>{g.toa ? `${g.toa} · ` : ""}{g.can} <span style={{ opacity: .7 }}>({g.items.length}{g.tong > g.items.length ? `/${g.tong}` : ""})</span></span>
+                    <span>{`${g.toa ? `${g.toa} · ` : ""}${g.can}`.trim() || "Cả dự án"} <span style={{ opacity: .7 }}>({g.items.length}{g.tong > g.items.length ? `/${g.tong}` : ""})</span></span>
                     {/* Còn bản cũ chưa nạp → cho bấm lấy thêm. Mặc định chỉ 2 bản mới nhất cho nhẹ. */}
                     {g.tong > g.items.length && (
                       <button type="button" onClick={() => void napThem(g)} disabled={!!themBusy}
