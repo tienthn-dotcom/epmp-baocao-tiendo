@@ -56,6 +56,7 @@ import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { ridKeys } from "@/lib/rid";
+import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -1201,39 +1202,6 @@ function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OT
  *  chấm vàng "% cần rà". Các giai đoạn khác (Thiết kế, LOA/Tạm ứng, Thi công lắp đặt…) tính %
  *  theo cách khác (block/nhập tay không breakdown) nên KHÔNG chấm vàng chỉ vì thiếu số mã. */
 const COUNT_STAGES = new Set<string>(["Trình duyệt mẫu", "Đặt vật tư", "Triển khai sản xuất", "Sản xuất nhập kho"]);
-
-/** Đọc DEADLINE (ISO yyyy-mm-dd) từ dd/mm trong TỪ KHOÁ vướng mắc "trình BOD phê duyệt".
- *  - Có dd/mm/yyyy → dùng luôn. Có dd/mm (không năm) → NEO năm theo ngày cắm cờ (firstSeenIso):
- *    năm = năm cắm cờ; nếu dd/mm đứng TRƯỚC ngày cắm trong năm (wrap cuối năm) → +1 năm.
- *  - Ưu tiên cụm dd/mm đứng sau chữ "trước". Không tìm được dd/mm hợp lệ → null (gọi bên ngoài lùi logic cũ). */
-function parseMpDeadlineIso(note: string, firstSeenIso: string): string | null {
-  if (!note) return null;
-  const p2 = (n: number) => String(n).padStart(2, "0");
-  const valid = (d: number, mo: number) => mo >= 1 && mo <= 12 && d >= 1 && d <= 31;
-  // DEADLINE = cụm "trước <dd/mm>" gắn với việc TRÌNH BOD — tức "trước" GẦN chữ "bitrix" NHẤT.
-  //  · Một ghi chú có thể có NHIỀU "trước dd/mm" cho việc KHÁC nhau (vd "…(bitrix) trước 09/09. Cần PM
-  //    đặt hàng gạch trước 29/08") → phải chọn đúng cụm của BOD (gần bitrix), KHÔNG lấy "trước" cuối.
-  //  · KHÔNG có "bitrix" hoặc không có "trước dd/mm" → KHÔNG có deadline (null). KHÔNG nhặt ngày "dời từ".
-  const low = note.normalize("NFC").toLowerCase();
-  const anchor = low.lastIndexOf("bitrix");   // ô gộp nhiều tin → bám cụm bitrix MỚI NHẤT (tin cuối)
-  if (anchor < 0) return null;
-  const cands: { pos: number; d: number; mo: number; y: number | null }[] = [];
-  const re = /trước\s*(?:ngày\s*)?(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?/g;
-  let mm: RegExpExecArray | null;
-  while ((mm = re.exec(low)) !== null) {
-    const d = +mm[1], mo = +mm[2]; let y: number | null = mm[3] ? +mm[3] : null; if (y != null && y < 100) y += 2000;
-    if (valid(d, mo)) cands.push({ pos: mm.index, d, mo, y });
-  }
-  if (!cands.length) return null;
-  cands.sort((a, b) => Math.abs(a.pos - anchor) - Math.abs(b.pos - anchor));   // GẦN "bitrix" nhất
-  const r = cands[0];
-  let y = r.y;
-  if (y == null) {
-    const fy = +firstSeenIso.slice(0, 4), fm = +firstSeenIso.slice(5, 7), fd = +firstSeenIso.slice(8, 10);
-    y = r.mo < fm || (r.mo === fm && r.d < fd) ? fy + 1 : fy;
-  }
-  return `${y}-${p2(r.mo)}-${p2(r.d)}`;
-}
 
 function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "SHOP" | "OTHER" {
   const c = it.rawCode.trim().toUpperCase();
@@ -3280,6 +3248,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
      (tránh xoá nhầm khoá cũ). */
   useEffect(() => {
     if (!remapReady) return;
+    // DỮ LIỆU DEMO TUYỆT ĐỐI KHÔNG ĐƯỢC GHI. Có lượt render dùng demo trong lúc dữ liệu thật đang
+    // tải; lượt đó thấy "dự án không còn cờ" nên XOÁ SẠCH mốc cắm cờ, rồi lượt sau ghi lại bằng
+    // ngày hôm nay — đó là lý do ngày trình BOD cứ nhảy. Xem cùng cách chặn ở syncItemFp.
+    if (dataMode === "demo") return;
     if (mpFlagQuery.isLoading || editsQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {};
     for (const key of mpProjectKeys) if (!mpFlags[key]) add[key] = today.slice(0, 10);
@@ -3294,7 +3266,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         queryClient.setQueryData(["mpFlags"], r.mpFlags);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [remapReady, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
+  }, [remapReady, dataMode, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
 
   /* SỐ TUẦN cờ MP/BOD tồn tại theo TÊN dự án (chuẩn hoá) — cho ComplianceDialog tô màu + trừ điểm.
      ĐẾM THEO KỲ BÁO CÁO (tuần Thứ 2–CN, khớp cột tuần của báo cáo): tuần MỚI DÍNH CỜ = 0 (miễn, chưa
@@ -3311,7 +3283,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       const first = mpFlags[pkProj(p)];
       if (!first) continue;
       const note = mpInfo.get(pkProj(p)) || "";
-      const parsed = parseMpDeadlineIso(note, first);   // dd/mm sau chữ "trước" trong ghi chú, hoặc null
+      // Neo năm theo HÔM NAY, không theo ngày cắm cờ: ngày cắm cờ bị xoá-ghi lại mỗi khi khoá dự án
+      // đổi, neo vào đó thì năm cũng trôi theo.
+      const parsed = parseMpDeadlineIso(note, today.slice(0, 10));
       let dlIso: string | null = null, w = 0;
       if (parsed) {
         // CÓ "trước dd/mm": deadline = đúng ngày đó; QUA deadline → mỗi tuần −10, KHÔNG ân hạn.
