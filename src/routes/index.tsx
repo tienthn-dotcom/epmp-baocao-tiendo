@@ -531,6 +531,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.99.1", date: "09/09/2026", items: [
+    "Sửa menu ẩn dòng: menu nằm trong ô bảng nên bị vùng cuộn cắt mất một nửa, bấm không trúng. Nay nổi hẳn lên trên và tự canh trong màn hình. Chữ gọn lại còn hai dòng: “Chỉ ẩn với tôi” · “Ẩn với mọi người”.",
+  ] },
   { v: "3.99.0", date: "09/09/2026", items: [
     "ẨN DÒNG NAY CÓ HAI LỰA CHỌN. Bấm nút ẩn sẽ hỏi: “Chỉ ẩn với tôi” — dòng chỉ biến khỏi bảng của chính người bấm, dùng để dựng bản báo cáo cho gọn, bảng của người khác giữ nguyên; hoặc “Ẩn với mọi người” — cả công ty không thấy dòng đó nữa, đúng như cách ẩn cũ.",
     "AI CŨNG ẨN ĐƯỢC cho riêng mình. Riêng “Ẩn với mọi người” vẫn chỉ admin và PMO, vì nó đổi bảng báo cáo chính thức của cả nhà.",
