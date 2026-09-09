@@ -235,3 +235,33 @@ test("Edge case: 0% plan + 0% actual but overdue → kept (computed, not from co
   // REF=2026-06-18, Finish=2026-05-25 → 24 ngày
   expect(data.items[0].overdueDays).toBe(24);
 });
+
+/* ── CỘT RID ──────────────────────────────────────────────────────────────────────────────────
+   RID là khoá bền của ghi chú. Trong file thật nhãn "RID" KHÔNG nằm cùng dòng header (dòng header
+   có "Show", nhãn RID nằm ở dòng kế, cùng hàng bộ lọc) — dò đúng một dòng thì cột này coi như không
+   tồn tại, và đó là lý do kho khoá không có lấy một mục `rid:` nào suốt thời gian qua. */
+
+function buildRowsRid(nhanO: number, giaTri: string[]): unknown[][] {
+  const rows = buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" });
+  rows[nhanO] = rows[nhanO] ?? [];
+  (rows[nhanO] as unknown[])[0] = "RID";
+  (rows[7] as unknown[])[0] = giaTri[0];
+  (rows[8] as unknown[])[0] = giaTri[1];
+  return rows;
+}
+
+test("RID: nhãn nằm ở dòng DƯỚI header vẫn đọc được", () => {
+  const data = parseTimelineRows(buildRowsRid(6, ["ePMP1", "ePMP2"]), REF);
+  expect(data.items[0].rid).toBe("ePMP2");
+  expect(data.projects[0].rid).toBe("ePMP1");
+});
+
+test("RID: nhãn nằm ĐÚNG dòng header cũng vẫn đọc được (file đời cũ)", () => {
+  const data = parseTimelineRows(buildRowsRid(5, ["7", "8"]), REF);
+  expect(data.items[0].rid).toBe("8");
+});
+
+test("RID: nguồn chưa có cột thì để trống, app tự lùi về STT/IDCUNG", () => {
+  const data = parseTimelineRows(buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" }), REF);
+  expect(data.items[0].rid).toBeUndefined();
+});

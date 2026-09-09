@@ -55,6 +55,7 @@ import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
+import { ridKeys } from "@/lib/rid";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -2081,9 +2082,10 @@ type GanttRow = {
  *  sync đổi %/mô tả/ngày → ghi chú vẫn dính đúng dòng. Đổi định dạng khoá này sẽ reset
  *  các ghi chú cũ MỘT LẦN (KV cũ dùng khoá 6-trường). */
 const itemKeyOf = (it: ItemRow) =>
-  it.rid && it.rid.trim()
-    // ƯU TIÊN TUYỆT ĐỐI: RID (số nguyên/dòng do PMO điền) — bền nhất, STT đánh lại mặc kệ.
-    ? `rid:${it.rid.trim()}`
+  // ƯU TIÊN TUYỆT ĐỐI: RID (mã dòng do PMO điền) — bền nhất, STT đánh lại mặc kệ. Lấy DẠNG CHUẨN
+  // (xem lib/rid.ts) nên nguồn đổi cách ghi từ "1" sang "ePMP 1" cũng không làm note lạc dòng.
+  ridKeys(it.rid)[0]
+    ? ridKeys(it.rid)[0]
     : it.projHid && it.projHid.trim()
     // Kế: ID CỨNG dự án + mã công đoạn (+dupIdx) — bền khi có cột IDCUNG.
     ? `h:${it.projHid.trim()}:${(it.rawCode || "").toUpperCase()}:${it.dupIdx ?? 0}`
@@ -2096,8 +2098,9 @@ const itemKeyOf = (it: ItemRow) =>
 /** MỌI khoá ứng viên của 1 đầu việc theo thứ tự ưu tiên (rid → h → id → composite). Dùng ĐỌC DỰ PHÒNG:
  *  note cũ lưu ở khoá cũ (h:/id:/composite) VẪN hiện, dù note mới nay ghi theo rid. KHÔNG di trú KV. */
 const itemKeysOf = (it: ItemRow): string[] => {
-  const ks: string[] = [];
-  if (it.rid && it.rid.trim()) ks.push(`rid:${it.rid.trim()}`);
+  // ridKeys trả kèm khoá ĐỜI CŨ (hồi RID còn là số trần) → note viết trước ngày nguồn thêm tiền tố
+  // "ePMP" vẫn hiện nguyên, khỏi phải di trú KV hàng loạt.
+  const ks: string[] = [...ridKeys(it.rid)];
   if (it.projHid && it.projHid.trim()) ks.push(`h:${it.projHid.trim()}:${(it.rawCode || "").toUpperCase()}:${it.dupIdx ?? 0}`);
   if (it.id && it.id.trim()) ks.push(`id:${it.id.trim()}`);
   ks.push([it.projectCode, it.projectName, it.rawCode, it.dupIdx ?? 0].join(String.fromCharCode(0)));
@@ -3018,10 +3021,16 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     // ghi lẻ từng dòng thì hai dòng thay nhau ghi đè và client gửi lại vô tận.
     const gom: Record<string, string[]> = {};
     const ngayKhai: Record<string, string> = {};
+    /* Khoá ỨNG VIÊN KHÁC của cùng một dòng. Khoá của dòng có thể ĐỔI (vd hôm nay app đọc được cột
+       RID nên dòng chuyển từ `id:` sang `rid:`); không dắt theo dấu vân tay cũ thì cả bảng mất ngày
+       đã chấm, chip "ngày cập nhật" nhảy hết về ngày nguồn khai. */
+    const khoaKhac: Record<string, string[]> = {};
     for (const p of data.projects) for (const it of (p.allItems ?? p.items ?? [])) {
       const k = nk(it);
       if (!k) continue;
       (gom[k] ??= []).push(oCoNghia(it));
+      const ds = (khoaKhac[k] ??= []);
+      for (const kk of itemKeysOf(it)) if (kk !== k && !ds.includes(kk)) ds.push(kk);
       // Ngày nguồn khai cho dòng này — dùng làm MỐC BAN ĐẦU, xem chỗ đặt `at` bên dưới.
       const nk2 = (it.updateDate ?? p.updateDate ?? "").slice(0, 10);
       if (nk2 && (!ngayKhai[k] || nk2 > ngayKhai[k])) ngayKhai[k] = nk2;
@@ -3033,8 +3042,12 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       // LẦN ĐẦU thấy một dòng thì chưa biết nó đổi hôm nào, lấy ngày nguồn khai làm mốc tạm —
       // lấy hôm nay là cả bảng hoá ra "vừa cập nhật" trong ngày bật tính năng, mất sạch tín hiệu.
       // Từ lần sau, mã đổi mới ghi hôm nay, và đó mới là ngày số liệu thật sự đổi.
-      if (!cu) entries[k] = { h, at: ngayKhai[k] || today };
-      else if (cu.h !== h) entries[k] = { h, at: today };
+      if (!cu) {
+        // Dòng này đổi khoá → DỜI dấu vân tay cũ sang khoá mới, giữ nguyên ngày đã chấm. Số y hệt
+        // thì ngày giữ nguyên; số đã khác thì mới tính là đổi hôm nay.
+        const cuKhac = (khoaKhac[k] ?? []).map((kk) => itemFp[kk]).find(Boolean);
+        entries[k] = cuKhac ? { h, at: cuKhac.h === h ? cuKhac.at : today } : { h, at: ngayKhai[k] || today };
+      } else if (cu.h !== h) entries[k] = { h, at: today };
     }
     const remove = Object.keys(itemFp).filter((k) => !gom[k]);
     const keys = Object.keys(entries);

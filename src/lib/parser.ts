@@ -462,14 +462,26 @@ function detectHidCol(headerRow: unknown[]): number {
   return -1;
 }
 
-/** Tìm cột "RID" — SỐ NGUYÊN duy nhất mỗi DÒNG do PMO tự điền (thường cột ĐẦU). Khoá bền chống mất
- *  note khi STT bị đánh lại. Trả -1 nếu nguồn chưa thêm cột (app tự lùi về STT/IDCUNG). */
-function detectRidCol(headerRow: unknown[]): number {
-  if (!headerRow) return -1;
-  for (let c = 0; c < headerRow.length; c++) {
-    const h = stripDiacritics(str(headerRow[c]).toLowerCase()).replace(/\s+/g, "");
-    if (!h) continue;
-    if (/^rid$|^r\.i\.d$|^rowid$/.test(h)) return c;
+/**
+ * Tìm cột "RID" — mã dòng duy nhất do PMO tự điền (thường cột ĐẦU). Khoá bền chống mất note khi STT
+ * bị đánh lại. Trả -1 nếu nguồn chưa thêm cột (app tự lùi về STT/IDCUNG).
+ *
+ * DÒ TRONG MỘT CỬA SỔ quanh dòng header chứ không chỉ đúng dòng đó: trong file thật nhãn "RID" nằm ở
+ * DÒNG DƯỚI header (dòng header có "Show", dòng kế mới có "RID" cùng hàng bộ lọc). Chỉ dò đúng một
+ * dòng thì ridCol = -1, và cột RID coi như không tồn tại — đúng thứ đã xảy ra: kho khoá không có
+ * lấy một mục `rid:` nào dù nguồn đã điền cột này từ lâu.
+ *
+ * Quét dòng dữ liệu cũng không sợ nhận nhầm: chỉ khớp ô ghi ĐÚNG chữ "RID", còn ô dữ liệu là "ePMP1".
+ */
+function detectRidCol(rows: unknown[][], headerIdx: number): number {
+  for (let r = Math.max(0, headerIdx - 1); r <= headerIdx + 2; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const h = stripDiacritics(str(row[c]).toLowerCase()).replace(/\s+/g, "");
+      if (!h) continue;
+      if (/^rid$|^r\.i\.d$|^rowid$/.test(h)) return c;
+    }
   }
   return -1;
 }
@@ -490,7 +502,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const updateCol = detectUpdateDateCol(rows[COL.headerIdx] ?? []);
   const idCol = detectIdCol(rows[COL.headerIdx] ?? []);
   const hidCol = detectHidCol(rows[COL.headerIdx] ?? []);
-  const ridCol = detectRidCol(rows[COL.headerIdx] ?? []);
+  const ridCol = detectRidCol(rows, COL.headerIdx);
   /** ID phân cấp (cột STT) của dòng hiện tại — "" nếu nguồn không có cột. */
   const idOf = (r: unknown[]): string | undefined => {
     if (idCol < 0) return undefined;
