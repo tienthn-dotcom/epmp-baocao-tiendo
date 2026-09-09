@@ -6594,13 +6594,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                             <button type="button" onClick={() => onOpenImage?.(g.key, g.name)}
                               className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">📷 {projImgIdx?.[g.key]?.n}</button>
                           )}
-                          {/* Nút Ảnh/clip hiện ở MỌI dự án, kể cả dự án chưa có ma trận và chưa có tư liệu —
-                              công trường nào cũng chụp ảnh mỗi ngày, phải có chỗ đưa lên. Chưa có gì thì nút mờ. */}
-                          {(() => { const coTL = hasMedia?.(g.name, g.items[0]?.projHid, g.maCT); return (
+                          {/* CHỈ hiện khi dự án ĐÃ CÓ tư liệu — đây là dấu hiệu "có gì để xem", không phải
+                              lối tải lên. Dự án chưa có ảnh (kể cả chưa có ma trận) thì vào app
+                              "Hình ảnh mỗi ngày" chọn dự án là tải lên được. */}
+                          {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
                             <button type="button" onClick={() => onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT)}
-                              title={coTL ? "Xem ảnh và clip của dự án" : "Chưa có ảnh — bấm để thêm"}
-                              className={`rounded-md px-2 py-1 text-[11px] font-semibold ${coTL ? "bg-white/15" : "bg-white/5 opacity-70"}`}>🎬 Ảnh/clip</button>
-                          ); })()}
+                              className="rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold">🎬 Ảnh/clip</button>
+                          )}
                         </div>
                       </div>
                       {expanded && (
@@ -6774,15 +6774,16 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                         )}
                         {/* MEDIA CÔNG TRƯỜNG — mở THẲNG popup tại đây, xem TOÀN BỘ ảnh + video của dự án
                             (gom theo phòng/khu). Trước chỉ hiện ở Mini Hotel và phải nhảy sang app khác. */}
-                        {/* MỌI dự án đều có chữ Media, kể cả dự án chưa có ma trận: công trường nào cũng
-                            chụp ảnh mỗi ngày. Chưa có tư liệu thì chữ mờ đi, bấm vào vẫn thêm được. */}
-                        {(() => { const coTL = hasMedia?.(g.name, g.items[0]?.projHid, g.maCT); return (
+                        {/* CHỈ hiện khi dự án ĐÃ CÓ tư liệu — bảng chính giữ nguyên như trước, không bày
+                            thêm chữ ở 73 dòng. Muốn thêm ảnh cho dự án chưa có gì thì vào app
+                            "Hình ảnh mỗi ngày", chọn dự án trong ô trên cùng. */}
+                        {hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) && (
                           <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT); }}
-                            className={`inline-flex items-center gap-0.5 text-[0.72em] font-semibold hover:text-white ${coTL ? "text-teal-200" : "text-slate-400"}`}
-                            title={coTL ? "Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)" : "Chưa có ảnh nào — bấm để thêm cho dự án này"}>
+                            className="inline-flex items-center gap-0.5 text-[0.72em] font-semibold text-teal-200 hover:text-white"
+                            title="Xem toàn bộ ảnh + video công trường của dự án (gom theo phòng / khu)">
                             🎬 Media
                           </button>
-                        ); })()}
+                        )}
                       </div>
                     </td>
                     {/* Nhân sự phụ trách: PM của dự án */}
