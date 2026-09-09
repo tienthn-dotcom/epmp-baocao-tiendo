@@ -527,6 +527,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.98.0", date: "09/09/2026", items: [
+    "NGÀY CẬP NHẬT CỦA CHÍNH FILE SAU LINK — mở ma trận lắp đặt là thấy ngay dòng “Ngày cập nhật: dd/mm/yyyy” kèm tên người sửa gần nhất. Ngày này hỏi thẳng Google Drive về file đang gắn link nên không ai gõ tay vào được.",
+    "TRONG BẢNG CHÍNH, dòng nào có gắn link thì cột “Ngày update” hiện thêm NGÀY CỦA FILE ĐÓ ngay bên dưới — chữ trơn, quá 14 ngày không ai đụng thì đỏ. Lọc theo hạng mục là biết ngay số trong từng link mới hay cũ, khỏi mở từng cái.",
+    "XEM NHƯ NGƯỜI DÙNG THƯỜNG (Hệ thống › Xem như người dùng thường) — admin và PMO bật lên để thấy đúng những gì người thường thấy: nút quản trị, app riêng, cột thao tác đều ẩn. Dùng để kiểm phân quyền, và để chụp màn báo cáo cho đỡ vướng nút. Lối ra là chốt nhỏ góc dưới trái; chốt đó không lọt vào ảnh chụp hay bản PDF.",
+    "DỰ ÁN CHƯA CÓ MA TRẬN NAY VẪN ĐƯA ẢNH LÊN ĐƯỢC. Vào “Hình ảnh mỗi ngày”, ô chọn dự án tách hai nhóm: “Xem theo từng căn” (bấm ô ma trận như cũ) và “Xem cả dự án”. Chọn dự án nhóm sau là ra thẳng kho ảnh dạng thư mục: lưới ảnh, mỗi tấm ghi ngày, clip có dấu ▶, kèm nút Tải ảnh / clip. Vẫn bắt buộc ghi báo cáo hiện trạng khi tải lên.",
+    "Ảnh của dự án không chia theo căn lưu thẳng trong “Media › <MÃ CT> › Hình ảnh | Video”. Tải lên xong là chữ 🎬 Media ở bảng chính hiện ngay, không phải chờ hay tải lại trang; dự án đã có kho ảnh thì bấm thẳng vào TÊN dự án cũng mở được.",
+    "DST — chưa ghim nguồn nào thì nói thẳng “Chưa có nguồn dữ liệu” thay vì lặng lẽ hiện số của file mẫu.",
+  ] },
   { v: "3.97.0", date: "08/09/2026", items: [
     "CỘT “NGÀY UPDATE” NAY LÀ NGÀY SỐ LIỆU THẬT SỰ ĐỔI, không còn là ngày người ta gõ tay trong nguồn. App tự chấm một mã rút gọn cho từng dòng (phần trăm thực tế, phần trăm dự kiến, số mã từng loại, số liệu Block, mốc bắt đầu / kết thúc, người phụ trách); lần nạp sau mã khác đi mới tính là có người sửa. Gõ lại ngày mà không sửa gì thì chip đứng yên. Dòng nào nguồn khai ngày mới mà số liệu đứng yên từ 7 ngày trở lên thì chip đeo viền cam và dấu ⌀; rê chuột thấy cả hai mốc.",
     "MÁY TỰ CHẤM DẤU VÂN TAY FILE NGUỒN MỖI ĐÊM — hỏi thẳng Drive mã kiểm tra và giờ sửa của chính file Master Plan, nên trả lời được “hôm nay có ai đụng vào file không” mà không phụ thuộc ô ngày do PM tự điền.",
