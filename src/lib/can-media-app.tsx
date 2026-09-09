@@ -152,15 +152,6 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
   });
   const isZone = !!regionQ.data && zonesOfSheet(regionQ.data.sh, regionQ.data.range).length > 0;
 
-  useEffect(() => {
-    if (!chiXem) { daMoRef.current = ""; return; }
-    const ten = selKmt?.name || sel?.name || "";
-    if (!ten || daMoRef.current === selId) return;
-    daMoRef.current = selId;
-    setPick({ toa: "", can: "", scope: "project" });
-    track("media_project", ten);
-  }, [chiXem, selId, selKmt, sel]);
-
   const narrowTop = useIsMobile();   // dien thoai: thanh tren thu gon, bo nut phu
   return (
     <div style={{ minHeight: "100vh", background: "#eef2f7", fontFamily: "system-ui,-apple-system,Segoe UI,sans-serif" }}>
@@ -213,19 +204,14 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
             </button>
           </div>
         ) : chiXem ? (
-          /* CHƯA CÓ MA TRẬN — không có bảng để bấm, nên mở thẳng kho ảnh chung của dự án.
-             Ảnh vẫn tách kho theo từng dự án, chỉ là không chia theo căn. */
-          <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
-            <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{selKmt?.name || sel?.name}</div>
-            <div style={{ marginTop: 6, fontSize: 13, color: C.sub, lineHeight: 1.7 }}>
-              Kho ảnh của dự án đang mở sẵn. Dự án chưa có ma trận nên ảnh và clip gom chung một kho,
-              không chia theo từng căn — mọi thứ còn lại giống hệt, vẫn bắt buộc kèm báo cáo hiện trạng khi tải lên.
-            </div>
-            <button type="button" onClick={() => { const ten = selKmt?.name || sel?.name || ""; setPick({ toa: "", can: "", scope: "project" }); track("media_project", ten); }}
-              style={{ marginTop: 16, border: "none", borderRadius: 10, padding: "11px 20px", background: C.tealD, color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}>
-              🖼 Mở lại kho ảnh của dự án
-            </button>
-          </div>
+          /* CHƯA CÓ MA TRẬN — không có bảng ma trận để bấm, nên bày thẳng KHO ẢNH của dự án như một
+             thư mục ảnh: lưới thumbnail, bấm tấm nào mở tấm đó. Ảnh vẫn tách kho theo từng dự án. */
+          <KhoAnhDuAn
+            ten={selKmt?.name || sel?.name || ""}
+            hid={selKmt?.hid ?? sel?.hid}
+            maCT={selKmt?.maCT ?? sel?.maCT}
+            onMo={() => { const t = selKmt?.name || sel?.name || ""; setPick({ toa: "", can: "", scope: "project" }); track("media_project", t); }}
+          />
         ) : listQ.isPending ? (
           <div style={{ padding: 40, textAlign: "center", color: C.sub, fontSize: 13.5 }}>Đang tải danh sách dự án…</div>
         ) : list.length === 0 ? (
@@ -243,6 +229,101 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         hid={pick.project ? undefined : (selKmt?.hid ?? sel?.hid)} maCT={selKmt?.maCT ?? sel?.maCT}
         projKey={pick.project ? `N:${pick.project}` : (selKmt ? kmtId(selKmt) : (sel ? projId(sel) : ""))}
         initialToa={pick.toa ?? ""} initialCan={pick.can} scope={pick.scope} onClose={() => setPick(null)} />}
+    </div>
+  );
+}
+
+/**
+ * KHO ẢNH CỦA DỰ ÁN — bày như một thư mục ảnh: lưới thumbnail, mỗi tấm ghi ngày chụp, clip có dấu ▶.
+ * Dùng cho dự án CHƯA CÓ ma trận (không có bảng để bấm về từng căn). Bấm tấm nào thì mở popup xem
+ * kèm hộp chú thích; nút tải lên cũng nằm trong popup vì ở đó mới có ô báo cáo hiện trạng bắt buộc.
+ * Mặc định server chỉ trả 2 bản mới nhất mỗi kho cho nhẹ; bấm "Xem thêm" để lấy phần cũ.
+ */
+function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?: string; onMo: () => void }) {
+  const q = useQuery({
+    queryKey: ["kho-anh-da", ten, hid ?? "", maCT ?? ""],
+    queryFn: () => listProjectMedia({ data: { project: ten, hid, maCT } }),
+    enabled: !!ten,
+    staleTime: 60_000,
+  });
+  const cans = q.data?.cans ?? [];
+  // Server chỉ trả 2 bản mới nhất mỗi kho cho nhẹ. Ở màn "thư mục ảnh" thì người ta muốn thấy hết,
+  // nên có nút lấy thêm — bấm mới gọi, không tự tải cả trăm tệp lúc mở trang.
+  const [themBusy, setThemBusy] = useState(false);
+  const [duBan, setDuBan] = useState<{ id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string; toa: string; can: string }[] | null>(null);
+  const napHet = async () => {
+    setThemBusy(true);
+    try {
+      const gom: { id: string; kind: "photo" | "video"; date: string; desc?: string; at?: string; toa: string; can: string }[] = [];
+      for (const c of cans) {
+        const r = await listCanMedia({ data: { project: ten, hid, maCT, toa: c.toa, can: c.can } });
+        for (const p of r.photos) gom.push({ id: p.id, kind: "photo", date: "", desc: p.desc, toa: c.toa, can: c.can });
+        for (const v of r.videos) gom.push({ id: v.id, kind: "video", date: v.date, desc: v.desc, toa: c.toa, can: c.can });
+      }
+      setDuBan(gom);
+    } catch { /* lấy hụt thì giữ nguyên 2 bản mới nhất */ }
+    finally { setThemBusy(false); }
+  };
+  const items = useMemo(
+    () => duBan ?? cans.flatMap((c) => c.media.map((m) => ({ ...m, toa: c.toa, can: c.can }))),
+    [duBan, cans],
+  );
+  const tong = cans.reduce((n, c) => n + (c.tong || c.media.length), 0);
+  const urls = useImageUrls(items.filter((m) => m.kind === "photo").slice(0, 60).map((m) => m.id));
+
+  const nen: React.CSSProperties = { background: "#fff", borderRadius: 14, boxShadow: "0 10px 30px rgba(15,23,42,.08)" };
+  return (
+    <div style={{ ...nen, padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{ten}</div>
+          <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
+            Dự án chưa có ma trận — ảnh và clip gom chung một kho, không chia theo từng căn.
+          </div>
+        </div>
+        <button type="button" onClick={onMo}
+          style={{ marginLeft: "auto", border: "none", borderRadius: 10, padding: "10px 18px", background: C.tealD, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>
+          ＋ Tải ảnh / clip
+        </button>
+      </div>
+
+      {q.isPending ? (
+        <div style={{ padding: "34px 0", textAlign: "center", color: C.sub, fontSize: 13 }}>Đang tải kho ảnh…</div>
+      ) : !items.length ? (
+        <div style={{ padding: "34px 0", textAlign: "center", color: C.sub, fontSize: 13, lineHeight: 1.7 }}>
+          Dự án chưa có ảnh hoặc clip nào.<br />
+          <span style={{ fontSize: 12 }}>Bấm “＋ Tải ảnh / clip” để thêm — nhớ ghi báo cáo hiện trạng kèm theo.</span>
+        </div>
+      ) : <>
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: ".04em" }}>
+            {items.length} mục đang hiện{tong > items.length ? ` · còn ${tong - items.length} bản cũ` : ""}
+          </span>
+          {tong > items.length && (
+            <button type="button" onClick={() => void napHet()} disabled={themBusy}
+              style={{ border: "1px solid #cbd5e1", background: "#fff", color: C.ink, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: themBusy ? .6 : 1 }}>
+              {themBusy ? "Đang lấy…" : `Xem thêm ${tong - items.length} bản cũ`}
+            </button>
+          )}
+        </div>
+        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: 10 }}>
+          {items.map((m) => (
+            <button key={m.id} type="button" onClick={onMo} title={m.desc || (m.kind === "video" ? "Clip" : "Ảnh")}
+              style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", background: "#0f172a", padding: 0, cursor: "pointer", aspectRatio: "4 / 3", position: "relative" }}>
+              {m.kind === "photo" && urls[m.id] ? (
+                <img src={urls[m.id]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              ) : (
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: m.kind === "video" ? 26 : 12 }}>
+                  {m.kind === "video" ? "▶" : "…"}
+                </div>
+              )}
+              <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "linear-gradient(transparent, rgba(2,6,23,.75))", color: "#fff", fontSize: 10.5, fontWeight: 700, padding: "12px 6px 4px", textAlign: "left" }}>
+                {m.kind === "video" ? "Clip" : "Ảnh"}{m.date ? ` · ${m.date}` : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      </>}
     </div>
   );
 }
