@@ -169,12 +169,12 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               style={{ height: 40, borderRadius: 10, border: "none", padding: "0 12px", fontSize: 14, fontWeight: 700, color: C.ink, background: "#fff", flex: 1, minWidth: 0, maxWidth: "100%" }}>
               {list.length === 0 && khongMaTran.length === 0 && <option value="">(chưa có dự án nào)</option>}
               {list.length > 0 && (
-                <optgroup label="Có ma trận lắp đặt">
+                <optgroup label="Xem theo từng căn">
                   {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
                 </optgroup>
               )}
               {khongMaTran.length > 0 && (
-                <optgroup label="Chưa có ma trận — ảnh gom chung dự án">
+                <optgroup label="Xem cả dự án">
                   {khongMaTran.map((p) => <option key={kmtId(p)} value={kmtId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
                 </optgroup>
               )}
@@ -197,7 +197,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         {missProject ? (
           <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", color: C.sub, fontSize: 13.5, lineHeight: 1.7, boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
             Dự án <b style={{ color: C.ink }}>{missProject}</b> chưa được gắn link ma trận nên chưa có bảng để bấm.
-            <div style={{ marginTop: 6, fontSize: 12.5 }}>PMO vào ePMP → dòng dự án → “Gắn/Sửa link” để gắn ma trận, hoặc chọn dự án khác ở ô trên.</div>
+            {canEdit && <div style={{ marginTop: 6, fontSize: 12.5 }}>PMO vào ePMP → dòng dự án → “Gắn/Sửa link” để gắn ma trận, hoặc chọn dự án khác ở ô trên.</div>}
             <button type="button" onClick={() => setMissProject(null)}
               style={{ marginTop: 14, border: "none", borderRadius: 9, padding: "8px 16px", background: C.tealD, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               Xem dự án đang chọn
@@ -275,12 +275,9 @@ function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?
   return (
     <div style={{ ...nen, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{ten}</div>
-          <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>
-            Dự án chưa có ma trận — ảnh và clip gom chung một kho, không chia theo từng căn.
-          </div>
-        </div>
+        {/* CHỈ tên dự án. Chuyện "dự án này chưa có ma trận nên gom chung kho" là việc nội bộ của
+            người dựng bảng, người vào xem ảnh không cần đọc — đừng bày ra màn hình. */}
+        <div style={{ minWidth: 0, fontSize: 15.5, fontWeight: 800, color: C.ink }}>{ten}</div>
         <button type="button" onClick={onMo}
           style={{ marginLeft: "auto", border: "none", borderRadius: 10, padding: "10px 18px", background: C.tealD, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>
           ＋ Tải ảnh / clip
@@ -290,14 +287,13 @@ function KhoAnhDuAn({ ten, hid, maCT, onMo }: { ten: string; hid?: string; maCT?
       {q.isPending ? (
         <div style={{ padding: "34px 0", textAlign: "center", color: C.sub, fontSize: 13 }}>Đang tải kho ảnh…</div>
       ) : !items.length ? (
-        <div style={{ padding: "34px 0", textAlign: "center", color: C.sub, fontSize: 13, lineHeight: 1.7 }}>
-          Dự án chưa có ảnh hoặc clip nào.<br />
-          <span style={{ fontSize: 12 }}>Bấm “＋ Tải ảnh / clip” để thêm — nhớ ghi báo cáo hiện trạng kèm theo.</span>
+        <div style={{ padding: "34px 0", textAlign: "center", color: C.sub, fontSize: 13 }}>
+          Chưa có ảnh hoặc clip nào.
         </div>
       ) : <>
         <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: ".04em" }}>
-            {items.length} mục đang hiện{tong > items.length ? ` · còn ${tong - items.length} bản cũ` : ""}
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>
+            {tong > items.length ? `${items.length}/${tong}` : `${items.length}`} ảnh &amp; clip
           </span>
           {tong > items.length && (
             <button type="button" onClick={() => void napHet()} disabled={themBusy}
