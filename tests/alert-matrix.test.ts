@@ -8,11 +8,13 @@ import type { ItemRow } from "../src/lib/types";
 const GT = 40; // gapThreshold
 
 describe("bậc phân loại", () => {
-  it("bậc % lệch: 1 = ≥40 · 2 = 20..<40 · 3 = <20", () => {
+  // Chốt 31/07/2026: mốc 20% thuộc BẬC 3 ("bám sát kế hoạch"), bậc 2 là dải TRÊN 20 tới dưới ngưỡng trễ.
+  it("bậc % lệch: 1 = ≥40 · 2 = >20..<40 · 3 = ≤20", () => {
     expect(gapLevel(40, GT)).toBe(1);
     expect(gapLevel(100, GT)).toBe(1);
     expect(gapLevel(39.9, GT)).toBe(2);
-    expect(gapLevel(20, GT)).toBe(2);
+    expect(gapLevel(20.1, GT)).toBe(2);
+    expect(gapLevel(20, GT)).toBe(3);
     expect(gapLevel(19.9, GT)).toBe(3);
     expect(gapLevel(0, GT)).toBe(3);
     expect(gapLevel(-30, GT)).toBe(3); // vượt kế hoạch

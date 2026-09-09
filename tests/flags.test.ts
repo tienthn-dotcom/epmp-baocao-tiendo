@@ -26,16 +26,16 @@ describe("detectStage — nhận diện bản LIVE / DEV", () => {
 });
 
 describe("featureOn — ma trận bật/tắt", () => {
-  it("Đánh giá tuân thủ: DEV bật, LIVE tắt (21/07 tạm ẩn bản nâng cấp trên live)", () => {
+  it("Đánh giá tuân thủ: BẬT cả hai bản (28/07 đưa lên live sau khi duyệt số)", () => {
     expect(featureOn("complianceReport", "dev")).toBe(true);
-    expect(featureOn("complianceReport", "live")).toBe(false);
+    expect(featureOn("complianceReport", "live")).toBe(true);
   });
-  it("Tác vụ con Gantt: DEV bật, LIVE tắt (21/07 tạm ẩn dòng con trên live)", () => {
+  it("Tác vụ con Gantt: BẬT cả hai bản (28/07 đưa lên live)", () => {
     expect(featureOn("ganttChildTasks", "dev")).toBe(true);
-    expect(featureOn("ganttChildTasks", "live")).toBe(false);
+    expect(featureOn("ganttChildTasks", "live")).toBe(true);
   });
-  it("App Shell (thanh dọc multi-app): DEV bật, LIVE tắt (đang phát triển, chưa cho lên live)", () => {
+  it("App Shell (thanh dọc multi-app): BẬT cả hai bản (17/08 deploy app Chi tiết tiến độ)", () => {
     expect(featureOn("appShell", "dev")).toBe(true);
-    expect(featureOn("appShell", "live")).toBe(false);
+    expect(featureOn("appShell", "live")).toBe(true);
   });
 });

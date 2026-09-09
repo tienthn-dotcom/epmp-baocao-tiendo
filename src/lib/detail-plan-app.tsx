@@ -225,13 +225,16 @@ export function DetailPlanApp() {
   /* Chưa ghim nguồn nào: bản DEV lùi về file mẫu cho dễ thử; bản THẬT thì để TRỐNG.
      Trước đây bản thật cũng lùi về file mẫu, nên xoá sạch nguồn xong vẫn thấy đầy số của file
      mẫu — nhìn y như dữ liệu demo không chịu biến mất, không ai biết đường nào mà lần. */
+  // Bản DEV thêm ?nguon=trong để dựng đúng cảnh "chưa ghim nguồn nào" mà thử màn hình trống,
+  // vì bình thường dev luôn lùi về file mẫu nên không bao giờ thấy được cảnh đó.
+  const thuTrong = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("nguon") === "trong";
   const activeList: DstSourceItem[] = useMemo(
-    () => (sources.length
+    () => (sources.length && !thuTrong
       ? sources
-      : (import.meta.env.DEV ? [{ id: "mau", fileId: SAMPLE_FILE, gid: SAMPLE_GID, addedAt: "" }] : [])),
-    [sources],
+      : (import.meta.env.DEV && !thuTrong ? [{ id: "mau", fileId: SAMPLE_FILE, gid: SAMPLE_GID, addedAt: "" }] : [])),
+    [sources, thuTrong],
   );
-  const chuaCoNguon = !sources.length && !activeList.length;
+  const chuaCoNguon = !activeList.length;
   const srcKey = activeList.map((x) => `${x.fileId}|${x.gid ?? ""}|${x.sheet ?? ""}|${x.full ? 1 : 0}`).join(";");
   const q = useQuery({
     queryKey: ["detail-plan", srcKey, refreshN],

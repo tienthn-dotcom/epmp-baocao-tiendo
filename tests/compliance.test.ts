@@ -174,8 +174,9 @@ describe("chấm điểm tuân thủ", () => {
     );
     const p = r.projects[0];
     expect(p.updateScore).toBe(100);   // 3 tuần đã tới hạn đều P
-    expect(p.qualityPenalty).toBe(4);  // nửa đầu việc thiếu định lượng
-    expect(p.score).toBe(96);          // 100 − 4
+    // Chốt 28/07: BỎ chấm chất lượng Master Plan, điểm chỉ theo 3 tiêu chí tuân thủ.
+    expect(p.qualityPenalty).toBe(0);
+    expect(p.score).toBe(100);
   });
 });
 

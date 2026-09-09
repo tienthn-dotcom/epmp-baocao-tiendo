@@ -221,7 +221,8 @@ test("Cổng dữ liệu: mã prefix lạ bị bỏ qua → cảnh báo, không 
   expect(q.level).toBe("warn");
   const chk = q.checks.find(c => c.id === "unknownPrefix")!;
   expect(chk.level).toBe("warn");
-  expect(chk.detail).toContain("XYZ-99");
+  // Mã lạ nay liệt kê ĐÍCH DANH từng dòng trong `items`; `detail` chỉ còn câu hướng dẫn cách sửa.
+  expect((chk.items ?? []).join(" ")).toContain("XYZ-99");
 });
 
 test("Edge case: 0% plan + 0% actual but overdue → kept (computed, not from col T)", () => {

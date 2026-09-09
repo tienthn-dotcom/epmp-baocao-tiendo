@@ -78,10 +78,12 @@ test("Ma trận 3B: 90% thực tế (lệch 10) + trễ 5 → CẦN TẬP TRUNG"
   expect(r.kind).toBe("focus");
 });
 
-test("Luật 09/07: trễ 25 ngày (≥14) → TRỄ TIẾN ĐỘ dù gap nhỏ", () => {
+// Sau 31/07: lệch 20 rơi BẬC 3, ô 3A của ma trận là "cần cắt đầu việc" — trễ nặng mà bám sát
+// kế hoạch nghĩa là đầu việc thừa so với năng lực, không phải trễ tiến độ.
+test("Lệch 20 (bậc 3) + trễ 25 ngày (bậc A) → ô 3A = CẦN CẮT ĐẦU VIỆC", () => {
   const it = mkItem({ projectCode: "P", projectName: "X", rawCode: "VT-1", pctPlanRaw: 80, pctActual: 60, overdueDays: 25 });
   const r = classifyStageAlert(it, matcher.computePlanPct(it), TH);
-  expect(r.kind).toBe("late");
+  expect(r.kind).toBe("trim");
 });
 
 test("Luật 09/07: gap 20 (dải 20–39) + trễ 13 (<14) → CẦN TẬP TRUNG", () => {

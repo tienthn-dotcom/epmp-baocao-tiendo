@@ -97,15 +97,16 @@ const capNgan = (s?: string): string | undefined => {
 
 /** Cấp PHIÊN UPLOAD 1 file media (ảnh/video) cho 1 PHÒNG (Toà + căn) của 1 DỰ ÁN. Trả { uploadUrl, name }. */
 export const startCanMediaUpload = createServerFn({ method: "POST" })
-  .validator((d: { project: string; hid?: string; maCT?: string; toa?: string; can: string; kind: "photo" | "video"; ext: string; mime: string; origin?: string; caption?: string; devAs?: string | null }) => d)
+  .validator((d: { project: string; hid?: string; maCT?: string; toa?: string; can: string; caDuAn?: boolean; kind: "photo" | "video"; ext: string; mime: string; origin?: string; caption?: string; devAs?: string | null }) => d)
   .handler(async ({ data }): Promise<{ uploadUrl: string; name: string }> => {
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
-    /* KHÔNG có tên phòng = ảnh của CẢ DỰ ÁN (dự án chưa có ma trận nên không có căn để dắt về).
-       Khi đó tệp nằm thẳng trong thư mục dự án: <MÃ CT> › Hình ảnh | Video. Trước đây chặn cứng ở
-       đây nên mấy dự án chưa có ma trận không có đường đưa ảnh lên. */
+    /* ẢNH CỦA CẢ DỰ ÁN — dự án chưa có ma trận thì không có căn để dắt về, tệp nằm thẳng trong
+       thư mục dự án: <MÃ CT> › Hình ảnh | Video. Phải khai CỜ `caDuAn` tường minh: nếu chỉ suy từ
+       "ô phòng rỗng" thì một lời gọi thiếu sót cũng lẳng lặng đổ tệp ra thư mục gốc dự án. */
     const can = safeCan(data.can);
-    const caDuAn = !can;
+    const caDuAn = !can && data.caDuAn === true;
+    if (!can && !caDuAn) throw new Error("Thiếu tên phòng.");
     const tienTo = can || (data.maCT || "").split(/[,;/]/)[0].replace(/\s+/g, "").toUpperCase() || "DuAn";
     // CHÚ THÍCH LÀ BẮT BUỘC: tải ảnh/clip lên đồng thời phải nói hiện trạng đang tới đâu. Chặn ở
     // SERVER chứ không riêng ở nút bấm — người dùng gọi thẳng API vẫn không lách được.
