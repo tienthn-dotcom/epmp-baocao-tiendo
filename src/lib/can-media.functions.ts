@@ -85,7 +85,16 @@ const mediaPath = (drive: { mediaFolderPath: (p: string, t: string, c: string, k
   drive.mediaFolderPath(project, toa, can, kind === "video" ? "video" : "photo", "ePMP", hid, maCT);
 const rid6 = () => Math.random().toString(36).slice(2, 8);
 /** Số mục mới nhất mỗi căn mà màn hình nạp sẵn (Drive vẫn giữ đủ, xem cũ thì bấm "Xem thêm"). */
-const MEDIA_MOI_NHAT = 2;
+const MEDIA_MOI_NHAT = 2;          // số tệp lấy tạm khi không đọc được ngày của tệp nào
+const MEDIA_SO_NGAY = 2;           // lấy MỌI tệp của 2 NGÀY gần nhất có tư liệu
+
+/** Ngày của một tệp, dạng so sánh được "YYYY-MM-DD".
+ *  Ưu tiên giờ tải lên thật (createdTime); thiếu thì lùi về ngày trong tên tệp (dd-mm-yy). */
+function ngayCuaTep(m: { at?: string; date?: string }): string {
+  if (m.at) return m.at.slice(0, 10);
+  const d = m.date || "";
+  return /^\d{2}-\d{2}-\d{2}$/.test(d) ? `20${d.slice(6, 8)}-${d.slice(3, 5)}-${d.slice(0, 2)}` : "";
+}
 /** CHÚ THÍCH ảnh/clip — cắt còn 100 TỪ (chốt với chủ nhà) và bỏ xuống dòng cho gọn một đoạn.
  *  Chặn ở SERVER chứ không chỉ ở ô nhập: client sửa được, server thì không. */
 const capNgan = (s?: string): string | undefined => {
@@ -283,7 +292,12 @@ export const listProjectMedia = createServerFn({ method: "POST" })
       c.tong = c.media.length;
       // Mới nhất trước: ưu tiên giờ tải lên thật (createdTime), thiếu thì lùi về ngày trong tên tệp.
       c.media.sort((a, b) => (b.at || b.date || "").localeCompare(a.at || a.date || ""));
-      c.media = c.media.slice(0, MEDIA_MOI_NHAT);
+      /* LẤY THEO NGÀY, KHÔNG THEO SỐ TỆP: giữ MỌI tệp của 2 ngày gần nhất có tư liệu — một buổi
+         quay 5 clip thì phải thấy đủ 5, cắt cứng 2 tệp là mất phần lớn buổi hôm đó. Ngày nào cũng
+         không đọc được (tệp cũ, thiếu giờ tải lên) thì mới lùi về "2 tệp mới nhất". */
+      const ngay = [...new Set(c.media.map(ngayCuaTep).filter(Boolean))].sort().reverse().slice(0, MEDIA_SO_NGAY);
+      const theoNgay = ngay.length ? c.media.filter((m) => ngay.includes(ngayCuaTep(m))) : [];
+      c.media = theoNgay.length ? theoNgay : c.media.slice(0, MEDIA_MOI_NHAT);
     }
     return { cans: out };
   });

@@ -527,6 +527,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.98.1", date: "09/09/2026", items: [
+    "DÒNG CÓ GẮN LINK CHỈ CÒN MỘT NGÀY trong cột “Ngày update” — ngày của chính file trong link. Trước đó bày cả badge ngày cấp dự án lẫn ngày của link, một ô hai ngày nhìn rối. Dòng không có link vẫn là badge ngày update như cũ.",
+    "ẢNH / CLIP NẠP THEO NGÀY, KHÔNG THEO SỐ TỆP: hiện MỌI tệp của 2 ngày gần nhất có tư liệu. Một buổi quay 5 clip là thấy đủ 5, không bị cắt còn 2. Ngày nào cũng không đọc được giờ tải lên thì mới lùi về 2 tệp mới nhất.",
+  ] },
   { v: "3.98.0", date: "09/09/2026", items: [
     "NGÀY CẬP NHẬT CỦA CHÍNH FILE SAU LINK — mở ma trận lắp đặt là thấy ngay dòng “Ngày cập nhật: dd/mm/yyyy” kèm tên người sửa gần nhất. Ngày này hỏi thẳng Google Drive về file đang gắn link nên không ai gõ tay vào được.",
     "TRONG BẢNG CHÍNH, dòng nào có gắn link thì cột “Ngày update” hiện thêm NGÀY CỦA FILE ĐÓ ngay bên dưới — chữ trơn, quá 14 ngày không ai đụng thì đỏ. Lọc theo hạng mục là biết ngay số trong từng link mới hay cũ, khỏi mở từng cái.",
@@ -6158,10 +6162,14 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
             nút ẨN (hiện khi rê chuột, admin + PMO) / BỎ ẨN (khi đang soi dòng ẩn) — print:hidden nên
             KHÔNG lọt vào PDF/Excel. */}
         <td className="border-r border-slate-100 px-1 py-1 text-center">
-          {!groupMode && !it._hidden && <UpdateChip date={it.updateDate} today={today} fpAt={itemFp[it._key]?.at} />}
-          {/* Dòng con CÓ LINK: ngày file sau link được sửa lần cuối. Cố ý KHÔNG dùng badge màu như
-              dòng cấp dự án — chỉ chữ trơn, quá 14 ngày thì đỏ — để hai loại ngày không lẫn nhau. */}
-          {viewLink && <LinkDate meta={linkMeta[viewLink.fileId.split("|")[0]]} today={today} />}
+          {/* DÒNG CÓ LINK: chỉ hiện NGÀY CỦA FILE trong link — đó mới là ngày số liệu của dòng này
+              thật sự đổi. Bày kèm badge ngày cấp dự án nữa thì một ô hai ngày, nhìn rối mà chẳng
+              nói thêm gì. Dòng KHÔNG có link thì vẫn là badge ngày update như cũ. */}
+          {(() => {
+            const meta = viewLink ? linkMeta[viewLink.fileId.split("|")[0]] : undefined;
+            if (meta?.modifiedTime) return <LinkDate meta={meta} today={today} />;
+            return !groupMode && !it._hidden ? <UpdateChip date={it.updateDate} today={today} fpAt={itemFp[it._key]?.at} /> : null;
+          })()}
           {canHideRow && (it._hidden ? (
             <button type="button" title="Bỏ ẩn — đưa dòng này trở lại báo cáo"
               onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, false); }}
