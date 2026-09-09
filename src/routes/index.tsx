@@ -6759,6 +6759,14 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                           style={{ wordBreak: "break-word" }} title={`Xem ${imgN} ảnh hiện trường`}>
                           {g.name} <span className="whitespace-nowrap">📷{imgN > 1 ? ` ${imgN}` : ""}</span>
                         </button>
+                      ) : hasMedia?.(g.name, g.items[0]?.projHid, g.maCT) ? (
+                        /* Chưa có ảnh gắn theo hạng mục, nhưng dự án CÓ kho ảnh (thường là dự án chưa
+                           có ma trận, ảnh gom chung) → bấm tên là mở thẳng kho đó, khỏi đi tìm nút. */
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(g.name, g.items[0]?.projHid, g.maCT); }}
+                          className="line-clamp-3 text-left font-bold leading-tight text-white underline decoration-dotted decoration-1 underline-offset-2 hover:text-teal-200"
+                          style={{ wordBreak: "break-word" }} title="Xem ảnh và clip của dự án">
+                          {g.name} <span className="whitespace-nowrap">🎬</span>
+                        </button>
                       ) : (
                         <span className="line-clamp-3 font-bold leading-tight text-white" style={{ wordBreak: "break-word" }} title={g.name}>{g.name}</span>
                       )}

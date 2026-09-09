@@ -790,6 +790,9 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
       + "\n\nThường do rớt mạng hoặc màn hình tắt giữa chừng. Mở lại và tải lại đúng mấy tệp này.");
     // Làm mới 1 lần là cả popup lẫn dấu chấm ngoài ma trận đều cập nhật (dùng chung query).
     await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
+    // Và báo cho BẢNG CHÍNH biết dự án này vừa có tư liệu, để chữ 🎬 Media hiện ra ngay.
+    // Danh sách dự-án-có-media nhớ 10 phút, không gọi thì phải tải lại trang mới thấy.
+    await qc.invalidateQueries({ queryKey: ["media-projects"] });
   }
 
   // Nút tải lên: chữ KHÔNG được xuống dòng và nút không được co — thêm ô chú thích vào cùng hàng
