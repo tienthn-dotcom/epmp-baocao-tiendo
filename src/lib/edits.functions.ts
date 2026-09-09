@@ -893,17 +893,37 @@ export const saveUserRole = createServerFn({ method: "POST" })
    Admin ẩn các hạng mục "nằm trong khuôn khổ, không đáng raise" khỏi báo cáo (bảng + KPI + PDF +
    Excel cho MỌI người); bỏ ẩn được. Khoá = itemKeyOf (ID cột STT, ổn định). Đọc CÔNG KHAI (client
    cần để loại khỏi hiển thị); GHI chỉ ADMIN. Lưu ai/khi để có vết. */
+/* ── DÒNG ẨN — VIEW RIÊNG CỦA TỪNG NGƯỜI (đổi mục đích 09/09/2026) ──────────────────────────
+   Trước: ẩn một dòng là CẢ CÔNG TY không thấy dòng đó nữa. Nghe thì gọn, nhưng thành ra một
+   người quyết định thay cho tất cả, và người khác không hiểu vì sao bảng của mình thiếu dòng.
+   Nay: mỗi người có DANH SÁCH ẨN RIÊNG — ẩn để dựng bản báo cáo cho gọn, không đụng tới ai.
+   Kho đổi thành { [email]: { [khoá dòng]: {at, by} } }; đọc/ghi luôn theo email người gọi. */
 const HIDDEN_KEY = "hidden:v1";
 const DEV_HIDDEN_FILE = ".data/pmo-hidden.json";
 export type HiddenRows = Record<string, { at: string; by: string }>;
+/** Kho ẩn: `chung` = ẩn cho MỌI NGƯỜI (bảng báo cáo chính thức, chỉ admin/PMO đặt được);
+ *  `nguoi` = danh sách ẩn RIÊNG của từng email (ai ẩn nấy thấy, dựng bản báo cáo của mình). */
+type HiddenStore = { chung: HiddenRows; nguoi: Record<string, HiddenRows> };
 
-async function readHidden(): Promise<HiddenRows> {
-  const kv = await getKv();
-  if (kv) { const raw = await kv.get(HIDDEN_KEY); return raw ? (JSON.parse(raw) as HiddenRows) : {}; }
-  try { const fs = await import("node:fs/promises"); return JSON.parse(await fs.readFile(DEV_HIDDEN_FILE, "utf8")) as HiddenRows; }
-  catch { return {}; }
+/** Dữ liệu cũ là bản đồ PHẲNG (khoá dòng → {at, by}) áp cho mọi người. Giữ nguyên ý nghĩa đó:
+ *  đưa hết vào nhánh `chung`. Dòng nào muốn chuyển thành ẩn riêng thì bỏ ẩn rồi ẩn lại theo
+ *  lựa chọn "chỉ mình tôi" — không tự ý đổi phạm vi của việc người khác đã quyết. */
+function chuyenDoiKhoAn(raw: unknown): HiddenStore {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  if (o && typeof o === "object" && ("chung" in o || "nguoi" in o)) {
+    const s = o as Partial<HiddenStore>;
+    return { chung: s.chung ?? {}, nguoi: s.nguoi ?? {} };
+  }
+  return { chung: (o as HiddenRows) ?? {}, nguoi: {} };
 }
-async function writeHidden(map: HiddenRows): Promise<void> {
+
+async function readHiddenAll(): Promise<HiddenStore> {
+  const kv = await getKv();
+  if (kv) { const raw = await kv.get(HIDDEN_KEY); return chuyenDoiKhoAn(raw ? JSON.parse(raw) : {}); }
+  try { const fs = await import("node:fs/promises"); return chuyenDoiKhoAn(JSON.parse(await fs.readFile(DEV_HIDDEN_FILE, "utf8"))); }
+  catch { return { chung: {}, nguoi: {} }; }
+}
+async function writeHiddenAll(map: HiddenStore): Promise<void> {
   const kv = await getKv();
   if (kv) { await kv.put(HIDDEN_KEY, JSON.stringify(map)); return; }
   const fs = await import("node:fs/promises");
@@ -911,10 +931,16 @@ async function writeHidden(map: HiddenRows): Promise<void> {
   await fs.writeFile(DEV_HIDDEN_FILE, JSON.stringify(map, null, 2), "utf8");
 }
 
-/** Đọc danh sách dòng đã ẩn (khoá item → ai ẩn, khi nào). CÔNG KHAI — client cần để loại khỏi bảng/KPI. */
-export const fetchHiddenRows = createServerFn({ method: "GET" }).handler(async () => {
-  return { hidden: await readHidden() };
-});
+/** Dòng ẩn mà NGƯỜI ĐANG XEM phải chịu: phần ẩn CHUNG (mọi người) + phần chính họ ẩn riêng.
+ *  Trả kèm hai nhánh tách bạch để giao diện nói rõ dòng này ai ẩn và bỏ ẩn thì gỡ ở đâu. */
+export const fetchHiddenRows = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ devAs: z.string().nullable().optional() }).parse(input ?? {}))
+  .handler(async ({ data }) => {
+    const email = (await callerEmail(data?.devAs))?.toLowerCase() ?? "";
+    const all = await readHiddenAll();
+    const cuaToi = email ? (all.nguoi[email] ?? {}) : {};
+    return { hidden: { ...all.chung, ...cuaToi }, chung: all.chung, cuaToi };
+  });
 
 /** Ẩn / bỏ ẩn 1 dòng — ADMIN và PMO. hide=true để ẩn, false để bỏ ẩn.
  *  PMO là người rà bảng hằng ngày, biết hạng mục nào trong khuôn khổ không cần raise — bắt chờ admin
@@ -924,16 +950,36 @@ export const setHiddenRow = createServerFn({ method: "POST" })
     z.object({
       key: z.string().min(1).max(600),
       hide: z.boolean(),
+      /** "chung" = ẩn cho mọi người (admin/PMO) · "toi" = chỉ ẩn trong bảng của chính mình. */
+      pham: z.enum(["chung", "toi"]).optional(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được ẩn / bỏ ẩn dòng.");
-    const map = await readHidden();
-    if (data.hide) map[data.key] = { at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
-    else delete map[data.key];
-    await writeHidden(map);
-    return { hidden: map };
+    const email = (await callerEmail(data.devAs))?.toLowerCase();
+    if (!email) throw new Error("Cần đăng nhập để ẩn dòng.");
+    const chung = data.pham === "chung";
+    // Ẩn CHO MỌI NGƯỜI vẫn là quyết định của admin/PMO — nó đổi bảng của cả công ty.
+    // Ẩn RIÊNG thì ai cũng làm được: chỉ đổi bảng của chính họ.
+    if (chung && !((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))))
+      throw new Error("Chỉ admin/PMO mới được ẩn dòng cho mọi người.");
+    const all = await readHiddenAll();
+    if (data.hide) {
+      const ghi = { at: new Date().toISOString(), by: email };
+      if (chung) all.chung[data.key] = ghi;
+      else (all.nguoi[email] ??= {})[data.key] = ghi;
+    } else {
+      // Bỏ ẩn: gỡ khỏi danh sách riêng của mình; nếu là dòng ẩn CHUNG thì phải là admin/PMO mới gỡ được.
+      delete all.nguoi[email]?.[data.key];
+      if (all.chung[data.key]) {
+        if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))))
+          throw new Error("Dòng này do admin/PMO ẩn cho mọi người — nhờ họ bỏ ẩn.");
+        delete all.chung[data.key];
+      }
+    }
+    await writeHiddenAll(all);
+    const cuaToi = all.nguoi[email] ?? {};
+    return { hidden: { ...all.chung, ...cuaToi }, chung: all.chung, cuaToi };
   });
 
 /* ── TUỲ CHỈNH VÙNG POPUP (admin) — kho KV `sheetview:v1` = { [linkKey]: { sheet?, range? } } ──

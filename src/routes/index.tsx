@@ -277,7 +277,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *   v3.26.0 (31/07/2026): ẨN DÒNG THỦ CÔNG (admin) — hạng mục "trong khuôn khổ, không đáng raise" ẩn
  *     khỏi báo cáo (bảng + KPI + PDF + Excel cho MỌI người). Rê chuột dòng item → nút mắt-gạch (admin,
  *     print:hidden) ẩn dòng; toolbar hiện "Dòng đã ẩn (N)" → bật soi lại (làm mờ + nút Bỏ ẩn). Kho KV
- *     `hidden:v1` (edits.functions: fetchHiddenRows/setHiddenRow, chốt quyền ADMIN + PMO); lọc ở tầng `enriched`
+ *     `hidden:v1` (edits.functions: fetchHiddenRows/setHiddenRow); lọc ở tầng `enriched`
+ *     ĐỔI MỤC ĐÍCH 09/09/2026: ẩn nay có HAI PHẠM VI — "Chỉ ẩn với tôi" (ai cũng làm được, chỉ đổi
+ *     bảng của chính họ, dùng để dựng bản báo cáo gọn) và "Ẩn với mọi người" (admin/PMO, đổi bảng
+ *     của cả công ty như cũ). Kho tách hai nhánh: { chung, nguoi: { [email]: … } }; dữ liệu cũ vào
+ *     nhánh `chung` để không đổi ý nghĩa việc người khác đã quyết.
  *     (tách enrichedAll cho effect đồng bộ để không xoá nhầm); ghi vết hide_row/unhide_row vào Nhật ký.
  *     LƯU Ý: ẩn HẾT item của 1 dự án → dự án biến khỏi bảng (không còn gì để hiện) — đúng thiết kế.
  *   v3.25.0 (31/07/2026): Mở rộng quyền PMO trong box chat: PMO giờ SỬA + ẨN + XOÁ được comment NGƯỜI
@@ -527,6 +531,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.99.0", date: "09/09/2026", items: [
+    "ẨN DÒNG NAY CÓ HAI LỰA CHỌN. Bấm nút ẩn sẽ hỏi: “Chỉ ẩn với tôi” — dòng chỉ biến khỏi bảng của chính người bấm, dùng để dựng bản báo cáo cho gọn, bảng của người khác giữ nguyên; hoặc “Ẩn với mọi người” — cả công ty không thấy dòng đó nữa, đúng như cách ẩn cũ.",
+    "AI CŨNG ẨN ĐƯỢC cho riêng mình. Riêng “Ẩn với mọi người” vẫn chỉ admin và PMO, vì nó đổi bảng báo cáo chính thức của cả nhà.",
+    "Các dòng đang ẩn từ trước giữ nguyên là ẩn với mọi người — không tự đổi phạm vi của việc người khác đã quyết. Muốn chuyển thành ẩn riêng thì bỏ ẩn rồi ẩn lại và chọn “Chỉ ẩn với tôi”.",
+    "Nhật ký giám sát ghi rõ phạm vi mỗi lần ẩn: [mọi người] hay [chỉ mình tôi].",
+  ] },
   { v: "3.98.1", date: "09/09/2026", items: [
     "DÒNG CÓ GẮN LINK CHỈ CÒN MỘT NGÀY trong cột “Ngày update” — ngày của chính file trong link. Trước đó bày cả badge ngày cấp dự án lẫn ngày của link, một ô hai ngày nhìn rối. Dòng không có link vẫn là badge ngày update như cũ.",
     "ẢNH / CLIP NẠP THEO NGÀY, KHÔNG THEO SỐ TỆP: hiện MỌI tệp của 2 ngày gần nhất có tư liệu. Một buổi quay 5 clip là thấy đủ 5, không bị cắt còn 2. Ngày nào cũng không đọc được giờ tải lên thì mới lùi về 2 tệp mới nhất.",
@@ -2754,7 +2764,11 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
   /** ẨN / BỎ ẨN 1 DÒNG (admin) — cập nhật lạc quan cache rồi ghi server (server chốt quyền admin).
    *  Khoá = itemKeyOf. Ghi vết vào Nhật ký giám sát để biết ai ẩn/bỏ ẩn hạng mục nào. */
-  const onHideRow = useCallback((key: string, label: string, hide: boolean) => {
+  /** Ẩn một dòng. `pham`:
+   *   · "toi"  — chỉ mất trong bảng của chính người bấm (dựng bản báo cáo riêng cho gọn).
+   *   · "chung" — mất với MỌI NGƯỜI (bảng báo cáo chính thức) — chỉ admin/PMO đặt được.
+   *  Chốt 09/09/2026: trước đây ẩn là mặc nhiên áp cho cả công ty, một người quyết thay tất cả. */
+  const onHideRow = useCallback((key: string, label: string, hide: boolean, pham: "chung" | "toi" = "toi") => {
     const prev = queryClient.getQueryData<HiddenRows>(["hiddenRows"]) ?? {};
     const next: HiddenRows = { ...prev };
     if (hide) next[key] = { at: new Date().toISOString(), by: me.email ?? "?" };
@@ -2762,9 +2776,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     queryClient.setQueryData(["hiddenRows"], next);   // lạc quan: bảng phản hồi tức thì
     void (async () => {
       try {
-        const r = await setHiddenRow({ data: { key, hide, devAs: devAs() } });
+        const r = await setHiddenRow({ data: { key, hide, pham, devAs: devAs() } });
         queryClient.setQueryData(["hiddenRows"], r.hidden);
-        track(hide ? "hide_row" : "unhide_row", label.slice(0, 290));
+        track(hide ? "hide_row" : "unhide_row",
+          `${hide ? (pham === "chung" ? "[mọi người] " : "[chỉ mình tôi] ") : ""}${label}`.slice(0, 290));
       } catch (e) {
         queryClient.setQueryData(["hiddenRows"], prev); // rollback nếu server từ chối
         toast.error(`${hide ? "Ẩn" : "Bỏ ẩn"} dòng thất bại: ${(e as Error).message}`);
@@ -2829,7 +2844,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   //    admin bật "Hiện dòng đã ẩn" để soi + bỏ ẩn. Xem fetchHiddenRows/setHiddenRow (server chốt quyền).
   const hiddenQuery = useQuery({
     queryKey: ["hiddenRows"],
-    queryFn: async (): Promise<HiddenRows> => (await fetchHiddenRows()).hidden ?? {},
+    queryFn: async (): Promise<HiddenRows> => (await fetchHiddenRows({ data: { devAs: devAs() } })).hidden ?? {},
     staleTime: 60_000,
   });
   const hiddenMap: HiddenRows = useMemo(() => hiddenQuery.data ?? {}, [hiddenQuery.data]);
@@ -5763,7 +5778,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   showHidden: boolean;
   onToggleShowHidden: () => void;
   hiddenCount: number;
-  onHideRow: (key: string, label: string, hide: boolean) => void;
+  onHideRow: (key: string, label: string, hide: boolean, pham?: "chung" | "toi") => void;
   /** Ngày kết thúc THỰC TẾ (ngày lần đầu đạt 100%) theo itemKey — hiện dưới ô "Ngày kết thúc". */
   completedDates: CompletedDates;
   /** Vân tay đầu việc — ngày SỐ LIỆU của dòng thật sự đổi lần cuối (chip ngày update đọc ở đây). */
@@ -5782,7 +5797,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** ẨN DÒNG: admin + PMO. PMO rà bảng hằng ngày nên là người biết hạng mục nào trong khuôn khổ,
    *  không cần raise. Server vẫn chốt quyền lần nữa (setHiddenRow) — nút này chỉ là lớp giao diện. */
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
-  const canHideRow = isAdmin || isPmo;
+  /* AI CŨNG ẩn được — vì mặc định là "chỉ ẩn với tôi", chỉ đổi bảng của chính người bấm.
+     Riêng lựa chọn "ẩn với mọi người" trong menu mới cần admin/PMO (server chốt lại lần nữa). */
+  const canHideRow = true;
 
   /* NGÀY SỬA THẬT CỦA TỪNG FILE ĐANG GẮN LINK — hỏi Drive một lượt cho mọi link đang có.
      Lọc theo hạng mục xong, nhìn cột Ngày update ở dòng con là biết số trong link đó mới hay cũ,
@@ -6100,11 +6117,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                 className="inline-flex h-8 items-center rounded-md border border-sky-300 px-2.5 text-[11.5px] font-semibold text-sky-700">📄 PDF</button>
             )}
             {canHideRow && (
-              <button type="button"
-                onClick={() => onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, !it._hidden)}
-                className="ml-auto inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-slate-400">
-                {it._hidden ? "Bỏ ẩn" : "Ẩn"}
-              </button>
+              <HideMenu nhan={`${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`}
+                dangAn={!!it._hidden} laAdminPmo={isAdmin || isPmo} lop="ml-auto h-8 px-2 text-[11px]"
+                onChon={(pham) => onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, !it._hidden, pham)} />
             )}
           </div>
         </div>
@@ -6177,11 +6192,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               <RotateCcw className="h-3 w-3" /> Bỏ ẩn
             </button>
           ) : (
-            <button type="button" title="Ẩn dòng này khỏi báo cáo (hạng mục trong khuôn khổ, không cần raise)"
-              onClick={(e) => { e.stopPropagation(); onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, true); }}
-              className="mx-auto flex h-4 w-4 items-center justify-center rounded text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 print:hidden">
-              <EyeOff className="h-3 w-3" />
-            </button>
+            <HideMenu nhan={`${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`}
+              dangAn={false} laAdminPmo={isAdmin || isPmo} chiIcon
+              lop="mx-auto h-4 w-4 text-slate-400 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100"
+              onChon={(pham) => onHideRow(it._key, `${it.projectCode} ${it.projectName} · ${stageAbbrOf(it._stageId)} — ${it._stageLabel}`, true, pham)} />
           ))}
         </td>
         {/* Cột "Mã": bảng NHÓM → dòng con hiện MÃ VIẾT TẮT hạng mục (dữ liệu cột Hạng mục cũ);
@@ -7956,6 +7970,65 @@ function LinkDate({ meta, today }: { meta?: { modifiedTime: string; nguoiSua: st
     <div className={`whitespace-nowrap text-[9px] font-semibold tabular-nums ${d > 14 ? "text-red-600" : "text-slate-700"}`}
          title={`Dữ liệu trong link sửa lần cuối: ${fmtDateVN2(ngay)} (${d} ngày trước)${meta.nguoiSua ? ` · ${meta.nguoiSua}` : ""}`}>
       {fmtDayMonth(ngay)}
+    </div>
+  );
+}
+
+/**
+ * NÚT ẨN DÒNG — hỏi ẩn cho AI trước khi ẩn.
+ *   · "Chỉ ẩn với tôi" — dòng biến khỏi bảng của chính người bấm, dùng để dựng bản báo cáo gọn.
+ *     Ai cũng làm được, vì nó không đụng tới bảng của người khác.
+ *   · "Ẩn với mọi người" — dòng biến khỏi bảng của cả công ty. Chỉ admin/PMO, vì đó là quyết định
+ *     về bảng báo cáo chính thức.
+ * Trước 09/09/2026 chỉ có một kiểu ẩn và nó mặc nhiên áp cho tất cả — một người quyết thay cả nhà.
+ */
+function HideMenu({ nhan, dangAn, laAdminPmo, chiIcon, lop, onChon }: {
+  nhan: string; dangAn: boolean; laAdminPmo: boolean; chiIcon?: boolean; lop?: string;
+  onChon: (pham: "chung" | "toi") => void;
+}) {
+  const [mo, setMo] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!mo) return;
+    const ngoai = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setMo(false); };
+    document.addEventListener("mousedown", ngoai);
+    return () => document.removeEventListener("mousedown", ngoai);
+  }, [mo]);
+
+  // Đang ẩn → bấm là bỏ ẩn luôn, không hỏi gì (server tự biết gỡ ở danh sách nào).
+  if (dangAn) {
+    return (
+      <button type="button" title={`Bỏ ẩn — đưa "${nhan}" trở lại bảng`}
+        onClick={(e) => { e.stopPropagation(); onChon("toi"); }}
+        className={`inline-flex items-center justify-center gap-1 rounded font-semibold print:hidden ${lop ?? ""}`}>
+        <RotateCcw className="h-3 w-3" />{chiIcon ? "" : "Bỏ ẩn"}
+      </button>
+    );
+  }
+  return (
+    <div ref={ref} className="relative inline-flex print:hidden" onClick={(e) => e.stopPropagation()}>
+      <button type="button" title="Ẩn dòng này — chọn ẩn riêng mình hay ẩn với mọi người"
+        onClick={(e) => { e.stopPropagation(); setMo((v) => !v); }}
+        className={`inline-flex items-center justify-center gap-1 rounded font-semibold ${lop ?? ""}`}>
+        <EyeOff className="h-3 w-3" />{chiIcon ? "" : "Ẩn"}
+      </button>
+      {mo && (
+        <div className="absolute right-0 top-full z-40 mt-1 w-[236px] rounded-md border border-slate-200 bg-white p-1 text-left shadow-lg">
+          <button type="button" onClick={() => { setMo(false); onChon("toi"); }}
+            className="flex w-full flex-col rounded px-2 py-1.5 text-left hover:bg-slate-50">
+            <span className="text-[12px] font-semibold text-slate-800">Chỉ ẩn với tôi</span>
+            <span className="text-[10.5px] text-slate-500">Bảng của người khác giữ nguyên dòng này.</span>
+          </button>
+          <button type="button" disabled={!laAdminPmo}
+            onClick={() => { if (!laAdminPmo) return; setMo(false); onChon("chung"); }}
+            className={`flex w-full flex-col rounded px-2 py-1.5 text-left ${laAdminPmo ? "hover:bg-slate-50" : "cursor-not-allowed opacity-50"}`}>
+            <span className="text-[12px] font-semibold text-slate-800">Ẩn với mọi người</span>
+            <span className="text-[10.5px] text-slate-500">
+              {laAdminPmo ? "Cả công ty không thấy dòng này nữa." : "Chỉ admin / PMO đặt được."}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
