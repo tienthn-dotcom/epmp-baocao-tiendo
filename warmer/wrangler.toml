@@ -13,7 +13,7 @@ compatibility_date = "2024-09-23"
 [triggers]
 #  · "30 16 * * *" = 23:30 VN — sao lưu NHẬT KÝ GIÁM SÁT ra Drive (cuối ngày làm việc, gom trọn
 #    một ngày; app đọc mốc "Tất cả" từ file này cho nhẹ, xem fetchActivityFromDrive).
-crons = ["30 10 * * *", "30 13 * * 3", "30 16 * * *"]
+crons = ["0 2 * * *", "30 10 * * *", "30 13 * * 3", "30 16 * * *"]   # 02:00 UTC = 09:00 VN — chụp camera công trường
 
 # KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
 [[kv_namespaces]]

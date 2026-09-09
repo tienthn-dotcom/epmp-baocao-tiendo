@@ -345,6 +345,197 @@ async function chamVanTayNguon(env) {
   return { doi, doiGanNhat: moi.doiGanNhat, modifiedTime: moi.modifiedTime, nguoiSua: moi.nguoiSua, soLanDoi: lichSu.length };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  CAMERA CÔNG TRƯỜNG — MỖI NGÀY MỘT TẤM, TỰ VỀ DRIVE
+ *
+ *  Vì sao làm ở worker chứ không ở app: ảnh phải chụp ĐÚNG MỘT KHUNG GIỜ mỗi ngày cho cả
+ *  ~100 camera, không phụ thuộc ai mở máy. Worker có cron sẵn nên gắn thẳng vào đây.
+ *
+ *  Đường đi: EZVIZ Open API cấp accessToken từ (appKey, appSecret) → gọi /device/capture cho
+ *  từng camera → API trả về một URL ảnh sống ngắn hạn → tải ảnh đó về rồi đẩy lên Drive, VÀO
+ *  ĐÚNG thư mục ảnh của căn: "Data Source › DATABASE › ePMP › Media › <MÃ CT> › [Toà] › <Căn> ›
+ *  Hình ảnh". Nhờ vậy ảnh camera nằm chung chỗ với ảnh người chụp tay, app không phải sửa gì.
+ *
+ *  Cần hai secret (đặt bằng `npx wrangler secret put` trong thư mục warmer):
+ *     EZVIZ_APP_KEY · EZVIZ_APP_SECRET     ← lấy ở tài khoản open.ezvizlife.com
+ *  Chưa có secret thì mọi hàm dưới đây trả về { skip } và KHÔNG làm gì — cron vẫn chạy phần khác.
+ *
+ *  Danh sách camera nằm ở KV `cam:list:v1`, dạng:
+ *     [{ serial, kenh, maCT, duAn, toa, can, tat }]
+ *  serial = số máy in trên thân camera; kenh mặc định 1; toa để trống nếu dự án không chia toà;
+ *  tat = true thì bỏ qua camera đó. Sửa danh sách bằng app (màn cấu hình) hoặc bằng tay trong KV.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const CAM_LIST_KEY = "cam:list:v1";
+const CAM_TOKEN_KEY = "cam:token:v1";        // { token, hetHan } — token EZVIZ sống 7 ngày
+const CAM_LOG_KEY = "cam:log:v1";            // nhật ký 30 lần chụp gần nhất, để soi khi ảnh không về
+const EZVIZ_BASE_DEFAULT = "https://isgpopen.ezvizlife.com";   // vùng Đông Nam Á; đè bằng env.EZVIZ_BASE
+
+/** Bỏ ký tự Drive không nhận — khớp mediaSafe() của app để trùng đúng thư mục app đang dùng. */
+function camSafe(s) {
+  return String(s || "").trim().replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 60);
+}
+/** Mã CT chuẩn hoá: "ct25-040, 038…" → "CT25-040". Khớp maCTChuan() của app. */
+function camMaCT(ma) {
+  const dau = String(ma || "").split(/[,;/]/)[0].replace(/\s+/g, "").toUpperCase();
+  return /^CT\d{2}-\d+$/.test(dau) ? dau : "";
+}
+
+/** accessToken của EZVIZ — sống 7 ngày, nhớ trong KV để khỏi xin lại mỗi lần chụp. */
+async function camToken(env) {
+  const kv = env.PMO_EDITS;
+  const key = env.EZVIZ_APP_KEY, secret = env.EZVIZ_APP_SECRET;
+  if (!key || !secret) return null;
+  if (kv) {
+    try {
+      const cu = JSON.parse((await kv.get(CAM_TOKEN_KEY)) || "{}");
+      if (cu.token && cu.hetHan && Date.now() < cu.hetHan - 60_000) return cu.token;
+    } catch { /* cache hỏng → xin lại */ }
+  }
+  const base = env.EZVIZ_BASE || EZVIZ_BASE_DEFAULT;
+  const r = await fetch(`${base}/api/lapp/token/get`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ appKey: key, appSecret: secret }),
+  });
+  const j = await r.json().catch(() => ({}));
+  const tok = j?.data?.accessToken;
+  if (!tok) throw new Error(`EZVIZ không cấp token (code ${j?.code ?? r.status}: ${j?.msg || "không rõ"})`);
+  if (kv) {
+    // expireTime là mốc mili-giây; thiếu thì coi như 6 ngày cho chắc.
+    const hetHan = Number(j.data.expireTime) || (Date.now() + 6 * 864e5);
+    try { await kv.put(CAM_TOKEN_KEY, JSON.stringify({ token: tok, hetHan })); } catch { /* bỏ qua */ }
+  }
+  return tok;
+}
+
+/** Bảo camera chụp một tấm NGAY → trả về URL ảnh (sống ngắn hạn). */
+async function camChup(env, token, serial, kenh) {
+  const base = env.EZVIZ_BASE || EZVIZ_BASE_DEFAULT;
+  const r = await fetch(`${base}/api/lapp/device/capture`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ accessToken: token, deviceSerial: serial, channelNo: String(kenh || 1) }),
+  });
+  const j = await r.json().catch(() => ({}));
+  const url = j?.data?.picUrl;
+  if (!url) throw new Error(`chụp hụt (code ${j?.code ?? r.status}: ${j?.msg || "không rõ"})`);
+  return url;
+}
+
+/* DANH SÁCH CAMERA ĐỌC TỪ MỘT FILE CSV TRÊN DRIVE — "DATABASE › ePMP › Camera › camera-list.csv".
+   Vì sao CSV chứ không phải màn hình nhập trong app: gần 100 camera, mỗi cái phải gắn với đúng
+   dự án / toà / căn — việc đó làm trong Excel nhanh hơn hẳn gõ web, và ai cũng sửa được.
+   Cột: serial,kenh,maCT,duAn,toa,can,tat   (kenh trống = 1; tat = "x" thì bỏ qua camera đó)
+   Chưa có file thì worker TỰ TẠO file mẫu chỉ có dòng tiêu đề, để người dùng mở ra điền luôn. */
+const CAM_PATH = ["DATABASE", "ePMP", "Camera"];
+const CAM_FILE = "camera-list.csv";
+const CAM_MAU = "serial,kenh,maCT,duAn,toa,can,tat\n";
+
+function tachCsv(text) {
+  const dong = String(text || "").split(/\r?\n/).filter((d) => d.trim());
+  if (dong.length < 2) return [];
+  const cot = dong[0].split(",").map((x) => x.trim().toLowerCase());
+  const idx = (ten) => cot.indexOf(ten);
+  const ra = [];
+  for (const d of dong.slice(1)) {
+    const o = d.split(",").map((x) => x.trim());
+    const lay = (ten) => (idx(ten) >= 0 ? (o[idx(ten)] || "") : "");
+    const serial = lay("serial");
+    if (!serial) continue;
+    ra.push({
+      serial, kenh: Number(lay("kenh")) || 1, maCT: lay("mact"),
+      duAn: lay("duan"), toa: lay("toa"), can: lay("can"),
+      tat: /^(x|1|true|tat)$/i.test(lay("tat")),
+    });
+  }
+  return ra;
+}
+
+/** Đọc danh sách camera: ưu tiên CSV trên Drive; không có thì lùi về KV `cam:list:v1`. */
+async function docDanhSachCamera(env, driveTok, root) {
+  const AUTH = { Authorization: `Bearer ${driveTok}` };
+  let folder = root;
+  for (const seg of CAM_PATH) folder = await driveEnsureFolder(driveTok, seg, folder);
+  const q = `name='${CAM_FILE}' and '${folder}' in parents and trashed=false`;
+  const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&${DRIVE_SHARED}`, { headers: AUTH });
+  const fj = await fr.json().catch(() => ({}));
+  const id = fj.files && fj.files[0] && fj.files[0].id;
+  if (!id) {
+    // Chưa có file → tạo file mẫu để người dùng mở ra điền, khỏi phải tự đoán cột.
+    try { await driveUpsertFile(driveTok, folder, CAM_FILE, "text/csv", new TextEncoder().encode(CAM_MAU)); } catch { /* tạo hụt cũng không chặn */ }
+    return { ds: [], nguon: `vừa tạo file mẫu trên Drive: ${CAM_PATH.join(" › ")} › ${CAM_FILE}` };
+  }
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&${DRIVE_SHARED}`, { headers: AUTH });
+  if (r.ok) {
+    const ds = tachCsv(await r.text());
+    if (ds.length) return { ds, nguon: "CSV trên Drive" };
+  }
+  const kv = env.PMO_EDITS;
+  if (kv) {
+    try {
+      const j = JSON.parse((await kv.get(CAM_LIST_KEY)) || "[]");
+      if (Array.isArray(j) && j.length) return { ds: j, nguon: "KV cam:list:v1" };
+    } catch { /* KV hỏng */ }
+  }
+  return { ds: [], nguon: "chưa có camera nào trong CSV" };
+}
+
+/** Chụp toàn bộ camera trong danh sách rồi đẩy ảnh vào đúng thư mục căn trên Drive. */
+async function chupCameraHangNgay(env) {
+  const kv = env.PMO_EDITS;
+  if (!kv) return { skip: "thiếu KV PMO_EDITS" };
+  if (!env.EZVIZ_APP_KEY || !env.EZVIZ_APP_SECRET) return { skip: "chưa đặt secret EZVIZ_APP_KEY / EZVIZ_APP_SECRET" };
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+
+  const driveTok = await driveToken(env);
+  const root = env.GDRIVE_ROOT || DRIVE_ROOT_DEFAULT;
+  const { ds: dsThô, nguon } = await docDanhSachCamera(env, driveTok, root);
+  const ds = dsThô.filter((c) => c && c.serial && !c.tat);
+  if (!ds.length) return { skip: `chưa có camera nào để chụp — ${nguon}` };
+
+  const token = await camToken(env);
+  const now = new Date(Date.now() + 7 * 3600_000);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const stamp = `${p2(now.getUTCDate())}-${p2(now.getUTCMonth() + 1)}-${String(now.getUTCFullYear()).slice(2)}`;
+  const gio = `${p2(now.getUTCHours())}:${p2(now.getUTCMinutes())}`;
+
+  const xong = [], hong = [];
+  for (const c of ds) {
+    try {
+      const picUrl = await camChup(env, token, c.serial, c.kenh);
+      const anh = await fetch(picUrl);
+      if (!anh.ok) throw new Error(`tải ảnh về lỗi ${anh.status}`);
+      const bytes = new Uint8Array(await anh.arrayBuffer());
+      if (bytes.length < 1024) throw new Error("ảnh rỗng (dưới 1KB)");
+
+      // Đúng cây thư mục của app: DATABASE › ePMP › Media › <MÃ CT> › [Toà] › <Căn> › Hình ảnh
+      const thuMucDuAn = camMaCT(c.maCT) || camSafe(c.duAn) || "Khac";
+      const duong = ["DATABASE", "ePMP", "Media", thuMucDuAn];
+      if (camSafe(c.toa)) duong.push(camSafe(c.toa));
+      if (camSafe(c.can)) duong.push(camSafe(c.can));
+      duong.push("Hình ảnh");
+      let folder = root;
+      for (const seg of duong) folder = await driveEnsureFolder(driveTok, seg, folder);
+
+      // Tên tệp giữ đúng khuôn app đang đọc: "<căn>_<dd-mm-yy>_<hậu tố>.jpg" — thêm chữ "cam" để
+      // phân biệt ảnh máy tự chụp với ảnh người chụp tay.
+      const dau = camSafe(c.can) || thuMucDuAn;
+      const ten = `${dau}_${stamp}_cam${p2(now.getUTCHours())}${p2(now.getUTCMinutes())}.jpg`;
+      await driveUpsertFile(driveTok, folder, ten, "image/jpeg", bytes);
+      xong.push(`${c.serial} → ${duong.slice(3).join("/")}/${ten}`);
+    } catch (e) {
+      hong.push(`${c.serial}: ${e.message}`);
+    }
+  }
+
+  const ket = { ngay: `${now.getUTCFullYear()}-${p2(now.getUTCMonth() + 1)}-${p2(now.getUTCDate())}`, gio, xong: xong.length, hong: hong.length, loi: hong.slice(0, 10) };
+  try {
+    const cu = JSON.parse((await kv.get(CAM_LOG_KEY)) || "[]");
+    await kv.put(CAM_LOG_KEY, JSON.stringify([ket, ...(Array.isArray(cu) ? cu : [])].slice(0, 30)));
+  } catch { /* ghi nhật ký hụt cũng không chặn việc chụp */ }
+  return ket;
+}
+
 /** Xuất PDF báo cáo tuân thủ từ Google Sheet → ghi đè vào Drive (1 file / 1 ngày). */
 async function backupCompliancePdf(env) {
   if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
@@ -427,13 +618,37 @@ export default {
         .catch((e) => console.error("chamVanTayNguon lỗi:", e)));
       return;
     }
+    if (cron === "0 2 * * *") {                // 09:00 VN — CHỤP CAMERA công trường, mỗi ngày một tấm
+      ctx.waitUntil(chupCameraHangNgay(env).then((r) => console.log("camera:", JSON.stringify(r)))
+        .catch((e) => console.error("chupCameraHangNgay lỗi:", e)));
+      return;
+    }
     ctx.waitUntil(warmAll(env));              // 17:30 VN — warm Summary
     ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(req, env) {
+    const tham = new URL(req.url).searchParams;
+    /* THỬ CAMERA: mở "…/?cam=1" để chụp NGAY toàn bộ danh sách; "…/?cam=<số máy>" để thử đúng một
+       camera mà không đụng tới ảnh của cả công trường. Trả về JSON nói rõ chụp được mấy cái, hụt
+       cái nào và vì sao — cần thế để dò lúc mới cắm camera. */
+    if (tham.get("cam")) {
+      const chi = tham.get("cam");
+      try {
+        if (chi !== "1") {
+          const token = await camToken(env);
+          if (!token) throw new Error("chưa đặt secret EZVIZ_APP_KEY / EZVIZ_APP_SECRET");
+          const url = await camChup(env, token, chi, tham.get("kenh") || 1);
+          return new Response(JSON.stringify({ thu: chi, picUrl: url }, null, 2), { headers: { "content-type": "application/json" } });
+        }
+        const r = await chupCameraHangNgay(env);
+        return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
+      }
+    }
     // Bấm tay: mặc định warm ÍT (2 file) cho nhẹ; muốn nhiều thì thêm ?n=… vào URL.
-    const n = Math.max(0, Math.min(12, Number(new URL(req.url).searchParams.get("n")) || 2));
+    const n = Math.max(0, Math.min(12, Number(tham.get("n")) || 2));
     const warm = await warmAll(env, n);
     let audit, pdf, kvbak;
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
