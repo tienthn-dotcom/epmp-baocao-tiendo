@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X } from "lucide-react";
+import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, LayoutGrid, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X } from "lucide-react";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
@@ -38,6 +38,7 @@ import { PmoAiApp } from "@/lib/pmo-ai-app";
 import { DataStudioApp } from "@/lib/data-studio-app";
 import { PerfChartApp } from "@/lib/perf-chart-app";
 import { CanMediaApp } from "@/lib/can-media-app";
+import { MtldV2App } from "@/lib/mtld-v2-app";
 
 const RAIL_W = 52;        // bề rộng thanh khi THU (icon)
 const RAIL_W_OPEN = 214;  // bề rộng khi MỞ (overlay)
@@ -58,6 +59,10 @@ const APPS: AppDef[] = [
   // GỘP 04/09/2026: app cũ "Video tại công trường" (clipcan) đã BỎ — Media là bản duy nhất, cùng
   // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
   { id: "media", name: "Hình ảnh mỗi ngày", sub: "Ma trận + ảnh/video theo căn", icon: <Images className="h-5 w-5" />, live: true },
+  // BẢN THỬ của MTLĐ: mọi dự án về CÙNG một khuôn thẻ, chia nhóm Khối phòng / Public, bấm mới ra
+  // ma trận gốc. `roleOnly: []` = CHỈ admin thấy (danh sách rỗng nên không cấp nào khớp, còn admin
+  // thì luôn qua được) — đang phát triển, chưa cho PMO/PM vào để khỏi lẫn với app MTLĐ thật.
+  { id: "mtld2", name: "Lắp đặt (thử)", sub: "Một khuôn thẻ · Khối phòng / Public", icon: <LayoutGrid className="h-5 w-5" />, live: true, roleOnly: [] },
 ];
 
 export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
@@ -121,6 +126,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
     : shellOn && effectiveApp === "datastudio" ? <DataStudioApp />
     : shellOn && effectiveApp === "perf" ? <PerfChartApp />
     : shellOn && effectiveApp === "media" ? <CanMediaApp wantProject={wantProject} />
+    : shellOn && effectiveApp === "mtld2" ? <MtldV2App />
     : epmpApp;
 
   return (
