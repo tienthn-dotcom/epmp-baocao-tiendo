@@ -7986,16 +7986,16 @@ function HideMenu({ nhan, dangAn, laAdminPmo, chiIcon, lop, onChon }: {
   nhan: string; dangAn: boolean; laAdminPmo: boolean; chiIcon?: boolean; lop?: string;
   onChon: (pham: "chung" | "toi") => void;
 }) {
-  const [mo, setMo] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [viTri, setViTri] = useState<{ top: number; left: number } | null>(null);
+  const nutRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!mo) return;
-    const ngoai = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setMo(false); };
-    document.addEventListener("mousedown", ngoai);
-    return () => document.removeEventListener("mousedown", ngoai);
-  }, [mo]);
+    if (!viTri) return;
+    const dong = () => setViTri(null);
+    document.addEventListener("mousedown", dong);
+    window.addEventListener("scroll", dong, true);   // cuộn bảng → đóng, khỏi trôi lệch khỏi nút
+    return () => { document.removeEventListener("mousedown", dong); window.removeEventListener("scroll", dong, true); };
+  }, [viTri]);
 
-  // Đang ẩn → bấm là bỏ ẩn luôn, không hỏi gì (server tự biết gỡ ở danh sách nào).
   if (dangAn) {
     return (
       <button type="button" title={`Bỏ ẩn — đưa "${nhan}" trở lại bảng`}
@@ -8005,31 +8005,41 @@ function HideMenu({ nhan, dangAn, laAdminPmo, chiIcon, lop, onChon }: {
       </button>
     );
   }
+
+  const W = 190;
   return (
-    <div ref={ref} className="relative inline-flex print:hidden" onClick={(e) => e.stopPropagation()}>
-      <button type="button" title="Ẩn dòng này — chọn ẩn riêng mình hay ẩn với mọi người"
-        onClick={(e) => { e.stopPropagation(); setMo((v) => !v); }}
-        className={`inline-flex items-center justify-center gap-1 rounded font-semibold ${lop ?? ""}`}>
+    <>
+      <button ref={nutRef} type="button" title="Ẩn dòng này"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (viTri) { setViTri(null); return; }
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          // Menu bám mép PHẢI của nút và tự thụt vào khi sát rìa màn.
+          setViTri({ top: Math.min(r.bottom + 4, window.innerHeight - 90), left: Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8)) });
+        }}
+        className={`inline-flex items-center justify-center gap-1 rounded font-semibold print:hidden ${lop ?? ""}`}>
         <EyeOff className="h-3 w-3" />{chiIcon ? "" : "Ẩn"}
       </button>
-      {mo && (
-        <div className="absolute right-0 top-full z-40 mt-1 w-[236px] rounded-md border border-slate-200 bg-white p-1 text-left shadow-lg">
-          <button type="button" onClick={() => { setMo(false); onChon("toi"); }}
-            className="flex w-full flex-col rounded px-2 py-1.5 text-left hover:bg-slate-50">
-            <span className="text-[12px] font-semibold text-slate-800">Chỉ ẩn với tôi</span>
-            <span className="text-[10.5px] text-slate-500">Bảng của người khác giữ nguyên dòng này.</span>
+      {viTri && typeof document !== "undefined" && createPortal(
+        /* PORTAL ra body: menu nằm trong ô bảng thì bị vùng cuộn cắt mất một nửa (đo được: tràn hẳn
+           ra ngoài mép trái màn hình). Toạ độ tính theo nút rồi kẹp trong khung nhìn. */
+        <div style={{ position: "fixed", top: viTri.top, left: viTri.left, width: W, zIndex: 80 }}
+          onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+          className="overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl">
+          <button type="button" onClick={() => { setViTri(null); onChon("toi"); }}
+            className="block w-full px-3 py-1.5 text-left text-[12.5px] font-semibold text-slate-800 hover:bg-slate-100">
+            Chỉ ẩn với tôi
           </button>
           <button type="button" disabled={!laAdminPmo}
-            onClick={() => { if (!laAdminPmo) return; setMo(false); onChon("chung"); }}
-            className={`flex w-full flex-col rounded px-2 py-1.5 text-left ${laAdminPmo ? "hover:bg-slate-50" : "cursor-not-allowed opacity-50"}`}>
-            <span className="text-[12px] font-semibold text-slate-800">Ẩn với mọi người</span>
-            <span className="text-[10.5px] text-slate-500">
-              {laAdminPmo ? "Cả công ty không thấy dòng này nữa." : "Chỉ admin / PMO đặt được."}
-            </span>
+            onClick={() => { if (!laAdminPmo) return; setViTri(null); onChon("chung"); }}
+            title={laAdminPmo ? undefined : "Chỉ admin / PMO"}
+            className={`block w-full px-3 py-1.5 text-left text-[12.5px] font-semibold ${laAdminPmo ? "text-slate-800 hover:bg-slate-100" : "cursor-not-allowed text-slate-400"}`}>
+            Ẩn với mọi người
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
