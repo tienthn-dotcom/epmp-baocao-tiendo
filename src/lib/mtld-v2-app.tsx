@@ -1,24 +1,26 @@
 /**
  * THEO DÕI LẮP ĐẶT — BẢN THỬ (chỉ admin thấy, đang phát triển).
  *
- * Cùng tinh thần app MTLĐ hiện có, khác đúng một chỗ: KHÔNG bày bảng gốc ra trang tổng.
- * Mỗi dự án dựng bảng một kiểu — khác cột, khác cách gom, khác bảng màu — nên xếp cạnh nhau thì mỗi
- * ô nói một thứ tiếng, không so dự án này với dự án kia được.
+ * KHÁC BẢN ĐANG CHẠY ở chỗ: không bày lại bảng gốc của từng dự án ra trang tổng. Mỗi dự án một kiểu
+ * bảng, xếp cạnh nhau thì mỗi ô nói một thứ tiếng, không so được với nhau. Ở đây RÚT SỐ ra khỏi bảng
+ * rồi dựng dashboard trên số đó:
  *
- * Ở đây mọi dự án quy về CÙNG MỘT KHUÔN THẺ, dựng từ mấy con số bảng nào cũng có:
- *   % thực tế · % kế hoạch · chênh lệch · nhích thêm hôm nay · số khu đạt / chậm / báo động.
- * Thẻ chia hai nhóm KHỐI PHÒNG và PUBLIC — hai loại đó đọc theo hai cách khác nhau, gộp một lưới là
- * so nhầm. Bấm vào thẻ mới mở bảng gốc: heatmap và mã màu giữ nguyên, không mất gì.
+ *   1. Rút  — đọc tab dự án đang gắn, lấy % thực tế / % kế hoạch / cảnh báo theo từng khu.
+ *   2. Cất  — mỗi ngày ghi một mốc vào kho (D1, bảng `lapdat_moc`); ghi rồi thì thôi, không ghi lại.
+ *   3. Vẽ   — số tổng và đường tiến độ đọc từ KHO, không mở lại file gốc.
  *
- * SỐ ĐỌC Ở CLIENT: worker mà mở .xlsx là dính Error 1102. Tải bằng ĐÚNG cách popup đang tải
- * (getSummaryFile theo tên tab) nên dùng chung luôn cache của popup — không đẻ thêm lượt đọc KV, và
- * số trên thẻ chắc chắn khớp số trong bảng gốc.
+ * Nhờ bước 2 mà có thứ bảng gốc không có: hôm qua so với hôm nay, và đường tiến độ theo thời gian.
+ * Dự án nào không rút được số thì nạp bằng CSV (cùng bộ cột với bảng SQL) — xem panel "Kho số".
+ *
+ * Bấm vào thẻ vẫn mở bảng gốc, heatmap và mã màu giữ nguyên.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw, Database, X } from "lucide-react";
 import { getInstallList, getSummaryFile } from "@/lib/mtld-install.functions";
 import { docBaoCao, docBangPct, tomTat, tomTatBangPct, doanNhom, type O, type TomTat } from "@/lib/mtld-baocao";
+import { luuMocKho, docKho, napCsvKho, xuatCsvKho } from "@/lib/lapdat-kho.functions";
+import { duongNgay, moiNhatTheoDuAn, tongQuan, SQL_TAO_BANG, COT_KHO, type MocKho } from "@/lib/lapdat-kho";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { track } from "@/lib/track";
@@ -30,7 +32,7 @@ const T = {
 };
 
 const CUNG_LUC = 4;    // số dự án đọc file cùng lúc — nhiều hơn thì nghẽn, ít hơn thì chờ lâu
-const DOT_DAU = 12;    // số thẻ đọc số ngay khi mở; phần còn lại chờ cuộn tới
+const DOT_DAU = 12;    // số thẻ rút số ngay khi mở; phần còn lại chờ cuộn tới
 
 type Proj = {
   fileId: string; gid?: string; name: string; maCT: string; hid?: string;
@@ -39,13 +41,15 @@ type Proj = {
 };
 const pid = (p: Proj) => `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`;
 
-/** Cùng khoá localStorage app MTLĐ đang dùng — máy đã mở Dashboard thì vào đây có danh sách ngay,
- *  không phải chờ KV. KV vẫn là nguồn thật; cái này chỉ để khỏi đứng trước màn hình trống. */
+/** Cùng khoá localStorage app MTLĐ đang dùng — máy đã mở Dashboard thì vào đây có danh sách ngay. */
 const LS_KEY = "mtld:install:v2";
 function docLs(): Proj[] {
   try { const l = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); return Array.isArray(l) ? (l as Proj[]) : []; }
   catch { return []; }
 }
+
+const homNay = () => new Date().toISOString().slice(0, 10);
+const p100 = (v: number | null | undefined): number | null => (v == null ? null : Math.round(v * 1000) / 10);
 
 type So = { tt?: TomTat; nhom: "public" | "rooms"; tieuDe: string; loi?: string };
 
@@ -56,11 +60,14 @@ function b64ToBuf(b64: string): ArrayBuffer {
   return u.buffer;
 }
 
+/**
+ * Rút số của MỘT dự án rồi cất mốc hôm nay vào kho.
+ * Tải bằng ĐÚNG cách popup đang tải (theo tên tab, không theo gid): vài dự án khai gid trỏ tab khác
+ * với tab đã chọn, bám tên tab thì thẻ và bảng gốc luôn cùng một nguồn, lại xài chung cache nên
+ * không tốn thêm lượt đọc.
+ */
 async function docSo(p: Proj): Promise<So> {
   const doan = doanNhom("", p.sheet || "", p.name);
-  // TẢI Y HỆT POPUP: theo TÊN TAB, không theo gid. Vài dự án khai gid trỏ tab khác với tab đã chọn
-  // (Mini Hotel: sheet "Summary" nhưng gid lại là "Public Summary") — bám tên tab thì thẻ và bảng
-  // gốc luôn cùng một nguồn, lại xài chung cache nên không tốn thêm lượt đọc.
   const r = await getSummaryFile({ data: { fileId: p.fileId, sheet: p.sheet || undefined } });
   if (!r?.b64) return { nhom: doan, tieuDe: "", loi: "không tải được file" };
   const XLSX = await import("xlsx");
@@ -69,31 +76,58 @@ async function docSo(p: Proj): Promise<So> {
   const sh = wb.Sheets[ten];
   if (!sh) return { nhom: doan, tieuDe: "", loi: "không thấy tab đã khai" };
   const rows = XLSX.utils.sheet_to_json<O[]>(sh, { header: 1, defval: null });
-  const bc = docBaoCao(rows, p.maCT);
-  if (bc.ok) return { tt: tomTat(bc.khu), nhom: doanNhom(bc.tieuDe, ten, p.name), tieuDe: bc.tieuDe };
+  const ngay = homNay();
 
-  /* NHIỀU DẠNG TAB CÙNG TỒN TẠI. Phần lớn dự án gắn bảng "BÁO CÁO % HOÀN THÀNH" (có kế hoạch, có
-     cảnh báo); một số gắn thẳng ma trận, chỉ có cột "% THỰC HIỆN". Thử dạng giàu trước, không được
-     thì rút lấy phần trăm — thẻ khi đó thiếu phần kế hoạch, và nói rõ là thiếu. */
+  // Dạng 1 — bảng "BÁO CÁO % HOÀN THÀNH": có kế hoạch, có cảnh báo, đủ để nói trễ hay không.
+  const bc = docBaoCao(rows, p.maCT);
+  if (bc.ok) {
+    const nhom = doanNhom(bc.tieuDe, ten, p.name);
+    void catMoc(bc.khu.map((k) => ({
+      ngay, maCT: p.maCT, duAn: p.name, khu: k.khu, scope: nhom,
+      pctThuc: p100(k.pctThuc), pctDuKien: p100(k.pctDuKien), pctHomTruoc: p100(k.pctHomTruoc),
+      chenhLech: p100(k.chenhLech), tangNgay: p100(k.tangTrongNgay),
+      canhBao: k.canhBao, ngayBanGiao: k.ngayBanGiao ?? "", soNgayConLai: k.soNgayConLai,
+      nguon: "bang",
+    })));
+    return { tt: tomTat(bc.khu), nhom, tieuDe: bc.tieuDe };
+  }
+
+  // Dạng 2 — ma trận chỉ có cột "% THỰC HIỆN": không có kế hoạch, chỉ cất được % thực tế.
   const bp = docBangPct(rows);
-  if (bp.ok) return { tt: tomTatBangPct(bp.dong), nhom: doanNhom("", ten, p.name), tieuDe: "" };
+  if (bp.ok) {
+    const nhom = doanNhom("", ten, p.name);
+    void catMoc(bp.dong.map((d) => ({
+      ngay, maCT: p.maCT, duAn: p.name, khu: d.ten, scope: nhom,
+      pctThuc: p100(d.pct), pctDuKien: null, pctHomTruoc: null, chenhLech: null, tangNgay: null,
+      canhBao: "", ngayBanGiao: "", soNgayConLai: null, nguon: "matran",
+    })));
+    return { tt: tomTatBangPct(bp.dong), nhom, tieuDe: "" };
+  }
+
   return { nhom: doan, tieuDe: "", loi: bp.loi };
 }
+
+/** Cất mốc vào kho. Hỏng thì thôi — kho là thứ cộng thêm, không được làm chết màn hình đang xem. */
+async function catMoc(rows: MocKho[]): Promise<void> {
+  if (!rows.length) return;
+  try { await luuMocKho({ data: { rows } }); } catch { /* kho lỗi → bỏ qua */ }
+}
+
+/* ── mấy mảnh nhỏ dùng lại ──────────────────────────────────────────────────────────────────── */
 
 /** Màu theo mức TRỄ so với kế hoạch, không theo % tuyệt đối: dự án mới chạy 10% mà đúng kế hoạch thì
  *  không có gì đáng báo động, còn 90% mà trễ 20% thì có. */
 const mauTheoTre = (chenh: number | null | undefined): string =>
   chenh == null ? T.faint : chenh >= -1 ? T.xanh : chenh >= -10 ? T.vang : T.do;
-
 /** Bảng ma trận không có cột kế hoạch → không nói được trễ hay không, đành tô theo % tuyệt đối. */
 const mauTheoPct = (v: number | null | undefined): string =>
   v == null ? T.faint : v >= 95 ? T.xanh : v >= 60 ? T.vang : T.do;
-
 const mauThe = (tt?: TomTat): string =>
   tt?.chenhLech != null ? mauTheoTre(tt.chenhLech) : mauTheoPct(tt?.pctThuc);
 
 const sos = (v: number | null | undefined, hau = "%"): string =>
   v == null ? "—" : `${Math.round(v * 10) / 10}${hau}`.replace(".", ",");
+const ngayNgan = (s: string) => (s.length >= 10 ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : s);
 
 /** Thanh % thực tế, có VẠCH kế hoạch — nhìn phát biết đang trước hay sau kế hoạch. */
 function Thanh({ thuc, keHoach, mau }: { thuc: number | null; keHoach: number | null; mau: string }) {
@@ -109,6 +143,81 @@ function Thanh({ thuc, keHoach, mau }: { thuc: number | null; keHoach: number | 
     </div>
   );
 }
+
+function Chip({ n, nhan, mau }: { n: number; nhan: string; mau: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${T.line}`, borderRadius: 999, padding: "2px 8px", color: T.soft }}>
+      <b style={{ color: mau }}>{n}</b>{nhan}
+    </span>
+  );
+}
+
+function O1({ nhan, so, mau, phu }: { nhan: string; so: string; mau?: string; phu?: string }) {
+  return (
+    <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 13px", minWidth: 128 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".07em", color: T.faint, textTransform: "uppercase" }}>{nhan}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: mau ?? T.ink, lineHeight: 1.25, marginTop: 3 }}>{so}</div>
+      {phu && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 1 }}>{phu}</div>}
+    </div>
+  );
+}
+
+/* ── ĐƯỜNG TIẾN ĐỘ (từ kho) ─────────────────────────────────────────────────────────────────── */
+
+/**
+ * Hai đường: thực tế và kế hoạch, trục dọc ghim 0..100 để hình dạng đường không đổi theo dữ liệu.
+ * Vẽ tay bằng SVG — kéo cả thư viện chart về chỉ để vẽ hai nét là không đáng.
+ */
+function DuongTienDo({ diem, narrow }: { diem: { ngay: string; thuc: number | null; keHoach: number | null }[]; narrow: boolean }) {
+  const W = 600, H = narrow ? 120 : 150, L = 4;
+  if (diem.length < 2) {
+    return (
+      <div style={{ padding: "22px 14px", fontSize: 12, color: T.faint, lineHeight: 1.6 }}>
+        Kho mới có {diem.length === 1 ? "một ngày" : "chưa có ngày nào"}. Mỗi ngày mở app một lần là kho tự dày thêm, vài ngày nữa sẽ có đường.
+      </div>
+    );
+  }
+  const x = (i: number) => (i / (diem.length - 1)) * (W - L * 2) + L;
+  const y = (v: number) => H - L - (v / 100) * (H - L * 2);
+  const net = (lay: (d: typeof diem[number]) => number | null): string => {
+    const ps: string[] = [];
+    diem.forEach((d, i) => { const v = lay(d); if (v != null) ps.push(`${x(i)},${y(v)}`); });
+    return ps.join(" ");
+  };
+  const thuc = net((d) => d.thuc), kh = net((d) => d.keHoach);
+  return (
+    <div>
+      {/* Nhãn trục dọc để ngoài SVG: svg đang kéo giãn theo bề ngang (preserveAspectRatio="none")
+          nên chữ vẽ bên trong sẽ bị méo. */}
+      <div style={{ display: "flex", gap: 7 }}>
+        <div style={{ width: 24, height: H, position: "relative", flexShrink: 0, fontSize: 9.5, color: T.faint }}>
+          {[100, 50, 0].map((v, i) => (
+            <span key={v} style={{ position: "absolute", right: 0, top: `calc(${i * 50}% - ${i === 0 ? 0 : i === 1 ? 5 : 10}px)` }}>{v}%</span>
+          ))}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: H }} role="img" aria-label="Đường tiến độ thực tế so với kế hoạch">
+        {[0, 25, 50, 75, 100].map((g) => (
+          <line key={g} x1={0} x2={W} y1={y(g)} y2={y(g)} stroke={T.line} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        ))}
+        {kh && <polyline points={kh} fill="none" stroke={T.soft} strokeWidth={1.5} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
+        {thuc && <polyline points={thuc} fill="none" stroke={T.accent} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.faint, marginTop: 4 }}>
+        <span>{ngayNgan(diem[0].ngay)}</span>
+        <span style={{ display: "inline-flex", gap: 12 }}>
+          <span><span style={{ display: "inline-block", width: 10, height: 2, background: T.accent, verticalAlign: "middle", marginRight: 4 }} />thực tế</span>
+          <span><span style={{ display: "inline-block", width: 10, height: 2, background: T.soft, verticalAlign: "middle", marginRight: 4 }} />kế hoạch</span>
+        </span>
+        <span>{ngayNgan(diem[diem.length - 1].ngay)}</span>
+      </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── THẺ DỰ ÁN ──────────────────────────────────────────────────────────────────────────────── */
 
 function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onMo: () => void }) {
   const tt = so?.tt;
@@ -172,19 +281,15 @@ function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onM
   );
 }
 
-function Chip({ n, nhan, mau }: { n: number; nhan: string; mau: string }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1px solid ${T.line}`, borderRadius: 999, padding: "2px 8px", color: T.soft }}>
-      <b style={{ color: mau }}>{n}</b>{nhan}
-    </span>
-  );
-}
+/* ── MÀN CHÍNH ──────────────────────────────────────────────────────────────────────────────── */
 
 export function MtldV2App() {
   const narrow = useIsMobile();
+  const qc = useQueryClient();
   const [bump, setBump] = useState(0);
   const [mo, setMo] = useState<Proj | null>(null);
   const [xep, setXep] = useState<"tre" | "ten">("tre");
+  const [moKho, setMoKho] = useState(false);
 
   const [tuLs, setTuLs] = useState<Proj[]>([]);
   useEffect(() => { setTuLs(docLs()); }, []);
@@ -197,7 +302,7 @@ export function MtldV2App() {
     return ra.sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }, [listQ.data, tuLs]);
 
-  /* AI CHƯA NHÌN THÌ CHƯA ĐỌC. Mỗi dự án đọc số = một lượt tải file; mở app mà nạp hết mấy chục dự
+  /* AI CHƯA NHÌN THÌ CHƯA ĐỌC. Mỗi dự án rút số = một lượt tải file; mở app mà nạp hết mấy chục dự
      án là làm việc thừa cho những thẻ người ta còn chưa cuộn tới. Nên:
        · `dich`    = mốc đã cuộn tới (12 thẻ đầu, cuộn tới đâu nới thêm tới đó);
        · `choPhep` = trong mốc đó chỉ mở CUNG_LUC lượt một lúc, xong cái nào mở tiếp cái đó. */
@@ -218,15 +323,13 @@ export function MtldV2App() {
 
   type Muc = { p: Proj; so?: So; dangDoc: boolean };
   const trangThai = kq.map((q) => q.status).join(",");
-  // Đếm số đã xong để nới làn kế tiếp. Phải qua ref vì `choPhep` cần tính TRƯỚC khi gọi useQueries;
-  // ghi xong thì ép vẽ lại một nhịp.
+  // Đếm số đã xong để nới làn kế tiếp. Phải qua ref vì `choPhep` cần tính TRƯỚC khi gọi useQueries.
   const [, veLai] = useState(0);
   useEffect(() => {
     const n = kq.filter((q) => q.isSuccess || q.isError).length;
     if (n !== xongRef.current) { xongRef.current = n; veLai((x) => x + 1); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trangThai]);
-  // Cuộn tới đáy lưới → nới mốc, nạp tiếp một đợt.
   useEffect(() => {
     const el = dayRef.current;
     if (!el || dich >= list.length) return;
@@ -236,6 +339,27 @@ export function MtldV2App() {
     ob.observe(el);
     return () => ob.disconnect();
   }, [dich, list.length]);
+
+  const khoQ = useQuery({
+    queryKey: ["mtld2-kho", bump],
+    queryFn: () => docKho({ data: { soNgay: 120 } }),
+    staleTime: 5 * 60 * 1000,
+    retry: 0,
+  });
+  /* Mốc vừa rút được cất vào kho ở NỀN, nên số tổng đọc lúc mở màn là số CŨ. Đợi loạt thẻ lắng
+     xuống (không đổi trạng thái thêm trong 1,5 giây) rồi đọc kho lại MỘT lần — đọc lại sau mỗi thẻ
+     thì mỗi lần mở app là mấy chục lượt gọi thừa. */
+  const daDoc = useRef(false);
+  useEffect(() => {
+    if (daDoc.current || !kq.some((q) => q.isSuccess)) return;
+    const t = setTimeout(() => { daDoc.current = true; qc.invalidateQueries({ queryKey: ["mtld2-kho"] }); }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trangThai]);
+  useEffect(() => { daDoc.current = false; }, [bump]);
+  const khoRows = (khoQ.data?.rows ?? []) as MocKho[];
+  const diem = useMemo(() => duongNgay(khoRows), [khoRows]);
+  const tong = useMemo(() => tongQuan(moiNhatTheoDuAn(khoRows)), [khoRows]);
 
   const nhom = useMemo(() => {
     const mucs: Muc[] = list.map((p, i) => ({
@@ -262,6 +386,10 @@ export function MtldV2App() {
     padding: "5px 11px", fontSize: 11.5, fontWeight: 600 as const, cursor: "pointer", border: "none",
     background: dang ? T.accent : "transparent", color: dang ? "#fff" : T.soft,
   });
+  const nutPhu = {
+    display: "inline-flex", alignItems: "center", gap: 5, background: T.panel, color: T.ink,
+    border: `1px solid ${T.line}`, borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+  } as const;
 
   return (
     <div style={{ minHeight: "100vh", width: "100%", background: T.bg, color: T.ink, fontFamily: "system-ui,-apple-system,Segoe UI,sans-serif" }}>
@@ -274,14 +402,42 @@ export function MtldV2App() {
             <button type="button" onClick={() => setXep("tre")} style={nut(xep === "tre")}>Trễ nhất trước</button>
             <button type="button" onClick={() => setXep("ten")} style={nut(xep === "ten")}>Tên A–Z</button>
           </span>
-          <button type="button" onClick={() => setBump((n) => n + 1)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, background: T.panel, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          <button type="button" onClick={() => setMoKho(true)} style={nutPhu}><Database className="h-3.5 w-3.5" /> Kho số</button>
+          <button type="button" onClick={() => { setBump((n) => n + 1); qc.invalidateQueries({ queryKey: ["mtld2-kho"] }); }} style={nutPhu}>
             <RefreshCw className="h-3.5 w-3.5" /> Làm mới
           </button>
         </div>
       </div>
 
       <div style={{ padding: narrow ? 12 : 20 }}>
+        {/* SỐ TỔNG + ĐƯỜNG TIẾN ĐỘ — đọc từ KHO, không mở lại file gốc. */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <O1 nhan="% thực tế" so={sos(tong.thuc)} mau={mauTheoTre(tong.chenh)}
+            phu={tong.ngayMoiNhat ? `chốt ${ngayNgan(tong.ngayMoiNhat)}` : undefined} />
+          <O1 nhan="so kế hoạch" so={tong.chenh == null ? "—" : `${tong.chenh > 0 ? "+" : ""}${sos(tong.chenh)}`}
+            mau={mauTheoTre(tong.chenh)}
+            phu={tong.chenh == null ? "chưa dự án nào có kế hoạch" : `${tong.soCoKeHoach}/${tong.soDuAn} dự án có kế hoạch`} />
+          <O1 nhan="dự án trễ" so={String(tong.soTre)} mau={tong.soTre ? T.vang : T.xanh} phu={`trên ${tong.soDuAn} dự án có số`} />
+          <O1 nhan="khu báo động" so={String(tong.soBaoDong)} mau={tong.soBaoDong ? T.do : T.xanh} phu={`${tong.soKhu} khu`} />
+          <O1 nhan="quá hạn bàn giao" so={String(tong.soQuaHan)} mau={tong.soQuaHan ? T.do : T.xanh} phu="dự án" />
+        </div>
+        <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: narrow ? 12 : 14, marginBottom: 22 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: T.soft, marginBottom: 8 }}>
+            TIẾN ĐỘ THEO NGÀY <span style={{ color: T.faint, fontWeight: 400, letterSpacing: 0 }}>· {diem.length} ngày trong kho</span>
+          </div>
+          <DuongTienDo diem={diem} narrow={narrow} />
+          {(() => {
+            // Đường kế hoạch chỉ nói cho những dự án CÓ cột kế hoạch. Không ghi rõ thì người xem
+            // tưởng khoảng cách giữa hai đường là độ trễ của cả công ty.
+            const c = diem.at(-1);
+            return c && c.soCoKeHoach > 0 && c.soCoKeHoach < c.soDuAn ? (
+              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>
+                đường kế hoạch tính trên {c.soCoKeHoach}/{c.soDuAn} dự án có cột kế hoạch
+              </div>
+            ) : null;
+          })()}
+        </div>
+
         {listQ.isPending && !list.length ? (
           <div style={{ color: T.faint, fontSize: 13, padding: 48, textAlign: "center" }}>Đang tải danh sách dự án…</div>
         ) : !list.length ? (
@@ -313,11 +469,99 @@ export function MtldV2App() {
       <div ref={dayRef} style={{ height: 1 }} />
 
       {mo && <ChiTiet p={mo} onDong={() => setMo(null)} narrow={narrow} />}
+      {moKho && <KhoSo onDong={() => setMoKho(false)} narrow={narrow} soDong={khoRows.length}
+        xong={() => qc.invalidateQueries({ queryKey: ["mtld2-kho"] })} />}
     </div>
   );
 }
 
-/** Chi tiết = bảng GỐC, y hệt popup của app chính — không vẽ lại, không diễn giải thêm. */
+/* ── KHO SỐ: nạp thêm bằng CSV, xuất ra CSV, và câu SQL để nạp hàng loạt ────────────────────── */
+
+function KhoSo({ onDong, narrow, soDong, xong }: { onDong: () => void; narrow: boolean; soDong: number; xong: () => void }) {
+  const [csv, setCsv] = useState("");
+  const [dangNap, setDangNap] = useState(false);
+  const [ketQua, setKetQua] = useState<string | null>(null);
+  const mauCsv = `${COT_KHO.join(",")}\n2026-09-09,CT25-070,Nam Phương Public,Main Lobby,public,96.7,100,96.7,-3.3,0,CHẬM NHẸ,2026-08-30,-10,csv`;
+
+  async function nap() {
+    setDangNap(true); setKetQua(null);
+    try {
+      const r = await napCsvKho({ data: { csv } });
+      setKetQua(`Đã nạp ${r.ghi} dòng${r.bo ? `, bỏ ${r.bo} dòng` : ""}.${r.loi.length ? " " + r.loi.join(" · ") : ""}`);
+      if (r.ghi) { setCsv(""); xong(); }
+    } catch (e) { setKetQua((e as Error).message); }
+    finally { setDangNap(false); }
+  }
+  async function xuat() {
+    try {
+      const r = await xuatCsvKho({ data: {} });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([r.csv], { type: "text/csv;charset=utf-8" }));
+      a.download = `lapdat-kho-${homNay()}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setKetQua(`Đã xuất ${r.soDong} dòng.`);
+    } catch (e) { setKetQua((e as Error).message); }
+  }
+
+  const o = { background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, color: T.ink, fontSize: 12, padding: 9, width: "100%", fontFamily: "ui-monospace,monospace" } as const;
+  const nutC = { background: T.accent, color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" } as const;
+  const nutP = { background: T.panel, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" } as const;
+
+  return (
+    <div onClick={onDong} style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(2,6,23,.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: narrow ? 0 : 24 }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ display: "flex", flexDirection: "column", width: "min(760px, 96vw)", maxHeight: "92vh", background: T.side, border: `1px solid ${T.line}`, borderRadius: narrow ? 0 : 14, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 15px", borderBottom: `1px solid ${T.line}` }}>
+          <Database className="h-4 w-4" style={{ color: T.soft }} />
+          <span style={{ fontSize: 13.5, fontWeight: 700 }}>Kho số lắp đặt</span>
+          <span style={{ fontSize: 11.5, color: T.faint }}>{soDong} dòng đang xem</span>
+          <button type="button" onClick={onDong} title="Đóng"
+            style={{ marginLeft: "auto", width: 30, height: 30, borderRadius: 8, border: `1px solid ${T.line}`, background: T.panel, color: T.soft, cursor: "pointer", display: "grid", placeItems: "center" }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div style={{ padding: 15, overflow: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 12, color: T.soft, marginBottom: 6, lineHeight: 1.6 }}>
+              Dán CSV vào đây để bù số cho dự án chưa rút tự động được. Bốn cột bắt buộc:
+              <b style={{ color: T.ink }}> ngay, maCT, duAn, khu</b>. Cùng ngày cùng khu thì đè, chạy lại không sinh dòng trùng.
+            </div>
+            <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={7} spellCheck={false}
+              placeholder={mauCsv} style={{ ...o, resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+              <button type="button" onClick={nap} disabled={dangNap || csv.trim().length < 10} style={{ ...nutC, opacity: dangNap || csv.trim().length < 10 ? .5 : 1 }}>
+                {dangNap ? "Đang nạp…" : "Nạp vào kho"}
+              </button>
+              <button type="button" onClick={xuat} style={nutP}>Xuất CSV</button>
+              <button type="button" onClick={() => setCsv(mauCsv)} style={nutP}>Chèn dòng mẫu</button>
+            </div>
+            {ketQua && <div style={{ fontSize: 12, color: T.ink, marginTop: 9, lineHeight: 1.6 }}>{ketQua}</div>}
+          </div>
+
+          <div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".07em", color: T.soft, marginBottom: 6 }}>NẠP HÀNG LOẠT BẰNG SQL</div>
+            <div style={{ fontSize: 12, color: T.soft, marginBottom: 6, lineHeight: 1.6 }}>
+              Kho là bảng <code style={{ color: T.ink }}>lapdat_moc</code> trên D1 <code style={{ color: T.ink }}>pmo-audit</code>, cùng bộ cột với CSV ở trên.
+            </div>
+            <pre style={{ ...o, margin: 0, whiteSpace: "pre-wrap", fontSize: 11, color: T.soft, lineHeight: 1.55 }}>
+{SQL_TAO_BANG};
+
+-- nạp từ máy:
+npx wrangler d1 execute pmo-audit --remote --file=./lapdat.sql
+
+-- xem thử:
+npx wrangler d1 execute pmo-audit --remote --command="SELECT ngay, COUNT(*) FROM lapdat_moc GROUP BY ngay ORDER BY ngay DESC LIMIT 10"</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── CHI TIẾT: bảng GỐC, y hệt popup của app chính ──────────────────────────────────────────── */
+
 function ChiTiet({ p, onDong, narrow }: { p: Proj; onDong: () => void; narrow: boolean }) {
   useEffect(() => {
     const on = (e: KeyboardEvent) => { if (e.key === "Escape") onDong(); };
@@ -333,7 +577,9 @@ function ChiTiet({ p, onDong, narrow }: { p: Proj; onDong: () => void; narrow: b
           <span style={{ fontSize: 13.5, fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
           <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: T.faint, flexShrink: 0 }}>{p.maCT}</span>
           <button type="button" onClick={onDong} title="Đóng (Esc)"
-            style={{ marginLeft: "auto", flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.line}`, background: "#1b2333", color: "#cbd5e1", fontSize: 15, cursor: "pointer" }}>✕</button>
+            style={{ marginLeft: "auto", flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.line}`, background: "#1b2333", color: "#cbd5e1", cursor: "pointer", display: "grid", placeItems: "center" }}>
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 14, background: "#fff" }}>
           <MatrixFormEditor fid={p.fileId} opts={{ sheetName: p.sheet, range: p.range, tl: p.tl, br: p.br }}
