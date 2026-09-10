@@ -56,6 +56,7 @@ import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { ridKeys } from "@/lib/rid";
+import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
@@ -533,6 +534,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.101.1", date: "10/09/2026", items: [
+    "SỬA: gõ nhầm 100% rồi hạ xuống thì NGÀY KẾT THÚC THỰC TẾ biến mất ngay. Trước đây ngày cũ vẫn bám lại trên dòng, đọc lên thành “việc này đã xong” trong khi nó mới 39%.",
+    "Ngày kết thúc thực tế và ô % giờ luôn khớp nhau ở mọi chỗ hiển thị — bảng phẳng, bảng gộp, biểu đồ tiến độ.",
+  ] },
   { v: "3.101.0", date: "10/09/2026", items: [
     "BỚT THÔNG BÁO LÚC MỞ APP. Bỏ hẳn toast “Đang xem DỮ LIỆU DEMO…” — nó bắn ngay trong lúc app còn đang tải nguồn thật, đọc lên thành báo động giả. Tình trạng dữ liệu vẫn nằm thường trực ở huy hiệu “Dữ liệu tính đến…” trên đầu trang.",
     "Nút “Tiêu chí cảnh báo” thôi để nền vàng — nó là nút tra cứu ngưỡng, không phải cảnh báo, để màu vàng thì mở app lần nào cũng tưởng đang có chuyện.",
@@ -2074,6 +2079,7 @@ const itemKeysOf = (it: ItemRow): string[] => {
   return ks;
 };
 
+
 /** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
 const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.hidden).map((m) => m.text).join("\n");
 const fmtMsgTime = (iso: string): string => {
@@ -2948,7 +2954,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         queryClient.setQueryData(["completedDates"], r.completed);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [remapReady, dataMode, data.projects, completedDates, completedQuery.isLoading, today, queryClient, nk]);
+  }, [remapReady, dataMode, data.projects, completedDates, completedQuery.isLoading, editsQuery.isLoading, hiddenQuery.isLoading, today, queryClient, nk]);
 
   /* ── VÂN TAY ĐẦU VIỆC — "dòng này lần cuối THẬT SỰ đổi là ngày nào" ─────────────────
      Cột "Ngày update" do người ta tự gõ trong nguồn; gõ lại ngày mà không sửa gì thì app vẫn tưởng
@@ -3052,6 +3058,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       };
     });
   }, [data.items, edits, today, nk]);
+
 
   // TÁCH RIÊNG phép "enrich" 1 đầu việc để TÁI DÙNG cho cả việc ĐANG LÀM (enriched) lẫn việc ĐÃ
   // HOÀN THÀNH (doneEnriched, chỉ khi bật "Hiện tất cả") — KHÔNG dựng lại logic, không đụng KPI.
@@ -3731,7 +3738,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           note: "",
           children: [],
           stageAbbr: stageAbbrOf(it._stageId as StageOrOther),
-          actualEnd: completedDates[it._key] ?? null,
+          actualEnd: ngayKetThucThucTe(completedDates, it._key, it.pctActual),
           hideKey: it._key, hidden: !!it._hidden,
         };
       });
@@ -3756,7 +3763,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         color: bit._alertColor,
         overdue: bit.overdueDays ?? 0,
         actual: clampPct(bit.pctActual),
-        actualEnd: completedDates[bit._key] ?? null,
+        actualEnd: ngayKetThucThucTe(completedDates, bit._key, bit.pctActual),
         hideKey: bit._key, hidden: !!bit._hidden,
       }));
       arr.push({
@@ -3771,7 +3778,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         color: it._alertColor,
         overdue: it.overdueDays ?? 0,
         actual: clampPct(it.pctActual),
-        actualEnd: completedDates[it._key] ?? null,
+        actualEnd: ngayKetThucThucTe(completedDates, it._key, it.pctActual),
         hideKey: it._key, hidden: !!it._hidden,
         blocks: blockKids.length ? blockKids : undefined,
       });
@@ -4380,7 +4387,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
             });
             for (const it of g.items) {
               const st = itemStatus(it);
-              const doneOn = completedDates[it._key];
+              // Chưa 100% thì KHÔNG hiện ngày kết thúc thực tế, dù kho còn lưu — xem ngayKetThucThucTe.
+            const doneOn = ngayKetThucThucTe(completedDates, it._key, it.pctActual);
               rows.push({
                 kind: "item", statusColor: st.color,
                 cells: [
@@ -6043,7 +6051,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
       ? { fileId: linkCfg.gid ? `${linkCfg.fileId}|${linkCfg.gid}` : linkCfg.fileId, sheet: linkCfg.sheet, range: linkCfg.range, tl: linkCfg.tl, br: linkCfg.br, snap: linkCfg.snap, snapKey: linkKey, hideAdmin: true, chart: linkCfg.chart }
       : (installFid ? { fileId: installFid } : null);
     const picDisplay = it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm);
-    const doneOn = completedDates[it._key];
+    // Chưa 100% thì KHÔNG hiện ngày kết thúc thực tế, dù kho còn lưu — xem ngayKetThucThucTe.
+    const doneOn = ngayKetThucThucTe(completedDates, it._key, it.pctActual);
     const xong = actual != null && actual >= 100;
     // Vệt màu bên trái = mức nghiêm trọng, liếc một cái là biết thẻ nào cần xử lý trước.
     const via = xong ? "#10b981" : it._alertColor === "red" ? "#dc2626" : it._alertColor === "amber" ? "#f59e0b" : "#cbd5e1";
@@ -6285,7 +6294,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         <td className="border-r border-slate-100 px-1 py-1 text-center text-[0.85em] tabular-nums text-slate-700 whitespace-nowrap">
           {it._deadlineEdited && <span className="mr-0.5 rounded bg-teal-100 px-1 text-[9px] font-bold text-teal-800" title={`PM cập nhật trên app lúc ${fmtDateTimeVN(it._editedAt)}`}>✎</span>}
           {(() => {
-            const doneOn = completedDates[it._key];
+            // Chưa 100% thì KHÔNG hiện ngày kết thúc thực tế, dù kho còn lưu — xem ngayKetThucThucTe.
+            const doneOn = ngayKetThucThucTe(completedDates, it._key, it.pctActual);
             return doneOn
               ? <span className="leading-tight"><span className="text-slate-400 line-through">{fmtDateVN2(it.deadline)}</span><br /><span className="font-semibold text-emerald-700" title="Ngày kết thúc thực tế (lần đầu đạt 100%)">{fmtDateVN2(doneOn)}</span></span>
               : fmtDateVN2(it.deadline);
