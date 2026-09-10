@@ -376,10 +376,10 @@ export const getProjRegions = createServerFn({ method: "GET" })
  * Mỗi mục vẫn có mốc thời gian riêng nên chỉ hỏi lại Drive đúng file đã cũ.
  */
 const FMETA_KEY = "fmeta:v2";
-/* THỨ HIỂN THỊ LÀ MỘT NGÀY, KHÔNG PHẢI MỘT GIỜ. Ngày mỗi ngày mới đổi một lần, nên hỏi lại Drive
-   nửa tiếng một lần là làm việc thừa. Sáu tiếng là đủ dày để trong ngày làm việc vẫn bắt được
-   file vừa sửa, mà số lượt hỏi giảm đi hơn chục lần. */
-const FMETA_HAN = 6 * 3600 * 1000;
+/* MỖI NGÀY HỎI LẠI MỘT LƯỢT. Thứ hiển thị là một NGÀY — ngày thì mỗi ngày mới đổi một lần, nên
+   hỏi dày hơn thế là làm việc thừa. Neo theo NGÀY (giờ VN) chứ không theo cửa sổ 24 tiếng trôi:
+   dễ hình dung, và cả kho cùng làm mới đúng một lần sau nửa đêm. */
+const MOI_LUOT_HOI = 8;   // mỗi lượt gọi chỉ hỏi Drive tối đa ngần này file — xem ghi chú bên dưới
 const FMETA_TTL_S = 30 * 86_400;           // khoá tự dọn sau 30 ngày nếu app ngừng dùng
 type FMetaMuc = { modifiedTime: string | null; nguoiSua: string; ts: number };
 type FMetaMap = Record<string, FMetaMuc>;
@@ -411,8 +411,10 @@ async function ghiFMeta(kv: KVLike | null, map: FMetaMap): Promise<void> {
  */
 function conTuoi(m: FMetaMuc | undefined, gio: number): boolean {
   if (!m) return false;
-  if (gio - (m.ts ?? 0) < FMETA_HAN) return true;
-  return !!m.modifiedTime && ngayVN(m.modifiedTime) === ngayVN(new Date(gio).toISOString());
+  const homNay = ngayVN(new Date(gio).toISOString());
+  if (ngayVN(new Date(m.ts ?? 0).toISOString()) === homNay) return true;   // hôm nay hỏi rồi
+  // File sửa trong hôm nay thì cũng khỏi hỏi: có sửa thêm mấy lần nữa, NGÀY hiện ra vẫn là hôm nay.
+  return !!m.modifiedTime && ngayVN(m.modifiedTime) === homNay;
 }
 
 export const getLinkUpdatedAt = createServerFn({ method: "POST" })
@@ -459,11 +461,16 @@ export const getLinksUpdatedAt = createServerFn({ method: "POST" })
     }
     let doi = false;
     if (conThieu.length) {
+      /* CHỈ HỎI MỘT NẮM MỖI LƯỢT. Sau nửa đêm cả kho cùng hết hạn; hỏi hết một lần thì người mở
+         app đầu tiên phải chờ mấy chục lượt gọi Drive nối đuôi nhau. Hỏi dần qua vài lượt mở đầu
+         ngày, dòng chưa kịp hỏi vẫn hiện ngày của hôm qua — sai lệch tối đa một ngày, đúng bằng
+         mức chính xác mà cột này cần. */
+      const nam = conThieu.slice(0, MOI_LUOT_HOI);
       try {
         const drive = await import("@/lib/drive.functions");
         // Hỏi tuần tự: mỗi lượt là một lời gọi nhẹ (chỉ metadata), bắn song song vài chục lượt
         // là Google chặn vì quá nhanh. Chỗ nào hỏi hụt thì bỏ qua, bảng chỉ khuyết dòng đó.
-        for (const id of conThieu) {
+        for (const id of nam) {
           const m = await drive.driveFileMetaImpl(id);
           if (!m) continue;
           map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
