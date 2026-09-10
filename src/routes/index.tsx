@@ -533,6 +533,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.100.1", date: "10/09/2026", items: [
+    "Khu vực đang dựng thử (chỉ admin) — không đổi gì trên bảng báo cáo đang dùng.",
+  ] },
   { v: "3.100.0", date: "10/09/2026", items: [
     "NGÀY “CẦN PM TRÌNH BOD PHÊ DUYỆT” KHÔNG CÒN NHẢY LUNG TUNG. App nay đọc đúng ngày đứng ngay sau cụm “trình BOD phê duyệt (bitrix) trước dd/mm”. Trước đây ô ghi chú có nhiều việc thì app nhặt trúng ngày của việc khác — vd “đặt hàng gạch trước 29/08” — nên cứ thêm một tin là ngày đổi. Ô gộp nhiều tin thì lấy tin BOD mới nhất; câu không ghi hạn thì để trống, không tự bịa ngày.",
     "Ngày cắm cờ trình BOD không bị xoá rồi ghi lại nữa (trước đây có lúc bị đặt lại thành ngày hôm nay, kéo theo cả tuổi cờ và điểm tuân thủ sai).",
