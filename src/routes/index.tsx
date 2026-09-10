@@ -533,6 +533,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.100.0", date: "10/09/2026", items: [
+    "NGÀY “CẦN PM TRÌNH BOD PHÊ DUYỆT” KHÔNG CÒN NHẢY LUNG TUNG. App nay đọc đúng ngày đứng ngay sau cụm “trình BOD phê duyệt (bitrix) trước dd/mm”. Trước đây ô ghi chú có nhiều việc thì app nhặt trúng ngày của việc khác — vd “đặt hàng gạch trước 29/08” — nên cứ thêm một tin là ngày đổi. Ô gộp nhiều tin thì lấy tin BOD mới nhất; câu không ghi hạn thì để trống, không tự bịa ngày.",
+    "Ngày cắm cờ trình BOD không bị xoá rồi ghi lại nữa (trước đây có lúc bị đặt lại thành ngày hôm nay, kéo theo cả tuổi cờ và điểm tuân thủ sai).",
+    "ĐỌC ĐƯỢC CỘT RID. Nhãn “RID” nằm ở dòng dưới dòng tiêu đề nên trước giờ app không thấy cột này — tức khoá chống mất ghi chú khi đánh lại STT chưa từng hoạt động. Nay đọc được, và ghi kiểu “ePMP 1”, “ePMP1” hay “epmp 1” đều tính là một.",
+    "Ngày cập nhật dữ liệu của từng dòng được giữ nguyên khi khoá dòng đổi — không dòng nào bị đặt lại thành “vừa cập nhật hôm nay”.",
+  ] },
   { v: "3.99.1", date: "09/09/2026", items: [
     "Sửa menu ẩn dòng: menu nằm trong ô bảng nên bị vùng cuộn cắt mất một nửa, bấm không trúng. Nay nổi hẳn lên trên và tự canh trong màn hình. Chữ gọn lại còn hai dòng: “Chỉ ẩn với tôi” · “Ẩn với mọi người”.",
   ] },
