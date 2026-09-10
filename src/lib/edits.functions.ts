@@ -136,18 +136,20 @@ type KVLike = {
  * Vượt trần ngày của gói free, KV ném lỗi. Mọi chỗ ĐỌC đều ném theo, server fn ném ra ngoài, và
  * bảng trắng — cả công ty không vào được, dù dữ liệu chính vốn nằm ở file nguồn chứ không nằm ở KV.
  *
- * Nên: ĐỌC hỏng thì coi như CHƯA CÓ (bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú / dòng ẩn).
- * GHI thì CỐ TÌNH để lỗi ném ra — người dùng phải biết là note chưa lưu được, chứ báo "đã lưu"
- * rồi mất trắng thì tệ hơn nhiều.
+ * ĐỌC hỏng → coi như CHƯA CÓ (bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú / dòng ẩn).
+ * GHI thì CỐ TÌNH để lỗi ném ra — người dùng phải biết note chưa lưu được, chứ báo "đã lưu" rồi
+ * mất trắng thì tệ hơn nhiều.
+ *
+ * TRẢ VỀ MỘT OBJECT THƯỜNG, KHÔNG DÙNG Proxy. Bọc bằng Proxy thì `put`/`delete` lấy `this` là cái
+ * Proxy chứ không phải KV namespace thật, và Workers từ chối: "Illegal invocation: function called
+ * with incorrect `this` reference". Gọi thẳng qua closure thì `this` luôn đúng.
  */
-function bocKv<T extends { get(k: string): Promise<string | null> }>(kv: T): T {
-  const goc = kv.get.bind(kv);
-  return new Proxy(kv, {
-    get(muc, ten, nhan) {
-      if (ten === "get") return async (k: string) => { try { return await goc(k); } catch { return null; } };
-      return Reflect.get(muc, ten, nhan);
-    },
-  });
+function bocKv(kv: KVLike): KVLike {
+  return {
+    get: async (key) => { try { return await kv.get(key); } catch { return null; } },
+    put: (key, value) => kv.put(key, value),
+    ...(kv.delete ? { delete: (key: string) => kv.delete!(key) } : {}),
+  };
 }
 
 /** Lấy KV binding trên Workers — thử mọi vị trí nitro/TanStack Start có thể đặt env. */

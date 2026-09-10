@@ -534,6 +534,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.101.2", date: "10/09/2026", items: [
+    "SỬA GẤP: không lưu được link ma trận (báo lỗi “Illegal invocation”). Lỗi do bản vá chống-quá-tải phát hành cùng ngày; nay gắn link, xem thử, lưu link chạy lại bình thường.",
+  ] },
   { v: "3.101.1", date: "10/09/2026", items: [
     "SỬA: gõ nhầm 100% rồi hạ xuống thì NGÀY KẾT THÚC THỰC TẾ biến mất ngay. Trước đây ngày cũ vẫn bám lại trên dòng, đọc lên thành “việc này đã xong” trong khi nó mới 39%.",
     "Ngày kết thúc thực tế và ô % giờ luôn khớp nhau ở mọi chỗ hiển thị — bảng phẳng, bảng gộp, biểu đồ tiến độ.",

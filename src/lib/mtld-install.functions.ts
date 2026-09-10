@@ -24,23 +24,16 @@ async function fetchXlsxById(id: string, gid?: string): Promise<ArrayBuffer> {
  *  Worker khỏi parse lại file 2MB. Dynamic import để không phá import-protection ở client. */
 type KVLike = { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> };
 /**
- * BỌC KV để HẾT HẠN MỨC KHÔNG LÀM SẬP CẢ APP.
- *
- * Vượt trần ngày của gói free, KV ném lỗi. Mọi chỗ ĐỌC đều ném theo, server fn ném ra ngoài, và
- * bảng trắng — cả công ty không vào được, dù dữ liệu chính vốn nằm ở file nguồn chứ không nằm ở KV.
- *
- * Nên: ĐỌC hỏng thì coi như CHƯA CÓ (bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú / dòng ẩn).
- * GHI thì CỐ TÌNH để lỗi ném ra — người dùng phải biết là note chưa lưu được, chứ báo "đã lưu"
- * rồi mất trắng thì tệ hơn nhiều.
+ * BỌC KV để HẾT HẠN MỨC KHÔNG LÀM SẬP CẢ APP — xem ghi chú dài ở edits.functions.ts.
+ * ĐỌC hỏng → coi như chưa có. GHI vẫn để lỗi ném ra.
+ * KHÔNG dùng Proxy: `put` sẽ lấy `this` là Proxy chứ không phải KV thật → Workers báo
+ * "Illegal invocation: function called with incorrect `this` reference".
  */
-function bocKv<T extends { get(k: string): Promise<string | null> }>(kv: T): T {
-  const goc = kv.get.bind(kv);
-  return new Proxy(kv, {
-    get(muc, ten, nhan) {
-      if (ten === "get") return async (k: string) => { try { return await goc(k); } catch { return null; } };
-      return Reflect.get(muc, ten, nhan);
-    },
-  });
+function bocKv(kv: KVLike): KVLike {
+  return {
+    get: async (k) => { try { return await kv.get(k); } catch { return null; } },
+    put: (k, v, o) => kv.put(k, v, o),
+  };
 }
 
 async function getKv(): Promise<KVLike | null> {
