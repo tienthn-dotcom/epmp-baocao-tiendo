@@ -130,6 +130,26 @@ type KVLike = {
   delete?(key: string): Promise<void>;
 };
 
+/**
+ * BỌC KV để HẾT HẠN MỨC KHÔNG LÀM SẬP CẢ APP.
+ *
+ * Vượt trần ngày của gói free, KV ném lỗi. Mọi chỗ ĐỌC đều ném theo, server fn ném ra ngoài, và
+ * bảng trắng — cả công ty không vào được, dù dữ liệu chính vốn nằm ở file nguồn chứ không nằm ở KV.
+ *
+ * Nên: ĐỌC hỏng thì coi như CHƯA CÓ (bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú / dòng ẩn).
+ * GHI thì CỐ TÌNH để lỗi ném ra — người dùng phải biết là note chưa lưu được, chứ báo "đã lưu"
+ * rồi mất trắng thì tệ hơn nhiều.
+ */
+function bocKv<T extends { get(k: string): Promise<string | null> }>(kv: T): T {
+  const goc = kv.get.bind(kv);
+  return new Proxy(kv, {
+    get(muc, ten, nhan) {
+      if (ten === "get") return async (k: string) => { try { return await goc(k); } catch { return null; } };
+      return Reflect.get(muc, ten, nhan);
+    },
+  });
+}
+
 /** Lấy KV binding trên Workers — thử mọi vị trí nitro/TanStack Start có thể đặt env. */
 async function getKv(): Promise<KVLike | null> {
   try {
@@ -138,13 +158,13 @@ async function getKv(): Promise<KVLike | null> {
     if (getEvent) {
       const ev = getEvent() as { context?: { cloudflare?: { env?: Record<string, unknown> } } } | undefined;
       const kv = ev?.context?.cloudflare?.env?.PMO_EDITS;
-      if (kv) return kv as KVLike;
+      if (kv) return bocKv(kv as KVLike);
     }
   } catch { /* not available in this runtime */ }
   const g = globalThis as unknown as Record<string, unknown>;
   const env = (g.__env__ ?? g.__cf_env__ ?? null) as Record<string, unknown> | null;
-  if (env?.PMO_EDITS) return env.PMO_EDITS as KVLike;
-  if (g.PMO_EDITS) return g.PMO_EDITS as KVLike;
+  if (env?.PMO_EDITS) return bocKv(env.PMO_EDITS as KVLike);
+  if (g.PMO_EDITS) return bocKv(g.PMO_EDITS as KVLike);
   return null;
 }
 

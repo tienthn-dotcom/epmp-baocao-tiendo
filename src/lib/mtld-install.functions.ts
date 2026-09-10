@@ -23,17 +23,38 @@ async function fetchXlsxById(id: string, gid?: string): Promise<ArrayBuffer> {
 /** KV binding trên Workers (tái dùng PMO_EDITS) để CACHE HTML Summary → bấm lần sau tức thì,
  *  Worker khỏi parse lại file 2MB. Dynamic import để không phá import-protection ở client. */
 type KVLike = { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl?: number }): Promise<void> };
+/**
+ * BỌC KV để HẾT HẠN MỨC KHÔNG LÀM SẬP CẢ APP.
+ *
+ * Vượt trần ngày của gói free, KV ném lỗi. Mọi chỗ ĐỌC đều ném theo, server fn ném ra ngoài, và
+ * bảng trắng — cả công ty không vào được, dù dữ liệu chính vốn nằm ở file nguồn chứ không nằm ở KV.
+ *
+ * Nên: ĐỌC hỏng thì coi như CHƯA CÓ (bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú / dòng ẩn).
+ * GHI thì CỐ TÌNH để lỗi ném ra — người dùng phải biết là note chưa lưu được, chứ báo "đã lưu"
+ * rồi mất trắng thì tệ hơn nhiều.
+ */
+function bocKv<T extends { get(k: string): Promise<string | null> }>(kv: T): T {
+  const goc = kv.get.bind(kv);
+  return new Proxy(kv, {
+    get(muc, ten, nhan) {
+      if (ten === "get") return async (k: string) => { try { return await goc(k); } catch { return null; } };
+      return Reflect.get(muc, ten, nhan);
+    },
+  });
+}
+
 async function getKv(): Promise<KVLike | null> {
   try {
     const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
     const getEvent = mod.getEvent as undefined | (() => unknown);
     const ev = getEvent?.() as { context?: { cloudflare?: { env?: Record<string, unknown> } } } | undefined;
     const kv = ev?.context?.cloudflare?.env?.PMO_EDITS;
-    if (kv) return kv as KVLike;
+    if (kv) return bocKv(kv as KVLike);
   } catch { /* runtime khác */ }
   const g = globalThis as unknown as Record<string, unknown>;
   const env = (g.__env__ ?? null) as Record<string, unknown> | null;
-  return (env?.PMO_EDITS ?? g.PMO_EDITS ?? null) as KVLike | null;
+  const kv2 = (env?.PMO_EDITS ?? g.PMO_EDITS ?? null) as KVLike | null;
+  return kv2 ? bocKv(kv2) : null;
 }
 
 // (Đã BỎ getInstallLinks server-fn: việc đọc hyperlink chuyển hẳn sang CLIENT — xem
