@@ -69,14 +69,19 @@ function soTrongNhan(t: string): number | null {
   return m ? so(m[1]) : null;
 }
 
-/** Ô ghi kiểu "160 / 431" — đã đạt trên tổng. Có file để số ở DÒNG NGAY DƯỚI nhãn theo kiểu này. */
+/**
+ * Ô ghi CẶP "đã đạt / tổng" — file thật gặp cả "160 / 431" lẫn "84 ― 86" (gạch ngang dài).
+ *
+ * CHỈ nhận dạng CẶP, không nhận số trần: ô nằm dưới nhãn có thể là số của dòng khác hẳn
+ * (vd dòng "Tăng hôm trước"), nhận số trần là lấy nhầm ngay.
+ */
 function soTrenTong(v: OTrangThai): { dat: number; tong: number | null } | null {
   const t = chu(v);
   if (!t) return null;
-  const m = /^(-?[\d.,]+)\s*\/\s*([\d.,]+)$/.exec(t);
-  if (m) { const a = so(m[1]), b = so(m[2]); return a == null ? null : { dat: a, tong: b }; }
-  const n = so(t);
-  return n == null ? null : { dat: n, tong: null };
+  const m = /^(-?[\d.,]+)\s*(?:[/\u2015\u2013\u2014]|\s-\s)\s*([\d.,]+)$/.exec(t);
+  if (!m) return null;
+  const a = so(m[1]), b = so(m[2]);
+  return a == null ? null : { dat: a, tong: b };
 }
 
 const chu = (v: OTrangThai): string =>
@@ -146,24 +151,36 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
      Nhãn đứng trên bảng đếm mà dòng "Lũy kế" bỏ trống thì tính 0: chặng đó đang theo dõi, chỉ là
      chưa căn nào tới — khác hẳn với "không có nhãn". */
   const dem: Record<string, number> = {};
-  for (let r = tranNhan - 1; r >= 0; r--) {
+  /* Nhãn được điền bằng cách nào — quyết định có được CỘNG THÊM nữa hay không:
+       "chot" = số đọc thẳng (trong nhãn, hoặc cộng theo dòng Lũy kế) → đã là số cuối, chốt luôn;
+       "khoi" = số của MỘT KHỐI (B1, B2…) → nhãn lặp lại ở khối sau thì phải cộng dồn. */
+  const nguon: Record<string, "chot" | "khoi"> = {};
+  let tongKhoi = 0;
+
+  /* Quét cả bảng chứ không chỉ phần đầu: có file (Mini Hotel) để nhãn trong TỪNG KHỐI B1…B5 nằm
+     rải phía dưới, mỗi khối một cụm "Đã giao thô | Đã giao tinh | …" với số kiểu "84 ― 86". */
+  for (let r = Math.min(rows.length, 200) - 1; r >= 0; r--) {
     const row = rows[r] || [];
     for (let c = 0; c < row.length; c++) {
       const t = chu(row[c]);
       if (!t) continue;
       const chang = changCua(khongDau(t));
-      if (!chang || dem[chang.ma] != null) continue;
-      // Số ghi thẳng trong nhãn là số CHỐT của nhóm — tin nó, khỏi cộng lại dòng Lũy kế.
+      if (!chang || nguon[chang.ma] === "chot") continue;
+      // Số ghi thẳng trong nhãn là số CHỐT của nhóm — tin nó, khỏi cộng lại gì nữa.
       const trongNhan = soTrongNhan(t);
-      if (trongNhan != null) { dem[chang.ma] = trongNhan; continue; }
-      /* Khuôn thứ tư: nhãn một dòng, số ở DÒNG NGAY DƯỚI, ghi kiểu "160 / 431" (đạt / tổng).
-         Ô chú thích màu không dính vào đây vì dưới nó lại là một dòng chữ khác, không phải số. */
-      const duoi = soTrenTong((rows[r + 1] ?? [])[c]);
+      if (trongNhan != null) { dem[chang.ma] = trongNhan; nguon[chang.ma] = "chot"; continue; }
+      /* Số nằm DƯỚI nhãn, dạng cặp "160 / 431" hay "84 ― 86". Có file để cách nhãn một dòng
+         (dòng giữa là chữ), nên dò tới ba dòng. Ô chú thích màu không dính vào đây vì dưới nó
+         lại là chữ, không phải cặp số. */
+      let duoi: { dat: number; tong: number | null } | null = null;
+      for (let k = 1; k <= 3 && !duoi; k++) duoi = soTrenTong((rows[r + k] ?? [])[c]);
       if (duoi) {
-        dem[chang.ma] = duoi.dat;
-        if (duoi.tong != null && tongCan == null) tongCan = duoi.tong;
+        dem[chang.ma] = (dem[chang.ma] ?? 0) + duoi.dat;   // nhãn lặp theo khối → cộng dồn
+        nguon[chang.ma] = "khoi";
+        if (duoi.tong != null && chang.ma === "giaoTho") tongKhoi += duoi.tong;
         continue;
       }
+      if (nguon[chang.ma] === "khoi") continue;   // đã đếm theo khối thì đừng trộn thêm cách khác
       const { c1, c2 } = khoangCot(merges, r, c);
       const tenBangDem = dongSo.some((dr) => {
         const rr = rows[dr] || [];
@@ -177,8 +194,11 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
         if (v != null) tong += v;
       }
       dem[chang.ma] = tong;
+      nguon[chang.ma] = "chot";
     }
   }
+  // Không có dòng "Tổng" thì lấy tổng cộng từ mẫu số của các khối ("… ― 86" mỗi khối một cái).
+  if (tongCan == null && tongKhoi > 0) tongCan = tongKhoi;
 
   const thieuNhan = CHANG.filter((x) => dem[x.ma] == null).map((x) => x.ten);
   if (thieuNhan.length === CHANG.length) {

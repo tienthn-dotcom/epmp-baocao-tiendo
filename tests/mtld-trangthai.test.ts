@@ -197,10 +197,14 @@ describe("khuôn nhãn trên — số dưới", () => {
 describe("nhãn gõ lệch vẫn nhận", () => {
   const thu = (nhan: string) => {
     const rows: OTrangThai[][] = Array.from({ length: 6 }, () => o(8));
-    dat(rows[2], 1, nhan); dat(rows[3], 1, 7);
+    dat(rows[2], 1, nhan);
+    dat(rows[4], 0, "Lũy kế"); dat(rows[4], 1, 7);
     return docTrangThaiPhong(rows, []);
   };
-  it("Xóa (dấu sắc) cũng như Xoá", () => expect(thu("Xóa list defects PMU").ok && thu("Xóa list defects PMU")).toBeTruthy());
+  it("Xóa (dấu sắc) cũng như Xoá", () => {
+    const r = thu("Xóa list defects PMU");
+    expect(r.ok && r.tt.xoaDefect).toBe(7);
+  });
   it("'Bàn giao VH' = bàn giao vận hành", () => {
     const r = thu("Bàn giao VH");
     expect(r.ok && r.tt.giaoVanHanh).toBe(7);
@@ -208,5 +212,51 @@ describe("nhãn gõ lệch vẫn nhận", () => {
   it("'BÀN GIAO THÔ' viết hoa", () => {
     const r = thu("BÀN GIAO THÔ");
     expect(r.ok && r.tt.giaoTho).toBe(7);
+  });
+});
+
+/** Khuôn thứ năm (Mini Hotel "Summary"): năm nhãn lặp lại trong TỪNG KHỐI B1…B5 nằm rải phía
+ *  dưới bảng, số ghi dạng "84 ― 86" (gạch ngang dài). Phải CỘNG DỒN các khối. */
+describe("nhãn lặp theo từng khối — cộng dồn", () => {
+  const dựng = () => {
+    const rows: OTrangThai[][] = Array.from({ length: 24 }, () => o(30));
+    dat(rows[3], 1, "Tổng"); dat(rows[3], 2, 427);
+    dat(rows[8], 1, "Lũy kế");
+    const nhan = (r: number) => {
+      dat(rows[r], 20, "Đã giao thô"); dat(rows[r], 21, "Đã giao tinh");
+      dat(rows[r], 22, "Ra list Defect"); dat(rows[r], 23, "Xoá list Defect"); dat(rows[r], 24, "Đã giao VH");
+    };
+    // khối 1: nhãn r12, chen một dòng chữ, số ở r14
+    nhan(11); dat(rows[12], 20, "X");
+    ["84 ― 86", "70 ― 86", "63 ― 86", "62 ― 86", "51 ― 86"].forEach((v, i) => dat(rows[13], 20 + i, v));
+    // khối 2
+    nhan(18);
+    ["85 ― 87", "70 ― 87", "49 ― 87", "41 ― 87", "0 ― 87"].forEach((v, i) => dat(rows[20], 20 + i, v));
+    return rows;
+  };
+
+  it("cộng số của hai khối lại", () => {
+    const r = docTrangThaiPhong(dựng(), []);
+    if (!r.ok) throw new Error("phải đọc được");
+    expect(r.tt.giaoTho).toBe(169);        // 84 + 85
+    expect(r.tt.giaoTinh).toBe(140);       // 70 + 70
+    expect(r.tt.raDefect).toBe(112);       // 63 + 49
+    expect(r.tt.xoaDefect).toBe(103);      // 62 + 41
+    expect(r.tt.giaoVanHanh).toBe(51);     // 51 + 0
+    expect(r.tt.thieuNhan).toEqual([]);
+  });
+
+  it("tổng căn vẫn lấy từ dòng Tổng của bảng", () => {
+    expect(docTrangThaiPhong(dựng(), []).ok && docTrangThaiPhong(dựng(), []).tt?.tongCan).toBe(427);
+  });
+
+  it("KHÔNG nhặt số trần nằm dưới nhãn (dễ trúng dòng 'Tăng hôm trước')", () => {
+    const rows: OTrangThai[][] = Array.from({ length: 8 }, () => o(30));
+    dat(rows[2], 28, "Đã giao Vận Hành");
+    dat(rows[3], 28, "B1");        // dòng tên block
+    dat(rows[4], 28, 5);           // đây là "tăng hôm trước", KHÔNG phải luỹ kế
+    dat(rows[6], 1, "Lũy kế");
+    const r = docTrangThaiPhong(rows, []);
+    expect(r.ok && r.tt.giaoVanHanh).not.toBe(5);
   });
 });

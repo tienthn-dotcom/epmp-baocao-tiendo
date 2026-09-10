@@ -68,9 +68,11 @@ function b64ToBuf(b64: string): ArrayBuffer {
  * với tab đã chọn, bám tên tab thì thẻ và bảng gốc luôn cùng một nguồn, lại xài chung cache nên
  * không tốn thêm lượt đọc.
  */
-async function docSo(p: Proj): Promise<So> {
+async function docSo(p: Proj, moi?: boolean): Promise<So> {
   const doan = doanNhom("", p.sheet || "", p.name);
-  const r = await getSummaryFile({ data: { fileId: p.fileId, sheet: p.sheet || undefined } });
+  // `moi` = bấm "Làm mới": đọc thẳng từ Drive. Không có cờ này thì nút làm mới chỉ đọc lại đúng
+  // bản cache cũ — file đã sửa trên Drive cả mấy ngày mà app vẫn hiện số cũ.
+  const r = await getSummaryFile({ data: { fileId: p.fileId, sheet: p.sheet || undefined, force: moi || undefined } });
   if (!r?.b64) return { nhom: doan, tieuDe: "", loi: "không tải được file" };
   const XLSX = await import("xlsx");
   const wb = XLSX.read(b64ToBuf(r.b64), { type: "array", cellDates: true });
@@ -411,7 +413,7 @@ export function MtldV2App() {
   const kq = useQueries({
     queries: list.map((p, i) => ({
       queryKey: ["mtld2-so", pid(p), bump],
-      queryFn: () => docSo(p),
+      queryFn: () => docSo(p, bump > 0),
       enabled: i < choPhep,
       staleTime: 10 * 60 * 1000,
       retry: 0,
