@@ -52,7 +52,8 @@ function docLs(): Proj[] {
 const homNay = () => new Date().toISOString().slice(0, 10);
 const p100 = (v: number | null | undefined): number | null => (v == null ? null : Math.round(v * 1000) / 10);
 
-type So = { tt?: TomTat; phong?: TrangThaiPhong; nhom: "public" | "rooms"; tieuDe: string; loi?: string };
+type KhuNho = { ten: string; pct: number | null };
+type So = { tt?: TomTat; phong?: TrangThaiPhong; khu?: KhuNho[]; nhom: "public" | "rooms"; tieuDe: string; loi?: string };
 
 function b64ToBuf(b64: string): ArrayBuffer {
   const bin = atob(b64);
@@ -94,7 +95,7 @@ async function docSo(p: Proj): Promise<So> {
       canhBao: k.canhBao, ngayBanGiao: k.ngayBanGiao ?? "", soNgayConLai: k.soNgayConLai,
       nguon: "bang",
     })));
-    return { tt: tomTat(bc.khu), nhom, tieuDe: bc.tieuDe };
+    return { tt: tomTat(bc.khu), khu: bc.khu.map((k) => ({ ten: k.khu, pct: k.pctThuc == null ? null : p100(k.pctThuc) })), nhom, tieuDe: bc.tieuDe };
   }
 
   /* Dạng 2 — KHỐI PHÒNG: không phải bảng phần trăm mà là BẢNG ĐẾM CĂN theo bốn chặng bàn giao
@@ -112,7 +113,7 @@ async function docSo(p: Proj): Promise<So> {
       pctThuc: p100(d.pct), pctDuKien: null, pctHomTruoc: null, chenhLech: null, tangNgay: null,
       canhBao: "", ngayBanGiao: "", soNgayConLai: null, nguon: "matran",
     })));
-    return { tt: tomTatBangPct(bp.dong), nhom, tieuDe: "" };
+    return { tt: tomTatBangPct(bp.dong), khu: bp.dong.map((d) => ({ ten: d.ten, pct: p100(d.pct) })), nhom, tieuDe: "" };
   }
 
   return { nhom: doan, tieuDe: "", loi: bp.loi };
@@ -260,10 +261,13 @@ const CHANG_MAU = [
 
 function PheuPhong({ t }: { t: TrangThaiPhong }) {
   const tong = t.tongCan || 0;
+  // CHỈ hiện chặng file có thật. File theo dõi 4 chặng thì hiện 4 — bày thêm một dòng rỗng
+  // rồi để dấu gạch ngang thì tốn chỗ mà chẳng nói được gì.
+  const co = CHANG_MAU.filter((c) => c.lay(t) != null);
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        {CHANG_MAU.map((c) => {
+        {co.map((c) => {
           const v = c.lay(t);
           return (
             <div key={c.ten} style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -278,12 +282,29 @@ function PheuPhong({ t }: { t: TrangThaiPhong }) {
           );
         })}
       </div>
-      {t.thieuNhan.length > 0 && (
-        <div style={{ fontSize: 10.5, color: T.vang, lineHeight: 1.45 }}>
-          file chưa ghi nhãn: {t.thieuNhan.join(" · ")}
-        </div>
-      )}
     </>
+  );
+}
+
+/** Các khu của dự án + phần trăm từng khu — để người xem biết con số tổng ở trên lấy từ đâu ra. */
+function DongKhu({ ds }: { ds: KhuNho[] }) {
+  const HIEN = 6;
+  const sap = [...ds].sort((a, b) => (a.pct ?? 999) - (b.pct ?? 999));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 1 }}>
+      {sap.slice(0, HIEN).map((k, i) => (
+        <div key={`${k.ten}-${i}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span title={k.ten} style={{ fontSize: 10.5, color: T.soft, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.ten}</span>
+          <div style={{ width: 46, height: 5, borderRadius: 3, background: "#1b2333", overflow: "hidden", flexShrink: 0 }}>
+            <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, k.pct ?? 0))}%`, background: mauTheoPct(k.pct), borderRadius: 3 }} />
+          </div>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: k.pct == null ? T.faint : T.ink, width: 38, textAlign: "right", flexShrink: 0 }}>{sos(k.pct)}</span>
+        </div>
+      ))}
+      {sap.length > HIEN && (
+        <div style={{ fontSize: 10, color: T.faint }}>+{sap.length - HIEN} khu nữa — bấm để xem bảng gốc</div>
+      )}
+    </div>
   );
 }
 
@@ -340,6 +361,7 @@ function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onM
             {tt.chamNhe > 0 && <Chip n={tt.chamNhe} nhan="chậm nhẹ" mau={T.vang} />}
             {tt.baoDong > 0 && <Chip n={tt.baoDong} nhan="báo động" mau={T.do} />}
           </div>
+          {so?.khu?.length ? <DongKhu ds={so.khu} /> : null}
           {(tt.tangHomNay != null || tt.soNgayConLai != null) && (
             <div style={{ fontSize: 11, color: T.faint, lineHeight: 1.45 }}>
               {tt.tangHomNay == null ? "" : tt.tangHomNay > 0 ? `+${sos(tt.tangHomNay)} hôm nay` : "hôm nay chưa nhích"}

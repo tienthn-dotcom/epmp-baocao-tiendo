@@ -55,7 +55,7 @@ describe("file đã ghi đủ nhãn", () => {
     const r = docTrangThaiPhong(rows, merges);
     expect(r.ok && r.tt).toEqual({
       tongCan: 255, giaoTho: 101, giaoTinh: 85, raDefect: null, xoaDefect: 85, giaoVanHanh: 0,
-      thieuNhan: ["ra list Defect"],   // file Hyatt không tách chặng "ra list" riêng
+      thieuNhan: ["ra defect"],   // file Hyatt không tách chặng "ra list" riêng
     });
   });
 
@@ -73,7 +73,7 @@ describe("file mới ghi nhãn một chặng", () => {
     if (!r.ok) throw new Error("phải đọc được");
     expect(r.tt.tongCan).toBe(427);
     expect(r.tt.giaoVanHanh).toBe(0);         // có nhãn, đang theo dõi, chưa căn nào tới
-    expect(r.tt.thieuNhan).toEqual(["giao thô", "giao tinh", "xoá list Defect", "ra list Defect"]);
+    expect(r.tt.thieuNhan).toEqual(["giao thô", "giao tinh", "xoá defect", "ra defect"]);
   });
 
   it("gắn nhãn cho nhóm là đọc ra số ngay, không phải sửa gì thêm", () => {
@@ -151,5 +151,62 @@ describe("khuôn chuẩn hoá — số nằm ngay trong nhãn", () => {
     const { rows, merges } = dựng();
     const r = docTrangThaiPhong(rows, merges);
     expect(r.ok && r.tt.giaoVanHanh).toBe(0);   // có nhãn, đang theo dõi, Lũy kế còn trống
+  });
+});
+
+/** Khuôn thứ tư gặp trong file thật (Bà Nà "HEAT MAP Z2"): nhãn một dòng, số ở DÒNG NGAY DƯỚI
+ *  ghi kiểu "160 / 431" (đã đạt / tổng). File này cũng không có dòng "Lũy kế". */
+describe("khuôn nhãn trên — số dưới", () => {
+  const dựng = () => {
+    const rows: OTrangThai[][] = Array.from({ length: 16 }, () => o(26));
+    dat(rows[1], 1, "Ngày báo cáo:");
+    dat(rows[2], 1, "Đã giao thô"); dat(rows[2], 4, "Đã giao tinh");
+    dat(rows[2], 11, "Đóng defect BQL"); dat(rows[2], 18, "Bàn giao VH");
+    dat(rows[3], 1, "160 / 431"); dat(rows[3], 4, "53 / 431");
+    dat(rows[3], 11, "0 / 431"); dat(rows[3], 18, "0 / 431");
+    // chú thích màu: nhãn giống hệt, nhưng dưới nó lại là chữ chứ không phải số
+    dat(rows[10], 25, "Đã giao thô"); dat(rows[11], 25, "Đã giao tinh (Nội bộ)");
+    dat(rows[12], 25, "Đã đóng defect từ Ban quản lý"); dat(rows[13], 25, "Bàn giao Vận hành");
+    return rows;
+  };
+
+  it("đọc số ở dòng dưới, lấy luôn tổng căn từ '160 / 431'", () => {
+    const r = docTrangThaiPhong(dựng(), []);
+    if (!r.ok) throw new Error("phải đọc được");
+    expect(r.tt.giaoTho).toBe(160);
+    expect(r.tt.giaoTinh).toBe(53);
+    expect(r.tt.giaoVanHanh).toBe(0);
+    expect(r.tt.tongCan).toBe(431);
+  });
+
+  it("KHÔNG tính 'Đóng defect BQL' là chặng xoá defect vận hành", () => {
+    const r = docTrangThaiPhong(dựng(), []);
+    expect(r.ok && r.tt.xoaDefect).toBeNull();
+    expect(r.ok && r.tt.thieuNhan).toContain("xoá defect");
+  });
+
+  it("KHÔNG nhặt nhầm cột chú thích màu", () => {
+    const rows = dựng();
+    rows[2] = o(26);   // bỏ hết nhãn thật, chỉ còn cột chú thích
+    rows[3] = o(26);
+    expect(docTrangThaiPhong(rows, []).ok).toBe(false);
+  });
+});
+
+/** Viết hoa/thiếu dấu/số nhiều đều phải nhận — mỗi file gõ một kiểu. */
+describe("nhãn gõ lệch vẫn nhận", () => {
+  const thu = (nhan: string) => {
+    const rows: OTrangThai[][] = Array.from({ length: 6 }, () => o(8));
+    dat(rows[2], 1, nhan); dat(rows[3], 1, 7);
+    return docTrangThaiPhong(rows, []);
+  };
+  it("Xóa (dấu sắc) cũng như Xoá", () => expect(thu("Xóa list defects PMU").ok && thu("Xóa list defects PMU")).toBeTruthy());
+  it("'Bàn giao VH' = bàn giao vận hành", () => {
+    const r = thu("Bàn giao VH");
+    expect(r.ok && r.tt.giaoVanHanh).toBe(7);
+  });
+  it("'BÀN GIAO THÔ' viết hoa", () => {
+    const r = thu("BÀN GIAO THÔ");
+    expect(r.ok && r.tt.giaoTho).toBe(7);
   });
 });

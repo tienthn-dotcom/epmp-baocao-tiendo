@@ -202,7 +202,10 @@ export function docBangPct(rows: O[][]): BangPct {
     const ten = chu(row[cTen]);
     if (!ten) { if (++trong >= 8 && dong.length) break; continue; }
     trong = 0;
-    if (/^t[ổo]ng|^total$|^ghi chú/i.test(ten)) continue;
+    /* Bỏ DÒNG TỔNG HỢP lẫn trong bảng: "% trung bình đã hoàn thành", "Tổng", "Cộng"… Đếm nó như
+       một khu thì vừa đội số khu lên vừa kéo lệch trung bình (một dòng trung bình bị đem đi
+       trung bình lần nữa). */
+    if (/^t[ổo]ng|^total$|^c[ộo]ng\b|^ghi chú|trung\s*b[ìi]nh/i.test(ten)) continue;
     const v = so(row[cPct]);
     // Phần trăm trong mọi file đang dùng đều ghi thang 0..1. Gặp số ngoài khoảng đó thì đấy không
     // phải cột phần trăm (hoặc dòng đó là số lượng) — bỏ qua, đừng đoán rồi chia 100.

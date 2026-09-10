@@ -40,21 +40,43 @@ export type TrangThaiPhong = {
 
 export type KetQua = { ok: true; tt: TrangThaiPhong } | { ok: false; loi: string };
 
-/* KHÔNG dùng \b sau chữ có dấu: \b của JS tính theo bảng chữ ASCII, "ô" không phải ký tự từ
-   nên "giao thô" KHÔNG khớp /giao\s*th[ôo]\b/ — đúng cái bẫy đã dính ở chữ "trước". */
+/* BỎ DẤU RỒI MỚI KHỚP. Mỗi file gõ một kiểu — "Xoá" với "Xóa", "Bàn giao vận hành" với
+   "Bàn giao VH", "defect" với "defects" — viết regex ôm hết dấu thì vừa dài vừa sót.
+   Bỏ dấu xong chỉ còn chữ thường ASCII, hết luôn cái bẫy \b không ăn với chữ có dấu. */
+function khongDau(t: string): string {
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "d").toLowerCase();
+}
+
 const CHANG = [
-  { ma: "giaoTho", ten: "giao thô", re: /(?:đã\s*)?giao\s*th[ôo]/i },
-  { ma: "giaoTinh", ten: "giao tinh", re: /(?:đã\s*)?giao\s*tinh/i },
-  // "Xoá list Defect" phải xét TRƯỚC "Ra list Defect" — hai nhãn chỉ khác mỗi động từ đầu.
-  { ma: "xoaDefect", ten: "xoá list Defect", re: /xo[áa]\s*(?:list\s*)?defect/i },
-  { ma: "raDefect", ten: "ra list Defect", re: /\bra\s*(?:list\s*)?defect/i },
-  { ma: "giaoVanHanh", ten: "bàn giao vận hành", re: /(?:b[àa]n\s*giao|đã\s*giao|giao)\s*v[ậa]n\s*h[àa]nh/i },
+  { ma: "giaoTho", ten: "giao thô", re: /giao\s*tho/, tru: null },
+  { ma: "giaoTinh", ten: "giao tinh", re: /giao\s*tinh/, tru: null },
+  /* "Xoá list Defect" xét TRƯỚC "Ra list Defect" — hai nhãn chỉ khác mỗi động từ đầu.
+     Nhận cả "đóng defect" (có file ghi vậy), nhưng LOẠI nhãn có "bql": đóng defect với ban quản lý
+     là chặng khác với đóng defect vận hành mà PMO đang đếm. */
+  { ma: "xoaDefect", ten: "xoá defect", re: /(?:xoa|dong)\s*(?:list\s*)?defects?/, tru: /bql/ },
+  { ma: "raDefect", ten: "ra defect", re: /\bra\s*(?:list\s*)?defects?/, tru: null },
+  { ma: "giaoVanHanh", ten: "vận hành", re: /(?:ban\s*giao|da\s*giao|giao)\s*(?:van\s*hanh|vh)/, tru: null },
 ] as const;
+
+/** Chặng khớp với một nhãn (nhãn phải BỎ DẤU trước), hoặc undefined. */
+function changCua(nhan: string) {
+  return CHANG.find((x) => x.re.test(nhan) && !(x.tru && x.tru.test(nhan)));
+}
 
 /** Khuôn mới ghi luôn số vào nhãn: "Đã giao thô: 376". Có số ngay trong nhãn thì lấy số đó. */
 function soTrongNhan(t: string): number | null {
   const m = /:\s*(-?[\d.,]+)\s*$/.exec(t);
   return m ? so(m[1]) : null;
+}
+
+/** Ô ghi kiểu "160 / 431" — đã đạt trên tổng. Có file để số ở DÒNG NGAY DƯỚI nhãn theo kiểu này. */
+function soTrenTong(v: OTrangThai): { dat: number; tong: number | null } | null {
+  const t = chu(v);
+  if (!t) return null;
+  const m = /^(-?[\d.,]+)\s*\/\s*([\d.,]+)$/.exec(t);
+  if (m) { const a = so(m[1]), b = so(m[2]); return a == null ? null : { dat: a, tong: b }; }
+  const n = so(t);
+  return n == null ? null : { dat: n, tong: null };
 }
 
 const chu = (v: OTrangThai): string =>
@@ -68,10 +90,10 @@ const so = (v: OTrangThai): number | null => {
 };
 
 /** Dòng có nhãn ở cột trái khớp `re` — trả chỉ số dòng, -1 nếu không có. */
-function timDong(rows: OTrangThai[][], re: RegExp, toiDa = 40): number {
+function timDong(rows: OTrangThai[][], re: RegExp, toiDa = 40, coToiDa = 10): number {
   for (let r = 0; r < Math.min(toiDa, rows.length); r++) {
     const row = rows[r] || [];
-    for (let c = 0; c < Math.min(4, row.length); c++) {
+    for (let c = 0; c < Math.min(coToiDa, row.length); c++) {
       if (re.test(chu(row[c]))) return r;
     }
   }
@@ -93,9 +115,11 @@ function khoangCot(merges: Merge[], r: number, c: number): { c1: number; c2: num
  */
 export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): KetQua {
   if (!rows?.length) return { ok: false, loi: "bảng rỗng" };
+  /* Dòng "Lũy kế" là nơi lấy số khi nhãn KHÔNG kèm số. Khuôn mới ghi số thẳng vào nhãn
+     ("Đã giao thô: 376") nên file không có dòng này vẫn đọc được — đừng đòi nó nữa. */
   const dongLuyKe = timDong(rows, /^l[ũu]y\s*k[êế]$/i);
-  if (dongLuyKe < 0) return { ok: false, loi: "không thấy dòng “Lũy kế”" };
-  const luyKe = rows[dongLuyKe] || [];
+  const luyKe = dongLuyKe >= 0 ? (rows[dongLuyKe] || []) : [];
+  const tranNhan = dongLuyKe >= 0 ? dongLuyKe : Math.min(14, rows.length);
 
   // Tổng số căn: dòng "Tổng" — lấy con số đầu tiên bên phải nhãn.
   let tongCan: number | null = null;
@@ -110,7 +134,7 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
   }
 
   /* Các dòng SỐ của bảng đếm — dùng để biết một nhãn có thật sự đứng trên bảng đếm hay không. */
-  const dongSo = [dongLuyKe];
+  const dongSo: number[] = dongLuyKe >= 0 ? [dongLuyKe] : [];
   for (const re of [/^tăng\s*hôm\s*trước$/i, /^tăng\s*trong\s*ngày$/i, /^còn\s*lại/i]) {
     const r = timDong(rows, re);
     if (r >= 0) dongSo.push(r);
@@ -122,16 +146,24 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
      Nhãn đứng trên bảng đếm mà dòng "Lũy kế" bỏ trống thì tính 0: chặng đó đang theo dõi, chỉ là
      chưa căn nào tới — khác hẳn với "không có nhãn". */
   const dem: Record<string, number> = {};
-  for (let r = dongLuyKe - 1; r >= 0; r--) {
+  for (let r = tranNhan - 1; r >= 0; r--) {
     const row = rows[r] || [];
     for (let c = 0; c < row.length; c++) {
       const t = chu(row[c]);
       if (!t) continue;
-      const chang = CHANG.find((x) => x.re.test(t));
+      const chang = changCua(khongDau(t));
       if (!chang || dem[chang.ma] != null) continue;
       // Số ghi thẳng trong nhãn là số CHỐT của nhóm — tin nó, khỏi cộng lại dòng Lũy kế.
       const trongNhan = soTrongNhan(t);
       if (trongNhan != null) { dem[chang.ma] = trongNhan; continue; }
+      /* Khuôn thứ tư: nhãn một dòng, số ở DÒNG NGAY DƯỚI, ghi kiểu "160 / 431" (đạt / tổng).
+         Ô chú thích màu không dính vào đây vì dưới nó lại là một dòng chữ khác, không phải số. */
+      const duoi = soTrenTong((rows[r + 1] ?? [])[c]);
+      if (duoi) {
+        dem[chang.ma] = duoi.dat;
+        if (duoi.tong != null && tongCan == null) tongCan = duoi.tong;
+        continue;
+      }
       const { c1, c2 } = khoangCot(merges, r, c);
       const tenBangDem = dongSo.some((dr) => {
         const rr = rows[dr] || [];
@@ -149,7 +181,9 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
   }
 
   const thieuNhan = CHANG.filter((x) => dem[x.ma] == null).map((x) => x.ten);
-  if (thieuNhan.length === CHANG.length) return { ok: false, loi: "không thấy nhãn trạng thái bàn giao nào" };
+  if (thieuNhan.length === CHANG.length) {
+    return { ok: false, loi: dongLuyKe < 0 ? "không thấy nhãn chặng bàn giao nào" : "không thấy nhãn chặng bàn giao nào (có dòng Lũy kế)" };
+  }
   return {
     ok: true,
     tt: {

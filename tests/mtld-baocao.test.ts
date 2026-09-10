@@ -99,3 +99,17 @@ describe("doanNhom", () => {
     expect(doanNhom("MA TRẬN … KHU CÔNG CỘNG 4S", "PUBLIC 4S", "Tây Hồ View")).toBe("public");
   });
 });
+
+describe("bỏ dòng tổng hợp lẫn trong bảng", () => {
+  it("không đếm '% trung bình đã hoàn thành' như một khu", () => {
+    const r = docBangPct([
+      ["KHU", "% HOÀN THÀNH"],
+      ["TẦNG 5", 0.8],
+      ["% trung bình đã hoàn thành", 0.763],
+      ["TẦNG 6", 0.7],
+      ["Tổng", 0.75],
+    ]);
+    expect(r.ok && r.dong.map((d) => d.ten)).toEqual(["TẦNG 5", "TẦNG 6"]);
+    expect(tomTatBangPct(r.ok ? r.dong : []).pctThuc).toBe(75);
+  });
+});
