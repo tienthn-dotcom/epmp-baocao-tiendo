@@ -1,7 +1,16 @@
 /**
  * DEADLINE "CẦN PM TRÌNH BOD PHÊ DUYỆT (BITRIX)" — đọc ngày từ đúng câu người ta viết.
  *
- * Câu chuẩn trong ghi chú:  "cần PM trình BOD phê duyệt (bitrix) trước 09/09"
+ * HAI MẪU CÂU CHUẨN (PMO chốt 10/09/2026) — cũng chính là quy ước để gom dự án vào bộ lọc
+ * "Cần cập nhật MP" (xem noteSaysTrinhBodBitrix trong parser.ts):
+ *
+ *   PMO: Dự án mới cần PM lập master plan & trình BOD phê duyệt bitrix trước ......
+ *   PMO: Tiến độ dời từ ... đến ....., cần PM trình BOD phê duyệt bitrix trước .......
+ *
+ * Mẫu thứ hai là chỗ dễ đọc sai nhất: nó có SẴN HAI NGÀY ("dời từ … đến …") đứng TRƯỚC ngày cần
+ * lấy. Ngày của cụm dời tiến độ tuyệt đối không được lẫn vào deadline trình BOD.
+ *
+ * Chưa điền ngày (còn để "......") thì KHÔNG có deadline — để trống, không bịa.
  *
  * KHOÁ CỨNG VÀO CÂU ĐÓ. Bản trước dò kiểu "tìm chữ bitrix, rồi lấy cụm 'trước dd/mm' GẦN NHẤT" —
  * gần nhất tính cả hai phía, nên một ô ghi chú gộp nhiều tin thì nó nhặt trúng ngày của việc khác

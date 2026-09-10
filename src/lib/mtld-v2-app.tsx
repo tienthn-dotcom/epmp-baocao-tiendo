@@ -163,6 +163,25 @@ function Chip({ n, nhan, mau }: { n: number; nhan: string; mau: string }) {
   );
 }
 
+/** Một con số nhỏ trong dòng tóm tắt — dùng thay cho thẻ to khi số đó chỉ để liếc qua. */
+function SoNho({ nhan, gt, mau }: { nhan: string; gt: string; mau?: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+      <span style={{ fontSize: 10.5, color: T.faint, textTransform: "uppercase", letterSpacing: ".05em" }}>{nhan}</span>
+      <b style={{ fontSize: 14, color: mau ?? T.ink }}>{gt}</b>
+    </span>
+  );
+}
+
+/** Bốn thẻ KPI khối phòng — đúng bốn chặng PMO chốt. "Ra list Defect" là chặng trung gian, chỉ
+ *  hiện trong phễu của từng dự án chứ không lên thẻ tổng. */
+const THE_KPI = [
+  { nhan: "đã giao thô", mau: "#5b8cff", lay: (t: TrangThaiPhong) => t.giaoTho },
+  { nhan: "đã giao tinh", mau: "#35c281", lay: (t: TrangThaiPhong) => t.giaoTinh },
+  { nhan: "đã xoá defect", mau: "#e0b13a", lay: (t: TrangThaiPhong) => t.xoaDefect },
+  { nhan: "đã giao vận hành", mau: "#c07ce0", lay: (t: TrangThaiPhong) => t.giaoVanHanh },
+] as const;
+
 function O1({ nhan, so, mau, phu }: { nhan: string; so: string; mau?: string; phu?: string }) {
   return (
     <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 13px", minWidth: 128 }}>
@@ -234,6 +253,7 @@ function DuongTienDo({ diem, narrow }: { diem: { ngay: string; thuc: number | nu
 const CHANG_MAU = [
   { lay: (t: TrangThaiPhong) => t.giaoTho, ten: "thô", mau: "#5b8cff" },
   { lay: (t: TrangThaiPhong) => t.giaoTinh, ten: "tinh", mau: "#35c281" },
+  { lay: (t: TrangThaiPhong) => t.raDefect, ten: "ra defect", mau: "#8a94ab" },
   { lay: (t: TrangThaiPhong) => t.xoaDefect, ten: "xoá defect", mau: "#e0b13a" },
   { lay: (t: TrangThaiPhong) => t.giaoVanHanh, ten: "vận hành", mau: "#c07ce0" },
 ] as const;
@@ -343,6 +363,8 @@ export function MtldV2App() {
   const [mo, setMo] = useState<Proj | null>(null);
   const [xep, setXep] = useState<"tre" | "ten">("tre");
   const [moKho, setMoKho] = useState(false);
+  const [moChart, setMoChart] = useState(false);        // đường tiến độ mặc định ĐÓNG
+  const [moChuaDoc, setMoChuaDoc] = useState(false);    // mục "chưa rút được số" mặc định ĐÓNG
 
   const [tuLs, setTuLs] = useState<Proj[]>([]);
   useEffect(() => { setTuLs(docLs()); }, []);
@@ -421,7 +443,7 @@ export function MtldV2App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trangThai]);
 
-  const nhom = useMemo(() => {
+  const boCuc = useMemo(() => {
     const mucs: Muc[] = list.map((p, i) => ({
       p, so: kq[i]?.data, dangDoc: !kq[i] || (!kq[i].isSuccess && !kq[i].isError),
     }));
@@ -433,14 +455,21 @@ export function MtldV2App() {
       const va = a.so?.tt?.chenhLech ?? 999, vb = b.so?.tt?.chenhLech ?? 999;   // trễ nhất lên đầu
       return va - vb || a.p.name.localeCompare(b.p.name, "vi");
     };
+    /* Dự án CHƯA ĐỌC ĐƯỢC SỐ tách hẳn xuống cuối trang. Để lẫn trong lưới thì mỗi thẻ một chiều
+       cao, hàng nào cũng so le, mà thứ đáng nhìn lại bị mấy thẻ báo lỗi chen giữa. */
+    const chuaDoc = mucs.filter((m) => !!m.so?.loi).sort((a, b) => a.p.name.localeCompare(b.p.name, "vi"));
     const g: Record<string, Muc[]> = { rooms: [], public: [] };
-    for (const m of mucs) g[nhomCua(m)].push(m);
-    return [
-      { key: "rooms", ten: "KHỐI PHÒNG", ds: g.rooms.sort(sapXep) },
-      { key: "public", ten: "PUBLIC", ds: g.public.sort(sapXep) },
-    ].filter((n) => n.ds.length);
+    for (const m of mucs) if (!m.so?.loi) g[nhomCua(m)].push(m);
+    return {
+      nhom: [
+        { key: "rooms", ten: "KHỐI PHÒNG", ds: g.rooms.sort(sapXep) },
+        { key: "public", ten: "PUBLIC", ds: g.public.sort(sapXep) },
+      ].filter((n) => n.ds.length),
+      chuaDoc,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, trangThai, xep]);
+  const { nhom, chuaDoc } = boCuc;
 
   const nut = (dang: boolean) => ({
     padding: "5px 11px", fontSize: 11.5, fontWeight: 600 as const, cursor: "pointer", border: "none",
@@ -469,62 +498,72 @@ export function MtldV2App() {
         </div>
       </div>
 
-      <div style={{ padding: narrow ? 12 : 20 }}>
-        {/* SỐ TỔNG + ĐƯỜNG TIẾN ĐỘ — đọc từ KHO, không mở lại file gốc. */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-          <O1 nhan="% thực tế" so={sos(tong.thuc)} mau={mauTheoTre(tong.chenh)}
-            phu={tong.ngayMoiNhat ? `chốt ${ngayNgan(tong.ngayMoiNhat)}` : undefined} />
-          <O1 nhan="so kế hoạch" so={tong.chenh == null ? "—" : `${tong.chenh > 0 ? "+" : ""}${sos(tong.chenh)}`}
-            mau={mauTheoTre(tong.chenh)}
-            phu={tong.chenh == null ? "chưa dự án nào có kế hoạch" : `${tong.soCoKeHoach}/${tong.soDuAn} dự án có kế hoạch`} />
-          <O1 nhan="dự án trễ" so={String(tong.soTre)} mau={tong.soTre ? T.vang : T.xanh} phu={`trên ${tong.soDuAn} dự án có số`} />
-          <O1 nhan="khu báo động" so={String(tong.soBaoDong)} mau={tong.soBaoDong ? T.do : T.xanh} phu={`${tong.soKhu} khu`} />
-          <O1 nhan="quá hạn bàn giao" so={String(tong.soQuaHan)} mau={tong.soQuaHan ? T.do : T.xanh} phu="dự án" />
-        </div>
-        {/* KHỐI PHÒNG — đếm căn theo bốn chặng bàn giao. Số căn, không phải phần trăm. */}
+      {/* Giới hạn bề ngang: màn 1900px mà dàn hết thì một hàng 8 thẻ, tên dự án nào cũng gãy hai
+          dòng rồi cụt. Khung 1440 giữ thẻ đủ rộng để đọc được tên. */}
+      <div style={{ padding: narrow ? 12 : 20, maxWidth: 1440, margin: "0 auto" }}>
+
+        {/* ── HÀNG ĐẦU: BỐN THẺ KPI KHỐI PHÒNG. Đây là thứ cần nhìn trước. ── */}
         {tongPhong && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: T.soft, marginBottom: 8 }}>
-              KHỐI PHÒNG · BÀN GIAO
-              <span style={{ color: T.faint, fontWeight: 400, letterSpacing: 0 }}>
-                {" · "}{tongPhong.soDuAn} dự án{tongPhong.tongCan != null ? ` · ${tongPhong.tongCan} căn` : ""}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 9, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".09em", color: T.soft }}>KHỐI PHÒNG · BÀN GIAO</span>
+              <span style={{ fontSize: 11.5, color: T.faint }}>
+                {tongPhong.soDuAn} dự án{tongPhong.tongCan != null ? ` · ${tongPhong.tongCan} căn` : ""}
               </span>
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {CHANG_MAU.map((c) => {
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: `repeat(auto-fit, minmax(${narrow ? 150 : 190}px, 1fr))` }}>
+              {THE_KPI.map((c) => {
                 const v = c.lay(tongPhong);
                 const tong = tongPhong.tongCan || 0;
                 return (
-                  <O1 key={c.ten} nhan={c.ten === "thô" ? "đã giao thô" : c.ten === "tinh" ? "đã giao tinh" : c.ten === "xoá defect" ? "đã xoá defect" : "đã giao vận hành"}
-                    so={v == null ? "—" : String(v)} mau={v == null ? T.faint : c.mau}
-                    phu={v == null ? "chưa dự án nào ghi nhãn" : tong ? `${Math.round((v / tong) * 1000) / 10}% trên ${tong} căn`.replace(".", ",") : undefined} />
+                  <O1 key={c.nhan} nhan={c.nhan} so={v == null ? "—" : String(v)} mau={v == null ? T.faint : c.mau}
+                    phu={v == null ? "chưa file nào ghi nhãn"
+                      : tong ? `${(Math.round((v / tong) * 1000) / 10).toString().replace(".", ",")}% trên ${tong} căn` : undefined} />
                 );
               })}
             </div>
             {tongPhong.thieuNhan.length > 0 && (
-              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>
+              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 7 }}>
                 có file chưa ghi nhãn chặng: {tongPhong.thieuNhan.join(" · ")}
               </div>
             )}
           </div>
         )}
 
-        <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: narrow ? 12 : 14, marginBottom: 22 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: T.soft, marginBottom: 8 }}>
-            TIẾN ĐỘ THEO NGÀY <span style={{ color: T.faint, fontWeight: 400, letterSpacing: 0 }}>· {diem.length} ngày trong kho</span>
-          </div>
-          <DuongTienDo diem={diem} narrow={narrow} />
-          {(() => {
-            // Đường kế hoạch chỉ nói cho những dự án CÓ cột kế hoạch. Không ghi rõ thì người xem
-            // tưởng khoảng cách giữa hai đường là độ trễ của cả công ty.
-            const c = diem.at(-1);
-            return c && c.soCoKeHoach > 0 && c.soCoKeHoach < c.soDuAn ? (
-              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>
-                đường kế hoạch tính trên {c.soCoKeHoach}/{c.soDuAn} dự án có cột kế hoạch
-              </div>
-            ) : null;
-          })()}
+        {/* ── HÀNG HAI: số phần trăm gom thành MỘT DÒNG. Trước là năm thẻ to, chiếm cả tầng màn
+             hình cho năm con số mà không con nào là thứ phải nhìn trước. ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: narrow ? 10 : 18, flexWrap: "wrap",
+          background: T.panel, border: `1px solid ${T.line}`, borderRadius: 10, padding: "9px 13px", marginBottom: 14 }}>
+          <SoNho nhan="% thực tế" gt={sos(tong.thuc)} mau={mauTheoTre(tong.chenh)} />
+          <SoNho nhan="so kế hoạch" mau={mauTheoTre(tong.chenh)}
+            gt={tong.chenh == null ? "—" : `${tong.chenh > 0 ? "+" : ""}${sos(tong.chenh)}`} />
+          <SoNho nhan="dự án trễ" gt={String(tong.soTre)} mau={tong.soTre ? T.vang : T.xanh} />
+          <SoNho nhan="khu báo động" gt={String(tong.soBaoDong)} mau={tong.soBaoDong ? T.do : T.xanh} />
+          <SoNho nhan="quá hạn bàn giao" gt={String(tong.soQuaHan)} mau={tong.soQuaHan ? T.do : T.xanh} />
+          <span style={{ fontSize: 10.5, color: T.faint, marginLeft: "auto" }}>
+            {tong.ngayMoiNhat ? `chốt ${ngayNgan(tong.ngayMoiNhat)} · ` : ""}{tong.soCoKeHoach}/{tong.soDuAn} dự án có kế hoạch
+          </span>
+          <button type="button" onClick={() => setMoChart((v) => !v)}
+            style={{ background: "transparent", border: `1px solid ${T.line}`, borderRadius: 6, color: T.soft, fontSize: 11, fontWeight: 600, padding: "3px 9px", cursor: "pointer" }}>
+            {moChart ? "Ẩn đường tiến độ" : `Đường tiến độ (${diem.length} ngày)`}
+          </button>
         </div>
+
+        {/* Đường tiến độ: mặc định ĐÓNG. Kho mới có vài ngày nên nó gần như một nét thẳng — để mở
+            sẵn thì chiếm một phần ba màn hình mà chẳng nói được gì. */}
+        {moChart && (
+          <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: narrow ? 12 : 14, marginBottom: 18 }}>
+            <DuongTienDo diem={diem} narrow={narrow} />
+            {(() => {
+              const c = diem.at(-1);
+              return c && c.soCoKeHoach > 0 && c.soCoKeHoach < c.soDuAn ? (
+                <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>
+                  đường kế hoạch tính trên {c.soCoKeHoach}/{c.soDuAn} dự án có cột kế hoạch
+                </div>
+              ) : null;
+            })()}
+          </div>
+        )}
 
         {listQ.isPending && !list.length ? (
           <div style={{ color: T.faint, fontSize: 13, padding: 48, textAlign: "center" }}>Đang tải danh sách dự án…</div>
@@ -532,25 +571,45 @@ export function MtldV2App() {
           <div style={{ color: T.soft, fontSize: 13, padding: 48, textAlign: "center", lineHeight: 1.7 }}>
             Chưa có danh sách dự án. Mở <b style={{ color: T.ink }}>Project Master Plan</b> một lần để nạp danh sách link lắp đặt, rồi quay lại đây.
           </div>
-        ) : nhom.map((n) => {
-          const co = n.ds.filter((m) => m.so?.tt);
-          const tre = co.filter((m) => (m.so!.tt!.chenhLech ?? 0) < -1).length;
-          return (
-            <div key={n.key} style={{ marginBottom: 24 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".09em", color: T.soft }}>{n.ten}</span>
-                <span style={{ fontSize: 11.5, color: T.faint }}>{n.ds.length} dự án</span>
-                {tre > 0 && <span style={{ fontSize: 11.5, color: T.faint }}>· <b style={{ color: T.do }}>{tre}</b> trễ kế hoạch</span>}
+        ) : <>
+          {nhom.map((n) => {
+            const tre = n.ds.filter((m) => (m.so?.tt?.chenhLech ?? 0) < -1).length;
+            return (
+              <div key={n.key} style={{ marginBottom: 22 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".09em", color: T.soft }}>{n.ten}</span>
+                  <span style={{ fontSize: 11.5, color: T.faint }}>{n.ds.length} dự án</span>
+                  {tre > 0 && <span style={{ fontSize: 11.5, color: T.faint }}>· <b style={{ color: T.do }}>{tre}</b> trễ kế hoạch</span>}
+                </div>
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? 240 : 272}px, 1fr))`, alignItems: "stretch" }}>
+                  {n.ds.map((m) => (
+                    <The key={pid(m.p)} p={m.p} so={m.so} dangDoc={m.dangDoc}
+                      onMo={() => { setMo(m.p); track("mtld2_mo", `${m.p.maCT} · ${m.p.name}`); }} />
+                  ))}
+                </div>
               </div>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? 240 : 262}px, 1fr))`, alignItems: "start" }}>
-                {n.ds.map((m) => (
-                  <The key={pid(m.p)} p={m.p} so={m.so} dangDoc={m.dangDoc}
-                    onMo={() => { setMo(m.p); track("mtld2_mo", `${m.p.maCT} · ${m.p.name}`); }} />
-                ))}
-              </div>
+            );
+          })}
+
+          {/* Dự án chưa rút được số — gom cuối trang, mặc định đóng. Vẫn bấm vào xem bảng gốc được. */}
+          {chuaDoc.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <button type="button" onClick={() => setMoChuaDoc((v) => !v)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "transparent", border: "none", cursor: "pointer", padding: 0, marginBottom: 10 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".09em", color: T.soft }}>CHƯA RÚT ĐƯỢC SỐ</span>
+                <span style={{ fontSize: 11.5, color: T.faint }}>{chuaDoc.length} dự án · {moChuaDoc ? "thu lại" : "xem"}</span>
+              </button>
+              {moChuaDoc && (
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? 240 : 272}px, 1fr))`, alignItems: "stretch" }}>
+                  {chuaDoc.map((m) => (
+                    <The key={pid(m.p)} p={m.p} so={m.so} dangDoc={m.dangDoc}
+                      onMo={() => { setMo(m.p); track("mtld2_mo", `${m.p.maCT} · ${m.p.name}`); }} />
+                  ))}
+                </div>
+              )}
             </div>
-          );
-        })}
+          )}
+        </>}
       </div>
 
       {/* Mốc nạp: cuộn chạm tới là nới thêm một đợt. */}

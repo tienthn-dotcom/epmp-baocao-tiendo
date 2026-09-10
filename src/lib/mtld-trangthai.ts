@@ -30,6 +30,8 @@ export type TrangThaiPhong = {
   tongCan: number | null;
   giaoTho: number | null;
   giaoTinh: number | null;
+  /** Chặng trung gian: đã RA list defect (vận hành soi ra lỗi) — chưa xoá xong. */
+  raDefect: number | null;
   xoaDefect: number | null;
   giaoVanHanh: number | null;
   /** Chặng nào không tìm thấy nhãn trong file — để nói thẳng là "chưa gắn nhãn", không đoán bừa. */
@@ -43,9 +45,17 @@ export type KetQua = { ok: true; tt: TrangThaiPhong } | { ok: false; loi: string
 const CHANG = [
   { ma: "giaoTho", ten: "giao thô", re: /(?:đã\s*)?giao\s*th[ôo]/i },
   { ma: "giaoTinh", ten: "giao tinh", re: /(?:đã\s*)?giao\s*tinh/i },
+  // "Xoá list Defect" phải xét TRƯỚC "Ra list Defect" — hai nhãn chỉ khác mỗi động từ đầu.
   { ma: "xoaDefect", ten: "xoá list Defect", re: /xo[áa]\s*(?:list\s*)?defect/i },
+  { ma: "raDefect", ten: "ra list Defect", re: /\bra\s*(?:list\s*)?defect/i },
   { ma: "giaoVanHanh", ten: "bàn giao vận hành", re: /(?:b[àa]n\s*giao|đã\s*giao|giao)\s*v[ậa]n\s*h[àa]nh/i },
 ] as const;
+
+/** Khuôn mới ghi luôn số vào nhãn: "Đã giao thô: 376". Có số ngay trong nhãn thì lấy số đó. */
+function soTrongNhan(t: string): number | null {
+  const m = /:\s*(-?[\d.,]+)\s*$/.exec(t);
+  return m ? so(m[1]) : null;
+}
 
 const chu = (v: OTrangThai): string =>
   (v == null ? "" : v instanceof Date ? "" : String(v)).replace(/\s+/g, " ").trim();
@@ -119,6 +129,9 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
       if (!t) continue;
       const chang = CHANG.find((x) => x.re.test(t));
       if (!chang || dem[chang.ma] != null) continue;
+      // Số ghi thẳng trong nhãn là số CHỐT của nhóm — tin nó, khỏi cộng lại dòng Lũy kế.
+      const trongNhan = soTrongNhan(t);
+      if (trongNhan != null) { dem[chang.ma] = trongNhan; continue; }
       const { c1, c2 } = khoangCot(merges, r, c);
       const tenBangDem = dongSo.some((dr) => {
         const rr = rows[dr] || [];
@@ -143,6 +156,7 @@ export function docTrangThaiPhong(rows: OTrangThai[][], merges: Merge[] = []): K
       tongCan,
       giaoTho: dem.giaoTho ?? null,
       giaoTinh: dem.giaoTinh ?? null,
+      raDefect: dem.raDefect ?? null,
       xoaDefect: dem.xoaDefect ?? null,
       giaoVanHanh: dem.giaoVanHanh ?? null,
       thieuNhan,
@@ -161,6 +175,7 @@ export function congTrangThai(ds: TrangThaiPhong[]): TrangThaiPhong & { soDuAn: 
     tongCan: cong((t) => t.tongCan),
     giaoTho: cong((t) => t.giaoTho),
     giaoTinh: cong((t) => t.giaoTinh),
+    raDefect: cong((t) => t.raDefect),
     xoaDefect: cong((t) => t.xoaDefect),
     giaoVanHanh: cong((t) => t.giaoVanHanh),
     thieuNhan: [...new Set(ds.flatMap((t) => t.thieuNhan))],

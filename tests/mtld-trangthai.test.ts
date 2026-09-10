@@ -54,7 +54,8 @@ describe("file đã ghi đủ nhãn", () => {
     const { rows, merges } = hyatt();
     const r = docTrangThaiPhong(rows, merges);
     expect(r.ok && r.tt).toEqual({
-      tongCan: 255, giaoTho: 101, giaoTinh: 85, xoaDefect: 85, giaoVanHanh: 0, thieuNhan: [],
+      tongCan: 255, giaoTho: 101, giaoTinh: 85, raDefect: null, xoaDefect: 85, giaoVanHanh: 0,
+      thieuNhan: ["ra list Defect"],   // file Hyatt không tách chặng "ra list" riêng
     });
   });
 
@@ -72,7 +73,7 @@ describe("file mới ghi nhãn một chặng", () => {
     if (!r.ok) throw new Error("phải đọc được");
     expect(r.tt.tongCan).toBe(427);
     expect(r.tt.giaoVanHanh).toBe(0);         // có nhãn, đang theo dõi, chưa căn nào tới
-    expect(r.tt.thieuNhan).toEqual(["giao thô", "giao tinh", "xoá list Defect"]);
+    expect(r.tt.thieuNhan).toEqual(["giao thô", "giao tinh", "xoá list Defect", "ra list Defect"]);
   });
 
   it("gắn nhãn cho nhóm là đọc ra số ngay, không phải sửa gì thêm", () => {
@@ -107,5 +108,48 @@ describe("congTrangThai", () => {
     expect(t.giaoTho).toBe(101);              // chỉ Hyatt có số
     expect(t.giaoVanHanh).toBe(0);
     expect(t.thieuNhan).toContain("giao tinh");
+  });
+});
+
+/** Khuôn CHUẨN HOÁ (PMO đang gom về, 10/09/2026): nhãn ghi luôn con số phía sau dấu hai chấm.
+ *  Ngày | 10/09/2026 | Đã giao thô: 376 | Đã giao tinh: 288 | Ra list Defect VH: 227 |
+ *                     Xoá list Defect VH: 92 | Đã giao Vận Hành */
+describe("khuôn chuẩn hoá — số nằm ngay trong nhãn", () => {
+  const dựng = (): { rows: OTrangThai[][]; merges: Merge[] } => {
+    const rows: OTrangThai[][] = Array.from({ length: 10 }, () => o(36));
+    dat(rows[2], 0, "Ngày"); dat(rows[2], 1, "10/09/2026");
+    dat(rows[2], 4, "Đã giao thô: 376"); dat(rows[2], 10, "Đã giao tinh: 288");
+    dat(rows[2], 16, "Ra list Defect VH: 227"); dat(rows[2], 22, "Xoá list Defect VH: 92");
+    dat(rows[2], 28, "Đã giao Vận Hành");
+    dat(rows[3], 0, "Tổng"); dat(rows[3], 1, 427);
+    dat(rows[4], 0, "Tăng hôm trước"); dat(rows[4], 21, 2); dat(rows[4], 33, 13);
+    dat(rows[5], 0, "Tăng trong ngày");
+    dat(rows[8], 0, "Lũy kế");
+    const merges: Merge[] = [{ s: { r: 2, c: 28 }, e: { r: 2, c: 33 } }];
+    return { rows, merges };
+  };
+
+  it("lấy số ghi trong nhãn, không cần dòng Lũy kế", () => {
+    const { rows, merges } = dựng();
+    const r = docTrangThaiPhong(rows, merges);
+    if (!r.ok) throw new Error("phải đọc được");
+    expect(r.tt.tongCan).toBe(427);
+    expect(r.tt.giaoTho).toBe(376);
+    expect(r.tt.giaoTinh).toBe(288);
+    expect(r.tt.raDefect).toBe(227);
+    expect(r.tt.xoaDefect).toBe(92);
+  });
+
+  it("KHÔNG lẫn 'Ra list Defect' với 'Xoá list Defect'", () => {
+    const { rows, merges } = dựng();
+    const r = docTrangThaiPhong(rows, merges);
+    expect(r.ok && r.tt.raDefect).toBe(227);
+    expect(r.ok && r.tt.xoaDefect).toBe(92);
+  });
+
+  it("nhãn không kèm số thì vẫn cộng theo dòng đếm như cũ", () => {
+    const { rows, merges } = dựng();
+    const r = docTrangThaiPhong(rows, merges);
+    expect(r.ok && r.tt.giaoVanHanh).toBe(0);   // có nhãn, đang theo dõi, Lũy kế còn trống
   });
 });

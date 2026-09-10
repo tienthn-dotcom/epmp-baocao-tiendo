@@ -342,7 +342,12 @@ export function noteMentionsMpUpdate(note: string): boolean {
  *  BẮT BUỘC có cụm liền "trình BOD (phê) duyệt" VÀ từ "bitrix". Vì sao chặt vậy: nếu chỉ
  *  đòi bod+duyệt+bitrix rời rạc, hoặc dùng luật "cập nhật MP" chung, sẽ dính các dự án chỉ
  *  điền CỘT "Cần cập nhật MP" hay ghi chú khác (vd 43 ĐTM) → lọc phình ra sai. Cho phép
- *  biến thể: thiếu "phê" ("trình BOD duyệt (Bitrix)"), "(Bitrix)"/"trên Bitrix"/"qua Bitrix". */
+ *  biến thể: thiếu "phê" ("trình BOD duyệt (Bitrix)"), "(Bitrix)"/"trên Bitrix"/"qua Bitrix".
+ *
+ *  HAI MẪU CÂU CHUẨN PMO ĐANG DÙNG (chốt 10/09/2026) — cả hai đều lọt luật này:
+ *    PMO: Dự án mới cần PM lập master plan & trình BOD phê duyệt bitrix trước ......
+ *    PMO: Tiến độ dời từ ... đến ....., cần PM trình BOD phê duyệt bitrix trước .......
+ *  Ngày trong câu do lib/mp-deadline.ts đọc, KHÔNG đọc ở đây. */
 export function noteSaysTrinhBodBitrix(note: string): boolean {
   if (!note) return false;
   const n = stripDiacritics(note).replace(/\s+/g, " ").trim().toLowerCase();

@@ -174,7 +174,7 @@ export type BangPct = { ok: true; ten: string; dong: { ten: string; pct: number 
 /* CHỈ nhận cột ghi rõ là PHẦN TRĂM. Từng cho khớp cả cột "TỔNG" — và tab Summary của Mini Hotel có
    cột "Tổng" đếm SỐ CĂN (427), thế là thẻ hiện 127%. Số sai tệ hơn nhiều so với không có số. */
 const COT_PCT = /%\s*(thực hiện|hoàn thành|hoan thanh)|(thực hiện|hoàn thành)\s*%/i;
-const COT_TEN = /^căn$|^các khu|^khu|^khu vực$|^hạng mục$|^tên|^t[òo]a$/i;
+const COT_TEN = /^căn$|^các khu|^khu\b|^khu vực$|^hạng mục$|^tên|^t[òo]a$/i;
 
 /** Đọc bảng dạng "mỗi dòng một đơn vị + một cột phần trăm". Trả % theo thang 0..1. */
 export function docBangPct(rows: O[][]): BangPct {
