@@ -43,8 +43,9 @@ import { MtldV2App } from "@/lib/mtld-v2-app";
 const RAIL_W = 52;        // bề rộng thanh khi THU (icon)
 const RAIL_W_OPEN = 214;  // bề rộng khi MỞ (overlay)
 
-type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: boolean; adminPmoOnly?: boolean; roleOnly?: UserRole[] };
+type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: boolean; adminOnly?: boolean; adminPmoOnly?: boolean; roleOnly?: UserRole[] };
 // `live: true` = hiện cả trên bản chính thức. Không có = CHỈ hiện ở dev (tính năng đang làm dở).
+// `adminOnly: true`    = CHỈ admin thấy, kể cả PMO cũng không. Dùng cho app đang dựng dở.
 // `adminPmoOnly: true` = trên bản live CHỈ admin/PMO thấy (người thường không thấy trong rail).
 // `roleOnly: [...]`    = chỉ người ĐƯỢC PHÂN CẤP trong danh sách đó (+ admin) thấy. Dùng cho số
 //                        sản lượng / doanh thu / hiệu suất nhân sự: không phải ai cũng được xem.
@@ -60,9 +61,8 @@ const APPS: AppDef[] = [
   // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
   { id: "media", name: "Hình ảnh mỗi ngày", sub: "Ma trận + ảnh/video theo căn", icon: <Images className="h-5 w-5" />, live: true },
   // BẢN THỬ của MTLĐ: mọi dự án về CÙNG một khuôn thẻ, chia nhóm Khối phòng / Public, bấm mới ra
-  // ma trận gốc. `roleOnly: []` = CHỈ admin thấy (danh sách rỗng nên không cấp nào khớp, còn admin
-  // thì luôn qua được) — đang phát triển, chưa cho PMO/PM vào để khỏi lẫn với app MTLĐ thật.
-  { id: "mtld2", name: "Lắp đặt (thử)", sub: "Một khuôn thẻ · Khối phòng / Public", icon: <LayoutGrid className="h-5 w-5" />, live: true, roleOnly: [] },
+  // bảng gốc. Đang dựng dở nên CHỈ ADMIN — chưa cho cả PMO vào, để khỏi lẫn với app MTLĐ thật.
+  { id: "mtld2", name: "Lắp đặt (thử)", sub: "Một khuôn thẻ · Khối phòng / Public", icon: <LayoutGrid className="h-5 w-5" />, live: true, adminOnly: true },
 ];
 
 export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
@@ -114,7 +114,11 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   ) : null;
   // Trên bản chính thức (live) chỉ hiện app có cờ `live`, app adminPmoOnly chỉ khi là admin/PMO,
   // app roleOnly chỉ khi cấp của người dùng nằm trong danh sách (admin luôn thấy hết).
+  /* `adminOnly` chặn ở CẢ dev lẫn live, và chặn luôn cả PMO. Chưa biết danh tính (meQ đang tải) thì
+     coi như KHÔNG phải admin — thà giấu nhầm còn hơn hở nhầm app đang dựng dở ra cho cả nhà. */
+  const laAdmin = !!meQ.data?.isAdmin && !xemNhuUser;
   const visibleApps = APPS.filter((a) => (stage === "live" ? a.live : true)
+    && (!a.adminOnly || laAdmin)
     && (!a.adminPmoOnly || canManage)
     && (!a.roleOnly || meQ.data?.isAdmin || (myRole && a.roleOnly.includes(myRole))));
   // App đang chọn phải nằm trong danh sách được phép; nếu không (vd người thường lỡ ở mtld) → về ePMP.
