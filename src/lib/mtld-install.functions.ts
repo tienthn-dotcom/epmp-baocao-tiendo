@@ -202,6 +202,19 @@ export const recordSummaryFiles = createServerFn({ method: "POST" })
 // Dashboard (sau khi parse installLinks) ĐẨY danh sách này vào KV; app MTLĐ ĐỌC thẳng từ KV →
 // không còn phụ thuộc cầu nối localStorage (ghi/đọc lệch thời điểm, khác tab → trống).
 const INSTALL_LIST_KEY = "mtld:install:list:v2";
+
+/**
+ * GHI KV chỉ khi nội dung KHÁC bản đang có.
+ *
+ * Hạn mức KV: 100.000 lượt ĐỌC mỗi ngày nhưng chỉ 1.000 lượt GHI. Mấy kho dưới đây được client
+ * gửi lên MỖI LẦN MỞ APP dù dữ liệu y hệt hôm qua — mười người mở vài lượt một ngày là chạm trần
+ * ghi, app đứng giữa buổi. Đọc để so trước khi ghi là đổi thứ đang khan lấy thứ đang thừa.
+ */
+async function putNeuKhac(kv: KVLike, key: string, giaTri: string): Promise<boolean> {
+  try { if ((await kv.get(key)) === giaTri) return false; } catch { /* đọc hỏng → cứ ghi */ }
+  await kv.put(key, giaTri);
+  return true;
+}
 type InstallListItem = {
   fileId: string; gid?: string; name: string; maCT: string; region?: string; groupDA?: string;
   /** ID CỨNG của DỰ ÁN (cột "IDCUNG", vd "P0025") — KHOÁ BỀN của dự án: đổi tên / STT trôi / trùng mã CT
@@ -224,7 +237,7 @@ export const saveInstallList = createServerFn({ method: "POST" })
   })).max(1000) }).parse(input))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
     const kv = await getKv();
-    if (kv) { try { await kv.put(INSTALL_LIST_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
+    if (kv) { try { await putNeuKhac(kv, INSTALL_LIST_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
     return { ok: true };
   });
 export const getInstallList = createServerFn({ method: "POST" })
@@ -325,7 +338,7 @@ export const saveProjRegions = createServerFn({ method: "POST" })
     const n = Object.keys(data.map).length;
     if (!n) return { ok: false, n: 0 };            // map rỗng (ePMP chưa parse xong) → đừng ghi đè bản đang có
     const kv = await getKv();
-    if (kv) { try { await kv.put(PROJ_REGION_KEY, JSON.stringify(data.map)); } catch { /* KV lỗi → bỏ qua */ } return { ok: true, n }; }
+    if (kv) { try { await putNeuKhac(kv, PROJ_REGION_KEY, JSON.stringify(data.map)); } catch { /* KV lỗi → bỏ qua */ } return { ok: true, n }; }
     try {
       const fsp = await import("node:fs/promises");
       await fsp.mkdir(".data", { recursive: true });
@@ -432,7 +445,7 @@ export const saveMediaProjects = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data }): Promise<{ ok: boolean; n: number }> => {
     const kv = await getKv();
-    if (kv) { try { await kv.put(MEDIA_PROJ_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
+    if (kv) { try { await putNeuKhac(kv, MEDIA_PROJ_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
     else {
       // DEV không có KV — ghi ra tệp để thử được ngay trên máy, y như các kho khác của app.
       try {
