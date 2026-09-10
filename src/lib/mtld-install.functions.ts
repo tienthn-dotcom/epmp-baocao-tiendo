@@ -364,6 +364,34 @@ export const getProjRegions = createServerFn({ method: "GET" })
    do người ta gõ tay) mà hỏi thẳng Google: mỗi lần file đổi, Drive tự ghi lại giờ sửa, không ai
    sửa được con số đó. Chỉ hỏi metadata nên nhẹ, và cache 10 phút cho khỏi gọi lại mỗi lần mở.
    Chưa cấu hình Drive hoặc tài khoản không thấy file thì trả null, popup lặng lẽ giấu dòng đó. */
+/* ── NGÀY SỬA CỦA FILE TRONG LINK ────────────────────────────────────────────────────────────
+ *
+ * MỘT KHOÁ CHO TẤT CẢ, KHÔNG PHẢI MỖI FILE MỘT KHOÁ.
+ *
+ * Bản trước để mỗi file một khoá `fmeta:<id>` với hạn 10 phút. Bảng chính có mấy chục dòng gắn
+ * link, nên mỗi lượt mở là mấy chục lượt ĐỌC, và cứ qua 10 phút là mấy chục lượt GHI. Hạn mức KV
+ * free chỉ 1.000 lượt ghi mỗi ngày — một mình chỗ này đủ đốt sạch trước giờ nghỉ trưa.
+ *
+ * Nay gom cả bản đồ vào MỘT khoá: một lượt đọc cho cả bảng, và một lượt ghi cho cả đợt làm mới.
+ * Mỗi mục vẫn có mốc thời gian riêng nên chỉ hỏi lại Drive đúng file đã cũ.
+ */
+const FMETA_KEY = "fmeta:v2";
+const FMETA_HAN = 30 * 60 * 1000;          // 30 phút — ngày sửa file không cần tươi hơn thế
+const FMETA_TTL_S = 30 * 86_400;           // khoá tự dọn sau 30 ngày nếu app ngừng dùng
+type FMetaMuc = { modifiedTime: string | null; nguoiSua: string; ts: number };
+type FMetaMap = Record<string, FMetaMuc>;
+
+async function docFMeta(kv: KVLike | null): Promise<FMetaMap> {
+  if (!kv) return {};
+  try { const raw = await kv.get(FMETA_KEY); return raw ? (JSON.parse(raw) as FMetaMap) : {}; }
+  catch { return {}; }
+}
+async function ghiFMeta(kv: KVLike | null, map: FMetaMap): Promise<void> {
+  if (!kv) return;
+  try { await kv.put(FMETA_KEY, JSON.stringify(map), { expirationTtl: FMETA_TTL_S }); } catch { /* bỏ qua */ }
+}
+const conTuoi = (m: FMetaMuc | undefined, gio: number): boolean => !!m && gio - (m.ts ?? 0) < FMETA_HAN;
+
 export const getLinkUpdatedAt = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({
     fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/),
@@ -371,42 +399,42 @@ export const getLinkUpdatedAt = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data }): Promise<{ modifiedTime: string | null; nguoiSua: string }> => {
     const kv = await getKv();
-    const key = `fmeta:${data.fileId}`;
-    if (kv && !data.force) {
-      const hit = await kv.get(key);
-      if (hit) { try { return JSON.parse(hit) as { modifiedTime: string | null; nguoiSua: string }; } catch { /* cache hỏng → hỏi lại */ } }
-    }
+    const gio = Date.now();
+    const map = await docFMeta(kv);
+    const cu = map[data.fileId];
+    if (!data.force && conTuoi(cu, gio)) return { modifiedTime: cu.modifiedTime, nguoiSua: cu.nguoiSua };
     let ra: { modifiedTime: string | null; nguoiSua: string } = { modifiedTime: null, nguoiSua: "" };
     try {
       const drive = await import("@/lib/drive.functions");
       const m = await drive.driveFileMetaImpl(data.fileId);
       if (m) ra = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
     } catch { /* Drive lỗi → coi như chưa biết, KHÔNG làm hỏng popup */ }
-    if (kv && ra.modifiedTime) { try { await kv.put(key, JSON.stringify(ra), { expirationTtl: 600 }); } catch { /* bỏ qua */ } }
+    if (ra.modifiedTime) { map[data.fileId] = { ...ra, ts: gio }; await ghiFMeta(kv, map); }
+    // Drive hỏi hụt mà cache còn số cũ thì trả số cũ, hơn là để popup trống.
+    else if (cu) return { modifiedTime: cu.modifiedTime, nguoiSua: cu.nguoiSua };
     return ra;
   });
 
-/** NHIỀU FILE MỘT LƯỢT — bảng chính có mấy chục dòng gắn link, hỏi từng file là mấy chục lượt gọi.
- *  Dùng chung cache `fmeta:` với getLinkUpdatedAt nên mở popup rồi thì bảng lấy ngay khỏi hỏi lại. */
+/** NHIỀU FILE MỘT LƯỢT — bảng chính có mấy chục dòng gắn link. Một lượt đọc KV cho cả bảng,
+ *  hỏi Drive đúng mấy file đã cũ, rồi GHI MỘT LẦN cho cả đợt. */
 export const getLinksUpdatedAt = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({
     fileIds: z.array(z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/)).max(80),
   }).parse(input))
   .handler(async ({ data }): Promise<{ map: Record<string, { modifiedTime: string; nguoiSua: string }> }> => {
     const kv = await getKv();
+    const gio = Date.now();
+    const kho = await docFMeta(kv);
     const map: Record<string, { modifiedTime: string; nguoiSua: string }> = {};
     const conThieu: string[] = [];
     for (const id of [...new Set(data.fileIds)]) {
-      if (!kv) { conThieu.push(id); continue; }
-      const hit = await kv.get(`fmeta:${id}`);
-      if (hit) {
-        try {
-          const j = JSON.parse(hit) as { modifiedTime: string | null; nguoiSua: string };
-          if (j.modifiedTime) { map[id] = { modifiedTime: j.modifiedTime, nguoiSua: j.nguoiSua }; continue; }
-        } catch { /* cache hỏng → hỏi lại */ }
-      }
+      const m = kho[id];
+      if (conTuoi(m, gio) && m.modifiedTime) { map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua }; continue; }
+      // Hết hạn nhưng còn số cũ thì cứ hiện số cũ trước, đồng thời xếp hàng hỏi lại.
+      if (m?.modifiedTime) map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
       conThieu.push(id);
     }
+    let doi = false;
     if (conThieu.length) {
       try {
         const drive = await import("@/lib/drive.functions");
@@ -416,10 +444,12 @@ export const getLinksUpdatedAt = createServerFn({ method: "POST" })
           const m = await drive.driveFileMetaImpl(id);
           if (!m) continue;
           map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
-          if (kv) { try { await kv.put(`fmeta:${id}`, JSON.stringify(m), { expirationTtl: 600 }); } catch { /* bỏ qua */ } }
+          kho[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua, ts: gio };
+          doi = true;
         }
       } catch { /* Drive lỗi → trả về phần đã có */ }
     }
+    if (doi) await ghiFMeta(kv, kho);      // MỘT lượt ghi cho cả đợt, thay vì mỗi file một lượt
     return { map };
   });
 
