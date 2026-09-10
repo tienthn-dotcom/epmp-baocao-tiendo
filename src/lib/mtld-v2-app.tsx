@@ -19,6 +19,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Database, X } from "lucide-react";
 import { getInstallList, getSummaryFile } from "@/lib/mtld-install.functions";
 import { docBaoCao, docBangPct, tomTat, tomTatBangPct, doanNhom, type O, type TomTat } from "@/lib/mtld-baocao";
+import { docTrangThaiPhong, congTrangThai, type TrangThaiPhong } from "@/lib/mtld-trangthai";
 import { luuMocKho, docKho, napCsvKho, xuatCsvKho } from "@/lib/lapdat-kho.functions";
 import { duongNgay, moiNhatTheoDuAn, tongQuan, SQL_TAO_BANG, COT_KHO, type MocKho } from "@/lib/lapdat-kho";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -51,7 +52,7 @@ function docLs(): Proj[] {
 const homNay = () => new Date().toISOString().slice(0, 10);
 const p100 = (v: number | null | undefined): number | null => (v == null ? null : Math.round(v * 1000) / 10);
 
-type So = { tt?: TomTat; nhom: "public" | "rooms"; tieuDe: string; loi?: string };
+type So = { tt?: TomTat; phong?: TrangThaiPhong; nhom: "public" | "rooms"; tieuDe: string; loi?: string };
 
 function b64ToBuf(b64: string): ArrayBuffer {
   const bin = atob(b64);
@@ -75,7 +76,11 @@ async function docSo(p: Proj): Promise<So> {
   const ten = p.sheet && wb.SheetNames.includes(p.sheet) ? p.sheet : wb.SheetNames[0];
   const sh = wb.Sheets[ten];
   if (!sh) return { nhom: doan, tieuDe: "", loi: "không thấy tab đã khai" };
-  const rows = XLSX.utils.sheet_to_json<O[]>(sh, { header: 1, defval: null });
+  /* Bù cột trống ở đầu: sheet_to_json bắt đầu từ ô đầu của vùng dữ liệu (có file là B1), trong khi
+     toạ độ merge là TUYỆT ĐỐI. Không bù thì tra merge lệch nguyên một cột. */
+  const goc = XLSX.utils.decode_range(sh["!ref"] ?? "A1").s.c;
+  const rows = (XLSX.utils.sheet_to_json<O[]>(sh, { header: 1, defval: null, blankrows: true }) as O[][])
+    .map((r) => (goc ? (Array(goc).fill(null) as O[]).concat(r ?? []) : (r ?? [])));
   const ngay = homNay();
 
   // Dạng 1 — bảng "BÁO CÁO % HOÀN THÀNH": có kế hoạch, có cảnh báo, đủ để nói trễ hay không.
@@ -92,7 +97,13 @@ async function docSo(p: Proj): Promise<So> {
     return { tt: tomTat(bc.khu), nhom, tieuDe: bc.tieuDe };
   }
 
-  // Dạng 2 — ma trận chỉ có cột "% THỰC HIỆN": không có kế hoạch, chỉ cất được % thực tế.
+  /* Dạng 2 — KHỐI PHÒNG: không phải bảng phần trăm mà là BẢNG ĐẾM CĂN theo bốn chặng bàn giao
+     (giao thô → giao tinh → xoá list Defect → bàn giao vận hành). Thử trước dạng phần trăm chung
+     vì nó đặc thù hơn: đòi đúng dòng "Lũy kế" và nhãn chặng. */
+  const tp = docTrangThaiPhong(rows, (sh["!merges"] ?? []) as never[]);
+  if (tp.ok) return { phong: tp.tt, nhom: "rooms", tieuDe: "" };
+
+  // Dạng 3 — ma trận chỉ có cột "% THỰC HIỆN": không có kế hoạch, chỉ cất được % thực tế.
   const bp = docBangPct(rows);
   if (bp.ok) {
     const nhom = doanNhom("", ten, p.name);
@@ -219,6 +230,43 @@ function DuongTienDo({ diem, narrow }: { diem: { ngay: string; thuc: number | nu
 
 /* ── THẺ DỰ ÁN ──────────────────────────────────────────────────────────────────────────────── */
 
+/** Bốn chặng bàn giao, vẽ thành một thanh phễu: chặng sau luôn nằm gọn trong chặng trước. */
+const CHANG_MAU = [
+  { lay: (t: TrangThaiPhong) => t.giaoTho, ten: "thô", mau: "#5b8cff" },
+  { lay: (t: TrangThaiPhong) => t.giaoTinh, ten: "tinh", mau: "#35c281" },
+  { lay: (t: TrangThaiPhong) => t.xoaDefect, ten: "xoá defect", mau: "#e0b13a" },
+  { lay: (t: TrangThaiPhong) => t.giaoVanHanh, ten: "vận hành", mau: "#c07ce0" },
+] as const;
+
+function PheuPhong({ t }: { t: TrangThaiPhong }) {
+  const tong = t.tongCan || 0;
+  return (
+    <>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {CHANG_MAU.map((c) => {
+          const v = c.lay(t);
+          return (
+            <div key={c.ten} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ fontSize: 10, color: T.faint, width: 62, flexShrink: 0 }}>{c.ten}</span>
+              <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#1b2333", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${tong && v != null ? Math.min(100, (v / tong) * 100) : 0}%`, background: c.mau, borderRadius: 3 }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: v == null ? T.faint : T.ink, width: 34, textAlign: "right", flexShrink: 0 }}>
+                {v == null ? "—" : v}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {t.thieuNhan.length > 0 && (
+        <div style={{ fontSize: 10.5, color: T.vang, lineHeight: 1.45 }}>
+          file chưa ghi nhãn: {t.thieuNhan.join(" · ")}
+        </div>
+      )}
+    </>
+  );
+}
+
 function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onMo: () => void }) {
   const tt = so?.tt;
   const mau = mauThe(tt);
@@ -237,8 +285,8 @@ function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onM
             {p.maCT}{p.region ? ` · ${p.region}` : ""}
           </div>
         </div>
-        <div style={{ fontSize: 21, fontWeight: 800, color: mau, lineHeight: 1, whiteSpace: "nowrap" }}>
-          {dangDoc ? "…" : tt?.pctThuc == null ? "—" : sos(tt.pctThuc)}
+        <div style={{ fontSize: 21, fontWeight: 800, color: so?.phong ? T.ink : mau, lineHeight: 1, whiteSpace: "nowrap" }}>
+          {dangDoc ? "…" : so?.phong ? (so.phong.tongCan ?? "—") : tt?.pctThuc == null ? "—" : sos(tt.pctThuc)}
         </div>
       </div>
 
@@ -246,6 +294,11 @@ function The({ p, so, dangDoc, onMo }: { p: Proj; so?: So; dangDoc: boolean; onM
         <div style={{ fontSize: 11.5, color: T.faint }}>đang đọc bảng…</div>
       ) : so?.loi ? (
         <div style={{ fontSize: 11.5, color: T.vang, lineHeight: 1.5 }}>{so.loi} — bấm để mở bảng gốc</div>
+      ) : so?.phong ? (
+        <>
+          <div style={{ fontSize: 11.5, color: T.soft, marginTop: -3 }}>căn · theo chặng bàn giao</div>
+          <PheuPhong t={so.phong} />
+        </>
       ) : tt ? (
         <>
           <Thanh thuc={tt.pctThuc} keHoach={tt.pctDuKien} mau={mau} />
@@ -361,6 +414,13 @@ export function MtldV2App() {
   const diem = useMemo(() => duongNgay(khoRows), [khoRows]);
   const tong = useMemo(() => tongQuan(moiNhatTheoDuAn(khoRows)), [khoRows]);
 
+  /* BỐN THẺ KPI KHỐI PHÒNG — cộng dồn số căn theo chặng bàn giao của mọi dự án đọc được. */
+  const tongPhong = useMemo(() => {
+    const ds = kq.map((q) => q.data?.phong).filter((x): x is TrangThaiPhong => !!x);
+    return ds.length ? congTrangThai(ds) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trangThai]);
+
   const nhom = useMemo(() => {
     const mucs: Muc[] = list.map((p, i) => ({
       p, so: kq[i]?.data, dangDoc: !kq[i] || (!kq[i].isSuccess && !kq[i].isError),
@@ -421,6 +481,34 @@ export function MtldV2App() {
           <O1 nhan="khu báo động" so={String(tong.soBaoDong)} mau={tong.soBaoDong ? T.do : T.xanh} phu={`${tong.soKhu} khu`} />
           <O1 nhan="quá hạn bàn giao" so={String(tong.soQuaHan)} mau={tong.soQuaHan ? T.do : T.xanh} phu="dự án" />
         </div>
+        {/* KHỐI PHÒNG — đếm căn theo bốn chặng bàn giao. Số căn, không phải phần trăm. */}
+        {tongPhong && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: T.soft, marginBottom: 8 }}>
+              KHỐI PHÒNG · BÀN GIAO
+              <span style={{ color: T.faint, fontWeight: 400, letterSpacing: 0 }}>
+                {" · "}{tongPhong.soDuAn} dự án{tongPhong.tongCan != null ? ` · ${tongPhong.tongCan} căn` : ""}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {CHANG_MAU.map((c) => {
+                const v = c.lay(tongPhong);
+                const tong = tongPhong.tongCan || 0;
+                return (
+                  <O1 key={c.ten} nhan={c.ten === "thô" ? "đã giao thô" : c.ten === "tinh" ? "đã giao tinh" : c.ten === "xoá defect" ? "đã xoá defect" : "đã giao vận hành"}
+                    so={v == null ? "—" : String(v)} mau={v == null ? T.faint : c.mau}
+                    phu={v == null ? "chưa dự án nào ghi nhãn" : tong ? `${Math.round((v / tong) * 1000) / 10}% trên ${tong} căn`.replace(".", ",") : undefined} />
+                );
+              })}
+            </div>
+            {tongPhong.thieuNhan.length > 0 && (
+              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>
+                có file chưa ghi nhãn chặng: {tongPhong.thieuNhan.join(" · ")}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: narrow ? 12 : 14, marginBottom: 22 }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: T.soft, marginBottom: 8 }}>
             TIẾN ĐỘ THEO NGÀY <span style={{ color: T.faint, fontWeight: 400, letterSpacing: 0 }}>· {diem.length} ngày trong kho</span>
