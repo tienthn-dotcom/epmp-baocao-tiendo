@@ -533,6 +533,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.101.0", date: "10/09/2026", items: [
+    "BỚT THÔNG BÁO LÚC MỞ APP. Bỏ hẳn toast “Đang xem DỮ LIỆU DEMO…” — nó bắn ngay trong lúc app còn đang tải nguồn thật, đọc lên thành báo động giả. Tình trạng dữ liệu vẫn nằm thường trực ở huy hiệu “Dữ liệu tính đến…” trên đầu trang.",
+    "Nút “Tiêu chí cảnh báo” thôi để nền vàng — nó là nút tra cứu ngưỡng, không phải cảnh báo, để màu vàng thì mở app lần nào cũng tưởng đang có chuyện.",
+    "Báo lỗi tự kiểm nội bộ của bộ lọc nay chỉ hiện với admin — người dùng thường không làm gì được với nó.",
+    "App nhẹ hơn hẳn: lượt ghi dữ liệu mỗi ngày giảm từ hàng nghìn xuống còn vài chục, hết cảnh app đứng giữa buổi vì chạm hạn mức.",
+    "Hết hạn mức cũng không làm trắng bảng nữa: bảng vẫn vẽ từ file nguồn, chỉ khuyết ghi chú — thay vì cả app không vào được.",
+  ] },
   { v: "3.100.1", date: "10/09/2026", items: [
     "Khu vực đang dựng thử (chỉ admin) — không đổi gì trên bảng báo cáo đang dùng.",
   ] },
@@ -1508,7 +1515,6 @@ function Dashboard() {
         gapThreshold={thresholds.gapThreshold}
       />
 
-      <DataModeToast mode={dataMode} freshAt={freshAt} error={error?.message ?? null} />
       <main className="mx-auto w-full max-w-[1600px] px-3 py-3 2xl:px-6 print:p-0 print:max-w-none">
         <h1 className="sr-only">Báo cáo tổng hợp tình trạng phối hợp</h1>
         {data && <DashboardBody data={data} dataMode={dataMode} thresholds={thresholds} onOpenSource={() => setSettingsOpen(true)} />}
@@ -1645,8 +1651,10 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
               vàng trong app này đang MANG NGHĨA "cảnh báo", không được xài làm trang trí. */}
           <button onClick={() => { setTieuChiOpen(true); track("open_criteria"); }}
             title="Xem quy ước chấm cảnh báo"
-            className={`flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 print:hidden ${narrowHd ? "h-9" : "h-7"}`}>
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-600" /> Tiêu chí cảnh báo
+            /* Nút TRA CỨU, không phải cảnh báo. Để nền vàng + tam giác cảnh báo thì lúc nào mở app
+               cũng thấy như đang có chuyện, trong khi nó chỉ mở bảng giải thích ngưỡng. */
+            className={`flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:border-teal-500 print:hidden ${narrowHd ? "h-9" : "h-7"}`}>
+            <AlertTriangle className="h-3.5 w-3.5 text-slate-400" /> Tiêu chí cảnh báo
           </button>
           {tieuChiOpen && <AlertCriteriaDialog gapThreshold={gapThreshold} onClose={() => setTieuChiOpen(false)} />}
           {changelogOpen && <ChangelogDialog onClose={() => setChangelogOpen(false)} />}
@@ -1711,39 +1719,21 @@ function FreshnessBadge({ mode, freshAt, source }: {
   );
 }
 
-function DataModeToast({ mode, freshAt, error }: {
-  mode: "live" | "cache" | "demo"; freshAt: string | null; error: string | null;
-}) {
-  // TRẠNG THÁI DỮ LIỆU đã hiện THƯỜNG TRỰC ở huy hiệu trên header ("Dữ liệu tính đến …", chữ DEMO /
-  // BẢN LƯU). Toast ở đây chỉ để đập vào mắt LẦN ĐẦU. Trước đây mở app lần nào cũng bắn lại, mà nó nằm
-  // góc dưới-trái — đúng chỗ đặt nút mở thanh ứng dụng trên điện thoại, che mất nút.
-  //  · ĐIỆN THOẠI: bỏ hẳn toast này, huy hiệu header là đủ.
-  //  · MÁY TÍNH: mỗi phiên làm việc chỉ nhắc MỘT lần cho mỗi tình trạng (nhớ trong sessionStorage).
-  const narrow = useIsMobile();
-  const lastSig = useRef<string>("");
-  useEffect(() => {
-    const stale = hoursSince(freshAt) >= 24;
-    if (mode === "live" && !error && !stale) { lastSig.current = ""; return; }
-    if (narrow) return;
-    const sig = `${mode}|${error ?? ""}|${stale ? "stale" : "fresh"}`;
-    if (sig === lastSig.current) return;
-    lastSig.current = sig;
-    try {
-      const k = "pmo:datamode:" + sig;
-      if (sessionStorage.getItem(k)) return;
-      sessionStorage.setItem(k, "1");
-    } catch { /* trình duyệt chặn storage → cứ báo như cũ */ }
-    const msg =
-      mode === "demo" ? "Đang xem DỮ LIỆU DEMO, chưa kết nối nguồn dữ liệu thật." :
-      mode === "cache" ? "Đang xem BẢN LƯU GẦN NHẤT, không lấy được dữ liệu mới." :
-      error ? `Không tải được dữ liệu mới: ${error}` :
-      "Dữ liệu đã quá 24 giờ, hãy bấm Làm mới.";
-    const fn = mode === "demo" ? toast.message : mode === "cache" ? toast.warning : toast.error;
-    fn(msg, { position: "bottom-left", duration: 4000 });
-  }, [mode, freshAt, error, narrow]);
-  return null;
-}
-
+/* TỪNG CÓ "DataModeToast" Ở ĐÂY — ĐÃ BỎ (10/09/2026).
+ *
+ * Nó bắn toast mỗi khi dữ liệu không phải bản live: "Đang xem DỮ LIỆU DEMO…", "Đang xem BẢN LƯU…".
+ * Hai lý do bỏ:
+ *
+ *  1. BÁO SAI. Lúc app chưa tải xong nguồn thật thì nó tạm vẽ dữ liệu demo — "demo" là trạng thái
+ *     BÌNH THƯỜNG trong vài giây đầu của MỌI lần mở app. Toast bắn ngay lúc đó, đọc lên thành
+ *     "chưa kết nối nguồn dữ liệu thật" trong khi dữ liệu thật đang trên đường về.
+ *  2. THỪA. Tình trạng dữ liệu đã nằm THƯỜNG TRỰC ở huy hiệu trên header ("Dữ liệu tính đến …",
+ *     kèm chữ DEMO / BẢN LƯU). Ai cần biết thì liếc một cái là thấy.
+ *
+ * Cảnh báo THẬT vẫn còn: số dự án tụt bất thường (sai file/sai tab) vẫn bắn toast, vì nó hiếm và
+ * phải xử lý ngay. Nguyên tắc: chỉ báo khi có chuyện — báo đều đặn thì thành tiếng ồn, tới lúc
+ * hỏng thật lại không ai buồn đọc.
+ */
 
 /* ======================================================================
  *  SETTINGS / THRESHOLD DIALOGS
@@ -3986,7 +3976,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     auditSig.current = sig;
     if (audit.ok) {
       // đạt → không báo gì
-    } else {
+    } else if (me.isAdmin) {
+      /* Đây là TỰ KIỂM NỘI BỘ của bộ lọc, người dùng thường không làm gì được với nó — bắn toast
+         đỏ cho cả nhà chỉ tổ làm người ta hoang mang. Kết quả đầy đủ vẫn xem được trong menu
+         Hệ thống, đúng chỗ người sửa được nó sẽ tìm. */
       const extra = [...audit.unjustified, ...audit.missed].slice(0, 5).join(" · ");
       toast.error(audit.message + (extra ? `: ${extra}` : ""), { position: "bottom-left", duration: 4000 });
     }
