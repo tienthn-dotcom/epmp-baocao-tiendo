@@ -376,10 +376,20 @@ export const getProjRegions = createServerFn({ method: "GET" })
  * Mỗi mục vẫn có mốc thời gian riêng nên chỉ hỏi lại Drive đúng file đã cũ.
  */
 const FMETA_KEY = "fmeta:v2";
-const FMETA_HAN = 30 * 60 * 1000;          // 30 phút — ngày sửa file không cần tươi hơn thế
+/* THỨ HIỂN THỊ LÀ MỘT NGÀY, KHÔNG PHẢI MỘT GIỜ. Ngày mỗi ngày mới đổi một lần, nên hỏi lại Drive
+   nửa tiếng một lần là làm việc thừa. Sáu tiếng là đủ dày để trong ngày làm việc vẫn bắt được
+   file vừa sửa, mà số lượt hỏi giảm đi hơn chục lần. */
+const FMETA_HAN = 6 * 3600 * 1000;
 const FMETA_TTL_S = 30 * 86_400;           // khoá tự dọn sau 30 ngày nếu app ngừng dùng
 type FMetaMuc = { modifiedTime: string | null; nguoiSua: string; ts: number };
 type FMetaMap = Record<string, FMetaMuc>;
+
+/** Ngày (giờ VN) của một mốc ISO — "2026-09-10". */
+function ngayVN(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? "" : new Date(t + 7 * 3600_000).toISOString().slice(0, 10);
+}
 
 async function docFMeta(kv: KVLike | null): Promise<FMetaMap> {
   if (!kv) return {};
@@ -390,7 +400,20 @@ async function ghiFMeta(kv: KVLike | null, map: FMetaMap): Promise<void> {
   if (!kv) return;
   try { await kv.put(FMETA_KEY, JSON.stringify(map), { expirationTtl: FMETA_TTL_S }); } catch { /* bỏ qua */ }
 }
-const conTuoi = (m: FMetaMuc | undefined, gio: number): boolean => !!m && gio - (m.ts ?? 0) < FMETA_HAN;
+/**
+ * Mục còn dùng được không.
+ *
+ * Hai lối:
+ *  · hỏi chưa lâu (trong FMETA_HAN) → dùng luôn;
+ *  · file đã sửa TRONG HÔM NAY → khỏi hỏi lại tới hết ngày. Người ta có sửa thêm mấy lần nữa thì
+ *    NGÀY hiện trên bảng vẫn là hôm nay, hỏi lại cũng ra đúng con số đang hiện.
+ * Lối thứ hai gỡ hẳn gánh nặng cho những file đang được cập nhật đều — đúng nhóm hay bị hỏi nhất.
+ */
+function conTuoi(m: FMetaMuc | undefined, gio: number): boolean {
+  if (!m) return false;
+  if (gio - (m.ts ?? 0) < FMETA_HAN) return true;
+  return !!m.modifiedTime && ngayVN(m.modifiedTime) === ngayVN(new Date(gio).toISOString());
+}
 
 export const getLinkUpdatedAt = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({
