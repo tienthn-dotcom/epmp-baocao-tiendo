@@ -60,7 +60,7 @@ import { timNoteLac } from "@/lib/note-lac";
 import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
-import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
+import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { whoami, recordActivity, fetchActivityLog, fetchActivityFromDrive, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
@@ -535,6 +535,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.105.1", date: "11/09/2026", items: [
+    "Ghi chú CŨ (viết từ trước khi app biết đóng dấu) nay cũng được đóng dấu danh tính một lượt, khỏi phải chờ có người sửa từng cái. Nhờ vậy bản sao lưu đọc được ngay, và công cụ tìm lại ghi chú thất lạc có căn cứ để dò ngược.",
+  ] },
   { v: "3.105.0", date: "11/09/2026", items: [
     "SỬA GỐC CHUYỆN “GHI CHÚ NHẢY LUNG TUNG”. Trong nguồn có những số RID bị dùng lại cho nhiều dòng — sinh ra khi copy cả khối dự án, bản sao mang theo RID của bản gốc. Từ hôm qua RID là địa chỉ ưu tiên của ghi chú, nên mỗi số trùng làm mấy dòng dùng chung một ô: viết ở dòng này hiện luôn ở dòng kia, có trường hợp nhảy sang hẳn dự án khác và lên dòng cấp dự án. Nay số nào trùng thì app coi như dòng đó chưa có RID và chạy bằng STT như trước; số duy nhất vẫn dùng bình thường.",
     "Cổng dữ liệu thêm mục “RID trùng” — chỉ đích danh số nào đang bị mấy dòng nào dùng chung, để PMO xoá RID của dòng sao chép rồi cấp lại số mới.",
@@ -2690,6 +2693,25 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     if (!Object.keys(add).length && !remove.length) return;
     void syncNoteAnchors({ data: { add, remove } }).then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }));
   }, [remapReady, editsQuery.isLoading, anchorsQuery.isLoading, data.projects, edits, noteAnchors, noteAnchorNow, noteHasText, queryClient]);
+  /* ĐÓNG DẤU DANH TÍNH cho ghi chú CŨ — một lượt rồi thôi.
+     Ghi chú viết từ trước khi app biết đóng dấu chỉ có mỗi khoá, nên mở file sao lưu ra không biết
+     nó của dự án nào. Gửi danh tính hiện tại của những dòng đang thấy; server chỉ ghi vào ô nào
+     đang THIẾU hoặc LỆCH dấu. Vá xong là lần sau không còn gì để gửi → tốn đúng một lượt ghi KV. */
+  const dongDauRef = useRef(false);
+  useEffect(() => {
+    if (dongDauRef.current) return;
+    if (!remapReady || editsQuery.isLoading || !data.projects.length || !me?.isAdmin) return;
+    const dc: Record<string, string> = {};
+    for (const k of Object.keys(edits)) {
+      const d = danhChiNow[k];
+      if (d && noteHasText(k) && edits[k].dc !== d) dc[k] = d;
+    }
+    if (!Object.keys(dc).length) { dongDauRef.current = true; return; }
+    dongDauRef.current = true;
+    void dongDauDanhChi({ data: { dc, devAs: devAs() } })
+      .then((r) => { if (r.changed) void queryClient.invalidateQueries({ queryKey: ["edits"] }); })
+      .catch(() => { /* đóng dấu hỏng thì kệ — không được làm hỏng việc chính */ });
+  }, [remapReady, editsQuery.isLoading, data.projects, edits, danhChiNow, noteHasText, me?.isAdmin, queryClient]);
   // Xác nhận đã xử lý 1 trôi → ghi đè mỏ neo = vị trí hiện tại (xoá khỏi danh sách).
   const ackDrift = useCallback((key: string) => {
     const now = noteAnchorNow[key]; if (!now) return;

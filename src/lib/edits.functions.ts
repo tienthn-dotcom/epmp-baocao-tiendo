@@ -614,6 +614,38 @@ export const syncItemFp = createServerFn({ method: "POST" })
    Ghi LẦN ĐẦU (baseline) rồi giữ. Mỗi lần nạp nguồn, client so mỏ neo đã nhớ với vị trí HIỆN TẠI của
    cùng khoá — khác nhau = note đã TRÔI (nguồn đánh lại STT/đảo dòng) → cảnh báo before→after.
    THUẦN cộng thêm: không đổi khoá lưu note, không rủi ro mất dữ liệu. */
+/**
+ * ĐÓNG DẤU DANH TÍNH HÀNG LOẠT cho ghi chú CŨ (viết từ trước khi app biết đóng dấu).
+ *
+ * Ghi chú mới thì `editMessages` tự đóng dấu lúc gõ. Nhưng kho đang có mấy trăm ghi chú cũ chỉ có
+ * mỗi khoá — mở file sao lưu ra không biết là dự án nào. Hàm này vá một lượt: client gửi danh tính
+ * HIỆN TẠI của những dòng nó đang thấy, server chỉ ghi vào những ô đang THIẾU hoặc LỆCH dấu.
+ *
+ * CHỈ GHI KHI CÓ THAY ĐỔI THẬT. Vá xong là lần sau không còn gì để ghi → hội tụ sau đúng một lượt,
+ * không đốt hạn mức ghi của KV (gói free 1.000 lượt/ngày, đã từng chạm trần làm cả app đứng).
+ * Chỉ ADMIN gọi được, cho chắc.
+ */
+export const dongDauDanhChi = createServerFn({ method: "POST" })
+  .inputValidator((input) =>
+    z.object({
+      dc: z.record(z.string().min(1).max(600), z.string().max(600)),
+      devAs: z.string().nullable().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    if (!(await callerIsAdmin(data.devAs))) return { changed: 0, skipped: true };
+    const { map } = await readAll();
+    let changed = 0;
+    for (const [k, dc] of Object.entries(data.dc)) {
+      const cur = map[k];
+      if (!cur) continue;                       // không có ô note thì thôi, không đẻ ô rỗng
+      if (cur.dc === dc) continue;
+      cur.dc = dc; changed++;
+    }
+    if (changed > 0) await writeAll(map);
+    return { changed, skipped: false };
+  });
+
 export type NoteAnchors = Record<string, string>;   // { [noteKey]: "maCT||tên||giai đoạn||mô tả" }
 const NOTEANCHOR_KEY = "noteanchor:v1";
 const DEV_NOTEANCHOR_FILE = ".data/pmo-noteanchor.json";
