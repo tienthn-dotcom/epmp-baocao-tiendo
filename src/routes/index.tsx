@@ -56,6 +56,7 @@ import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { ridKeys } from "@/lib/rid";
+import { timNoteLac } from "@/lib/note-lac";
 import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
@@ -534,6 +535,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.105.0", date: "11/09/2026", items: [
+    "SỬA GỐC CHUYỆN “GHI CHÚ NHẢY LUNG TUNG”. Trong nguồn có những số RID bị dùng lại cho nhiều dòng — sinh ra khi copy cả khối dự án, bản sao mang theo RID của bản gốc. Từ hôm qua RID là địa chỉ ưu tiên của ghi chú, nên mỗi số trùng làm mấy dòng dùng chung một ô: viết ở dòng này hiện luôn ở dòng kia, có trường hợp nhảy sang hẳn dự án khác và lên dòng cấp dự án. Nay số nào trùng thì app coi như dòng đó chưa có RID và chạy bằng STT như trước; số duy nhất vẫn dùng bình thường.",
+    "Cổng dữ liệu thêm mục “RID trùng” — chỉ đích danh số nào đang bị mấy dòng nào dùng chung, để PMO xoá RID của dòng sao chép rồi cấp lại số mới.",
+    "GHI CHÚ NAY MANG SẴN DANH TÍNH CỦA DÒNG (mã CT · tên dự án · giai đoạn · mô tả · RID), đóng dấu ngay lúc gõ. Mở file sao lưu ra là đọc được ngay ghi chú đó của dự án nào — trước đây file chỉ có mã khoá kiểu “id:2.2”, phải có đúng bản file nguồn hôm đó mới tra ra. File sao lưu ghi chú cũng kèm luôn mỏ neo.",
+    "CÔNG CỤ DỮ LIỆU: thêm mục “ghi chú không nằm ở dòng nào” — đúng loại mọi người kêu là biến mất, mà công cụ cũ không hề thấy vì nó chỉ soi những ghi chú còn địa chỉ sống. Nay dò ngược theo dấu danh tính, chỉ ra đưa về dòng nào, và có nút đưa về hàng loạt. Đích đang giữ ghi chú của dòng khác thì app KHÔNG tự trộn — nói rõ lý do để người quyết.",
+  ] },
   { v: "3.104.0", date: "11/09/2026", items: [
     "NGÀY SỬA CUỐI CỦA FILE TRONG LINK nay có thể lấy thẳng từ file nguồn: thêm cột “Ngày file link”, app đọc luôn cột đó, khỏi hỏi Google Drive. Ngày cũng hiện ngay trong sheet, ai mở sheet cũng thấy.",
     "Cột này do một script đặt trong chính file nguồn ghi mỗi sáng — một script dùng cho tất cả dự án, không phải cắm vào từng file ma trận.",
@@ -2573,6 +2580,22 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     }
     return m;
   }, [data.projects, pkProj]);
+  /* DANH TÍNH ĐỂ ĐÓNG DẤU VÀO NOTE (ItemEdit.dc) — như mỏ neo nhưng CÓ THÊM RID, và ghi thẳng vào
+     ô note chứ không để riêng một kho. Nhờ vậy file sao lưu ghi chú tự đọc được: mở ra thấy ngay
+     note đó của dự án nào, giai đoạn nào, RID bao nhiêu — khỏi cần file nguồn đúng bản hôm đó. */
+  const danhChiNow = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of data.projects) {
+      m[pkProj(p)] = [(p.code || "").trim(), (p.name || "").trim(), "__DUAN__", "", (p.rid || "").trim()].join("||");
+      for (const it of (p.allItems ?? p.items ?? [])) {
+        m[itemKeyOf(it)] = [
+          (it.maCT || it.projectCode || "").trim(), (it.projectName || "").trim(),
+          (it.stage || it.rawCode || "").trim(), normDesc(it.desc), (it.rid || "").trim(),
+        ].join("||");
+      }
+    }
+    return m;
+  }, [data.projects, pkProj]);
   const noteHasText = useCallback((k: string) => { const e = edits[k]; return !!e && !!(visibleText(e.noteMsgs) || visibleText(e.actionMsgs)); }, [edits]);
   // Danh tính HIỆN TẠI → khoá đang giữ (để tìm hạng mục khớp mỏ neo cũ = ĐÍCH đưa note về).
   const idToKeyNow = useMemo(() => {
@@ -2595,6 +2618,50 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     }
     return out;
   }, [edits, noteAnchors, noteAnchorNow, noteHasText, idToKeyNow]);
+  /* ── GHI CHÚ MẤT ĐỊA CHỈ (không hiện ở đâu cả) ──────────────────────────────────────────────
+     Khác "trôi": TRÔI là note vẫn hiện nhưng đứng nhầm dòng. MẤT ĐỊA CHỈ là khoá của nó không còn
+     khớp dòng nào trong nguồn → note biến mất khỏi bảng, người nhập tưởng bị xoá. Xảy ra khi nguồn
+     đánh lại STT, khi ô RID bị xoá đi, hoặc khi app phải bỏ một RID vì số đó bị trùng nhiều dòng.
+
+     Đây chính là loại mà công cụ cũ KHÔNG thấy — nó chỉ soi những note còn khoá sống, nên thứ người
+     dùng kêu mất thì không có trong danh sách nào.
+
+     Dò ngược bằng DANH TÍNH đóng dấu trong chính note (ItemEdit.dc), không có thì dùng mỏ neo. Chỉ
+     nhận khi danh tính ứng với ĐÚNG MỘT dòng; ứng nhiều dòng thì để người quyết chứ không đoán. */
+  const noteLac = useMemo(() => {
+    const ds = timNoteLac({
+      edits, neo: noteAnchors, nay: noteAnchorNow, coChu: noteHasText,
+      trichDoan: (k) => {
+        const e = edits[k];
+        return (visibleText(e?.noteMsgs) || visibleText(e?.actionMsgs) || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      },
+    });
+    // Gắn nhãn đọc được (tên dự án · giai đoạn) cho phần hiển thị.
+    return ds.map((x) => ({ ...x, nhan: fpLabel(x.danhTinh || null), nhanDich: x.dich ? fpLabel(noteAnchorNow[x.dich] ?? null) : "" }));
+  }, [edits, noteAnchors, noteAnchorNow, noteHasText]);
+  const fixLacOne = useCallback((key: string, dich: string) => {
+    const dt = noteAnchorNow[dich];
+    void remapKeys({ data: { edits: { [key]: dich }, completed: { [key]: dich }, updates: {} } })
+      .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set: dt ? { [dich]: dt } : {}, remove: [key] } }); })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
+      .then(() => { toast.success("Đã tìm lại ghi chú và đưa về đúng dòng."); track("fix_drift", `Tim lai note: ${key.slice(0, 40)} → ${dich.slice(0, 40)}`); })
+      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+  }, [noteAnchorNow, queryClient]);
+  const fixLacAll = useCallback(() => {
+    const em: Record<string, string> = {}, cm: Record<string, string> = {}, set: Record<string, string> = {}, remove: string[] = [];
+    for (const x of noteLac) {
+      if (!x.dich) continue;
+      em[x.key] = x.dich; cm[x.key] = x.dich; remove.push(x.key);
+      const dt = noteAnchorNow[x.dich]; if (dt) set[x.dich] = dt;
+    }
+    const n = Object.keys(em).length; if (!n) return;
+    void remapKeys({ data: { edits: em, completed: cm, updates: {} } })
+      .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set, remove } }); })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
+      .then(() => { toast.success(`Đã tìm lại ${n} ghi chú và đưa về đúng dòng.`); track("fix_drift", `Tim lai ${n} note mat dia chi`); })
+      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+  }, [noteLac, noteAnchorNow, queryClient]);
+
   // Đưa 1 note trôi VỀ đúng hạng mục (dời khoá + cập nhật mỏ neo). Đích có note sẵn → remapKeys GỘP thêm (note
   // là danh sách message) chứ không bỏ qua/không đè mất — an toàn, không mất tin nào.
   const fixDriftTo = useCallback((key: string, target: string, before: string) => {
@@ -2737,7 +2804,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       return true;
     }
     try {
-      const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, replyTo: opts?.replyTo, replyText: opts?.replyText, devAs: devAs() } });
+      const r = await editMessages({ data: { key, field, op, text: opts?.text, msgId: opts?.msgId, hi: opts?.hi, replyTo: opts?.replyTo, replyText: opts?.replyText, dc: danhChiNow[key], devAs: devAs() } });
       queryClient.setQueryData(["edits"], r.items);
       const FIELD_VN = field === "note" ? "Vướng mắc" : "Giải pháp";
       const OP_VN: Record<string, string> = { add: "thêm", edit: "sửa", hide: "ẩn", unhide: "mở ẩn", delete: "XOÁ", sethi: "tô màu", hiall: "tô cả ô", unhiall: "bỏ tô cả ô" };
@@ -4295,7 +4362,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         />
       </HeaderSlot>
 
-      {showDataQ && <AdminDataToolsDialog checks={dataQualityBad} qualityStats={data?.quality?.stats} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
+      {showDataQ && <AdminDataToolsDialog checks={dataQualityBad} qualityStats={data?.quality?.stats} lac={noteLac} onFixLacOne={fixLacOne} onFixLacAll={fixLacAll} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
       {pdfPreview && <PdfPreviewDialog url={pdfPreview.url} fileName={pdfPreview.name} onClose={() => setPdfPreview(null)} />}
 
       <OverviewStrip
@@ -7657,10 +7724,12 @@ function fpLabel(fp: string | null): string {
 }
 
 type AuditDriftItem = { key: string; text: string; now: string; correct: string; target: string | null };
-function AdminDataToolsDialog({ checks, qualityStats, drift, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, onClose }: { checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; onClose: () => void }) {
+/** Ghi chú MẤT ĐỊA CHỈ — khoá không còn khớp dòng nào, nên không hiện ở đâu trên bảng. */
+type NoteLacItem = { key: string; text: string; nhan: string; dich: string | null; nhanDich: string; canGop: boolean; vuong: string };
+function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, onFixLacAll, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, onClose }: { checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; lac: NoteLacItem[]; onFixLacOne: (key: string, dich: string) => void; onFixLacAll: () => void; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; onClose: () => void }) {
   useEscapeToClose(onClose);
   type Bak = { id: string; label: string; at: string; counts: { edits: number; completed: number; updates: number; mpflag: number } };
-  const [tab, setTab] = useState<"quality" | "shift" | "backup">((audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
+  const [tab, setTab] = useState<"quality" | "shift" | "backup">((lac.length || audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
   // GỘP audit + drift thành 1 danh sách "ghi chú đặt sai chỗ" (dedupe theo note): audit (theo nhật ký) là chuẩn,
   // drift (lệch so lần trước) bổ sung. Mỗi note: Đang ở (wrong) → Phải ở (right) + nguồn phát hiện.
   const misplaced = useMemo(() => {
@@ -7707,16 +7776,49 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, onAckDrift, onFixDr
           <button onClick={onClose} aria-label="Đóng" title="Đóng (Esc)" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5">
-          {tabBtn("shift", "Ghi chú lệch STT", misplaced.length)}
+          {tabBtn("shift", "Ghi chú sai chỗ", misplaced.length + lac.length)}
           {tabBtn("quality", "Cảnh báo dữ liệu", checks.length)}
           {tabBtn("backup", "Sao lưu & Khôi phục")}
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
           {tab === "shift" && (
             <div className="space-y-3">
+              {/* ── ① GHI CHÚ BIẾN MẤT ── loại người dùng kêu nhiều nhất, mà công cụ cũ không hề thấy:
+                     khoá của nó không còn khớp dòng nào nên không hiện ở đâu cả. Dò ngược bằng dấu danh
+                     tính đóng trong chính ghi chú. ── */}
+              {lac.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2">
+                    <span className="text-[12.5px] font-semibold text-rose-900">
+                      <b>{lac.length}</b> ghi chú hiện KHÔNG nằm ở dòng nào — {lac.filter((x) => x.dich).length} cái tìm lại được đúng dòng.
+                    </span>
+                    {lac.some((x) => x.dich) && (
+                      <button onClick={onFixLacAll} className="rounded-md bg-rose-700 px-3 py-1 text-[12px] font-bold text-white hover:bg-rose-800">
+                        Tìm lại tất cả ({lac.filter((x) => x.dich).length})
+                      </button>
+                    )}
+                  </div>
+                  {lac.map((x) => (
+                    <div key={x.key} className="rounded-lg border border-rose-200 bg-white p-3">
+                      <div className="mb-1.5 text-[12.5px] font-medium text-slate-800">“{x.text}”</div>
+                      <div className="grid grid-cols-[74px_1fr] gap-x-2 gap-y-1 text-[11.5px]">
+                        <span className="font-semibold text-slate-500">Của dòng:</span><span className="font-semibold text-slate-700">{x.nhan}</span>
+                        <span className="font-semibold text-emerald-700">Đưa về:</span>
+                        <span className="font-semibold text-emerald-800">{x.dich ? x.nhanDich : <span className="font-normal text-slate-500">{x.vuong}</span>}</span>
+                      </div>
+                      {x.dich && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button onClick={() => onFixLacOne(x.key, x.dich!)} className="rounded-md bg-teal-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-teal-800">↩ Đưa về đúng chỗ</button>
+                          {x.canGop && <span className="text-[10.5px] text-slate-500">Ô đích đã có ghi chú — sẽ nối thêm vào, không đè mất.</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12.5px] leading-relaxed text-slate-700">
-                <div className="mb-0.5 text-[13px] font-bold text-slate-800">① Ghi chú đang lệch (tự phát hiện)</div>
-                Đối chiếu <b>Nhật ký giám sát</b> (nơi note được VIẾT — chuẩn nhất) + <b>lệch so lần trước</b> để chỉ ra note đang gắn nhầm dự án. Xem để BIẾT lệch ở đâu, thử “Đưa về đúng chỗ”; nếu chưa được thì dùng <b>② Dịch STT đồng loạt</b> bên dưới (cái chạy chắc). <b>Nên “Tạo bản sao lưu” (tab Sao lưu) trước khi sửa.</b>
+                <div className="mb-0.5 text-[13px] font-bold text-slate-800">② Ghi chú đang lệch (tự phát hiện)</div>
+                Ghi chú VẪN HIỆN nhưng đứng nhầm dòng. Đối chiếu <b>Nhật ký giám sát</b> (nơi ghi chú được viết) và <b>lệch so lần trước</b>. Đưa về không được thì còn <b>③ Dịch STT đồng loạt</b> bên dưới. <b>Nên tạo bản sao lưu trước khi sửa.</b>
               </div>
               {auditLoading && <div className="py-4 text-center text-sm text-slate-400">Đang đọc nhật ký…</div>}
               {!auditLoading && misplaced.length === 0 && <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-6 text-center text-[13px] text-emerald-700">✔ Không có ghi chú nào đặt sai chỗ.</div>}
@@ -7755,7 +7857,7 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, onAckDrift, onFixDr
           {tab === "shift" && (
             <div className="space-y-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-[12.5px] leading-relaxed text-slate-700">
-                <div className="mb-1 text-[13px] font-bold text-slate-800">② Dịch STT đồng loạt (thủ công — chạy chắc)</div>
+                <div className="mb-1 text-[13px] font-bold text-slate-800">③ Dịch STT đồng loạt (thủ công — chạy chắc)</div>
                 Vướng mắc/Giải pháp, ngày hoàn thành và cờ “Cần cập nhật MP” được lưu theo <b>STT dự án</b> (khoá <code className="rounded bg-slate-200 px-1">id:STT</code>). Khi ai đó <b>chèn thêm một dự án vào giữa</b> nguồn, STT của mọi dự án phía sau bị dồn xuống → các ghi chú cũ vẫn trỏ STT cũ nên <b className="text-rose-700">hiện nhầm sang dự án bên cạnh</b>. Công cụ này dời từng khoá về đúng dự án — có <b>xem trước từng dòng</b> rồi mới áp dụng.
               </div>
 

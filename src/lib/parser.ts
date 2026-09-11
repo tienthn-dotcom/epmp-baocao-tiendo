@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import type { BlockArea, BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
 import { getDaysOverdue } from "./overdue";
+import { ridSo } from "./rid";
 
 export const GUARD_PLANNED_MIN = 0.15; // raw decimal (15%)
 export const OVERDUE_DAYS = 10;
@@ -546,10 +547,36 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   /** Ngày sửa cuối của FILE trong hyperlink, nếu Apps Script đã ghi vào cột "Ngày file link". */
   const ngayLinkCua = (r: unknown[]): string | undefined =>
     linkDateCol < 0 ? undefined : ngayLinkIso(r[linkDateCol]);
-  const ridOf = (r: unknown[]): string | undefined => {
+  /* ── RID TRÙNG THÌ KHÔNG CÒN LÀ ĐỊA CHỈ ────────────────────────────────────────────────────
+     RID chỉ đáng tin khi MỖI DÒNG MỘT SỐ. Trong nguồn thật có những số bị dùng lại cho nhiều dòng
+     — sinh ra khi COPY nguyên khối dự án: stamp-rid.gs chỉ điền ô TRỐNG nên bản sao giữ y số cũ.
+     Từ 11/09 RID thành địa chỉ ƯU TIÊN của ghi chú, nên mỗi số trùng kéo theo mấy dòng dùng CHUNG
+     một ô lưu: viết ở dòng này thì hiện luôn ở dòng kia, kể cả khác dự án (Tiến Bộ Plaza ↔ THV) và
+     khác cấp (hạng mục ↔ dòng dự án). Đúng hiện tượng "ghi chú nhảy" người dùng phản ánh.
+     Xử lý: số nào TRÙNG thì coi như dòng đó CHƯA CÓ RID → app lùi về IDCUNG/STT y như trước khi có
+     RID. Số duy nhất vẫn chạy bình thường. Danh sách số trùng đẩy ra cổng dữ liệu để PMO sửa nguồn. */
+  const ridDem = new Map<string, number>();
+  if (ridCol >= 0) {
+    for (let r = COL.headerIdx + 1; r < rows.length; r++) {
+      const v = str(rows[r]?.[ridCol]);
+      if (!v) continue;
+      const so = ridSo(v) || v.toUpperCase();
+      ridDem.set(so, (ridDem.get(so) ?? 0) + 1);
+    }
+  }
+  const ridTrung = new Set([...ridDem].filter(([, n]) => n > 1).map(([so]) => so));
+  /** số RID bị trùng → nhãn các dòng đang dùng nó (để cổng dữ liệu chỉ đích danh). */
+  const ridTrungNhan = new Map<string, string[]>();
+  const ridOf = (r: unknown[], nhan?: string): string | undefined => {
     if (ridCol < 0) return undefined;
     const v = str(r[ridCol]);
-    return v || undefined;
+    if (!v) return undefined;
+    const so = ridSo(v) || v.toUpperCase();
+    if (!ridTrung.has(so)) return v;
+    const ds = ridTrungNhan.get(so) ?? [];
+    ds.push(nhan || "(dòng không tên)");
+    ridTrungNhan.set(so, ds);
+    return undefined;
   };
   /** ID CỨNG (cột IDCUNG) của dòng — chỉ dòng DỰ ÁN mới điền; dòng con kế thừa qua currentHid. */
   const hidOf = (r: unknown[]): string | undefined => {
@@ -629,7 +656,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       const proj: ProjectRow = {
         id: idOf(r),
         hid: currentHid,
-        rid: ridOf(r),
+        rid: ridOf(r, `${str(maCT) || str(rawCode)} ${str(projectName)}`.trim() || "(dự án không tên)"),
         ngayLink: ngayLinkCua(r),
         code: rawCode || maCT,
         name: projectName || rawCode || maCT,
@@ -804,7 +831,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     const row: ItemRow = {
       id: idOf(r),
-      rid: ridOf(r),
+      rid: ridOf(r, `${current?.name ?? "(chưa rõ dự án)"} · ${str(rawCode)}`.trim()),
       ngayLink: ngayLinkCua(r),
       projHid: currentHid,
       projectCode: current?.code ?? "",
@@ -982,6 +1009,22 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   let dupNameCount = 0;
   for (const [nm, n] of projByName) if (n > 1) { dupNameCount++; dupNameItems.push(`${nameOrig.get(nm) ?? nm} (×${n})`); }
 
+  // ── RID TRÙNG — gom thành danh sách chỉ đích danh cho cổng dữ liệu (xem ridOf phía trên). ──
+  //  · SỐ DÒNG lấy từ lượt đếm trên TOÀN FILE (ridDem) — đúng kể cả khi dòng trùng đang tắt Show.
+  //  · NHÃN chỉ có cho dòng đang hiện (ridTrungNhan); thiếu bao nhiêu thì nói thẳng bấy nhiêu, không giấu.
+  let ridDupCount = 0;
+  const ridDupItems: string[] = [];
+  for (const so of [...ridTrung].sort((a, b) => a.localeCompare(b, "vi", { numeric: true }))) {
+    const tong = ridDem.get(so) ?? 0;
+    ridDupCount += tong;
+    const ds = ridTrungNhan.get(so) ?? [];
+    const thieu = tong - ds.length;
+    ridDupItems.push(
+      `RID ${so} — ${tong} dòng dùng chung` +
+      (ds.length ? `: ${ds.slice(0, 4).join(" · ")}${ds.length > 4 ? " …" : ""}` : "") +
+      (thieu > 0 ? ` (+${thieu} dòng đang tắt Show)` : ""));
+  }
+
   const checks: DataQualityCheck[] = [];
   // Cắt trần thì báo rõ còn bao nhiêu dòng nữa (không giấu bớt).
   const withMore = (list: string[], total: number) => total > list.length ? [...list, `…và ${total - list.length} dòng nữa (sửa tương tự)`] : list;
@@ -1032,6 +1075,12 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       : `${sttBlankCount} dòng THIẾU STT (ID) — dễ mất/nhảy Vướng mắc khi đồng bộ`,
     `Cách sửa: điền STT cho các dòng dưới đây (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).`,
     sttBlankItems);
+  add("ridDup", ridDupCount > 0, "error",
+    ridDupCount === 0
+      ? "Mọi RID là duy nhất — ghi chú bám RID an toàn"
+      : `${ridDupCount} dòng dùng CHUNG ${ridDupItems.length} số RID — app đã TẠM BỎ các RID đó (lùi về STT) để ghi chú khỏi nhảy sang dòng khác`,
+    `Cách sửa: RID là số định danh riêng của TỪNG DÒNG, không được lặp. Số trùng thường do copy cả khối dự án (bản sao mang theo RID của bản gốc). Xoá trắng ô RID của các dòng SAO CHÉP bên dưới rồi chạy lại stampRid — nó sẽ cấp số mới. Chừng nào còn trùng, những dòng đó vẫn chạy bằng STT như trước.`,
+    ridDupItems);
   add("sharedMaPm", sharedMaDiffPm > 0, "warn",
     sharedMaDiffPm === 0
       ? "Không có mã CT nào dùng cho nhiều dự án khác PM"

@@ -89,6 +89,17 @@ export type ChatMsg = {
 };
 
 export type ItemEdit = {
+  /**
+   * DANH TÍNH CỦA DÒNG, đóng dấu ngay lúc ghi — `mã CT ‖ tên dự án ‖ giai đoạn ‖ mô tả ‖ RID`.
+   *
+   * Khoá lưu ("id:77.3", "rid:530", "h:…") chỉ là ĐỊA CHỈ, tự nó không nói được nó là dự án nào.
+   * Mở file sao lưu ra mà chỉ thấy `"id:2.2": "Mẫu duyệt 24/154…"` thì không ai biết 2.2 là gì —
+   * phải có file nguồn ĐÚNG BẢN ngày hôm đó mới tra ra, mà qua hôm sau STT dồn là chịu.
+   *
+   * Vì vậy mỗi lần thêm/sửa, ghi luôn danh tính vào chính ô note. Từ đó bản sao lưu TỰ ĐỌC ĐƯỢC,
+   * và khi khoá có đổi (đánh lại STT, RID bị xoá/trùng) vẫn dò ngược ra đúng dòng.
+   */
+  dc?: string;
   /** Vướng mắc — box chat (mảng message, thay cho `note` string cũ). */
   noteMsgs?: ChatMsg[];
   /** Giải pháp — box chat (thay cho `action` string cũ). */
@@ -316,6 +327,8 @@ export const editMessages = createServerFn({ method: "POST" })
       hi: hiSchema.nullable().optional(),
       replyTo: z.string().max(80).optional(),
       replyText: z.string().max(300).optional(),
+      /** Danh tính dòng lúc ghi (xem ItemEdit.dc) — client gửi kèm khi thêm/sửa. */
+      dc: z.string().max(600).optional(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
@@ -323,6 +336,10 @@ export const editMessages = createServerFn({ method: "POST" })
     const { map } = await readAll();
     const now = new Date().toISOString();
     const cur: ItemEdit = map[data.key] ?? { updatedAt: now };
+    // ĐÓNG DẤU DANH TÍNH mỗi lần có người thêm/sửa — luôn ghi đè bằng danh tính MỚI NHẤT, vì dòng
+    // có thể đã đổi tên/mô tả từ lần trước. Thao tác tô màu/ẩn không đụng tới (không phải lúc xác
+    // nhận "note này thuộc về đây").
+    if ((data.op === "add" || data.op === "edit") && data.dc) cur.dc = data.dc;
     const listKey = data.field === "note" ? "noteMsgs" : "actionMsgs";
     const list: ChatMsg[] = cur[listKey] ?? [];
     if (data.op === "add") {
@@ -385,7 +402,9 @@ export const editMessages = createServerFn({ method: "POST" })
       try {
         const drive = await import("@/lib/drive.functions");
         if (await drive.driveIsConfigured()) {
-          const payload = JSON.stringify({ at: now, edits: map }, null, 2);
+          // KÈM LUÔN MỎ NEO: file ghi chú phải tự đứng một mình đọc được, khỏi phải ghép với file
+          // sao lưu toàn bộ mới biết mỗi khoá là dự án nào.
+          const payload = JSON.stringify({ at: now, edits: map, anchors: await readNoteAnchors() }, null, 2);
           await drive.driveArchiveJson(["ePMP", "Ghi chú"], "GhiChu_latest.json", payload);
           const vnDate = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
           await drive.driveArchiveJson(["ePMP", "Ghi chú", "Lịch sử"], `GhiChu_${vnDate}.json`, payload);
