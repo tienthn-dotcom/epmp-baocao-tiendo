@@ -535,6 +535,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.106.0", date: "11/09/2026", items: [
+    "VƯỚNG MẮC CẤP DỰ ÁN NAY LẤY THẲNG TỪ FILE NGUỒN. Ô “Vướng mắc / Cần xử lý” trên dòng dự án trong Master Plan hiện luôn ở cột Vướng mắc cấp dự án của app, đứng trên các tin gõ trong app. Sửa trong file là app đổi theo ngay, khỏi gõ hai nơi.",
+    "Chỉ áp cho DÒNG CẤP DỰ ÁN. Dòng hạng mục vẫn chỉ có ghi chú gõ trong app như cũ.",
+    "Dòng lấy từ file có nhãn riêng và không sửa được trong app — muốn đổi thì đổi trong file nguồn. Ghi chú mọi người đã gõ vẫn nguyên, nằm ngay dưới.",
+  ] },
   { v: "3.105.1", date: "11/09/2026", items: [
     "Ghi chú CŨ (viết từ trước khi app biết đóng dấu) nay cũng được đóng dấu danh tính một lượt, khỏi phải chờ có người sửa từng cái. Nhờ vậy bản sao lưu đọc được ngay, và công cụ tìm lại ghi chú thất lạc có căn cứ để dò ngược.",
   ] },
@@ -2108,6 +2113,9 @@ const itemKeysOf = (it: ItemRow): string[] => {
 };
 
 
+/** ID của tin VƯỚNG MẮC lấy từ cột U dòng cha trong FILE NGUỒN — không nằm trong kho, nên chỗ
+ *  hiển thị phải nhận ra để KHÔNG cho sửa/ẩn/xoá (sửa thì sửa trong file). */
+const MSG_NGUON = "src:file-nguon";
 /** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
 const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.hidden).map((m) => m.text).join("\n");
 const fmtMsgTime = (iso: string): string => {
@@ -4066,18 +4074,41 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
      chuẩn Bàn giao → Tên → Mã CT → Hạng mục → Ngày bắt đầu, tức dự án vẫn theo
      (Bàn giao, Tên) và việc con vẫn theo (giai đoạn, ngày bắt đầu). Màn hình không đổi,
      chỉ khác là giờ bấm cột mới có tác dụng. */
+  /* ── VƯỚNG MẮC CẤP DỰ ÁN LẤY THẲNG TỪ FILE NGUỒN ──────────────────────────────────────────
+     Cột “Vướng mắc / Cần xử lý” trên DÒNG CHA trong Master Plan là nơi PMO ghi chỉ đạo cho cả dự
+     án (147/149 dòng dự án đang có nội dung). Trước đây app không hiện ra, nên cùng một chỗ mà
+     trong file một đằng trên app một nẻo — ai muốn đọc phải mở file.
+
+     Nay đẩy thẳng vào ô Vướng mắc CẤP DỰ ÁN của app, đứng TRÊN các tin gõ trong app. CHỈ dòng cấp
+     dự án — dòng hạng mục vẫn chỉ có ghi chú gõ trong app, không đụng tới.
+
+     CHỈ ĐỌC, KHÔNG CHÉP VÀO KHO: nguồn đổi là app đổi theo ngay, không tốn lượt ghi KV, và không
+     có cửa nào đè mất ghi chú mọi người đã gõ. Tin này mang id MSG_NGUON để chỗ hiển thị biết mà
+     không cho sửa/xoá — muốn đổi thì đổi trong file nguồn. */
+  const vuongMacNguon = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of data.projects) {
+      const t = (p.projectNote ?? "").trim();
+      if (t) m.set(pkProj(p), t);
+    }
+    return m;
+  }, [data.projects, pkProj]);
+  const tinNguon = useCallback((key: string, luc: string | null): ChatMsg[] => {
+    const t = vuongMacNguon.get(key);
+    return t ? [{ id: MSG_NGUON, text: t, author: "", at: luc ?? "" }] : [];
+  }, [vuongMacNguon]);
   const dueMonthGroups = useMemo<DueMonthGroup[]>(() => {
     const byKey = new Map<string, DueMonthGroup>();
     for (const it of sortedAlerts) {
       const key = pkItem(it);
       let g = byKey.get(key);
-      if (!g) { const ped = edits[key]; g = { key, maCT: it.maCT || it.projectCode, name: it.projectName, start: it.projectStart ?? null, deadline: it.projectDeadline, pm: it._projectPm || "—", updateDate: it.updateDate ?? null, delivered: !!it.projectDelivered, items: [], note: visibleText(ped?.noteMsgs), action: visibleText(ped?.actionMsgs), noteMsgs: ped?.noteMsgs ?? [], actionMsgs: ped?.actionMsgs ?? [], editedAt: ped?.updatedAt ?? null }; byKey.set(key, g); }
+      if (!g) { const ped = edits[key]; const dsNote = [...tinNguon(key, it.updateDate ?? null), ...(ped?.noteMsgs ?? [])]; g = { key, maCT: it.maCT || it.projectCode, name: it.projectName, start: it.projectStart ?? null, deadline: it.projectDeadline, pm: it._projectPm || "—", updateDate: it.updateDate ?? null, delivered: !!it.projectDelivered, items: [], note: visibleText(dsNote), action: visibleText(ped?.actionMsgs), noteMsgs: dsNote, actionMsgs: ped?.actionMsgs ?? [], editedAt: ped?.updatedAt ?? null }; byKey.set(key, g); }
       // Dự phòng: nếu dòng cha KHÔNG có ngày Bắt đầu → lấy ngày bắt đầu SỚM NHẤT của công đoạn con.
       if (!it.projectStart && it.start && (!g.start || it.start < g.start)) g.start = it.start;
       g.items.push(it);
     }
     return [...byKey.values()];
-  }, [filters.mpOnly, sortedAlerts, edits]);
+  }, [filters.mpOnly, sortedAlerts, edits, tinNguon]);
 
   // Audit → toast (góc dưới trái, tự ẩn).
   // CHỬ KHI CÓ CHUYỆN: tự kiểm ĐẠT thì IM. Trước đây lần nào mở app cũng bắn một toast "Đạt" —
@@ -5541,13 +5572,20 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
     if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">＋ nhập…</span>;
     return (
       <div className="space-y-1 font-bold leading-snug text-white">
-        {vis.map((m) => <div key={m.id} className="whitespace-pre-line"><HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly /></div>)}
+        {vis.map((m) => (
+          <div key={m.id} className="whitespace-pre-line">
+            {m.id === MSG_NGUON && <span className="mr-1 rounded bg-white/25 px-1 py-px align-middle text-[8.5px] font-semibold uppercase tracking-wide text-white/90">file</span>}
+            <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />
+          </div>
+        ))}
       </div>
     );
   }
   if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">＋ nhập…</span>;
   // TÁC GIẢ, ADMIN, hoặc PMO đều SỬA/ẨN/XOÁ được comment người khác (chốt 31/07). PMO ngang admin ở 3 thao tác này.
-  const canEdit = (m: ChatMsg) => !!onOp && (!!isAdmin || isPmo || (!!myEmail && m.author === myEmail));
+  // Tin lấy từ FILE NGUỒN không nằm trong kho của app → mọi thao tác sửa/ẩn/xoá/tô đều vô nghĩa
+  // (bấm cũng không có gì đổi). Chặn ngay ở đây cho khỏi bày nút chết.
+  const canEdit = (m: ChatMsg) => m.id !== MSG_NGUON && !!onOp && (!!isAdmin || isPmo || (!!myEmail && m.author === myEmail));
   const canHide = canEdit;
   return (
     <div className="space-y-1.5" onClick={openDelayed}>
@@ -5571,7 +5609,8 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {((field === "note" && onReply) || canHide(m) || ((isAdmin || isPmo) && !!onOp)) && (
+            {m.id === MSG_NGUON && <span className="rounded bg-slate-200 px-1 py-px text-[9px] font-semibold text-slate-600">file nguồn</span>}
+            {m.id !== MSG_NGUON && ((field === "note" && onReply) || canHide(m) || ((isAdmin || isPmo) && !!onOp)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
                   <button type="button" title="Trả lời → sang Giải pháp" onClick={(e) => { e.stopPropagation(); onReply(m); }} className="hover:text-teal-700"><Reply className="h-3.5 w-3.5" /></button>
