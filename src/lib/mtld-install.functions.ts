@@ -393,7 +393,15 @@ const FMETA_KEY = "fmeta:v2";
 /* MỖI NGÀY HỎI LẠI MỘT LƯỢT. Thứ hiển thị là một NGÀY — ngày thì mỗi ngày mới đổi một lần, nên
    hỏi dày hơn thế là làm việc thừa. Neo theo NGÀY (giờ VN) chứ không theo cửa sổ 24 tiếng trôi:
    dễ hình dung, và cả kho cùng làm mới đúng một lần sau nửa đêm. */
-const MOI_LUOT_HOI = 8;   // mỗi lượt gọi chỉ hỏi Drive tối đa ngần này file — xem ghi chú bên dưới
+/* APP KHÔNG ĐI HỎI DRIVE HÀNG LOẠT NỮA.
+ *
+ * Cron của warmer làm sẵn cả bảng ngày mỗi sáng 09:00 (xem lamMoiNgaySuaLink trong warmer), nên
+ * lúc người dùng mở bảng chỉ cần ĐỌC kho. Mỗi lượt mở: 1 lượt đọc KV, 0 lượt ghi, 0 lần gọi Drive.
+ *
+ * Vẫn chừa một khe nhỏ: link VỪA GẮN chưa kịp vào kho thì hỏi Drive ngay cho vài cái, không thì
+ * người gắn link xong phải đợi tới sáng mai mới thấy ngày. Chỉ hỏi link CHƯA CÓ trong kho, không
+ * hỏi lại link đã có — link đã có thì cứ để cron lo. */
+const MOI_LUOT_HOI = 3;
 const FMETA_TTL_S = 30 * 86_400;           // khoá tự dọn sau 30 ngày nếu app ngừng dùng
 type FMetaMuc = { modifiedTime: string | null; nguoiSua: string; ts: number };
 type FMetaMap = Record<string, FMetaMuc>;
@@ -468,17 +476,11 @@ export const getLinksUpdatedAt = createServerFn({ method: "POST" })
     const conThieu: string[] = [];
     for (const id of [...new Set(data.fileIds)]) {
       const m = kho[id];
-      if (conTuoi(m, gio) && m.modifiedTime) { map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua }; continue; }
-      // Hết hạn nhưng còn số cũ thì cứ hiện số cũ trước, đồng thời xếp hàng hỏi lại.
-      if (m?.modifiedTime) map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
-      conThieu.push(id);
+      if (m?.modifiedTime) { map[id] = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua }; continue; }
+      conThieu.push(id);   // CHƯA CÓ trong kho — link vừa gắn, hỏi ngay vài cái cho khỏi chờ tới mai
     }
     let doi = false;
     if (conThieu.length) {
-      /* CHỈ HỎI MỘT NẮM MỖI LƯỢT. Sau nửa đêm cả kho cùng hết hạn; hỏi hết một lần thì người mở
-         app đầu tiên phải chờ mấy chục lượt gọi Drive nối đuôi nhau. Hỏi dần qua vài lượt mở đầu
-         ngày, dòng chưa kịp hỏi vẫn hiện ngày của hôm qua — sai lệch tối đa một ngày, đúng bằng
-         mức chính xác mà cột này cần. */
       const nam = conThieu.slice(0, MOI_LUOT_HOI);
       try {
         const drive = await import("@/lib/drive.functions");

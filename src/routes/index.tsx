@@ -534,6 +534,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.102.0", date: "11/09/2026", items: [
+    "NGÀY CẬP NHẬT CỦA LINK nay được máy chủ làm sẵn mỗi sáng, app chỉ việc đọc — mở bảng không còn phải đi hỏi Google Drive mấy chục lượt. Đây là thứ nặng nhất còn lại, và cũng là thủ phạm làm app chạm hạn mức rồi đứng giữa buổi mấy hôm nay.",
+    "Link vừa gắn vẫn có ngày ngay, không phải đợi tới hôm sau.",
+  ] },
   { v: "3.101.2", date: "10/09/2026", items: [
     "SỬA GẤP: không lưu được link ma trận (báo lỗi “Illegal invocation”). Lỗi do bản vá chống-quá-tải phát hành cùng ngày; nay gắn link, xem thử, lưu link chạy lại bình thường.",
   ] },

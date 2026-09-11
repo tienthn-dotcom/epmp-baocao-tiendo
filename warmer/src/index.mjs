@@ -597,6 +597,64 @@ Content-Type: application/pdf
   return { name, kb: Math.round(bytes.length / 1024), updated: !!existing };
 }
 
+/* ── NGÀY SỬA CUỐI CỦA TỪNG LINK — làm sẵn MỖI NGÀY MỘT LƯỢT ────────────────────────────────
+ *
+ * Cột "ngày update" của bảng chính hiện ngày sửa cuối của file trong link. Trước đây app tự đi hỏi
+ * Google Drive lúc người dùng mở bảng: mấy chục link là mấy chục lượt gọi, rồi ghi lại vào KV —
+ * đủ đốt sạch hạn mức ghi của gói free trước giờ nghỉ trưa.
+ *
+ * Nay cron làm sẵn: hỏi Drive một lượt cho tất cả link, ghi vào MỘT khoá `fmeta:v2`. App chỉ ĐỌC.
+ * Mỗi lượt mở bảng còn đúng 1 lượt đọc KV, 0 lượt ghi, 0 lần gọi Drive.
+ *
+ * Thứ hiển thị là một NGÀY nên mỗi ngày làm mới một lần là đủ — sửa file lúc 9h thì 9h hôm sau
+ * mới đổi ngày trên bảng, mà ngày trên bảng vốn cũng chỉ đổi mỗi ngày một lần.
+ */
+const FMETA_KEY = "fmeta:v2";
+const FMETA_TTL_S = 30 * 86_400;
+
+async function lamMoiNgaySuaLink(env) {
+  const kv = env.PMO_EDITS;
+  if (!kv) return { skip: "thiếu KV PMO_EDITS" };
+  if (!env.GDRIVE_OAUTH_CLIENT_ID || !env.GDRIVE_OAUTH_REFRESH) return { skip: "thiếu secret GDRIVE_OAUTH_*" };
+
+  // Danh sách link lấy từ chính bảng đang chạy (app ghi mỗi khi danh sách đổi).
+  let ids = [];
+  try {
+    const raw = await kv.get("mtld:install:list:v2");
+    const ds = raw ? JSON.parse(raw) : [];
+    ids = [...new Set(ds.map((x) => x && x.fileId).filter(Boolean))];
+  } catch { /* danh sách hỏng → thôi */ }
+  if (!ids.length) return { skip: "chưa có danh sách link" };
+
+  const token = await driveToken(env);
+  const AUTH = { Authorization: `Bearer ${token}` };
+  let kho = {};
+  try { kho = JSON.parse((await kv.get(FMETA_KEY)) || "{}"); } catch { kho = {}; }
+
+  const gio = Date.now();
+  let ok = 0, hut = 0;
+  for (const id of ids) {
+    try {
+      // Hỏi TUẦN TỰ: bắn song song mấy chục lượt là Google chặn vì quá nhanh.
+      const r = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${id}?fields=modifiedTime,lastModifyingUser(displayName,emailAddress)&${DRIVE_SHARED}`,
+        { headers: AUTH });
+      if (!r.ok) { hut++; continue; }
+      const j = await r.json();
+      if (!j.modifiedTime) { hut++; continue; }
+      kho[id] = {
+        modifiedTime: j.modifiedTime,
+        nguoiSua: (j.lastModifyingUser && (j.lastModifyingUser.displayName || j.lastModifyingUser.emailAddress)) || "",
+        ts: gio,
+      };
+      ok++;
+    } catch { hut++; }
+  }
+  // MỘT lượt ghi cho cả đợt.
+  if (ok) await kv.put(FMETA_KEY, JSON.stringify(kho), { expirationTtl: FMETA_TTL_S });
+  return { soLink: ids.length, ok, hut };
+}
+
 export default {
   // HAI lịch (xem wrangler.toml):
   //  · "30 10 * * *" (17:30 VN) — warm Summary + sao lưu nhật ký giám sát.
@@ -618,7 +676,10 @@ export default {
         .catch((e) => console.error("chamVanTayNguon lỗi:", e)));
       return;
     }
-    if (cron === "0 2 * * *") {                // 09:00 VN — CHỤP CAMERA công trường, mỗi ngày một tấm
+    if (cron === "0 2 * * *") {                // 09:00 VN — đầu giờ làm việc
+      // Làm sẵn ngày sửa cuối của mọi link để app KHỎI phải hỏi Drive lúc người dùng mở bảng.
+      ctx.waitUntil(lamMoiNgaySuaLink(env).then((r) => console.log("ngaySuaLink:", JSON.stringify(r)))
+        .catch((e) => console.error("lamMoiNgaySuaLink lỗi:", e)));
       ctx.waitUntil(chupCameraHangNgay(env).then((r) => console.log("camera:", JSON.stringify(r)))
         .catch((e) => console.error("chupCameraHangNgay lỗi:", e)));
       return;
@@ -642,6 +703,16 @@ export default {
           return new Response(JSON.stringify({ thu: chi, picUrl: url }, null, 2), { headers: { "content-type": "application/json" } });
         }
         const r = await chupCameraHangNgay(env);
+        return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
+      }
+    }
+    /* LÀM SẴN NGÀY SỬA LINK ngay bây giờ: mở "…/?ngaylink=1". Dùng khi vừa đổi danh sách link,
+       không muốn đợi tới lượt cron 09:00 sáng mai. */
+    if (tham.get("ngaylink")) {
+      try {
+        const r = await lamMoiNgaySuaLink(env);
         return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
       } catch (e) {
         return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
