@@ -538,7 +538,7 @@ const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.106.0", date: "11/09/2026", items: [
     "VƯỚNG MẮC CẤP DỰ ÁN NAY LẤY THẲNG TỪ FILE NGUỒN. Ô “Vướng mắc / Cần xử lý” trên dòng dự án trong Master Plan hiện luôn ở cột Vướng mắc cấp dự án của app, đứng trên các tin gõ trong app. Sửa trong file là app đổi theo ngay, khỏi gõ hai nơi.",
     "Chỉ áp cho DÒNG CẤP DỰ ÁN. Dòng hạng mục vẫn chỉ có ghi chú gõ trong app như cũ.",
-    "Dòng lấy từ file có nhãn riêng và không sửa được trong app — muốn đổi thì đổi trong file nguồn. Ghi chú mọi người đã gõ vẫn nguyên, nằm ngay dưới.",
+    "Dòng lấy từ file mang badge PMO và không sửa được trong app — muốn đổi thì đổi trong file nguồn. Ghi chú mọi người đã gõ vẫn nguyên, nằm ngay dưới.",
   ] },
   { v: "3.105.1", date: "11/09/2026", items: [
     "Ghi chú CŨ (viết từ trước khi app biết đóng dấu) nay cũng được đóng dấu danh tính một lượt, khỏi phải chờ có người sửa từng cái. Nhờ vậy bản sao lưu đọc được ngay, và công cụ tìm lại ghi chú thất lạc có căn cứ để dò ngược.",
@@ -4095,7 +4095,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   }, [data.projects, pkProj]);
   const tinNguon = useCallback((key: string, luc: string | null): ChatMsg[] => {
     const t = vuongMacNguon.get(key);
-    return t ? [{ id: MSG_NGUON, text: t, author: "", at: luc ?? "" }] : [];
+    // Bỏ chữ "PMO:" mở đầu — danh tính đó đã nằm trong badge PMO, để cả hai là lặp.
+    const chu = (t ?? "").replace(/^\s*PMO\s*[:：]\s*/i, "").trim();
+    return chu ? [{ id: MSG_NGUON, text: chu, author: "", at: luc ?? "" }] : [];
   }, [vuongMacNguon]);
   const dueMonthGroups = useMemo<DueMonthGroup[]>(() => {
     const byKey = new Map<string, DueMonthGroup>();
@@ -5574,7 +5576,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
       <div className="space-y-1 font-bold leading-snug text-white">
         {vis.map((m) => (
           <div key={m.id} className="whitespace-pre-line">
-            {m.id === MSG_NGUON && <span className="mr-1 rounded bg-white/25 px-1 py-px align-middle text-[8.5px] font-semibold uppercase tracking-wide text-white/90">file</span>}
+            {m.id === MSG_NGUON && <span title="Bộ phận PMO — ghi trong file nguồn" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">PMO</span>}
             <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />
           </div>
         ))}
@@ -5609,7 +5611,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {m.id === MSG_NGUON && <span className="rounded bg-slate-200 px-1 py-px text-[9px] font-semibold text-slate-600">file nguồn</span>}
+            {m.id === MSG_NGUON && <span title="Bộ phận PMO — ghi trong file nguồn" className="inline-block shrink-0 rounded bg-[#1e3a5f] px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-white">PMO</span>}
             {m.id !== MSG_NGUON && ((field === "note" && onReply) || canHide(m) || ((isAdmin || isPmo) && !!onOp)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
