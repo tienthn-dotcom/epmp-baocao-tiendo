@@ -1,41 +1,40 @@
 /**
- * RID là khoá bền của ghi chú. Nguồn vừa đổi cách ghi ("1" → "ePMP 1"), nên mấy ca ở đây canh đúng
- * một thứ: đổi cách ghi KHÔNG được làm mất note đã lưu ở khoá cũ.
+ * RID là số định danh dòng (kiểu số căn cước). Khoá phải BỀN qua mọi cách ghi tiền tố —
+ * ngày 10/09 nguồn đổi "1" thành "ePMP 1" và cả kho ghi chú mất địa chỉ vì chuyện đó.
  */
 import { describe, it, expect } from "vitest";
-import { ridChuan, ridKeys } from "@/lib/rid";
+import { ridSo, ridKeys } from "@/lib/rid";
 
-describe("ridChuan", () => {
-  it("bỏ khoảng trắng và in hoa — gõ kiểu nào cũng ra một khoá", () => {
-    expect(ridChuan("ePMP 1")).toBe("EPMP1");
-    expect(ridChuan("ePMP1")).toBe("EPMP1");
-    expect(ridChuan(" epmp  1 ")).toBe("EPMP1");
-    expect(ridChuan("1")).toBe("1");
+describe("ridSo — địa chỉ là PHẦN SỐ", () => {
+  it("mọi cách ghi tiền tố đều ra cùng một số", () => {
+    for (const v of ["682", "ePMP682", "ePMP 682", "EPMP-682", "  epmp  682 "]) {
+      expect(ridSo(v)).toBe("682");
+    }
   });
+  it("bỏ số 0 thừa ở đầu", () => expect(ridSo("ePMP007")).toBe("7"));
 });
 
 describe("ridKeys", () => {
-  it("RID mới giữ được note cũ: có kèm khoá số trần đời cũ", () => {
-    expect(ridKeys("ePMP 1")).toEqual(["rid:EPMP1", "rid:ePMP 1", "rid:1"]);
+  it("khoá GHI là phần số", () => {
+    expect(ridKeys("ePMP 682")[0]).toBe("rid:682");
+    expect(ridKeys("682")[0]).toBe("rid:682");
   });
 
-  it("khoá GHI (phần tử đầu) là dạng chuẩn, không phải chữ thô", () => {
-    expect(ridKeys("ePMP 12")[0]).toBe("rid:EPMP12");
-    expect(ridKeys("ePMP12")[0]).toBe("rid:EPMP12");   // hai cách gõ, cùng một chỗ ghi
+  it("đổi cách ghi tiền tố KHÔNG làm đổi địa chỉ", () => {
+    expect(ridKeys("1")[0]).toBe(ridKeys("ePMP1")[0]);
+    expect(ridKeys("ePMP1")[0]).toBe(ridKeys("ePMP 1")[0]);
   });
 
-  it("RID vốn là số trần thì không đẻ khoá thừa", () => {
-    expect(ridKeys("7")).toEqual(["rid:7"]);
+  it("vẫn đọc được note ghi hồi khoá còn kèm chữ", () => {
+    expect(ridKeys("ePMP682")).toContain("rid:EPMP682");
   });
 
-  it("không có RID thì không có khoá nào — app tự lùi về IDCUNG/STT", () => {
+  it("hai dòng khác số thì khác địa chỉ", () => {
+    expect(ridKeys("ePMP1")[0]).not.toBe(ridKeys("ePMP11")[0]);
+  });
+
+  it("chưa cắm RID thì không có địa chỉ nào — app tự lùi về IDCUNG/STT", () => {
     expect(ridKeys(undefined)).toEqual([]);
-    expect(ridKeys("")).toEqual([]);
-    expect(ridKeys("   ")).toEqual([]);
-  });
-
-  it("hai dòng RID khác nhau không đụng khoá nhau", () => {
-    expect(ridKeys("ePMP 1")[0]).not.toBe(ridKeys("ePMP 2")[0]);
-    expect(ridKeys("ePMP 1")[0]).not.toBe(ridKeys("ePMP 11")[0]);
+    expect(ridKeys("  ")).toEqual([]);
   });
 });

@@ -534,6 +534,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.103.0", date: "11/09/2026", items: [
+    "RID nay là ĐỊA CHỈ BỀN của ghi chú, và app đọc theo PHẦN SỐ của nó. Ghi “1”, “ePMP1” hay “ePMP 1” đều là một — đổi cách ghi tiền tố không còn làm ghi chú lạc dòng nữa.",
+    "Mỗi dòng có bốn địa chỉ, ưu tiên từ bền tới mong manh: RID → ID cứng → STT → mã+tên. Ghi chú nằm ở đâu đọc ra ở đó, chuyển dần chứ không dời hàng loạt.",
+    "Ghi chú cấp dự án và cấp hạng mục nay dùng chung một cách đánh địa chỉ RID — trước đó lệch nhau (một bên “ePMP1”, một bên “EPMP1”) nên cùng một dòng mà hai nơi hiểu khác nhau.",
+    "Đã đưa 47 ghi chú bị lạc về đúng dòng (11 cái nhập ngày 10/09), sau khi STT trong nguồn xê dịch vì chèn dòng.",
+  ] },
   { v: "3.102.0", date: "11/09/2026", items: [
     "NGÀY CẬP NHẬT CỦA LINK nay được máy chủ làm sẵn mỗi sáng, app chỉ việc đọc — mở bảng không còn phải đi hỏi Google Drive mấy chục lượt. Đây là thứ nặng nhất còn lại, và cũng là thủ phạm làm app chạm hạn mức rồi đứng giữa buổi mấy hôm nay.",
     "Link vừa gắn vẫn có ngày ngay, không phải đợi tới hôm sau.",
