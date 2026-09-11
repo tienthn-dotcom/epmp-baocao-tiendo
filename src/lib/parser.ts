@@ -423,9 +423,36 @@ function detectUpdateDateCol(headerRow: unknown[]): number {
   for (let c = 0; c < headerRow.length; c++) {
     const h = str(headerRow[c]).toLowerCase();
     if (!h) continue;
+    if (/link/.test(h)) continue;   // "Ngày file link" là cột KHÁC — xem detectLinkDateCol
     if (/ng[àa]y\s*update|ng[àa]y\s*c[ậa]p\s*nh[ậa]t/i.test(h)) return c;
   }
   return -1;
+}
+
+/** Cột "Ngày file link" — ngày sửa cuối của FILE MA TRẬN trong hyperlink, do Apps Script của chính
+ *  file nguồn ghi vào mỗi sáng (xem scripts/apps-script-ngay-link.gs).
+ *
+ *  Có cột này thì app KHỎI hỏi Google Drive: ngày đi kèm dữ liệu, parse file nguồn là có sẵn.
+ *  Chưa có cột thì app lùi về kho cũ như trước, không gãy gì. */
+function detectLinkDateCol(headerRow: unknown[]): number {
+  if (!headerRow) return -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const h = stripDiacritics(str(headerRow[c]).toLowerCase()).replace(/\s+/g, " ").trim();
+    if (!h) continue;
+    if (/^ngay (file )?link/.test(h)) return c;
+  }
+  return -1;
+}
+
+/** "10/09/2026" hay "2026-09-10" → ISO "2026-09-10". Không đọc được thì trả undefined. */
+function ngayLinkIso(v: unknown): string | undefined {
+  const t = str(v).trim();
+  if (!t) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const d = v instanceof Date ? v : null;
+  return d && !isNaN(d.getTime()) ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : undefined;
 }
 
 /** Tìm cột "Top 20" (đánh số 1..20 các dự án trọng điểm) — cột ngoài cùng trái.
@@ -505,6 +532,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
   const groupCol = detectGroupCol(rows[COL.headerIdx] ?? []);
   const top20Col = detectTop20Col(rows[COL.headerIdx] ?? []);
   const updateCol = detectUpdateDateCol(rows[COL.headerIdx] ?? []);
+  const linkDateCol = detectLinkDateCol(rows[COL.headerIdx] ?? []);
   const idCol = detectIdCol(rows[COL.headerIdx] ?? []);
   const hidCol = detectHidCol(rows[COL.headerIdx] ?? []);
   const ridCol = detectRidCol(rows, COL.headerIdx);
@@ -515,6 +543,9 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     return v || undefined;
   };
   /** RID (cột "RID") của dòng — số nguyên duy nhất mỗi dòng; undefined nếu nguồn chưa có cột hoặc ô trống. */
+  /** Ngày sửa cuối của FILE trong hyperlink, nếu Apps Script đã ghi vào cột "Ngày file link". */
+  const ngayLinkCua = (r: unknown[]): string | undefined =>
+    linkDateCol < 0 ? undefined : ngayLinkIso(r[linkDateCol]);
   const ridOf = (r: unknown[]): string | undefined => {
     if (ridCol < 0) return undefined;
     const v = str(r[ridCol]);
@@ -599,6 +630,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         id: idOf(r),
         hid: currentHid,
         rid: ridOf(r),
+        ngayLink: ngayLinkCua(r),
         code: rawCode || maCT,
         name: projectName || rawCode || maCT,
         cdt: str(r[COL.G]),
@@ -773,6 +805,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     const row: ItemRow = {
       id: idOf(r),
       rid: ridOf(r),
+      ngayLink: ngayLinkCua(r),
       projHid: currentHid,
       projectCode: current?.code ?? "",
       projectName: current?.name ?? "(không xác định)",

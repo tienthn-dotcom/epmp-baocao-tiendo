@@ -265,3 +265,32 @@ test("RID: nguồn chưa có cột thì để trống, app tự lùi về STT/ID
   const data = parseTimelineRows(buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" }), REF);
   expect(data.items[0].rid).toBeUndefined();
 });
+
+/* ── CỘT "NGÀY FILE LINK" (do Apps Script của file nguồn ghi) ─────────────────────────────────
+   Có cột này thì app khỏi hỏi Google Drive. Nó phải KHÔNG được lẫn với cột "Ngày update" vốn có —
+   hai cái tên rất giống nhau, lẫn là cả bảng đọc sai ngày. */
+
+test("Ngày file link: đọc được, và KHÔNG bị nhầm với cột Ngày update", () => {
+  const rows = buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" });
+  const hdr = rows[5] as unknown[];
+  hdr[2] = "Ngày update";
+  hdr[21] = "Ngày file link";
+  (rows[7] as unknown[])[2] = "01/09/2026";   // ngày update của dòng cha
+  (rows[8] as unknown[])[2] = "01/09/2026";
+  (rows[8] as unknown[])[21] = "10/09/2026";  // ngày file trong link
+  const data = parseTimelineRows(rows, REF);
+  expect(data.items[0].ngayLink).toBe("2026-09-10");
+  expect(data.items[0].updateDate).not.toBe("2026-09-10");
+});
+
+test("Ngày file link: nhận cả dạng yyyy-mm-dd", () => {
+  const rows = buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" });
+  (rows[5] as unknown[])[21] = "Ngày file link";
+  (rows[8] as unknown[])[21] = "2026-09-10";
+  expect(parseTimelineRows(rows, REF).items[0].ngayLink).toBe("2026-09-10");
+});
+
+test("nguồn CHƯA gắn script thì để trống, app tự lùi về cách cũ", () => {
+  const data = parseTimelineRows(buildRows({ pctPlan: 1, pctActual: 0.5, deadline: "25/05/2026" }), REF);
+  expect(data.items[0].ngayLink).toBeUndefined();
+});

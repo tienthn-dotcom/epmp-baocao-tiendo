@@ -59,6 +59,9 @@ export type ItemRow = {
   /** RID — SỐ NGUYÊN duy nhất mỗi DÒNG do PMO tự điền (cột "RID"). KHOÁ ƯU TIÊN cao nhất chống mất note
    *  khi STT bị đánh lại. undefined nếu nguồn chưa có cột RID. Xem itemKeyOf/itemKeysOf. */
   rid?: string;
+  /** Ngày sửa cuối của FILE trong hyperlink "Thi công lắp đặt" — do Apps Script của file nguồn ghi
+   *  vào cột "Ngày file link" mỗi sáng. Có nó thì app KHỎI hỏi Google Drive. ISO "yyyy-mm-dd". */
+  ngayLink?: string;
   /** ID CỨNG của DỰ ÁN cha (cột "IDCUNG", vd "P0025") — KHOÁ BỀN nhất: STT đổi mặc kệ, ID cứng không
    *  đổi. Kế thừa từ dòng dự án. Khoá vướng mắc = h:<projHid>:<rawCode>. undefined nếu nguồn chưa có cột. */
   projHid?: string;
@@ -130,6 +133,8 @@ export type ProjectRow = {
   /** RID — SỐ NGUYÊN duy nhất mỗi DÒNG (cột "RID") do PMO tự điền. KHOÁ ƯU TIÊN cao nhất chống mất note
    *  cấp dự án khi STT trôi. undefined nếu nguồn chưa có cột RID. */
   rid?: string;
+  /** Ngày sửa cuối của FILE trong hyperlink — do Apps Script ghi vào cột "Ngày file link". */
+  ngayLink?: string;
   code: string;
   name: string;
   cdt: string;

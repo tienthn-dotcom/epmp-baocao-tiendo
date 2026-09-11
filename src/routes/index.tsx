@@ -534,6 +534,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.104.0", date: "11/09/2026", items: [
+    "NGÀY SỬA CUỐI CỦA FILE TRONG LINK nay có thể lấy thẳng từ file nguồn: thêm cột “Ngày file link”, app đọc luôn cột đó, khỏi hỏi Google Drive. Ngày cũng hiện ngay trong sheet, ai mở sheet cũng thấy.",
+    "Cột này do một script đặt trong chính file nguồn ghi mỗi sáng — một script dùng cho tất cả dự án, không phải cắm vào từng file ma trận.",
+    "Nguồn chưa gắn script thì app chạy y như cũ, không ảnh hưởng gì.",
+  ] },
   { v: "3.103.0", date: "11/09/2026", items: [
     "RID nay là ĐỊA CHỈ BỀN của ghi chú, và app đọc theo PHẦN SỐ của nó. Ghi “1”, “ePMP1” hay “ePMP 1” đều là một — đổi cách ghi tiền tố không còn làm ghi chú lạc dòng nữa.",
     "Mỗi dòng có bốn địa chỉ, ưu tiên từ bền tới mong manh: RID → ID cứng → STT → mã+tên. Ghi chú nằm ở đâu đọc ra ở đó, chuyển dần chứ không dời hàng loạt.",
@@ -6195,7 +6200,12 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               thật sự đổi. Bày kèm badge ngày cấp dự án nữa thì một ô hai ngày, nhìn rối mà chẳng
               nói thêm gì. Dòng KHÔNG có link thì vẫn là badge ngày update như cũ. */}
           {(() => {
-            const meta = viewLink ? linkMeta[viewLink.fileId.split("|")[0]] : undefined;
+            /* ƯU TIÊN cột "Ngày file link" trong chính file nguồn (Apps Script ghi mỗi sáng —
+               xem scripts/apps-script-ngay-link.gs). Có nó thì app không phải hỏi Google Drive
+               lần nào. Nguồn chưa gắn script thì lùi về kho cũ, không gãy gì. */
+            const meta = it.ngayLink
+              ? { modifiedTime: it.ngayLink, nguoiSua: "" }
+              : viewLink ? linkMeta[viewLink.fileId.split("|")[0]] : undefined;
             if (meta?.modifiedTime) return <LinkDate meta={meta} today={today} />;
             return !groupMode && !it._hidden ? <UpdateChip date={it.updateDate} today={today} fpAt={itemFp[it._key]?.at} /> : null;
           })()}
