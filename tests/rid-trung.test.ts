@@ -37,6 +37,16 @@ const tk = (d: ReturnType<typeof parseTimelineRows>, ten: string) =>
   d.projects.find((p) => p.name === ten)!.allItems.find((i) => i.rawCode === "TK");
 
 describe("RID trùng", () => {
+  /* RID trùng KHÔNG được nâng lên mức "error": assertDataQuality() trong app NÉM LỖI khi gặp bất kỳ
+     mục error nào, và ném là cả app không nạp được dữ liệu — đúng chuyện đã xảy ra chiều 11/09, người
+     còn cache trình duyệt thì thấy bản cũ, người máy mới thì trắng bảng. */
+  it("nguồn có RID trùng thì DỮ LIỆU VẪN NẠP ĐƯỢC (không được đẩy lên mức error)", () => {
+    const d = parseTimelineRows(dung(["ePMP1", "ePMP9", "ePMP3", "ePMP9"]), REF);
+    expect(d.quality.level).not.toBe("error");
+    expect(d.quality.checks.filter((c) => c.level === "error")).toEqual([]);
+    expect(d.projects).toHaveLength(2);
+  });
+
   it("mỗi dòng một số → RID được dùng làm địa chỉ", () => {
     const d = parseTimelineRows(dung(["ePMP1", "ePMP2", "ePMP3", "ePMP4"]), REF);
     expect(d.projects[0].rid).toBe("ePMP1");
@@ -72,10 +82,10 @@ describe("RID trùng", () => {
     expect(tk(d, "Dự án B")?.rid).toBe("ePMP4");
   });
 
-  it("cổng dữ liệu báo LỖI và chỉ đích danh số bị trùng", () => {
+  it("cổng dữ liệu cảnh báo và chỉ đích danh số bị trùng", () => {
     const d = parseTimelineRows(dung(["ePMP1", "ePMP9", "ePMP3", "ePMP9"]), REF);
     const c = d.quality.checks.find((x) => x.id === "ridDup")!;
-    expect(c.level).toBe("error");
+    expect(c.level).toBe("warn");
     expect(c.items?.join(" ")).toContain("RID 9");
     expect(c.items?.join(" ")).toContain("2 dòng");
   });

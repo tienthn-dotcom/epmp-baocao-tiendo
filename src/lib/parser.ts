@@ -1075,7 +1075,11 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
       : `${sttBlankCount} dòng THIẾU STT (ID) — dễ mất/nhảy Vướng mắc khi đồng bộ`,
     `Cách sửa: điền STT cho các dòng dưới đây (dòng trống STT sẽ khoá tạm theo tên — đổi tên là mất tin).`,
     sttBlankItems);
-  add("ridDup", ridDupCount > 0, "error",
+  // MỨC "warn", KHÔNG PHẢI "error": assertDataQuality() NÉM LỖI khi có bất kỳ mục nào ở mức error,
+  // và ném là cả app không nạp được dữ liệu — ai còn cache trình duyệt thì thấy bản cũ, ai máy mới
+  // thì trắng bảng. RID trùng KHÔNG làm dữ liệu hỏng: app đã tự bỏ những RID đó và chạy bằng STT.
+  // Chỉ thứ làm dữ liệu KHÔNG DÙNG ĐƯỢC (mất header, không có dự án nào) mới được để mức error.
+  add("ridDup", ridDupCount > 0, "warn",
     ridDupCount === 0
       ? "Mọi RID là duy nhất — ghi chú bám RID an toàn"
       : `${ridDupCount} dòng dùng CHUNG ${ridDupItems.length} số RID — app đã TẠM BỎ các RID đó (lùi về STT) để ghi chú khỏi nhảy sang dòng khác`,
