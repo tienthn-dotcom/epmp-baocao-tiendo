@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useIsFetching } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ClipboardCheck,
@@ -535,6 +535,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.107.1", date: "14/09/2026", items: [
+    "SỬA GẤP tiếp: app chỉ được ghi vào kho chung KHI ĐÃ TẢI XONG. Trước đó mỗi lần mở app, các việc nền chạy lại vài lượt theo nhịp từng phần dữ liệu về, mỗi lượt tính ra một kết quả khác nhau nên ghi đè lẫn nhau vài lần. Đây mới là thủ phạm chính, bản sửa buổi sáng chưa chạm tới.",
+  ] },
   { v: "3.107.0", date: "14/09/2026", items: [
     "CẮT LƯỢT GHI THỪA. Ba chỗ đẩy dữ liệu lên kho chung (danh sách Media, vùng dự án, mỏ neo ghi chú) trước đây chạy cả trong nhịp app còn đang hiện dữ liệu mẫu, nên mỗi lần ai đó mở app là ghi hai lần với hai nội dung khác nhau. Đo được: riêng kho Media ăn 82 lượt ghi trong hai tiếng sáng nay, gần gấp đôi số ghi chú thật của cả công ty.",
     "Ô nào đã có ảnh/clip nhưng lâu rồi chưa ai lên thêm thì nay đeo CHẤM ĐEN, thay vì để trống như ô chưa có gì. Nhìn bảng phân biệt được ba mức: chấm màu là vừa có, chấm đen là có mà cũ, để trống là chưa có.",
@@ -2415,6 +2418,24 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   const mediaProjQuery = useQuery({ queryKey: ["media-projects"], queryFn: () => listMediaProjects(), staleTime: 10 * 60 * 1000 });
   const mediaProjSet = useMemo(() => new Set(mediaProjQuery.data?.projects ?? []), [mediaProjQuery.data]);
   // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
+  /* ── CỔNG "TẢI XONG MỚI ĐƯỢC GHI" ────────────────────────────────────────────────────────────
+   *
+   * Các effect nền (đẩy danh sách Media, mỏ neo ghi chú, dấu vân tay, ngày kết thúc, cờ MP) đều
+   * tính ra một payload rồi so với kho, khác thì ghi. Chúng CHẠY LẠI mỗi khi một query nào đó vừa
+   * về, mà các query về không cùng lúc. Nên trong một lần mở app, cùng một effect chạy vài lượt và
+   * mỗi lượt tính ra một payload KHÁC NHAU vì thiếu dữ liệu khác nhau.
+   *
+   * Ví dụ đo được ngày 14/09: `sheetViews` là {} cho tới khi query của nó về, nên lượt đầu đẩy lên
+   * danh sách Media với coMaTran = false cho MỌI dự án, lượt sau đẩy bản đúng đè lên. Hai lượt ghi
+   * mỗi lần mở app, nhân với mọi người, ra 25 lượt/giờ chỉ riêng kho media.
+   * `nk()` còn tệ hơn: nó chọn khoá theo edits + completed + hidden, ba query về ba thời điểm, nên
+   * ba lượt chạy cho ra ba bộ khoá khác nhau.
+   *
+   * Chốt chặn: còn bất kỳ query nào đang tải thì KHÔNG ghi gì hết. Đợi client đứng yên rồi tính một
+   * lần, ghi một lần. Chặn nhầm một lượt cũng không sao, effect sẽ chạy lại khi mọi thứ xong.
+   * Đây là việc dọn nhà, không phải việc của người dùng, hoãn vài giây không ai thấy. */
+  const dangTaiKho = useIsFetching();
+
   const sheetViewsQuery = useQuery({ queryKey: ["sheetviews"], queryFn: () => getSheetViews(), staleTime: 5 * 60 * 1000 });
   const sheetViews = sheetViewsQuery.data?.views ?? {};
   // CẦU NỐI app MTLĐ: gom các popup "Thi công lắp đặt" ĐÃ GẮN LINK (Sửa link) — nguồn thật là
@@ -2427,6 +2448,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
        kv_write ngày 14/09: riêng kho media ăn 82 lượt trong hai tiếng, gần gấp đôi số lượt ghi chú
        thật của cả công ty. Cùng cách chặn đã áp cho completed/mpflag/itemfp từ 08/09. */
     if (dataMode === "demo") return;
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     try {
       const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean; noMx?: boolean }[] = [];
       const seenKey = new Set<string>();   // đã xử lý linkKey này chưa (khỏi lặp)
@@ -2471,7 +2493,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (moiDuAn.length) void saveMediaProjects({ data: { list: moiDuAn } }).catch(() => {});
     } catch { /* bỏ qua */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(sheetViews), data.items.length, dataMode]);
+  }, [JSON.stringify(sheetViews), data.items.length, dataMode, dangTaiKho]);
   // INDEX ảnh dự án (nhẹ: chỉ ngày/người) — mọi người tải để biết dòng nào có 📷; ảnh nặng tải khi mở popup.
   const projImgIdxQuery = useQuery({ queryKey: ["projimg-idx"], queryFn: () => getProjImageIndex(), staleTime: 5 * 60 * 1000 });
   const projImgIdx: ProjImgIdx = projImgIdxQuery.data?.idx ?? {};
@@ -2708,13 +2730,14 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // Ghi BASELINE lần đầu (giữ "trước đó ở đâu") + dọn mỏ neo của note đã xoá. Chờ di trú khoá xong.
   useEffect(() => {
     if (dataMode === "demo") return;   // xem lý do ở effect đẩy danh sách Media phía trên
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     if (!remapReady || editsQuery.isLoading || anchorsQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {}; const remove: string[] = [];
     for (const k of Object.keys(edits)) if (noteHasText(k) && !(k in noteAnchors) && noteAnchorNow[k]) add[k] = noteAnchorNow[k];
     for (const k of Object.keys(noteAnchors)) if (!noteHasText(k)) remove.push(k);
     if (!Object.keys(add).length && !remove.length) return;
     void syncNoteAnchors({ data: { add, remove } }).then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }));
-  }, [remapReady, dataMode, editsQuery.isLoading, anchorsQuery.isLoading, data.projects, edits, noteAnchors, noteAnchorNow, noteHasText, queryClient]);
+  }, [remapReady, dataMode, dangTaiKho, editsQuery.isLoading, anchorsQuery.isLoading, data.projects, edits, noteAnchors, noteAnchorNow, noteHasText, queryClient]);
   /* ĐÓNG DẤU DANH TÍNH cho ghi chú CŨ — một lượt rồi thôi.
      Ghi chú viết từ trước khi app biết đóng dấu chỉ có mỗi khoá, nên mở file sao lưu ra không biết
      nó của dự án nào. Gửi danh tính hiện tại của những dòng đang thấy; server chỉ ghi vào ô nào
@@ -3066,6 +3089,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
        data.projects, nên chạy trúng nhịp demo là xoá sạch ngày kết thúc thực tế của 549 dòng rồi
        ghi lại theo ngày hôm nay. Chỉ đồng bộ khi đang xem dữ liệu thật (live hoặc cache). */
     if (dataMode === "demo") return;
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     if (completedQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {};
     const seenDone = new Set<string>();
@@ -3083,7 +3107,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         queryClient.setQueryData(["completedDates"], r.completed);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [remapReady, dataMode, data.projects, completedDates, completedQuery.isLoading, editsQuery.isLoading, hiddenQuery.isLoading, today, queryClient, nk]);
+  }, [remapReady, dataMode, dangTaiKho, data.projects, completedDates, completedQuery.isLoading, editsQuery.isLoading, hiddenQuery.isLoading, today, queryClient, nk]);
 
   /* ── VÂN TAY ĐẦU VIỆC — "dòng này lần cuối THẬT SỰ đổi là ngày nào" ─────────────────
      Cột "Ngày update" do người ta tự gõ trong nguồn; gõ lại ngày mà không sửa gì thì app vẫn tưởng
@@ -3103,6 +3127,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   useEffect(() => {
     if (!remapReady || fpQuery.isLoading || !data.projects.length) return;
     if (dataMode === "demo") return;   // xem [[dataMode]] ngay dưới — tuyệt đối không ghi từ dữ liệu demo
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     if (fpSoLuot.current >= 3) return;
 
     /** Băm 32-bit (FNV-1a) — đủ phân biệt, gọn để nhét cả nghìn dòng vào KV. */
@@ -3165,7 +3190,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         queryClient.setQueryData(["itemFp"], r.fps);
       } catch { /* chấm vân tay là việc phụ — hỏng thì bảng vẫn chạy như thường */ }
     })();
-  }, [remapReady, dataMode, fpQuery.isLoading, data.projects, itemFp, today, queryClient, nk]);
+  }, [remapReady, dataMode, dangTaiKho, fpQuery.isLoading, data.projects, itemFp, today, queryClient, nk]);
 
   /* ── ÁP CHỈNH SỬA vào dữ liệu TRƯỚC mọi phép tính (lọc/phân loại/bảng/PDF
      đều tiêu thụ effectiveItems — sửa Deadline sẽ tự tính lại Quá hạn,
@@ -3387,6 +3412,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     // tải; lượt đó thấy "dự án không còn cờ" nên XOÁ SẠCH mốc cắm cờ, rồi lượt sau ghi lại bằng
     // ngày hôm nay — đó là lý do ngày trình BOD cứ nhảy. Xem cùng cách chặn ở syncItemFp.
     if (dataMode === "demo") return;
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     if (mpFlagQuery.isLoading || editsQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {};
     for (const key of mpProjectKeys) if (!mpFlags[key]) add[key] = today.slice(0, 10);
@@ -3401,7 +3427,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         queryClient.setQueryData(["mpFlags"], r.mpFlags);
       } catch { /* phụ trợ — hỏng không được làm hỏng bảng */ }
     })();
-  }, [remapReady, dataMode, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
+  }, [remapReady, dataMode, dangTaiKho, data.projects, mpProjectKeys, mpFlags, mpFlagQuery.isLoading, editsQuery.isLoading, today, queryClient]);
 
   /* SỐ TUẦN cờ MP/BOD tồn tại theo TÊN dự án (chuẩn hoá) — cho ComplianceDialog tô màu + trừ điểm.
      ĐẾM THEO KỲ BÁO CÁO (tuần Thứ 2–CN, khớp cột tuần của báo cáo): tuần MỚI DÍNH CỜ = 0 (miễn, chưa
@@ -3547,6 +3573,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     if (!regionByName.size) return;
     const map: Record<string, string> = {};
     if (dataMode === "demo") return;   // xem lý do ở effect đẩy danh sách Media phía trên
+    if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     for (const [k, v] of regionByName) map[k] = v;          // khoá theo TÊN DỰ ÁN
     // Khoá thêm theo NHÓM DỰ ÁN: app "Hiệu suất dự án" đọc file Pivot gom sẵn theo nhóm ("MINI HOTEL
     // PQ", "43 ĐTM"…) chứ không có tên dự án đầy đủ. Một nhóm trải nhiều vùng thì lấy vùng gặp trước
@@ -3561,7 +3588,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     // ghi đè lại, tốn hai lượt mỗi lần mở app.
     regionSigRef.current = sig;
     void saveProjRegions({ data: { map } }).catch(() => {});
-  }, [regionByName, data.items, dataMode]);
+  }, [regionByName, data.items, dataMode, dangTaiKho]);
 
   /* ── FACET COUNT cho 2 nút chế độ (Bàn giao tháng này / Top 20) ──
      Con số trên mỗi nút = số DỰ ÁN (mã+tên) khớp tiêu chí nút đó TRONG ngữ cảnh
