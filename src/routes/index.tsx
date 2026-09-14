@@ -535,6 +535,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.106.1", date: "14/09/2026", items: [
+    "Ô chú thích ảnh/clip đổi câu gợi ý: nay hỏi “triển khai công tác gì, bao nhiêu quân” thay vì “đang làm tới đâu, vướng gì”. Hỏi cùng một câu ở cả ô chú thích từng tệp lẫn ô báo cáo khi tải cả lô.",
+  ] },
   { v: "3.106.0", date: "11/09/2026", items: [
     "VƯỚNG MẮC CẤP DỰ ÁN NAY LẤY THẲNG TỪ FILE NGUỒN. Ô “Vướng mắc / Cần xử lý” trên dòng dự án trong Master Plan hiện luôn ở cột Vướng mắc cấp dự án của app, đứng trên các tin gõ trong app. Sửa trong file là app đổi theo ngay, khỏi gõ hai nơi.",
     "Chỉ áp cho DÒNG CẤP DỰ ÁN. Dòng hạng mục vẫn chỉ có ghi chú gõ trong app như cũ.",

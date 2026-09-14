@@ -987,7 +987,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
               </span>
             </div>
             <textarea autoFocus value={choCap} onChange={(e) => setChoCap(e.target.value)} rows={narrow ? 3 : 2}
-              placeholder="Đang làm tới đâu, vướng gì, cần ai xử lý…"
+              placeholder="Triển khai công tác gì, bao nhiêu quân…"
               style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "9px 11px", fontSize: 13, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: choWords > 100 ? "#fca5a5" : "rgba(255,255,255,.55)" }}>
@@ -1120,7 +1120,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
               {/* Ô viết tin mới — ai đăng nhập cũng viết được, giống box vướng mắc. */}
               <div style={{ display: "grid", gap: 6 }}>
                 <textarea value={cap} onChange={(e) => setCap(e.target.value)} rows={2}
-                  placeholder={msgs.length ? "Viết thêm chú thích…" : "Ghi ngắn gọn: đang làm tới đâu, vướng gì, cần ai xử lý…"}
+                  placeholder={msgs.length ? "Viết thêm chú thích…" : "Ghi ngắn gọn: triển khai công tác gì, bao nhiêu quân…"}
                   style={{ width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 8, border: "none", padding: "8px 10px", fontSize: 12.5, lineHeight: 1.45, color: C.ink, background: "#fff", fontFamily: "inherit" }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: capWords > 100 ? "#fca5a5" : "rgba(255,255,255,.5)" }}>
