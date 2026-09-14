@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { demGhiKv } from "@/lib/kv-dem";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
 import { DEFAULT_ROLES, roleOf, type UserRole } from "./roles";
 import { SESSION_COOKIE, readCookie, verifySession } from "./auth";
@@ -158,27 +159,34 @@ type KVLike = {
 function bocKv(kv: KVLike): KVLike {
   return {
     get: async (key) => { try { return await kv.get(key); } catch { return null; } },
-    put: (key, value) => kv.put(key, value),
-    ...(kv.delete ? { delete: (key: string) => kv.delete!(key) } : {}),
+    put: async (key, value) => { await kv.put(key, value); await demGhiKv(key); },
+    ...(kv.delete ? { delete: async (key: string) => { await kv.delete!(key); await demGhiKv(key); } } : {}),
   };
 }
 
-/** Lấy KV binding trên Workers — thử mọi vị trí nitro/TanStack Start có thể đặt env. */
-async function getKv(): Promise<KVLike | null> {
+/** Env của Workers — thử mọi vị trí nitro/TanStack Start có thể đặt nó. Dùng chung cho KV lẫn D1
+ *  (bảng đếm lượt ghi), nên chỗ dò env chỉ viết MỘT lần ở đây. */
+async function getEnvRaw(): Promise<Record<string, unknown> | null> {
   try {
     const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
     const getEvent = mod.getEvent as undefined | (() => unknown);
     if (getEvent) {
       const ev = getEvent() as { context?: { cloudflare?: { env?: Record<string, unknown> } } } | undefined;
-      const kv = ev?.context?.cloudflare?.env?.PMO_EDITS;
-      if (kv) return bocKv(kv as KVLike);
+      const env = ev?.context?.cloudflare?.env;
+      if (env) return env;
     }
-  } catch { /* not available in this runtime */ }
+  } catch { /* không có trong runtime này */ }
   const g = globalThis as unknown as Record<string, unknown>;
   const env = (g.__env__ ?? g.__cf_env__ ?? null) as Record<string, unknown> | null;
-  if (env?.PMO_EDITS) return bocKv(env.PMO_EDITS as KVLike);
-  if (g.PMO_EDITS) return bocKv(g.PMO_EDITS as KVLike);
-  return null;
+  if (env) return env;
+  return g.PMO_EDITS || g.PMO_LOG ? g : null;
+}
+
+/** Lấy KV binding trên Workers. */
+async function getKv(): Promise<KVLike | null> {
+  const env = await getEnvRaw();
+  const kv = env?.PMO_EDITS;
+  return kv ? bocKv(kv as KVLike) : null;
 }
 
 /* ── Dev fallback: file JSON cục bộ (node) ── */
