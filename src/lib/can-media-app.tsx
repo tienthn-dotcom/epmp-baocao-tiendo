@@ -57,6 +57,15 @@ const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|
  * Giờ lấy theo máy người xem (giờ VN), mốc là createdTime của Drive — giờ TẢI LÊN thật, không phải
  * ngày ghi trong tên file. Không đọc được giờ thì coi như cũ → xám.
  */
+/** Căn CÓ tư liệu nhưng đã cũ (từ 2 ngày trở lên) - chấm ĐEN, vòng tròn đầy.
+ *  Có chấm đen thì nhìn bảng phân biệt được ba trạng thái thay vì hai:
+ *      màu   = vừa có tư liệu (hôm nay / hôm qua)
+ *      đen   = ĐÃ CÓ tư liệu, nhưng lâu rồi chưa ai lên thêm
+ *      trống = CHƯA có gì cả
+ *  Trước đây căn cũ và căn chưa có gì trông y hệt nhau, nên không nhìn ra chỗ nào đáng đi nhắc.
+ *  Màu lấy đúng slate-900 của vành ngoài chấm nên nhìn liền một khối, không chọi. */
+const MARK_CU = { color: "#0F172A", deg: 360, label: "tư liệu cũ, từ 2 ngày trở lên" };
+
 function freshMark(at: string): { color: string; deg: number; label: string } | null {
   if (!at) return null;
   const d = new Date(at);
@@ -499,7 +508,7 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
         const m = hit && marks.get(`${hit.toa} ${hit.can}`);
         // Chỉ chấm căn có tư liệu MỚI (hôm nay / hôm qua). Căn có tư liệu cũ vẫn mở xem được như
         // thường, chỉ là không đeo dấu nữa — dấu để tìm chỗ VỪA CẬP NHẬT.
-        const k = m ? freshMark(m.at) : null;
+        const k = m ? (freshMark(m.at) ?? MARK_CU) : null;
         td.classList.toggle("has-media", !!k);
         if (m && k) {
           // Chấm dấu NÓI LUÔN LÚC NÀO TẢI LÊN: màu + phần rẻ quạt được tô. Đặt bằng biến CSS trên từng

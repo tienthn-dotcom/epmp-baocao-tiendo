@@ -535,6 +535,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.107.0", date: "14/09/2026", items: [
+    "CẮT LƯỢT GHI THỪA. Ba chỗ đẩy dữ liệu lên kho chung (danh sách Media, vùng dự án, mỏ neo ghi chú) trước đây chạy cả trong nhịp app còn đang hiện dữ liệu mẫu, nên mỗi lần ai đó mở app là ghi hai lần với hai nội dung khác nhau. Đo được: riêng kho Media ăn 82 lượt ghi trong hai tiếng sáng nay, gần gấp đôi số ghi chú thật của cả công ty.",
+    "Ô nào đã có ảnh/clip nhưng lâu rồi chưa ai lên thêm thì nay đeo CHẤM ĐEN, thay vì để trống như ô chưa có gì. Nhìn bảng phân biệt được ba mức: chấm màu là vừa có, chấm đen là có mà cũ, để trống là chưa có.",
+  ] },
   { v: "3.106.1", date: "14/09/2026", items: [
     "Ô chú thích ảnh/clip đổi câu gợi ý: nay hỏi “triển khai công tác gì, bao nhiêu quân” thay vì “đang làm tới đâu, vướng gì”. Hỏi cùng một câu ở cả ô chú thích từng tệp lẫn ô báo cáo khi tải cả lô.",
   ] },
@@ -2417,6 +2421,12 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // sheetViews (PMO gắn: fileId + vùng + form), KHÔNG phải hyperlink trong sheet. Mỗi dự án 1 thẻ, kèm
   // vùng + formKey để MtldApp render Y HỆT popup (ma trận live + form đã lưu). Ghi KV để MTLĐ đọc mọi lúc.
   useEffect(() => {
+    /* DỮ LIỆU DEMO TUYỆT ĐỐI KHÔNG ĐƯỢC GHI. App có nhịp render rơi về demo (5 dự án) trong lúc dữ
+       liệu thật đang tải. Nhịp đó đẩy một danh sách NGẮN lên kho, nhịp sau đẩy danh sách THẬT đè lại
+       — mỗi lần mở app tốn HAI lượt ghi, và mười người mở vài lần là ra hàng trăm. Đo trên bảng đếm
+       kv_write ngày 14/09: riêng kho media ăn 82 lượt trong hai tiếng, gần gấp đôi số lượt ghi chú
+       thật của cả công ty. Cùng cách chặn đã áp cho completed/mpflag/itemfp từ 08/09. */
+    if (dataMode === "demo") return;
     try {
       const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean; noMx?: boolean }[] = [];
       const seenKey = new Set<string>();   // đã xử lý linkKey này chưa (khỏi lặp)
@@ -2461,7 +2471,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (moiDuAn.length) void saveMediaProjects({ data: { list: moiDuAn } }).catch(() => {});
     } catch { /* bỏ qua */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(sheetViews), data.items.length]);
+  }, [JSON.stringify(sheetViews), data.items.length, dataMode]);
   // INDEX ảnh dự án (nhẹ: chỉ ngày/người) — mọi người tải để biết dòng nào có 📷; ảnh nặng tải khi mở popup.
   const projImgIdxQuery = useQuery({ queryKey: ["projimg-idx"], queryFn: () => getProjImageIndex(), staleTime: 5 * 60 * 1000 });
   const projImgIdx: ProjImgIdx = projImgIdxQuery.data?.idx ?? {};
@@ -2697,13 +2707,14 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   }, [noteDrift, queryClient]);
   // Ghi BASELINE lần đầu (giữ "trước đó ở đâu") + dọn mỏ neo của note đã xoá. Chờ di trú khoá xong.
   useEffect(() => {
+    if (dataMode === "demo") return;   // xem lý do ở effect đẩy danh sách Media phía trên
     if (!remapReady || editsQuery.isLoading || anchorsQuery.isLoading || !data.projects.length) return;
     const add: Record<string, string> = {}; const remove: string[] = [];
     for (const k of Object.keys(edits)) if (noteHasText(k) && !(k in noteAnchors) && noteAnchorNow[k]) add[k] = noteAnchorNow[k];
     for (const k of Object.keys(noteAnchors)) if (!noteHasText(k)) remove.push(k);
     if (!Object.keys(add).length && !remove.length) return;
     void syncNoteAnchors({ data: { add, remove } }).then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }));
-  }, [remapReady, editsQuery.isLoading, anchorsQuery.isLoading, data.projects, edits, noteAnchors, noteAnchorNow, noteHasText, queryClient]);
+  }, [remapReady, dataMode, editsQuery.isLoading, anchorsQuery.isLoading, data.projects, edits, noteAnchors, noteAnchorNow, noteHasText, queryClient]);
   /* ĐÓNG DẤU DANH TÍNH cho ghi chú CŨ — một lượt rồi thôi.
      Ghi chú viết từ trước khi app biết đóng dấu chỉ có mỗi khoá, nên mở file sao lưu ra không biết
      nó của dự án nào. Gửi danh tính hiện tại của những dòng đang thấy; server chỉ ghi vào ô nào
@@ -3535,6 +3546,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   useEffect(() => {
     if (!regionByName.size) return;
     const map: Record<string, string> = {};
+    if (dataMode === "demo") return;   // xem lý do ở effect đẩy danh sách Media phía trên
     for (const [k, v] of regionByName) map[k] = v;          // khoá theo TÊN DỰ ÁN
     // Khoá thêm theo NHÓM DỰ ÁN: app "Hiệu suất dự án" đọc file Pivot gom sẵn theo nhóm ("MINI HOTEL
     // PQ", "43 ĐTM"…) chứ không có tên dự án đầy đủ. Một nhóm trải nhiều vùng thì lấy vùng gặp trước
@@ -3545,9 +3557,11 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     }
     const sig = JSON.stringify(map);
     if (regionSigRef.current === sig) return;
+    // Xem lý do ở effect đẩy danh sách Media phía trên: nhịp demo ghi đè bằng bản ngắn rồi bản thật
+    // ghi đè lại, tốn hai lượt mỗi lần mở app.
     regionSigRef.current = sig;
     void saveProjRegions({ data: { map } }).catch(() => {});
-  }, [regionByName, data.items]);
+  }, [regionByName, data.items, dataMode]);
 
   /* ── FACET COUNT cho 2 nút chế độ (Bàn giao tháng này / Top 20) ──
      Con số trên mỗi nút = số DỰ ÁN (mã+tên) khớp tiêu chí nút đó TRONG ngữ cảnh
