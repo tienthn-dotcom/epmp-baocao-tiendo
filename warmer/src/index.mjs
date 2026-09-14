@@ -68,12 +68,28 @@ async function warmOne(kv, id) {
   await kv.put(`sfile:${id}`, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S });
 }
 
-/* WARM THEO LÔ, XOAY VÒNG.
-   Warm cả 24 file trong MỘT lượt là vượt hạn mức Worker (Error 1102): mỗi file phải tải ~2MB,
-   giải nén, tách sheet rồi nén lại — cộng lại quá sức một request. Nay mỗi lượt chỉ làm vài file,
-   nhớ vị trí ở KV `sfile:cursor` rồi lần sau làm tiếp từ đó. Cache giữ 3 ngày nên vài ngày là
-   phủ hết danh sách, và ngày nào cũng có phần được làm mới. */
-const WARM_MOI_LUOT = 6;
+/* WARM SUMMARY — CHỈ LÀM FILE SẮP HẾT HẠN, KHÔNG XOAY VÒNG MÙ.
+
+   Mỗi file phải tải ~2MB, giải nén, tách sheet Summary, nén lại rồi base64 — rất nặng CPU. Đo thật
+   trên Cloudflare: mốc 17:30 VN CHẾT vì CPU mỗi ngày từ 07/09 tới 13/09, đụng đúng trần 2.010.000µs.
+   Gọi tay thì 1 file lọt, 2 file ra Error 1102. Tức ngân sách chỉ đủ VÀI file mỗi lượt.
+
+   Lỗi nặng hơn của bản cũ: nó XOAY VÒNG theo con trỏ và nạp lại BẤT KỂ cache còn mới hay không.
+   File vừa cache mười phút trước vẫn bị tải lại — đốt CPU và đốt cả một lượt GHI KV (gói free chỉ
+   1.000 lượt ghi/ngày) để đổi lấy đúng con số y hệt.
+
+   Nay: một lượt `list` lấy HẠN HẾT của mọi khoá sfile: (hạn nằm sẵn trong metadata, KHÔNG phải đọc
+   giá trị 2MB), rồi chỉ làm những file đang THIẾU cache hoặc sắp hết hạn trong vòng NGUONG_LAM_MOI.
+   File nào còn tươi thì bỏ qua sạch: không tải, không ghi. Nhờ vậy ngân sách nhỏ vẫn phủ được cả
+   danh sách, vì mỗi ngày chỉ có vài file thật sự tới hạn. */
+const WARM_MOI_LUOT = 3;
+
+/* Làm mới khi cache còn sống dưới 1 ngày — sớm hơn hạn để không bao giờ có khoảng trống. */
+const NGUONG_LAM_MOI_S = 86_400;
+
+/* Trần CPU không đo được từ trong Worker → thêm hàng rào theo GIỜ ĐỒNG HỒ. Việc này CPU-bound nên
+   hai thứ đi cùng nhau; hàng rào để một file nặng bất thường không kéo sập cả lượt. */
+const WARM_NGAN_SACH_MS = 20_000;
 
 async function warmAll(env, soLuong = WARM_MOI_LUOT) {
   const kv = env.PMO_EDITS;
@@ -82,20 +98,40 @@ async function warmAll(env, soLuong = WARM_MOI_LUOT) {
   try { const raw = await kv.get("sfile:index"); ids = raw ? JSON.parse(raw) : []; } catch { /* registry rỗng */ }
   if (!ids.length) return { ok: 0, fail: 0, total: 0 };
 
-  let tu = 0;
-  try { tu = Number(await kv.get("sfile:cursor")) || 0; } catch { tu = 0; }
-  if (tu >= ids.length) tu = 0;
-  const lo = [];
-  for (let i = 0; i < Math.min(soLuong, ids.length); i++) lo.push(ids[(tu + i) % ids.length]);
+  // HẠN HẾT của từng khoá cache — lấy qua list (metadata), KHÔNG đọc giá trị (mỗi giá trị ~2MB).
+  const han = new Map();
+  try {
+    let cursor;
+    do {
+      const p = await kv.list({ prefix: "sfile:", ...(cursor ? { cursor } : {}) });
+      for (const k of p.keys) if (k.expiration) han.set(k.name, k.expiration);
+      cursor = p.list_complete ? null : p.cursor;
+    } while (cursor);
+  } catch { /* không lấy được hạn → coi như mọi file đều cần làm, về đúng hành vi cũ */ }
 
-  let ok = 0, fail = 0;
+  // Xếp theo ĐỘ GẤP: thiếu cache trước, rồi tới cái hết hạn sớm nhất.
+  const bayGio = Math.floor(Date.now() / 1000);
+  const canLam = ids
+    .map((id) => ({ id, hh: han.get(`sfile:${id}`) ?? 0 }))
+    .filter((x) => x.hh - bayGio < NGUONG_LAM_MOI_S)
+    .sort((a, b) => a.hh - b.hh);
+  if (!canLam.length) return { ok: 0, fail: 0, lam: 0, total: ids.length, conTuoi: ids.length };
+  const lo = canLam.slice(0, Math.min(soLuong, canLam.length)).map((x) => x.id);
+
+  let ok = 0, fail = 0, lam = 0, hetGio = false;
   const lyDo = [];   // giữ vài lỗi đầu để còn biết vì sao hỏng — nuốt sạch lỗi thì chẩn đoán bằng gì
+  const batDau = Date.now();
   for (const id of lo) {
+    // Hết ngân sách thì DỪNG: thà xong 1 file rồi lượt sau làm tiếp, hơn là đụng trần CPU giữa file
+    // thứ hai và mất cả lượt (file đang làm dở không được ghi, coi như công cốc).
+    if (lam > 0 && Date.now() - batDau > WARM_NGAN_SACH_MS) { hetGio = true; break; }
+    lam++;
     try { await warmOne(kv, id); ok++; }
     catch (e) { fail++; if (lyDo.length < 3) lyDo.push(`${id}: ${String(e).slice(0, 120)}`); }
   }
-  try { await kv.put("sfile:cursor", String((tu + lo.length) % ids.length)); } catch { /* kệ */ }
-  return { ok, fail, lam: lo.length, total: ids.length, tu, ...(lyDo.length ? { lyDo } : {}) };
+  // KHÔNG còn con trỏ: thứ tự do ĐỘ GẤP quyết định, nên chẳng có gì phải nhớ giữa hai lượt —
+  // bớt luôn một lượt ghi KV mỗi lần chạy.
+  return { ok, fail, lam, total: ids.length, canLam: canLam.length, ...(hetGio ? { hetGio: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -682,10 +718,17 @@ export default {
         .catch((e) => console.error("lamMoiNgaySuaLink lỗi:", e)));
       ctx.waitUntil(chupCameraHangNgay(env).then((r) => console.log("camera:", JSON.stringify(r)))
         .catch((e) => console.error("chupCameraHangNgay lỗi:", e)));
+      // Warm LÔ 1 ghép vào đây: gói Free chỉ cho 5 cron/tài khoản nên không xin được mốc riêng.
+      // Hai việc trên tốn chưa tới 10ms CPU (đo thật), còn cả trần cho 3 file warm.
+      ctx.waitUntil(warmAll(env).then((r) => console.log("warm:", JSON.stringify(r)))
+        .catch((e) => console.error("warmAll lỗi:", e)));
       return;
     }
-    ctx.waitUntil(warmAll(env));              // 17:30 VN — warm Summary
-    ctx.waitUntil(backupAuditLog(env).catch((e) => console.error("backupAuditLog lỗi:", e)));
+    // Các mốc WARM (10:30 · 14:30 · 17:30 VN) — CHỈ warm Summary.
+    // Trước đây mốc 17:30 sao lưu nhật ký giám sát thêm một lần nữa, trong khi mốc 23:30 đã làm đúng
+    // việc đó — làm hai lần vừa thừa vừa lấy mất phần CPU mà warm đang thiếu.
+    ctx.waitUntil(warmAll(env).then((r) => console.log("warm:", JSON.stringify(r)))
+      .catch((e) => console.error("warmAll lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(req, env) {
@@ -721,6 +764,10 @@ export default {
     // Bấm tay: mặc định warm ÍT (2 file) cho nhẹ; muốn nhiều thì thêm ?n=… vào URL.
     const n = Math.max(0, Math.min(12, Number(tham.get("n")) || 2));
     const warm = await warmAll(env, n);
+    /* ?chiwarm=1 → CHỈ warm rồi trả kết quả. Gộp cả bốn việc (warm + nhật ký + PDF + sao lưu KV)
+       vào một request là chính thứ làm lượt bấm tay chết Error 1102, nên không đo được warm nặng
+       bao nhiêu. Muốn đo riêng warm thì dùng cờ này. */
+    if (tham.get("chiwarm")) return new Response(JSON.stringify({ warm }, null, 2), { headers: { "content-type": "application/json" } });
     let audit, pdf, kvbak;
     try { audit = await backupAuditLog(env); } catch (e) { audit = { error: String(e) }; }
     try { pdf = await backupCompliancePdf(env); } catch (e) { pdf = { error: String(e) }; }

@@ -13,7 +13,19 @@ compatibility_date = "2024-09-23"
 [triggers]
 #  · "30 16 * * *" = 23:30 VN — sao lưu NHẬT KÝ GIÁM SÁT ra Drive (cuối ngày làm việc, gom trọn
 #    một ngày; app đọc mốc "Tất cả" từ file này cho nhẹ, xem fetchActivityFromDrive).
-crons = ["0 2 * * *", "30 10 * * *", "30 13 * * 3", "30 16 * * *"]   # 02:00 UTC = 09:00 VN — chụp camera công trường
+# ĐÚNG 5 LỊCH — gói Workers Free cho TỐI ĐA 5 cron trigger mỗi tài khoản (thử 6 thì Cloudflare từ
+# chối thẳng, mã 10072). Vì thế warm ghép vào mốc 09:00 thay vì xin thêm một mốc riêng.
+#
+# BA lượt WARM mỗi ngày (09:00 · 14:30 · 17:30 VN), mỗi lượt 3 file (xem WARM_MOI_LUOT trong
+# src/index.mjs) = 9 file/ngày → phủ hết danh sách trong 3 ngày, đúng bằng CACHE_TTL_S.
+# Trước đây MỘT lượt x 6 file: chết CPU mỗi ngày từ 07/09 tới 13/09, đụng trần 2.010.000µs.
+crons = [
+  "0 2 * * *",      # 09:00 VN — ngày sửa cuối của link + camera công trường + warm (lô 1)
+  "30 7 * * *",     # 14:30 VN — warm Summary (lô 2)
+  "30 10 * * *",    # 17:30 VN — warm Summary (lô 3). PHẢI khớp REFRESH_HOUR_VN/MIN_VN của app.
+  "30 13 * * 3",    # 20:30 VN thứ Tư — dựng PDF báo cáo tuân thủ
+  "30 16 * * *",    # 23:30 VN — sao lưu nhật ký giám sát + TOÀN BỘ dữ liệu KV + vân tay nguồn
+]
 
 # KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
 [[kv_namespaces]]
