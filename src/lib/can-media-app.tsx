@@ -48,37 +48,40 @@ const projId = (p: InstallProj) => p.hid ? `H:${p.hid}` : p.fileId + (p.gid ? "|
  *   · Tải lên HÔM QUA → tròn đầy · cyan #6FF0FF (mới, nhưng không phải hôm nay).
  *   · CŨ HƠN HAI NGÀY → KHÔNG chấm nữa.
  *
- * VÌ SAO CHỈ 2 NGÀY: chấm để trả lời "căn nào vừa có người cập nhật", không phải "căn nào từng có
- * tư liệu". Nhịp quay thực tế khoảng một clip mỗi tuần; giữ dấu mãi thì cả bảng kín chấm, nhìn vào
- * không còn biết chỗ nào mới. Ảnh/clip cũ vẫn nằm nguyên trong kho, bấm vào ô là xem được.
+ * CỬA SỔ MỘT TUẦN. Chấm trả lời đúng một câu: căn này có ai đụng tới trong tuần nay không.
+ * Quá bảy ngày là tắt hẳn chấm, vì lúc đó nó không còn là tin tức nữa. Ảnh/clip cũ vẫn nằm
+ * nguyên trong kho, bấm vào ô là xem được như thường.
  *
- * MÀU LẤY TỪ BẢNG MÃ MÀU CHỦ NHÀ GỬI (xanh lá · cam · xanh dương · cyan) — đều là tông SÁNG RỰC nên
- * bật lên trên nền ô, khác hẳn bảng màu heatmap của chính ô (navy, xanh lá đậm, xanh nhạt).
- * Giờ lấy theo máy người xem (giờ VN), mốc là createdTime của Drive — giờ TẢI LÊN thật, không phải
- * ngày ghi trong tên file. Không đọc được giờ thì coi như cũ → xám.
+ * Bậc màu do PMO chốt ngày 15/09/2026:
+ *      hôm nay        xanh lá / cam / xanh dương theo buổi tải lên
+ *      hôm qua        xám
+ *      2 tới 6 ngày   đen
+ *      từ 7 ngày      không chấm
+ *
+ * Ba màu của hôm nay lấy từ bảng mã màu chủ nhà gửi, đều là tông SÁNG RỰC nên bật lên trên nền ô,
+ * khác hẳn bảng màu heatmap của chính ô (navy, xanh lá đậm, xanh nhạt). Xám và đen của hai bậc sau
+ * cố tình KHÔNG rực: chúng là chuyện đã qua, không được tranh mắt với chuyện hôm nay.
+ *
+ * Mốc là createdTime của Drive, tức giờ TẢI LÊN thật, không phải ngày ghi trong tên file. Đọc không
+ * ra giờ thì coi như quá cũ và không chấm, vì thà im còn hơn báo sai là vừa có.
+ *
+ * ĐÁNH ĐỔI đã biết và đã chấp nhận: căn có tư liệu cũ hơn một tuần trông y hệt căn chưa có gì.
+ * Đổi lại, còn chấm nghĩa là còn mới, không phải đoán.
  */
-/** Căn CÓ tư liệu nhưng đã cũ (từ 2 ngày trở lên) - chấm ĐEN, vòng tròn đầy.
- *  Có chấm đen thì nhìn bảng phân biệt được ba trạng thái thay vì hai:
- *      màu   = vừa có tư liệu (hôm nay / hôm qua)
- *      đen   = ĐÃ CÓ tư liệu, nhưng lâu rồi chưa ai lên thêm
- *      trống = CHƯA có gì cả
- *  Trước đây căn cũ và căn chưa có gì trông y hệt nhau, nên không nhìn ra chỗ nào đáng đi nhắc.
- *  Màu lấy đúng slate-900 của vành ngoài chấm nên nhìn liền một khối, không chọi. */
-const MARK_CU = { color: "#0F172A", deg: 360, label: "tư liệu cũ, từ 2 ngày trở lên" };
-
 function freshMark(at: string): { color: string; deg: number; label: string } | null {
   if (!at) return null;
   const d = new Date(at);
   if (isNaN(d.getTime())) return null;
   const now = new Date();
-  // So theo NGÀY LỊCH: 0 = hôm nay, 1 = hôm qua, ≥2 = cũ (không chấm).
+  // So theo NGÀY LỊCH chứ không phải 24 giờ trượt: 0 = hôm nay, 1 = hôm qua, 7 = tròn một tuần.
   const ngay = (x: Date) => Math.floor(new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime() / 86400000);
   const cach = ngay(now) - ngay(d);
-  if (cach >= 2 || cach < 0) return null;
-  if (cach === 1) return { color: "#6FF0FF", deg: 360, label: "tải lên hôm qua" };
+  if (cach < 0 || cach >= 7) return null;                 // quá một tuần, hoặc ngày ở tương lai
+  if (cach >= 2) return { color: "#0F172A", deg: 360, label: `tải lên ${cach} ngày trước` };
+  if (cach === 1) return { color: "#9CA3AF", deg: 360, label: "tải lên hôm qua" };
   const h = d.getHours();
   const gio = `${String(h).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  // Trước 12h gộp chung một buổi: 0–6h gần như không ai tải, tách thêm một mốc chỉ rối.
+  // Trước 12h gộp chung một buổi: 0h tới 6h gần như không ai tải, tách thêm một mốc chỉ rối.
   if (h < 12) return { color: "#5CFF5C", deg: 90, label: `tải lên hôm nay ${gio} (sáng)` };
   if (h < 18) return { color: "#F5A623", deg: 180, label: `tải lên hôm nay ${gio} (chiều)` };
   return { color: "#4A86E8", deg: 270, label: `tải lên hôm nay ${gio} (tối)` };
@@ -506,9 +509,10 @@ function MatrixBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bo
       for (const td of Array.from(table.querySelectorAll<HTMLTableCellElement>("td[data-c]"))) {
         const hit = canAt(td, table);
         const m = hit && marks.get(`${hit.toa} ${hit.can}`);
-        // Chỉ chấm căn có tư liệu MỚI (hôm nay / hôm qua). Căn có tư liệu cũ vẫn mở xem được như
-        // thường, chỉ là không đeo dấu nữa — dấu để tìm chỗ VỪA CẬP NHẬT.
-        const k = m ? (freshMark(m.at) ?? MARK_CU) : null;
+        // Chấm là CỬA SỔ MỘT TUẦN (xem freshMark): hôm nay màu theo buổi, hôm qua xám, 2 tới 6 ngày
+        // đen, từ 7 ngày tắt hẳn. Căn chưa có tư liệu cũng để trống. Tư liệu cũ vẫn mở xem được như
+        // thường, chỉ là không đeo dấu nữa, vì dấu để tìm chỗ VỪA CẬP NHẬT.
+        const k = m ? freshMark(m.at) : null;
         td.classList.toggle("has-media", !!k);
         if (m && k) {
           // Chấm dấu NÓI LUÔN LÚC NÀO TẢI LÊN: màu + phần rẻ quạt được tô. Đặt bằng biến CSS trên từng

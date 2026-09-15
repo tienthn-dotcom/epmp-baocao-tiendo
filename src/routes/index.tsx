@@ -535,6 +535,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.107.2", date: "15/09/2026", items: [
+    "Chấm tư liệu trên ma trận căn nay nhớ MỘT TUẦN thay vì hai ngày: hôm nay hiện màu theo buổi, hôm qua xám, từ 2 tới 6 ngày đen, quá 7 ngày thì tắt chấm. Còn chấm nghĩa là tuần này có người đụng tới.",
+  ] },
   { v: "3.107.1", date: "14/09/2026", items: [
     "SỬA GẤP tiếp: app chỉ được ghi vào kho chung KHI ĐÃ TẢI XONG. Trước đó mỗi lần mở app, các việc nền chạy lại vài lượt theo nhịp từng phần dữ liệu về, mỗi lượt tính ra một kết quả khác nhau nên ghi đè lẫn nhau vài lần. Đây mới là thủ phạm chính, bản sửa buổi sáng chưa chạm tới.",
   ] },
