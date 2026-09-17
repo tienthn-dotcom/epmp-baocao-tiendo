@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import type { BlockArea, BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
+import type { BlockArea, BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, DoanGhiChu, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
 import { getDaysOverdue } from "./overdue";
 import { ridSo } from "./rid";
 
@@ -158,6 +158,41 @@ function noteStr(v: unknown): string {
   if (!s) return "";
   if (NULLISH_TOKENS.has(s.toLowerCase())) return "";
   return s;
+}
+
+/* ── CHỮ BỊ GẠCH NGANG TRONG Ô ─────────────────────────────────────────────────────────────────
+ *
+ * PMO gạch ngang phần đã hết hiệu lực ngay trong ô Vướng mắc, hay gặp nhất là ngày cũ bị dời:
+ *     "...trình BOD phê duyệt bitrix trước ~~15/09~~ 22/09"
+ *
+ * Đọc ô bằng giá trị thường thì gạch ngang mất sạch, còn lại "trước 15/09 22/09" — và phép dò
+ * "trước dd/mm" vớ đúng NGÀY ĐÃ HUỶ, vì nó mới là ngày đứng ngay sau chữ "trước". Đo trên nguồn
+ * ngày 17/09/2026: cả 8 ô có gạch đều rơi vào bẫy này, app hiện sai deadline trình BOD của 7 dự án.
+ *
+ * Định dạng nằm trong rich text của ô (SheetJS đưa ra ở `cell.r`), mỗi <r> là một đoạn, đoạn bị
+ * gạch mang <strike/> trong <rPr>. Tách ra thì vừa dò ngày đúng, vừa vẽ lại được y như file. */
+
+/** Tách rich text của ô thành các đoạn, đánh dấu đoạn bị gạch. Ô chữ thường → undefined. */
+function doanCuaRich(rich: string | undefined): DoanGhiChu[] | undefined {
+  if (!rich || !rich.includes("<strike/>")) return undefined;
+  const ra: DoanGhiChu[] = [];
+  for (const m of rich.matchAll(/<r>([\s\S]*?)<\/r>/g)) {
+    const than = m[1];
+    const t = /<t[^>]*>([\s\S]*?)<\/t>/.exec(than);
+    if (!t) continue;
+    const chu = t[1]
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+    // Chỉ xét <strike/> trong phần ĐỊNH DẠNG (<rPr>), không xét trong phần chữ.
+    const rPr = /<rPr>([\s\S]*?)<\/rPr>/.exec(than);
+    ra.push(rPr && rPr[1].includes("<strike/>") ? { chu, gach: true } : { chu });
+  }
+  return ra.length ? ra : undefined;
+}
+
+/** Ghép lại phần CÒN HIỆU LỰC: bỏ hẳn các đoạn bị gạch. */
+function boDoanGach(doan: DoanGhiChu[]): string {
+  return doan.filter((d) => !d.gach).map((d) => d.chu).join("");
 }
 
 /** Cast any raw cell to a finite number (Float). Strips %, thousands separators,
@@ -520,7 +555,7 @@ function detectRidCol(rows: unknown[][], headerIdx: number): number {
 }
 
 /** Parse rows[][] from the Timeline sheet (header row index 5, data from index 7). */
-export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined): ReportData {
+export function parseTimelineRows(rows: unknown[][], refDateIso: string, getFormula?: (r: number, c: number) => string | undefined, getRich?: (r: number, c: number) => string | undefined): ReportData {
   const projects: ProjectRow[] = [];
   const items: ItemRow[] = [];
   let current: ProjectRow | null = null;
@@ -627,6 +662,10 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
 
     if (isParent(rawCode, maCT, projectName)) {
       parentsTotal++;
+      // Ô Vướng mắc có thể mang đoạn bị GẠCH NGANG (phần đã hết hiệu lực). Mọi phép dò ngày và xét
+      // cờ phải chạy trên bản ĐÃ BỎ đoạn gạch, kẻo vớ đúng ngày vừa bị huỷ. Xem doanCuaRich().
+      const doanU = doanCuaRich(getRich?.(i, COL.U));
+      const noteSach = doanU ? noteStr(boDoanGach(doanU)) : noteStr(r[COL.U]);
       // ── FILTER 1 (parent): Show must equal "show"; "hide"/"Done"/blank → skip project & children
       if (!isShown(showCell)) {
         current = null;
@@ -671,21 +710,23 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
         // (3) — bổ sung bên dưới: ghi chú tương tự trên các đầu việc đang làm.
         needsMpUpdate:
           (mpCol >= 0 && str(r[mpCol]) !== "") ||
-          noteMentionsMpUpdate(str(r[COL.U])),
+          noteMentionsMpUpdate(noteSach),
         // Lý do (hiển thị ở chế độ gộp theo dự án): ưu tiên ghi chú dòng cha,
         // rồi tới nội dung ô cột "Cần cập nhật MP".
-        mpReason: noteMentionsMpUpdate(str(r[COL.U]))
+        mpReason: noteMentionsMpUpdate(noteSach)
           ? noteStr(r[COL.U])
           : (mpCol >= 0 ? str(r[mpCol]) : ""),
         // Vướng mắc CẤP DỰ ÁN thô (cột U dòng cha) — để bộ lọc "Cần cập nhật MP" quét
         // trực tiếp cụm "trình BOD phê duyệt (Bitrix)" đúng như người dùng Ctrl+F trên file.
         projectNote: noteStr(r[COL.U]),
+        projectNoteSach: noteSach,
+        projectNoteDoan: doanU,
         groupDA: groupCol >= 0 ? str(r[groupCol]) : "",
         rank: top20Col >= 0 ? (intCast(r[top20Col]) ?? undefined) : undefined,
         // "Ngày update" chỉ có trên dòng dự án CHA → mọi đầu việc con kế thừa (bên dưới).
         updateDate: updateCol >= 0 ? toIso(r[updateCol]) : null,
         // Dự án đã bàn giao xong (đọc ô Vướng mắc của chính dòng cha này).
-        delivered: noteSaysDelivered(str(r[COL.U])),
+        delivered: noteSaysDelivered(noteSach),
         items: [],
         allItems: [],
       };
@@ -1134,9 +1175,12 @@ export async function parseXlsxBuffer(buf: ArrayBuffer, refDateIso: string): Pro
   const rows: unknown[][] = XLSX.utils.sheet_to_json(sh, { header: 1, raw: true, defval: null });
   expandMergedNotes(sh, rows, detectColumns(rows).U);
   // Đọc CÔNG THỨC ô (cho % Block kiểu "trung bình khu" — cần AVERAGE(...) để lấy đúng các khu).
+  /** Rich text của ô (SheetJS đặt ở `.r`) — để biết đoạn nào bị GẠCH NGANG. */
+  const getRich = (r: number, c: number): string | undefined =>
+    (sh[XLSX.utils.encode_cell({ r, c })] as { r?: string } | undefined)?.r;
   const getFormula = (r: number, c: number): string | undefined =>
     (sh[XLSX.utils.encode_cell({ r, c })] as { f?: string } | undefined)?.f;
-  return parseTimelineRows(rows, refDateIso, getFormula);
+  return parseTimelineRows(rows, refDateIso, getFormula, getRich);
 }
 
 /** Cột "Vướng mắc / Cần xử lý" (U) trong file gốc thường bị MERGE dọc — một ô

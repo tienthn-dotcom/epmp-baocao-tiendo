@@ -123,6 +123,9 @@ export type ItemRow = {
   blocks?: BlockChild[];
 };
 
+/** Một ĐOẠN chữ trong ô ghi chú của file nguồn, kèm cờ bị gạch ngang. */
+export type DoanGhiChu = { chu: string; gach?: boolean };
+
 export type ProjectRow = {
   /** ID dự án đọc từ cột STT (dạng "70"). Đếm tăng vĩnh viễn, KHÔNG lặp lại kể cả khi dự án
    *  hoàn thành/ẩn → khoá match ổn định cấp dự án. undefined nếu nguồn không có cột STT. */
@@ -151,6 +154,17 @@ export type ProjectRow = {
   needsMpUpdate?: boolean;
   /** Nội dung ghi chú/ô đã kích hoạt cờ needsMpUpdate — hiển thị làm "lý do". */
   mpReason?: string;
+  /** Vướng mắc cấp dự án SAU KHI BỎ các đoạn bị GẠCH NGANG trong file.
+   *
+   *  PMO gạch ngang phần đã hết hiệu lực, hay gặp nhất là ngày cũ bị dời:
+   *      "...trình BOD phê duyệt bitrix trước ~~15/09~~ 22/09"
+   *  Đọc cả câu thì máy vớ đúng ngày ĐÃ HUỶ (15/09) vì nó mới là ngày đứng ngay sau chữ "trước".
+   *  Mọi phép DÒ NGÀY và XÉT CỜ phải dùng trường này, KHÔNG dùng projectNote.
+   *  Ô không có đoạn gạch nào thì trường này bằng đúng projectNote. */
+  projectNoteSach?: string;
+  /** Các ĐOẠN chữ của ô vướng mắc, kèm cờ bị gạch — để giao diện vẽ lại đúng như trong file.
+   *  undefined = ô chữ thường, không có đoạn nào bị gạch. */
+  projectNoteDoan?: DoanGhiChu[];
   /** Vướng mắc CẤP DỰ ÁN thô (cột U dòng cha) — bộ lọc "Cần cập nhật MP" quét cụm
    *  "trình BOD phê duyệt (Bitrix)" trực tiếp trên đây. Optional (snapshot cũ chưa có). */
   projectNote?: string;

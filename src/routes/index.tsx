@@ -26,7 +26,7 @@ import {
   Users,
   X, SlidersHorizontal} from "lucide-react";
 
-import type { BlockChild, CodeCount, DataQualityCheck, ItemRow, ReportData } from "@/lib/types";
+import type { BlockChild, CodeCount, DataQualityCheck, DoanGhiChu, ItemRow, ReportData } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -535,6 +535,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.109.0", date: "17/09/2026", items: [
+    "SỬA SAI NGÀY TRÌNH BOD. Trong file nguồn, PMO gạch ngang ngày cũ khi dời hạn (ví dụ “trước 15/09 22/09”, phần 15/09 bị gạch). App trước đây không đọc được gạch ngang nên vớ đúng ngày ĐÃ HUỶ. Đo trên nguồn hôm nay: cả 7 dự án có gạch đều hiện sai hạn.",
+    "Nay app đọc được gạch ngang: dò ngày trên phần CÒN HIỆU LỰC, và hiển thị phần bị gạch đúng như trong file (gạch ngang, mờ đi) để còn thấy ngày cũ là gì.",
+  ] },
   { v: "3.108.0", date: "17/09/2026", items: [
     "Thêm bộ lọc CHỦ ĐẦU TƯ trên thanh lọc, gom thành hai nhóm: Sun Group và Ngoài Sun Group. Dữ liệu lấy từ cột CĐT sẵn có trong file nguồn, không phải nhập thêm gì.",
     "Bộ lọc này ăn vào cả bảng, Gantt, xuất Excel và PDF — dòng tóm tắt đầu bản in ghi rõ đang lọc theo chủ đầu tư nào.",
@@ -3422,7 +3426,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     const m = new Map<string, string>();
     for (const p of data.projects) {
       const key = pkProj(p);
-      const fileNote = p.projectNote ?? "";
+      // DÒ trên bản ĐÃ BỎ đoạn gạch: ô hay ghi "trước ~~15/09~~ 22/09", đọc cả câu thì phép dò
+      // "trước dd/mm" vớ đúng ngày ĐÃ HUỶ. Xem parser.ts · doanCuaRich().
+      const fileNote = p.projectNoteSach ?? p.projectNote ?? "";
       const appNote = visibleText(edits[key]?.noteMsgs).trim();
       if (noteSaysTrinhBodBitrix(fileNote) || (appNote && noteSaysTrinhBodBitrix(appNote)))
         m.set(key, appNote || fileNote);
@@ -4171,18 +4177,27 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
      có cửa nào đè mất ghi chú mọi người đã gõ. Tin này mang id MSG_NGUON để chỗ hiển thị biết mà
      không cho sửa/xoá — muốn đổi thì đổi trong file nguồn. */
   const vuongMacNguon = useMemo(() => {
-    const m = new Map<string, string>();
+    const m = new Map<string, { chu: string; doan?: DoanGhiChu[] }>();
     for (const p of data.projects) {
       const t = (p.projectNote ?? "").trim();
-      if (t) m.set(pkProj(p), t);
+      if (t) m.set(pkProj(p), { chu: t, doan: p.projectNoteDoan });
     }
     return m;
   }, [data.projects, pkProj]);
   const tinNguon = useCallback((key: string, luc: string | null): ChatMsg[] => {
-    const t = vuongMacNguon.get(key);
+    const v = vuongMacNguon.get(key);
+    if (!v) return [];
+    const t = v.chu;
     // Bỏ chữ "PMO:" mở đầu — danh tính đó đã nằm trong badge PMO, để cả hai là lặp.
     const chu = (t ?? "").replace(/^\s*PMO\s*[:：]\s*/i, "").trim();
-    return chu ? [{ id: MSG_NGUON, text: chu, author: "", at: luc ?? "" }] : [];
+    if (!chu) return [];
+    // Cắt tiền tố ở ĐÚNG đoạn đầu để các đoạn sau (nhất là đoạn bị gạch) không xê dịch.
+    let doan = v.doan;
+    if (doan?.length) {
+      doan = doan.map((d, i) => (i === 0 ? { ...d, chu: d.chu.replace(/^s*PMOs*[:：]s*/i, "") } : d));
+      while (doan.length && !doan[0].chu.trim()) doan = doan.slice(1);
+    }
+    return [{ id: MSG_NGUON, text: chu, author: "", at: luc ?? "", ...(doan?.length ? { doan } : {}) }];
   }, [vuongMacNguon]);
   const dueMonthGroups = useMemo<DueMonthGroup[]>(() => {
     const byKey = new Map<string, DueMonthGroup>();
@@ -5644,6 +5659,18 @@ type MsgOp = (op: "add" | "edit" | "hide" | "unhide" | "delete" | "sethi" | "hia
 /** Ô BẢNG (Vướng mắc / Giải pháp): mỗi message KHÔNG ẩn = 1 BONG BÓNG CHAT vàng nhạt (hiện người
  *  nhập + ngày giờ). `dark` = hàng gộp dự án (nền navy) → giữ kiểu chữ trắng đơn giản (không bong
  *  bóng). `onOp` + `myEmail`/`isAdmin`: tác giả (hoặc admin) SỬA được ngay trên bảng (nút ✎). */
+/** Vẽ lại ô ghi chú của file nguồn theo ĐÚNG các đoạn, phần bị PMO gạch bỏ thì gạch ngang và mờ đi.
+ *  Giữ nguyên phần gạch chứ không xoá: người đọc thấy được ngày cũ là gì và đã đổi thành ngày nào. */
+function DoanText({ doan }: { doan: { chu: string; gach?: boolean }[] }) {
+  return (
+    <>
+      {doan.map((d, i) => (
+        <span key={i} className={d.gach ? "line-through opacity-50" : undefined}>{d.chu}</span>
+      ))}
+    </>
+  );
+}
+
 function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, today }: {
   msgs: ChatMsg[]; dark?: boolean; field?: "note" | "action";
   myEmail?: string | null; isAdmin?: boolean; onOp?: MsgOp; onOpen?: () => void;
@@ -5664,7 +5691,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
         {vis.map((m) => (
           <div key={m.id} className="whitespace-pre-line">
             {m.id === MSG_NGUON && <span title="Bộ phận PMO — ghi trong file nguồn" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">PMO</span>}
-            <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />
+            {m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />}
           </div>
         ))}
       </div>

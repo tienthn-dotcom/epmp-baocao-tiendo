@@ -87,6 +87,10 @@ export type ChatMsg = {
   replyTo?: string;
   /** Trích đoạn ngắn của vướng mắc được trả lời (lưu sẵn để hiện "↩ …" không cần tra chéo). */
   replyText?: string;
+  /** CÁC ĐOẠN chữ kèm cờ gạch ngang — CHỈ tin lấy từ FILE NGUỒN mới mang, để chỗ vẽ dựng lại đúng
+   *  phần PMO gạch bỏ trong file. KHÔNG BAO GIỜ được lưu xuống KV: tin nguồn là tin ảo, dựng lại từ
+   *  file mỗi lần mở, không nằm trong kho ghi chú. */
+  doan?: { chu: string; gach?: boolean }[];
 };
 
 export type ItemEdit = {
