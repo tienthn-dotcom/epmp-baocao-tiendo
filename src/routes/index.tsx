@@ -535,6 +535,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.108.0", date: "17/09/2026", items: [
+    "Thêm bộ lọc CHỦ ĐẦU TƯ trên thanh lọc, gom thành hai nhóm: Sun Group và Ngoài Sun Group. Dữ liệu lấy từ cột CĐT sẵn có trong file nguồn, không phải nhập thêm gì.",
+    "Bộ lọc này ăn vào cả bảng, Gantt, xuất Excel và PDF — dòng tóm tắt đầu bản in ghi rõ đang lọc theo chủ đầu tư nào.",
+  ] },
   { v: "3.107.2", date: "15/09/2026", items: [
     "Chấm tư liệu trên ma trận căn nay nhớ MỘT TUẦN thay vì hai ngày: hôm nay hiện màu theo buổi, hôm qua xám, từ 2 tới 6 ngày đen, quá 7 ngày thì tắt chấm. Còn chấm nghĩa là tuần này có người đụng tới.",
   ] },
@@ -2151,6 +2155,10 @@ type Filters = {
   deadlineMonths: string[];
   /** Lọc theo Vùng (cột "Location" trong nguồn) — value = tên vùng (North/PQ/…). */
   regions: string[];
+  /** Lọc theo NHÓM Chủ đầu tư — chỉ hai nhóm: "Sun Group" và "Ngoài Sun Group".
+   *  Gom từ cột "CĐT" của nguồn qua nhomCdt(). PMO chỉ cần tách Sun Group với phần còn lại, nên
+   *  bày đủ từng mã (SG/OT/BG) là bắt người dùng tự nhớ mã nào thuộc đâu. */
+  cdts: string[];
   /** Lọc theo Cụm dự án (cột "Group DA" trong nguồn) — value = mã cụm (PQs/NPHH/…). */
   groupDAs: string[];
   /** Lọc theo PM — Người phụ trách chính CẤP DỰ ÁN, lấy TÊN ĐẦU TIÊN (nếu ô nhiều người ngăn bởi
@@ -2170,7 +2178,23 @@ type Filters = {
   topKey: boolean;
 };
 
-const EMPTY_FILTERS: Filters = { depts: [], stages: [], alerts: [], deadlineMonths: [], regions: [], groupDAs: [], pms: [], pes: [], query: "", mpOnly: false, dueThisMonth: false, topKey: false };
+const EMPTY_FILTERS: Filters = { depts: [], stages: [], alerts: [], deadlineMonths: [], regions: [], cdts: [], groupDAs: [], pms: [], pes: [], query: "", mpOnly: false, dueThisMonth: false, topKey: false };
+
+/** NHÓM CHỦ ĐẦU TƯ — gom cột "CĐT" của nguồn về đúng HAI nhóm PMO cần phân biệt.
+ *
+ *  Nguồn ghi bằng mã viết tắt (đo ngày 17/09: SG 61 dự án · OT 14 · BG 7). Bày đủ ba mã lên bộ lọc
+ *  là bắt người dùng tự nhớ mã nào là Sun Group, nên gom lại còn hai nhóm.
+ *
+ *  Ô TRỐNG trả về chuỗi rỗng, tức KHÔNG thuộc nhóm nào. Cố tình như vậy: chưa ghi CĐT thì ta không
+ *  biết nó ngoài Sun Group hay chỉ là bỏ sót, xếp bừa vào "Ngoài Sun Group" là bịa ra dữ liệu.
+ *  Dự án như vậy chỉ mất khi người dùng CHỦ ĐỘNG lọc theo CĐT, còn mặc định vẫn hiện đủ. */
+export const NHOM_SUN = "Sun Group";
+export const NHOM_NGOAI_SUN = "Ngoài Sun Group";
+const nhomCdt = (cdt: string | null | undefined): string => {
+  const v = (cdt || "").trim();
+  if (!v) return "";
+  return /^sg$/i.test(v) ? NHOM_SUN : NHOM_NGOAI_SUN;
+};
 
 /** TÊN ĐẦU TIÊN của Người phụ trách chính cấp dự án (ô có thể ghi nhiều người ngăn bởi "/", ",",
  *  xuống dòng) → dùng làm value bộ lọc PM. Trống → "". */
@@ -3609,6 +3633,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
+      if (filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
       if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
@@ -3631,7 +3656,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
      "Vũ trụ" = enriched đã áp MỌI filter đang bật TRỪ chính filter đang dựng options
      (để vẫn chọn được nhiều giá trị của cùng 1 nhóm). Tính trên TOÀN BỘ đầu việc đang
      chạy — đúng bằng bảng đang hiện (bảng nay hiện cả việc chưa có cảnh báo). */
-  const optionUniverse = useCallback((exclude: "regions" | "groupDAs" | "pms" | "pes" | "deadlineMonths") => {
+  const optionUniverse = useCallback((exclude: "regions" | "cdts" | "groupDAs" | "pms" | "pes" | "deadlineMonths") => {
     const q = filters.query.trim().toLowerCase();
     return enriched.filter(i => {
       if (filters.mpOnly && !mpProjectKeys.has(pkItem(i))) return false;
@@ -3641,6 +3666,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.alerts.length && !filters.alerts.includes(i._alert as AlertK2)) return false;
       if (exclude !== "regions" && filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
+      if (exclude !== "cdts" && filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) return false;
       if (exclude !== "groupDAs" && filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
       if (exclude !== "pms" && filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (exclude !== "pes" && filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
@@ -3664,6 +3690,13 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     for (const i of optionUniverse("regions")) if (i.region) s.add(i.region);
     return [...s].sort((a, b) => a.localeCompare(b, "vi")).map(r => ({ v: r, l: r }));
   }, [optionUniverse, filters.regions]);
+
+  /** Hai nhóm Chủ đầu tư — chỉ hiện nhóm CÒN dự án trong bảng. Sun Group luôn đứng trước. */
+  const cdtOptions = useMemo(() => {
+    const s = new Set<string>(filters.cdts);
+    for (const i of optionUniverse("cdts")) { const g = nhomCdt(i.cdt); if (g) s.add(g); }
+    return [NHOM_SUN, NHOM_NGOAI_SUN].filter(g => s.has(g)).map(g => ({ v: g, l: g }));
+  }, [optionUniverse, filters.cdts]);
 
   /** Danh sách Cụm dự án — chỉ cụm còn trong bảng. */
   const groupDAOptions = useMemo(() => {
@@ -3718,6 +3751,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.stages.length && !filters.stages.includes(i._stageId)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
+      if (filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
       if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
@@ -3752,6 +3786,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
+      if (filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
       if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
@@ -3786,6 +3821,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         const sid = stageIdOf(i);
         if (filters.depts.length && !filters.depts.includes(deptOf(sid))) continue;
         if (filters.regions.length && !filters.regions.includes(i.region ?? "")) continue;
+        if (filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) continue;
         if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) continue;
         if (filters.pms.length && !filters.pms.includes(pmFirstOf(p.pm))) continue;
         if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) continue;
@@ -3862,6 +3898,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (filters.topKey && !topProjectKeys.has(pkItem(i))) return false;
       if (filters.depts.length && !filters.depts.includes(i._dept)) return false;
       if (filters.regions.length && !filters.regions.includes(i.region ?? "")) return false;
+      if (filters.cdts.length && !filters.cdts.includes(nhomCdt(i.cdt))) return false;
       if (filters.groupDAs.length && !filters.groupDAs.includes(i.groupDA ?? "")) return false;
       if (filters.pms.length && !filters.pms.includes(pmFirstOf(i._projectPm))) return false;
       if (filters.pes.length && !filters.pes.includes(pesOfRank(i.rank))) return false;
@@ -4187,6 +4224,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     if (filters.alerts.length) parts.push(`Nhóm: ${filters.alerts.map(a => ALERT_FULL_NAME[a]).join(", ")}`);
     if (filters.deadlineMonths.length) parts.push(`Mốc bàn giao: ${filters.deadlineMonths.map(monthLabelOf).join(", ")}`);
     if (filters.regions.length) parts.push(`Vùng: ${filters.regions.join(", ")}`);
+    if (filters.cdts.length) parts.push(`Chủ đầu tư: ${filters.cdts.join(", ")}`);
     if (filters.groupDAs.length) parts.push(`Cụm dự án: ${filters.groupDAs.join(", ")}`);
     if (filters.pms.length) parts.push(`PM: ${filters.pms.join(", ")}`);
     if (filters.pes.length) parts.push(`PES: ${filters.pes.map(id => PES_RANGES.find(a => a.id === id)?.name ?? id).join(", ")}`);
@@ -4264,7 +4302,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // không có dòng con nào — activeProjects lọc allItems.length > 0).
   const hasAnyFilter =
     filters.depts.length > 0 || filters.stages.length > 0 || filters.alerts.length > 0 ||
-    filters.deadlineMonths.length > 0 || filters.regions.length > 0 || filters.groupDAs.length > 0 ||
+    filters.deadlineMonths.length > 0 || filters.regions.length > 0 || filters.cdts.length > 0 || filters.groupDAs.length > 0 ||
     filters.pms.length > 0 || filters.pes.length > 0 || filters.query.trim() !== "" || filters.mpOnly ||
     filters.dueThisMonth || filters.topKey;
   // Dự án HIỆN HÀNH = có ≥1 dòng con ĐANG SHOW. Dự án mà mọi dòng con đều Hide
@@ -4497,6 +4535,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         totalAlertsCount={alerts.length}
         deadlineMonthOptions={deadlineMonthOptions}
         regionOptions={regionOptions}
+        cdtOptions={cdtOptions}
         groupDAOptions={groupDAOptions}
         pmOptions={pmOptions}
         pesOptions={pesOptions}
@@ -5923,7 +5962,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -5934,6 +5973,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   totalAlertsCount: number;
   deadlineMonthOptions: { v: string; l: string }[];
   regionOptions: { v: string; l: string }[];
+  cdtOptions: { v: string; l: string }[];
   groupDAOptions: { v: string; l: string }[];
   pmOptions: { v: string; l: string }[];
   pesOptions: { v: string; l: string }[];
@@ -6758,6 +6798,13 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           options={pesOptions}
           onToggle={v => setFilters(f => ({ ...f, pes: toggleIn(f.pes, v) }))}
           onClear={() => setFilters(f => ({ ...f, pes: [] }))}
+        />
+        <MultiSelect
+          label="Chủ đầu tư"
+          selected={filters.cdts}
+          options={cdtOptions}
+          onToggle={v => setFilters(f => ({ ...f, cdts: toggleIn(f.cdts, v) }))}
+          onClear={() => setFilters(f => ({ ...f, cdts: [] }))}
         />
         <MultiSelect
           label="Cụm dự án"
