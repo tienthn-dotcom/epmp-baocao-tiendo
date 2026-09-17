@@ -538,6 +538,7 @@ const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.108.0", date: "17/09/2026", items: [
     "Thêm bộ lọc CHỦ ĐẦU TƯ trên thanh lọc, gom thành hai nhóm: Sun Group và Ngoài Sun Group. Dữ liệu lấy từ cột CĐT sẵn có trong file nguồn, không phải nhập thêm gì.",
     "Bộ lọc này ăn vào cả bảng, Gantt, xuất Excel và PDF — dòng tóm tắt đầu bản in ghi rõ đang lọc theo chủ đầu tư nào.",
+    "Thanh lọc giữ đúng MỘT hàng như cũ: ô tìm kiếm co lại nhường chỗ, nút Cần cập nhật MP không còn bị đẩy xuống hàng riêng.",
   ] },
   { v: "3.107.2", date: "15/09/2026", items: [
     "Chấm tư liệu trên ma trận căn nay nhớ MỘT TUẦN thay vì hai ngày: hôm nay hiện màu theo buổi, hôm qua xám, từ 2 tới 6 ngày đen, quá 7 ngày thì tắt chấm. Còn chấm nghĩa là tuần này có người đụng tới.",
@@ -6757,7 +6758,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         </div>
       </div>
 
-      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[1fr_auto_auto_auto_auto_auto_auto]">
+      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[minmax(200px,1fr)_auto_auto_auto_auto_auto_auto_auto]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input value={filters.query} onChange={e => setFilters(f => ({ ...f, query: e.target.value }))}
