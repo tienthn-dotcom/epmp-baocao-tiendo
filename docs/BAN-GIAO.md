@@ -12,36 +12,76 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-*(Plan điền vào đây. Xoá phần mẫu bên dưới khi bắt đầu việc thật.)*
+**V1 · Dọn ký tự ngăn cách vô hình trong mã nguồn, rồi chốt lại bằng phép kiểm**
+Plan mở ngày 21/09/2026. Việc đầu tiên chạy thử dây chuyền bốn box.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-<một câu. Không gọn được trong một câu thì việc còn quá to, chẻ ra.>
+Thay 14 byte điều khiển **thật** đang nằm trong 6 file mã nguồn bằng escape đọc được (`\u0000`, `\u0001`), rồi thêm một phép kiểm quét toàn repo để lớp lỗi này không quay lại được nữa.
 
 **VÌ SAO CẦN**
-<ai đang đau ở đâu. Có số đo thì nêu số.>
+Các byte này là dấu ngăn cách cố ý trong khoá (`toa` + `can`, `code` + `name`, `pm` + `dpm`), nhưng viết bằng **byte thật** nên **không thấy trong editor, không thấy trong diff, không thấy khi review**.
+
+Đã đo: hiện tại **chúng vẫn khớp nhau**, app không sai số. Đây là rủi ro tiềm ẩn, không phải lỗi đang chạy - đừng phóng to hơn thế. Nhưng L1 cho thấy lớp lỗi này **từng lên tới production một lần**, và cái giá là hai chỗ dựng khoá lệch nhau trong im lặng. Ai viết thêm code cần dựng đúng khoá đó sẽ gõ dấu ngăn nhìn thấy được, rồi nó lệch mà không ai biết.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-<mô tả theo góc NGƯỜI DÙNG, không theo góc code.>
+Người dùng **không thấy gì cả**. Đây là việc làm sạch nền, không đổi hành vi. Một ký tự hiển thị khác đi cũng là làm sai.
 
 **PHẠM VI**
-- Trong: <liệt kê>
-- NGOÀI: <liệt kê - quan trọng ngang phần trên. Không viết thì Thực thi sẽ "tiện tay sửa luôn" và Review không soi nổi.>
+- Trong: đúng 12 dòng ở 6 file dưới đây, cộng một file kiểm mới.
+- NGOÀI: không đổi tên biến, không đổi cấu trúc khoá, không đổi byte này thành byte khác, không dọn dẹp gì quanh đó, không sửa CRLF, không chạm file nào khác.
+
+| File | Dòng | Byte | Đổi thành |
+|---|---|---|---|
+| src/lib/can-media-app.tsx | 499, 511, 1169 | 0x00 | `\u0000` |
+| src/lib/can-media.functions.ts | 256 | 0x00 | `\u0000` |
+| src/lib/compliance.ts | 203 | **0x01** | `\u0001` |
+| src/lib/filter.ts | 269 | 0x00 | `\u0000` |
+| src/lib/parser.ts | 869 | 0x00 hai chỗ | `\u0000` |
+| src/routes/index.tsx | 2555, 2564, 3058, 3976 (hai chỗ), 4960 | 0x00 | `\u0000` |
+
+**DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
+Đây là điểm nguy hiểm duy nhất của việc này. Mỗi byte là một **dấu ngăn trong khoá**, mà khoá thì hai đầu phải khớp:
+- `toa` + `can`: dựng ở `can-media.functions.ts:256` (server), đọc ở `can-media-app.tsx:499/511/1169` (client). **Hai bên phải cùng byte.**
+- `code` + `name`: dựng ở `filter.ts:269`, `index.tsx:2555`, `index.tsx:3058`; đọc ở `index.tsx:2564`. **Bốn chỗ phải cùng byte.**
+- `pm` + `dpm` ở `compliance.ts:203` dùng **0x01**, không phải 0x00. Đã soát: khoá này không dựng ở đâu khác. **Giữ đúng 0x01, đừng thống nhất về 0x00** - thống nhất là đổi hành vi.
+- `dupKey` ở `parser.ts:869` và khoá hàng ở `index.tsx:3976` dùng NUL **hai lần** trong một chuỗi. Đổi thiếu một cái là lệch.
 
 **RÀNG BUỘC**
-<luật nghiệp vụ, mốc giờ, công thức, thứ tự sắp xếp. Càng cụ thể càng ít phải hỏi lại.>
+1. `${a}\u0000${b}` phải sinh ra **đúng chuỗi cũ, từng byte**. Đây là phép thay tương đương, không phải phép sửa.
+2. Không đổi 0x01 của `compliance.ts` thành 0x00.
+3. Không đụng byte 0x0d (CR) - đó là dòng Windows bình thường, không phải rác.
+4. Khoá nào đi vào KV mà đổi byte thì **mọi dữ liệu người dùng đã lưu thành rác**. Vì vậy ràng buộc 1 là tuyệt đối.
 
-**ĐÃ ĐO TRƯỚC**
-<số liệu thật đã đo, tên file và số dòng đã đọc. Mục này tiết kiệm nhiều nhất cho Thực thi.>
+**ĐÃ ĐO TRƯỚC** (Plan đo 21/09/2026, cây làm việc sạch ở commit 440464d)
+```
+Quét src/ tests/ scripts/ docs/ : 14 byte điều khiển · 6 file · 12 dòng
+Byte đang dùng                  : 0x00 mười ba chỗ · 0x01 một chỗ
+Đã lệch nhau chưa               : CHƯA - mọi khoá code|name và toa|can đều dùng 0x00
+Khoá pm|dpm (0x01)              : chỉ dựng ở compliance.ts:203, không đọc nơi khác
+tsc                             : sạch
+vitest                          : 346 passed / 26 file
+Bẫy cần biết trước              : grep coi can-media-app.tsx là "Binary file" nên grep
+                                  THƯỜNG không tìm thấy gì trong file đó - phải dùng grep -a
+```
 
 **CHỖ CÒN MƠ HỒ**
-<thành thật. Thực thi gặp chỗ này thì HỎI LẠI PLAN, không tự quyết.>
+Không có. Danh sách 12 dòng là danh sách đóng, đã đo. Nếu Thực thi quét ra con số **khác 14**, nghĩa là có ai vừa sửa file - **dừng lại, báo Plan**, đừng tự quyết.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-<phép đo cụ thể: con số nào, trước bao nhiêu, sau bao nhiêu.>
+1. Quét lại: **0 byte** điều khiển trong `src/ tests/ scripts/ docs/` (trước: 14).
+2. `tsc` sạch · `vitest` **346 passed, không hơn không kém** ở bước này.
+3. **Phép kiểm mới** `tests/khong-byte-dieu-khien.test.ts`: quét mọi file `.ts .tsx .js .mjs .cjs .gs .md .json` trong `src/ tests/ scripts/ docs/`, đỏ nếu gặp byte trong dải 0x00-0x08, 0x0b, 0x0c, 0x0e-0x1f. Thông báo lỗi phải in **tên file, số dòng, tên byte**. Bỏ qua 0x09 (tab) và 0x0d (CR).
+   → Sau khi thêm: **347 passed**.
+4. Phép kiểm đó phải **đỏ trên bản chưa sửa**. Test xác nhận bằng `git stash` và nêu rõ trong mục ③.
+5. **Chứng minh tương đương** - phép đo quan trọng nhất. Với mỗi dòng đã sửa, chuỗi sinh ra phải **giống hệt bản cũ**: trước khi sửa ghi ra `scratchpad/khoa-truoc.json` một mẫu khoá dựng từ dữ liệu thật, sau khi sửa dựng lại và so **từng byte**.
+6. Không cần soi 1440px/375px vì việc này không đổi pixel nào. Nhưng **phải mở app trên localhost** xác nhận ma trận Media vẫn hiện chấm và vẫn mở được ô - đó là đường dùng khoá `toa|can` xuyên server-client.
+
+**HẠN MỨC**
+Việc này **không thêm đường ghi KV nào**. Lượt ghi mỗi lần mở app phải **không đổi**. Đổi là dấu hiệu đã phạm ràng buộc 1.
 
 ---
 

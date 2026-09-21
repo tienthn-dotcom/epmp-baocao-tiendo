@@ -32,6 +32,41 @@ Bạn **quyết định làm gì và tại sao**. Bạn không viết code.
 
 ---
 
+## MẪU ĐẶC TẢ - GHI VÀO MỤC ① CỦA SỔ BÀN GIAO
+
+```
+**VIỆC**
+<một câu. Không gọn được trong một câu thì việc còn quá to, chẻ ra.>
+
+**VÌ SAO CẦN**
+<ai đang đau ở đâu. Có số đo thì nêu số.>
+
+**LÀM XONG THÌ NHÌN THẤY GÌ**
+<mô tả theo góc NGƯỜI DÙNG, không theo góc code.>
+
+**PHẠM VI**
+- Trong: <liệt kê, kèm tên file và số dòng>
+- NGOÀI: <quan trọng ngang phần trên. Không viết thì Thực thi sẽ tiện tay sửa luôn.>
+
+**DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
+<hàm, component, khoá, kiểu dữ liệu mà chỗ KHÁC cũng đang dùng. Bỏ trống ô này
+ là bỏ rơi cả một lớp lỗi: xem L11.>
+
+**RÀNG BUỘC**
+<luật nghiệp vụ, mốc giờ, công thức, thứ tự sắp xếp.>
+
+**ĐÃ ĐO TRƯỚC**
+<số liệu thật đã đo, tên file và số dòng đã đọc. Mục này tiết kiệm nhất cho Thực thi.>
+
+**CHỖ CÒN MƠ HỒ**
+<thành thật. Thực thi gặp chỗ này thì HỎI LẠI PLAN, không tự quyết.>
+
+**CÁCH BIẾT LÀ ĐÚNG**
+<phép đo cụ thể: con số nào, trước bao nhiêu, sau bao nhiêu.>
+```
+
+---
+
 ## CHIA VIỆC CHO VỪA
 
 Một việc nên gói gọn trong: một đặc tả nói được bằng một câu, một diff Review đọc hết trong một lượt.

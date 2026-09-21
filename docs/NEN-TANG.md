@@ -99,6 +99,12 @@ Không phải lo xa. Mỗi mục là một lần app hỏng, có ngày tháng. �
 **L10 · Đoán một phép ánh xạ để "sửa" dữ liệu hàng loạt.** Phép đoán "dịch đều +5" sai: độ lệch thật là +1, +5, +6, và hai ghi chú đập về cùng một dòng.
 → Không chứng minh được từng cái thì không được đụng.
 
+**L11 · Thứ làm gãy chỗ khác mà không đụng vào chỗ đó.** Thêm bộ lọc Chủ đầu tư làm thanh lọc tràn xuống 3 hàng (commit 7a26e27). Diff sạch, test xanh, và giao diện vẫn hỏng. Loại này **không soi ra được bằng diff** - phải nghĩ ra mới thấy.
+→ Plan phải ghi rõ **code nào dùng chung** bị đụng tới. Test soi trúng đích hơn nhiều khi biết trước chỗ đó.
+
+**L12 · `git add -A` quét luôn việc của box khác.** Bốn box cùng mở **một thư mục làm việc**, nên cây git là cây dùng chung. Plan chạy `git add -A` và kéo nguyên ba file đang làm dở của box Test vào commit của mình, dưới một thông điệp không nói gì về chúng (21/09/2026, đã tách lại bằng `git reset --soft`).
+→ **Chỉ add đúng đường dẫn mình đã sửa.** Chạy `git status --short` trước khi commit, và không bao giờ `git add -A` / `git add .` ở dự án này.
+
 ---
 
 ## 5. LUẬT CỨNG - ÁP CHO CẢ BỐN BOX
@@ -142,6 +148,14 @@ Chỗ nào từng hỏng, ghi rõ hỏng ra sao và ngày nào, kèm mã lỗi t
 
 Ghi chú code, tên phép kiểm, chữ trên giao diện: **tiếng Việt**.
 Thông điệp commit: **không dấu** (ASCII), kết bằng dòng `Co-Authored-By` do người dùng quy định.
+
+### 5.6 Cây git là cây DÙNG CHUNG
+
+Bốn box mở cùng một thư mục. Thứ bạn thấy trong `git status` có thể là việc đang làm dở của box khác.
+
+- Commit thì **liệt kê đúng đường dẫn** mình đã sửa. **Không** `git add -A`, **không** `git add .` (xem L12).
+- Thấy file lạ chưa theo dõi thì **để yên**, đừng xoá, đừng commit hộ. Hỏi qua sổ bàn giao.
+- Không `git stash` khi box khác đang làm: stash cuốn luôn thay đổi của họ. Test cần stash để xác nhận phép kiểm đỏ thì **hẹn với Thực thi trước**.
 
 ---
 
