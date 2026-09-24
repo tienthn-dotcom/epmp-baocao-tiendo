@@ -15,7 +15,29 @@ Bốn box nói chuyện với nhau qua đúng file này.
 **V2b · Đo cho ra vì sao danh sách MTLĐ bị ghi 63 lần/ngày, rồi mới sửa**
 Plan mở 24/09/2026. **V2 đã chết** — xem "V2 SAI Ở ĐÂU" cuối mục ①. Không ai được làm theo V2 nữa.
 
-*Hàng đợi:* V1 (dọn 14 byte điều khiển vô hình) — đặc tả ở `git show 19e81d4`, **cần sửa hai chỗ** trước khi giao lại: ghim theo nội dung thay vì số dòng, và mốc test là **358 passed | 2 expected fail | 27 file** chứ không phải 346.
+*Hàng đợi:*
+
+**V3 · Thẻ MTLĐ hiện ĐỦ TÊN những dự án dùng chung một ma trận** — người dùng đã quyết 24/09/2026.
+Đo trên KV **production** cùng ngày (Plan đọc, được người dùng cho phép — box Thực thi bị chặn quyền và đã báo thay vì lách):
+
+```
+tong muc trong mtld:install:list:v2 : 46
+so chu ky ma tran khac nhau         : 37
+chu ky BI DUNG CHUNG                : 6
+so du an nam trong do               : 15   -> 6 the hien ra, 9 du an BI GIAU TEN
+trong 6 nhom do, co 2 nhom KHAC ma CT
+```
+
+Nhóm nặng nhất - **4 dự án, 4 mã CT khác nhau, chỉ hiện tên 1**:
+`CT26-052` Nhà hàng Tây Ban Nha · `CT26-051` Nhà hàng Italia · `CT25-025` Penthouse T3D · `CT26-031` Villa A2.
+
+**Giả thuyết cũ đã bị bác.** Bản chụp cục bộ 10/09 (31 mục, phủ chưa tới 40%) cho ra 1 nhóm / 2 dự án / cùng một mã CT, và gợi ý rằng ma trận dùng chung luôn là "hai khu vực của cùng một công trình" nên hậu quả nhẹ. Production nói ngược lại: **6 nhóm, 15 dự án, 2 nhóm bắc qua nhiều mã CT**. Đây là lý do luật "đo trên dữ liệu thật" tồn tại - mẫu 40% dẫn tới kết luận sai về mức nghiêm trọng.
+
+Việc: `dedupInstall` (`app-shell.tsx:231`) gộp theo `fileId|gid|formKey` rồi **giữ phần tử đầu**, nên 9 dự án kia không hiện tên ở đâu cả. Cho thẻ hiện đủ tên nhóm.
+**Không** đổi cách gộp, **không** tách thẻ - người dùng chọn "một thẻ, ghi đủ tên".
+Nhớ ba chỗ khác cũng giữ-cái-đầu: `mtld-v2-app.tsx:43`, `perf-chart-app.tsx:613`, và `can-media-app.tsx:107` (chỗ này khoá có tên dự án nên không dính).
+
+**V1** (dọn 14 byte điều khiển vô hình) — đặc tả ở `git show 19e81d4`, **cần sửa hai chỗ** trước khi giao lại: ghim theo nội dung thay vì số dòng, và mốc test đổi theo cây hiện tại chứ không phải 346.
 
 ---
 
