@@ -535,6 +535,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.109.1", date: "24/09/2026", items: [
+    "Gắn thêm đồng hồ đo cho kho chung. App vốn đã đếm mỗi ngày ghi vào kho bao nhiêu lượt, nay ghi thêm một mã ngắn đại diện cho nội dung vừa lưu, để phân biệt được “lưu 63 nội dung khác nhau” với “lưu đi lưu lại đúng một nội dung 63 lần”. Cần biết điều đó mới cắt đúng chỗ đang ăn hạn mức.",
+    "Không có gì đổi với người dùng: cùng màn hình, cùng số liệu, cùng tốc độ. Mã ngắn kia không đọc ngược ra nội dung, và không có tên dự án nào trong đó.",
+  ] },
   { v: "3.109.0", date: "17/09/2026", items: [
     "SỬA SAI NGÀY TRÌNH BOD. Trong file nguồn, PMO gạch ngang ngày cũ khi dời hạn (ví dụ “trước 15/09 22/09”, phần 15/09 bị gạch). App trước đây không đọc được gạch ngang nên vớ đúng ngày ĐÃ HUỶ. Đo trên nguồn hôm nay: cả 7 dự án có gạch đều hiện sai hạn.",
     "Nay app đọc được gạch ngang: dò ngày trên phần CÒN HIỆU LỰC, và hiển thị phần bị gạch đúng như trong file (gạch ngang, mờ đi) để còn thấy ngày cũ là gì.",

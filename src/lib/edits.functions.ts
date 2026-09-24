@@ -163,7 +163,7 @@ type KVLike = {
 function bocKv(kv: KVLike): KVLike {
   return {
     get: async (key) => { try { return await kv.get(key); } catch { return null; } },
-    put: async (key, value) => { await kv.put(key, value); await demGhiKv(key); },
+    put: async (key, value) => { await kv.put(key, value); await demGhiKv(key, value); },
     ...(kv.delete ? { delete: async (key: string) => { await kv.delete!(key); await demGhiKv(key); } } : {}),
   };
 }

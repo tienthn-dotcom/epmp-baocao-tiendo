@@ -106,118 +106,127 @@ Plan nhận lỗi: đã ghi "thứ tự đổi nên lớp chặn không khớp" 
 
 ## ② THỰC THI
 
-**ĐÃ LÀM — KHÔNG VIẾT DÒNG CODE NÀO. TRẢ VỀ ① PLAN.**
+> *Mục ② của vòng trước (trả V2 về Plan kèm bằng chứng) nằm ở commit `e83028f`. Plan đã thu hết nội
+> dung đó vào phần "V2 SAI Ở ĐÂU" của mục ① nên không chép lại ở đây.*
 
-Đặc tả giao đúng cho tôi một việc tự kiểm chứng: *"tự đi tìm MỌI chỗ đọc `mtld:install:list:v2` và
-xác nhận không chỗ nào phụ thuộc thứ tự. Đừng tin lời Plan. Thấy có thì báo lại."*
+**ĐÃ LÀM**
 
-Đã đi kiểm. **Ba trên bốn chỗ đọc đều phụ thuộc thứ tự**, và riêng cái cớ để sắp xếp thì không đứng
-được. Nên tôi dừng trước khi gõ, đúng câu dặn.
+`src/lib/kv-dem.ts` — gắn đồng hồ đo:
 
-Việc duy nhất đã đụng tới cây: **thu hồi bản V2 cũ** (`sfile`/`spdf2`) theo lệnh Plan —
-`git revert 81b0ec4` → commit `6de4432`. Mã cũ vẫn nằm nguyên trong lịch sử ở `81b0ec4`, lấy lại
-được bất cứ lúc nào nếu sau này muốn.
+1. Thêm `bamNgan(giaTri)` — SHA-256 qua `crypto.subtle`, lấy **12 ký tự hex đầu**. Không nội dung
+   nào ném ra ngoài: hỏng thì trả chuỗi rỗng.
+2. `demGhiKv(key)` → `demGhiKv(key, giaTri?)`. Tham số mới **không bắt buộc**, nên đường `delete`
+   (không có nội dung) gọi kiểu cũ vẫn chạy, băm rỗng.
+3. Bảng D1 thêm cột `bam TEXT`: `CREATE TABLE` mang sẵn cột cho máy mới, kèm một câu `ALTER TABLE
+   kv_write ADD COLUMN bam TEXT` cho **bảng đã có sẵn trên production** — `CREATE TABLE IF NOT
+   EXISTS` không bao giờ thêm cột cho bảng đang tồn tại.
+4. Câu chèn có **đường lùi**: chèn ba cột hỏng thì chèn lại hai cột như cũ.
 
-**LỖI TRONG ĐẶC TẢ — MỨC: CHẶN**
+`src/lib/mtld-install.functions.ts:38` và `src/lib/edits.functions.ts:166` — mỗi file **một dòng**,
+truyền nội dung vừa ghi xuống `demGhiKv`.
 
-**① · `dedupInstall()` KHÔNG "gộp và sắp lại". Nó GIỮ PHẦN TỬ ĐẦU TIÊN.**
+`tests/kv-dem-bam.test.ts` — **mới**, 11 phép kiểm, gọi thẳng hàm thật.
 
-`app-shell.tsx:229`:
+`src/routes/index.tsx` — mục CHANGELOG `v3.109.1 (24/09/2026)`.
 
-```ts
-for (const p of arr) { const sig = `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`;
-                       if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
-```
+**VÌ SAO LÀM THẾ**
 
-Chữ ký gộp là `fileId|gid|formKey` — **không có danh tính dự án trong đó**. Mà chính ghi chú ở
-`index.tsx:2496-2499` nói rõ **nhiều dự án khác nhau vẫn gắn chung một ma trận**, và mảng `named`
-cố ý giữ đủ từng dự án (khoá theo ID cứng ở dòng 2500).
+*Đụng ra ngoài PHẠM VI hai dòng — nói trước cho Review khỏi phải đi tìm.* Đặc tả ghi "Trong:
+`src/lib/kv-dem.ts`". Nhưng `demGhiKv` **không thể băm thứ nó không được đưa**: nó chỉ nhận mỗi
+`key`. Nên hai chỗ gọi phải truyền thêm nội dung. Mỗi chỗ đúng một dòng, chỉ thêm đối số, không đổi
+hành vi nào. Tôi quyết làm và nêu rõ ở đây theo phần cuối mục 7 NEN-TANG, thay vì dừng lại hỏi một
+việc không có đường nào khác để đi.
 
-Nên với một ma trận dùng chung, **phần tử nào đứng trước thì dự án đó thắng**, và `name`, `maCT`,
-`region`, `groupDA` hiện trên thẻ MTLĐ là của dự án thắng. Đổi thứ tự = đổi dự án thắng = **đổi
-chữ trên giao diện**. Thẻ đó còn được `app-shell.tsx:380` gom theo `region`, nên đổi cả nhóm vùng.
+*Băm bằng `crypto.subtle` chứ không tự viết vòng lặp.* SHA-256 của runtime là mã máy; một vòng
+`for` trong JS chạy trên payload vài trăm KB thì tốn CPU hơn hẳn, mà đây là hàm chạy ở **mọi** lượt
+ghi KV. Trần CPU mỗi lượt Worker khoảng 2.010.000 µs — L9, cron đã chết vì chỗ này.
 
-Đây đúng là họ **L11**: sửa một chỗ làm gãy chỗ khác mà không đụng vào chỗ đó, diff sạch, test xanh,
-giao diện vẫn sai.
+*Chỉ băm 128 KB đầu, và nhét độ dài thật vào phần băm.* Lý do y như trên: kho `sfile:` mang cả file
+.xlsx đã base64, có bản trên 2MB. Băm trọn là đốt CPU tỉ lệ với cỡ file, ở đúng chỗ từng chết. Nhét
+độ dài vào để hai payload khác cỡ không bao giờ đụng nhau. Đánh đổi: hai payload trùng **cả** 128 KB
+đầu **lẫn** độ dài sẽ ra cùng một băm. Với `mtld` (danh sách ~85 dự án, vài chục KB) thì không xảy
+ra — mà `mtld` mới là thứ việc này sinh ra để soi.
 
-**② · Hai chỗ đọc khác cũng giữ-cái-đầu-tiên.**
+*12 ký tự hex = 48 bit.* Đủ xa để vài chục payload một ngày không đụng nhau, mà vẫn ngắn và **một
+chiều** — không đọc ngược ra tên dự án. Đúng ràng buộc 1: đây là bảng ĐẾM, không phải nhật ký nội
+dung, cùng lý do mà cột `kho` chỉ lấy phần trước dấu hai chấm.
 
-| Chỗ đọc | Khoá gộp | Phụ thuộc thứ tự? |
-|---|---|---|
-| `app-shell.tsx:229` `dedupInstall` | `fileId\|gid\|formKey` | **CÓ** — thô hơn danh tính dự án |
-| `mtld-v2-app.tsx:43` `pid` | `fileId\|gid\|formKey` | **CÓ** — y hệt. Có `.sort` theo tên nhưng sắp **SAU** khi đã gộp, nên chỉ sửa thứ tự hiện ra, không sửa việc ai thắng |
-| `perf-chart-app.tsx:613` `regionMap` | tên dự án chuẩn hoá | **CÓ** — `if (n && !m[n]) m[n] = r` là first-wins. Có `Object.assign` đè bằng `proj:regions` phía sau nên chỉ là đường lùi, nhưng vẫn phụ thuộc thứ tự |
-| `can-media-app.tsx:107` | `fileId\|gid\|name` | không — khoá có tên dự án, lại còn sắp lại sau |
+*Vì sao có đường lùi cho câu chèn.* Nếu `ALTER` hỏng vì một lý do nào đó ngoài "đã có cột", câu chèn
+ba cột sẽ hỏng theo và **mất luôn dòng đếm**. Bảng này là thứ **duy nhất** đang soi được hạn mức ghi
+KV; mất nó là mù hẳn, đúng kiểu L9 (cron chết cả tuần mà không ai biết). Thà mất cái băm còn hơn mất
+dòng đếm.
 
-*Bẫy khi đi kiểm:* `grep` coi `can-media-app.tsx` và `index.tsx` là **"Binary file"** vì trong đó có
-byte NUL (đúng 14 byte của việc V1). Phải `grep -a` mới thấy. Test đã ghi bẫy này ở đặc tả V1 — nó
-cắn thật.
-
-**③ · Cái cớ để sắp xếp không đứng được: thứ tự không có nguồn nào làm nó đổi.**
-
-Đặc tả nói *"mảng `named` được dựng theo thứ tự duyệt `data.items`, thứ tự đổi thì chuỗi đổi"*. Đã
-truy: `data.items` dựng bằng cách đẩy từng dòng khi đi qua sheet (`parser.ts:560`), và **trong cả
-`parser.ts` không có một phép `.sort` nào trên `items`** — phép sort duy nhất là trên `ridTrung`
-dòng 1058, dùng để in câu chẩn đoán. Vòng lặp ở `index.tsx:2488` cũng tất định, hai bộ `seenKey`
-/`seenSig` đều là giữ-cái-đầu.
-
-Nghĩa là thứ tự `named` = **thứ tự dòng trong file Master Plan**, ổn định với cùng một file. Nó chỉ
-đổi khi PMO chèn/dời dòng — tức vài lần một ngày là cùng, không phải 63.
-
-Hệ quả: sắp xếp gần như **không cắt được lượt ghi nào**, mà vẫn phải trả giá ở mục ① và ②. Đổi một
-hành vi đang tất định lấy một hành vi tất định khác, không kèm lợi ích đo được.
-
-**VẬY 63 LƯỢT/NGÀY TỪ ĐÂU RA — ba hướng nên đào, tôi chưa chứng minh được cái nào**
-
-1. `putNeuKhac` **ghi khi đọc hỏng**: `try { if ((await kv.get(key)) === giaTri) return false; } catch {}`.
-   Mà `bocKv` đã nuốt lỗi đọc và trả `null` rồi, nên `null === giaTri` là sai → **ghi**. Mỗi lượt đọc
-   chập chờn là một lượt ghi thừa, im lặng.
-2. **Nội dung đổi thật** vì `sheetViews` (nguồn của `cfg`) là kho PMO sửa được — cần biết ngày 23/09
-   PMO có sửa link nhiều không.
-3. Effect có `dangTaiKho` trong dep array, nên nó chạy lại mỗi lần `useIsFetching()` về 0. Nếu có
-   nhịp nào đó cho ra payload khác nhau giữa hai lần về 0 thì mỗi nhịp là một lượt ghi.
-
-**Cách chốt rẻ nhất, đề nghị Plan quyết:** ghi thêm **mã băm ngắn của payload** vào bảng D1 `kv_write`
-cạnh tên kho. D1 còn 99% hạn mức (100.000 lượt/ngày, đang dùng ~650) nên không đụng gì tới trần KV.
-Một ngày sau là biết ngay 63 lượt đó là 63 payload khác nhau hay 1 payload ghi 63 lần — và câu trả
-lời đó chỉ đúng một trong ba hướng trên. Đoán tiếp mà không có số là cách làm ra **L10**.
+*CHANGELOG tăng PATCH (3.109.1) chứ không phải MINOR.* Người dùng không thấy gì đổi. Nhưng bản này
+**phải deploy mới có số**, mà `APP_VERSION` suy từ `CHANGELOG[0].v` — không thêm mục thì badge phiên
+bản đứng ở 3.109.0 và không ai phân biệt được máy đang chạy bản nào.
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch (sau khi revert)
-vitest                : 358 passed | 2 expected fail | 27 file — đúng mốc nền Test đo 21/09
-build                 : không chạy lại — không có thay đổi code nào để dựng
-quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền, không đổi
-kiểm trên app         : không áp dụng — không có thay đổi nào để nhìn
-ghi KV thêm mỗi lần mở app : 0 (không đụng gì)
-cổng demo             : CÓ SẴN ở index.tsx:2482, tôi không đụng
-cổng đang tải         : CÓ SẴN ở index.tsx:2483, tôi không đụng
+tsc                   : sạch (exit 0)
+vitest                : 369 passed | 2 expected fail | 28 file
+                        mốc nền 358 | 2 | 27 → chênh +11 đúng bằng phần tôi thêm
+                        (mốc này là 358, KHÔNG phải 346 như tiêu chí 3 của ① đang ghi)
+build                 : qua, 11,60s
+quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. Cả bốn file tôi đụng đều SẠCH
+                        (kv-dem.ts · kv-dem-bam.test.ts · mtld-install.functions.ts · edits.functions.ts)
+kiểm trên app         : 1440px — badge 3.109.0 → 3.109.1, bảng hiện 75 dự án như thường, không tràn.
+                        375px — scrollWidth = clientWidth = 375, không tràn ngang.
+                        Console: không lỗi mới. Vẫn đúng hai lỗi dev có sẵn (hydration lệch
+                        `data-tsd-source`, lệch ở cả `__root.tsx` là file tôi chưa từng đụng; và
+                        `GET /version.json → 404`, file chỉ có sau khi deploy).
+ghi KV thêm mỗi lần mở app : 0. Không thêm một đường ghi KV nào — chỉ thêm MỘT CỘT vào dòng D1 vốn
+                        đã ghi sẵn cho mỗi lượt ghi KV. Số dòng D1 mỗi ngày KHÔNG đổi (~650 trên
+                        trần 100.000). Đúng tiêu chí 2 của ①.
+cổng demo             : KHÔNG ÁP DỤNG — `kv-dem.ts` chạy trên Worker, không phải effect phía client;
+cổng đang tải         : KHÔNG ÁP DỤNG   `dataMode`/`dangTaiKho` không tồn tại trong phạm vi này.
+                        Hai cổng ở `index.tsx:2482-2483` vẫn nguyên, tôi không đụng.
 ```
 
-Lưu ý mốc nghiệm thu: tiêu chí 5 của ① ghi `vitest 346 passed (+1 = 347)`. **346 là mốc cũ**, đo
-trước khi Test thêm `tests/chu-gach-ngang-ranh-gioi.test.ts` vào cây. Mốc đúng bây giờ là
-**358 passed | 2 expected fail | 27 file**. Ai cầm 346 đi đối chiếu sẽ tưởng có 12 test lạ.
+Tiêu chí 4 của ① (băm ném lỗi thì `demGhiKv` vẫn chạy trọn, chốt bằng **số lượt `put`** — L14): đã
+có, nhóm kiểm cuối trong file test. Dựng đúng hình dạng `bocKv` đang dùng, cho D1 hỏng toàn tập, rồi
+chốt `soPut === 1` và caller không thấy lỗi.
+
+**Đã xác nhận ĐỎ trên bản chưa sửa:** lùi tạm câu chèn về đúng dạng cũ (hai cột, bỏ băm) → **3 phép
+kiểm đỏ**: "ghi đúng một dòng đếm mang theo băm", "hai payload khác nhau ra hai băm khác nhau",
+"đường delete băm rỗng". Phục hồi xong chạy lại 11/11 xanh.
 
 **CHỖ TÔI KHÔNG CHẮC**
 
-1. **Tôi không chứng minh được thứ tự KHÔNG BAO GIỜ đổi** — chỉ chứng minh được là trong đường code
-   đã đọc thì không có chỗ nào làm nó đổi. Còn `data` có thể bị lọc/sắp ở tầng trên mà tôi chưa soi
-   hết. Nếu Plan có bằng chứng thật rằng payload đổi thứ tự (ví dụ hai bản JSON chụp ở hai thời
-   điểm), thì đưa ra, tôi làm ngay.
-2. **Mức nghiêm trọng của mục ① tuỳ vào việc thực tế có bao nhiêu ma trận dùng chung.** Nếu gần như
-   không có dự án nào gắn chung ma trận thì sắp xếp gần như vô hại. Tôi không đo được con số này vì
-   nó nằm trong dữ liệu thật (`sheetViews` trên KV). **Đây là số Plan nên đo trước khi quyết.**
-3. Tôi **chưa đụng** tới hướng sửa `putNeuKhac` cho nó khỏi ghi khi đọc hỏng, dù tôi nghi hướng đó.
-   Đặc tả ghi rõ NGOÀI phạm vi: "không đổi `putNeuKhac`". Không tự mở rộng.
+1. **`ALTER TABLE` chạy trên D1 production, tôi chưa chạy thật lần nào.** Nếu nó hỏng vì lý do ngoài
+   "đã có cột", đường lùi sẽ giữ được dòng đếm nhưng cột `bam` **rỗng mãi mãi và không ai được báo**
+   — vì cả hàm này nuốt lỗi theo thiết kế. **Đề nghị: ngay sau khi deploy, chạy một câu kiểm**
+   trước khi ngồi đợi cả ngày:
+   ```
+   npx wrangler d1 execute pmo-audit --remote --command \
+     "SELECT COUNT(*) tong, COUNT(bam) co_bam, COUNT(NULLIF(bam,'')) bam_khac_rong FROM kv_write WHERE substr(ts,1,10)='<ngày>'"
+   ```
+   `co_bam` bằng 0 nghĩa là cột chưa có. `bam_khac_rong` bằng 0 mà `co_bam` khác 0 nghĩa là băm
+   luôn hỏng — xem mục 2.
+
+2. **`crypto.subtle` tôi chỉ kiểm được trên Node (vitest), chưa kiểm trên Workers thật.** Tài liệu
+   nói Workers có, nhưng tôi không tự xác nhận được nên không dám khẳng định. Không có thì `bamNgan`
+   trả rỗng, cả việc này thành công cốc mà vẫn "chạy bình thường". Câu SQL ở mục 1 phát hiện được.
+
+3. **Mốc cắt 128 KB làm mù một phần các kho file lớn.** Hai payload `sfile:` trùng 128 KB đầu và
+   trùng độ dài sẽ ra cùng băm. Đừng dùng cột này để kết luận về `sfile`/`spdf2` — nó được cắt cho
+   vừa CPU, và chỉ hứa chính xác với `mtld`.
+
+4. **Tôi không đo được CPU thêm trên Workers thật.** SHA-256 native trên tối đa 128 KB mỗi lượt ghi,
+   tôi tin là không đáng kể so với trần 2.010.000 µs, nhưng đó là suy luận chứ không phải số đo.
+
+5. **Ba câu lệnh dựng bảng chạy lại mỗi khi có isolate mới** (`banSan` là biến tầng module). Chuyện
+   này **có sẵn từ trước**, tôi không thêm — nhưng nay có thêm câu `ALTER` luôn hỏng-và-bị-nuốt nên
+   mỗi isolate mới tốn thêm một lượt gọi D1. D1 đang dùng 0,65% hạn mức nên không đáng lo, ghi ra
+   đây để Review khỏi tưởng là thứ mới phát sinh.
 
 **CHƯA LÀM**
 
-- **Toàn bộ phần sửa code của V2 mới.** Lý do ở trên. Chờ Plan quyết một trong ba đường:
-  (a) đo mã băm payload rồi quay lại; (b) đổi khoá gộp của `dedupInstall`/`pid` cho có danh tính dự
-  án — nhưng đó là **đổi hành vi hiển thị**, phải hỏi người dùng chứ không phải việc của hai chúng
-  ta; (c) bỏ V2, quay sang V1 đang nằm trong hàng đợi.
-- Không deploy. Không đụng file nào của box Test.
-
+- **Chưa có con số nào** — đó là điểm của việc này. Tiêu chí 1 của ① cần deploy rồi chờ một ngày.
+  Tôi không deploy.
+- **Không sửa** `putNeuKhac`, **không sửa** `dedupInstall`, **không sắp xếp** `named`, không đụng
+  `sfile`/`spdf2`/`sheetsnap`/warmer — đúng phần NGOÀI. Nghi ngờ của tôi về `putNeuKhac` (đọc hỏng
+  thì rơi xuống ghi) vẫn để nguyên đó chờ số, không tự đi sửa.
+- **Không đụng** hai file box Test đang làm dở (`docs/NEN-TANG.md`, `tests/chu-gach-ngang-ranh-gioi.test.ts`).
 ---
 
 ## ③ TEST

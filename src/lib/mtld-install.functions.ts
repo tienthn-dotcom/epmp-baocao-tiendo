@@ -35,7 +35,7 @@ function bocKv(kv: KVLike): KVLike {
     get: async (k) => { try { return await kv.get(k); } catch { return null; } },
     // Đếm cả lượt ghi của kho `sfile:`/`fmeta:` — chúng cũng ăn vào hạn mức 1.000 lượt/ngày, mà
     // lần truy nguyên 14/09 không tách được phần nào là của chúng. Xem lib/kv-dem.ts.
-    put: async (k, v, o) => { await kv.put(k, v, o); await demGhiKv(k); },
+    put: async (k, v, o) => { await kv.put(k, v, o); await demGhiKv(k, v); },
   };
 }
 
