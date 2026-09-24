@@ -12,74 +12,80 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V2 · Đừng ghi lại vào KV khi nội dung không đổi**
-Plan mở 24/09/2026. Ưu tiên trên V1 vì đụng hạn mức đang leo.
+**V2 · Hết ghi lại danh sách MTLĐ khi nó không đổi**
+Plan mở 24/09/2026. **Viết lại lần 2** — bản đầu có lý do sai, xem mục "ĐÃ SỬA LẠI" cuối mục ①.
 
-*Hàng đợi:* V1 (dọn 14 byte điều khiển vô hình) — đặc tả đã xong, xem `git show 19e81d4`. Làm sau V2.
+*Hàng đợi:* V1 (dọn 14 byte điều khiển vô hình) — đặc tả xong, xem `git show 19e81d4`.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Ba kho `sfile`, `spdf2`, `sheetsnap` đang ghi đè vào KV **kể cả khi nội dung giống hệt bản đã có**. Chỉ ghi khi nội dung thật sự đổi.
+Danh sách dự án có ma trận (`mtld:install:list:v2`) đang bị ghi đè khoảng 63 lần mỗi ngày dù nội dung không đổi. Chỉ ghi khi danh sách thật sự đổi.
 
 **VÌ SAO CẦN**
-Đo ngày 23/09/2026: **651 lượt ghi / trần 1.000 = 65%**, và đang leo (17/09: 477 · 21/09: 551 · 22/09: 461 · 23/09: 651). Ba kho này chiếm **289 lượt, tức 45% cả ngày**.
+Đo 23/09/2026: **651 lượt ghi / trần 1.000 = 65%**, đang leo (477 → 551 → 461 → 651).
 
-Ba kho luôn đi cùng nhau theo tỉ lệ gần như cố định 2:1:1 mỗi giờ (02h 29/16/15 · 03h 17/9/10 · 10h 35/19/18) - dấu hiệu rõ là **một thao tác mở file đẻ ra bốn lượt ghi**.
+Kho `mtld` ăn **63 lượt, tất cả dồn vào ĐÚNG MỘT khoá**. Danh sách dự án có ma trận thì mấy khi đổi, nên gần như toàn bộ 63 lượt là ghi thừa.
 
-Cơ chế hiện tại: cache ghim theo ngày. Ai mở file lần đầu sau mốc `lastRefreshBoundary` thì app tải lại từ Drive ở nền rồi ghi đè KV. **File không đổi vẫn tốn một lượt ghi, và mỗi người mở là một lượt.**
+Code **đã có** lớp chặn `putNeuKhac` (`mtld-install.functions.ts:230`) nhưng nó so bằng `JSON.stringify`. Mảng `named` được dựng theo **thứ tự duyệt `data.items`** (`index.tsx` ~2508), thứ tự đổi thì chuỗi đổi, lớp chặn coi là khác nên vẫn ghi. Cùng một tập dự án, chỉ khác thứ tự.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-Người dùng **không thấy gì khác**. Cùng tốc độ, cùng dữ liệu. Chỉ số lượt ghi giảm.
+Người dùng **không thấy gì khác**. MTLĐ vẫn đủ dự án, vẫn đúng thứ tự hiển thị.
 
 **PHẠM VI**
-- Trong: `src/lib/mtld-install.functions.ts` - `refreshAndStore` (dòng 141-172, cái `kv.put` ở **dòng 164**) và đường `spdf2` (khối `getSheetPdf`, `kv.put` trong `.then()` ở **dòng ~331**).
-- NGOÀI: không đụng `sheetsnap` ở `edits.functions.ts:1416` - đó là đường PMO **chủ động lưu**, ghi là đúng. Không đổi `CACHE_TTL_S`, không đổi `lastRefreshBoundary`, không đụng warmer, không đụng `sfile:index`, không gộp ba kho lại.
+- Trong: chỗ dựng mảng `named` trong `src/routes/index.tsx` (~2508) — sắp xếp theo khoá ổn định trước khi gọi `saveInstallList`.
+- NGOÀI: **không** đụng `sfile`, **không** đụng `spdf2`, **không** đụng `sheetsnap`, không đổi `lastRefreshBoundary`, không đụng warmer, không đổi `putNeuKhac`.
 
 **DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-- `refreshAndStore` được gọi từ **hai** chỗ: nhánh làm mới ở nền (dòng ~288) và nhánh cache trượt (dòng ~295). Nhánh thứ hai **chưa có bản cũ để so** - phải xử lý, đừng để nó thành không bao giờ ghi.
-- `lastRefreshBoundary` dùng chung cho cả `sfile` lẫn `spdf2`. Đổi cách hiểu mốc này là đụng cả hai.
-- `getWaitUntil` chạy việc ở nền: bỏ ghi thì việc nền **vẫn tải Drive**, chỉ không ghi. Đó là chủ ý, nhưng phải canh CPU - xem L9, cron từng chết vì quá 2.010.000 µs.
+`mtld:install:list:v2` được **đọc** ở app MTLĐ và ở app Hình ảnh. Thực thi phải tự tìm **mọi** chỗ đọc khoá này và xác nhận **không chỗ nào phụ thuộc thứ tự phần tử**. Theo chú thích trong code thì MTLĐ tự gộp lại bằng `dedupInstall()` lúc render, nhưng **đừng tin lời Plan, đi kiểm**. Thấy chỗ nào phụ thuộc thứ tự thì **báo Plan**.
 
 **RÀNG BUỘC**
-1. So sánh trên **nội dung b64**, không so trên `ts`. Giống nhau thì **không `put`**.
-2. Nội dung ĐỔI thì ghi như cũ, kèm `ts` mới.
-3. Không có bản cũ trong tay (cache trượt, lần đầu) thì **cứ ghi** - thà thừa một lượt còn hơn mất cache.
-4. Bỏ ghi thì `ts` đứng yên, nên lần mở sau lại kích hoạt làm mới nền. Chấp nhận: lượt ghi là thứ hiếm (1.000), còn gọi Drive thì không tính hạn mức. **Nhưng** phải chặn tải lặp trong cùng một isolate bằng một `Map` ở tầng module, nhớ trong khoảng 10 phút - rẻ, không tốn KV.
-5. Không thêm bất kỳ đường ghi KV mới nào, kể cả để lưu mã băm.
+1. Sắp xếp phải **ổn định và không phụ thuộc dữ liệu biến động** — đừng sắp theo ngày, %, hay trạng thái.
+2. Nội dung danh sách **không đổi một phần tử nào**, chỉ đổi thứ tự.
+3. Danh sách thật sự đổi (thêm/bớt dự án, đổi vùng gắn link) thì **vẫn phải ghi**.
+4. Không thêm đường ghi KV mới.
 
 **ĐÃ ĐO TRƯỚC** (Plan đo 24/09/2026)
 ```
-Cloudflare GraphQL, 23/09 UTC : write 651/1.000 = 65% · read 5.366/100.000 = 5% · list 4
-Hom nay 24/09 luc 01h47 UTC   : write 2 · read 34   -- KHONG phai dang chay nuoc rut
-Bay ve mui gio                : han muc reset 00:00 UTC = 07:00 gio Viet Nam
-D1 kv_write 23/09, theo kho   : sfile 137 · media 93 · sheetsnap 79 · spdf2 73 · mtld 63
-                                fmeta 52 · completed 45 · mpflag 43 · itemfp 30 · sheetview 25
-                                tong 646 (khop voi 651 cua Cloudflare)
-Ba kho muc tieu               : 289 = 45% ca ngay
+Cloudflare GraphQL 23/09 UTC : write 651/1.000 = 65% · read 5.366/100.000 = 5% · list 4
+24/09 luc 01h47 UTC          : write 2 · read 34 -- khong phai dang chay nuoc rut
+Han muc reset                : 00:00 UTC = 07:00 gio Viet Nam
+D1 kv_write 23/09 theo kho   : sfile 137 · media 93 · sheetsnap 79 · spdf2 73 · mtld 63
+                               fmeta 52 · completed 45 · mpflag 43 · itemfp 30 · sheetview 25
+                               tong 646 (khop 651 cua Cloudflare)
+Muc tieu cua V2              : chi kho mtld = 63
 ```
 
 **CHỖ CÒN MƠ HỒ**
-Nhánh cache trượt ở dòng ~295 gọi `refreshAndStore` mà không có bản cũ. Ràng buộc 3 nói cứ ghi. Nếu Thực thi thấy lấy được bản cũ rẻ hơn thì **báo Plan**, đừng tự đổi luật.
+Chọn khoá sắp xếp nào (`hid` / `maCT` / `fileId`) là việc của Thực thi — nhưng phải **nói rõ vì sao chọn**, và khoá đó phải có ở mọi phần tử. `hid` là ID cứng nhưng **có thể trống** (`hid?`), nên cần khoá dự phòng.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-1. Mở cùng một file hai lần bằng hai tài khoản khác nhau, sau mốc làm mới → lượt ghi `sfile` tăng **0** ở lần thứ hai (trước: tăng 1).
-2. Sửa thật file trên Drive rồi mở → **vẫn ghi**, và app hiện đúng dữ liệu mới. Đây là phép kiểm quan trọng nhất: tiết kiệm mà làm dữ liệu cũ đọng lại thì tệ hơn hẳn việc tốn lượt ghi.
-3. Đo lại sau một ngày chạy thật:
-   ```
-   npx wrangler d1 execute pmo-audit --remote --command \
-     "SELECT kho, COUNT(*) n FROM kv_write WHERE substr(ts,1,10)='<ngày>' GROUP BY 1 ORDER BY 2 DESC"
-   ```
-   Mong đợi: `sfile` + `spdf2` từ 210 xuống dưới 60. Tổng ngày từ ~650 xuống dưới 480.
-4. `tsc` sạch · `vitest` 346 passed.
-5. Phép kiểm mới cho luật "giống thì không ghi": giả lập `kv` đếm số lần `put`, gọi hai lần cùng nội dung → `put` đúng **1** lần; đổi nội dung → thành **2**. Phải đỏ trên bản chưa sửa.
+1. Phép kiểm mới: giả lập `kv` đếm số lần `put`; gọi `saveInstallList` hai lần với **cùng tập dự án nhưng đảo thứ tự** → `put` đúng **1** lần. Phải **đỏ trên bản chưa sửa**.
+2. Gắn thêm một dự án mới vào ma trận → **vẫn ghi**. Đây là phép kiểm quan trọng nhất: tiết kiệm mà làm danh sách đứng yên thì **MTLĐ mất dự án**.
+3. Mở app bằng hai tài khoản khác nhau → kho `mtld` tăng **0** ở lần thứ hai.
+4. Đo lại hôm sau: `mtld` từ 63 xuống **dưới 5**.
+5. `tsc` sạch · `vitest` 346 passed (+1 phép mới = 347).
 
 **HẠN MỨC**
-Đây là việc **giảm** lượt ghi. Không được thêm đường ghi nào. Đo trước và sau, ghi cả hai số vào mục ②.
+Việc này **giảm** lượt ghi. Đo trước và sau, ghi cả hai số vào mục ②.
 
 ---
+
+**ĐÃ SỬA LẠI - bản đặc tả đầu tiên sai ở đâu**
+
+Bản đầu (commit `ede1d05`) viết rằng `sfile`/`spdf2` ghi thừa vì "mỗi người mở là một lượt". **Sai.** Người dùng nhớ ra cơ chế thật và Plan kiểm lại thì đúng như người dùng nói:
+
+Mốc quét là **17:30 giờ VN** (`REFRESH_HOUR_VN`/`REFRESH_MIN_VN`, dòng 116-117), khớp cron warmer. Qua mốc đó cache mới thành cũ; ai mở file đầu tiên sau mốc thì làm mới **một lần rồi thôi cả ngày**. Số liệu theo giờ khớp: 17h VN `sfile` 35 (warmer), rồi đợt sáng hôm sau 08h/09h/10h/11h = 5/29/17/8. **Đúng thiết kế, không phải lỗi.** 137 lượt ≈ số khoá cache khác nhau được đụng trong ngày.
+
+Nặng hơn: ràng buộc "bỏ ghi thì `ts` đứng yên, chấp nhận" là đánh đổi **tệ**. Hiện làm mới 1 lần/ngày; bỏ ghi thì app đi kiểm lại **mỗi lần mở** — đổi một lượt ghi lấy hàng chục lượt tải Drive, đúng hướng **L9** (cron chết vì quá 2.010.000 µs).
+
+Muốn tiết kiệm ở `sfile`/`spdf2` thì phải **hỏi Drive xem file có đổi không trước khi tải**. Đó là việc khác, cần đo riêng, **không gộp vào V2**.
+
+---
+
+
 
 
 
