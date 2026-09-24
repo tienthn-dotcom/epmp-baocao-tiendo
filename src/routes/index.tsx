@@ -535,6 +535,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.110.0", date: "24/09/2026", items: [
+    "CẮT LƯỢT GHI THỪA (tiếp). Mỗi ngày, ai mở ma trận lắp đặt hoặc bảng PDF của một dự án lần đầu thì app tự tải lại file từ Drive rồi lưu đè vào kho chung — kể cả khi file không có gì thay đổi. Mười người mở cùng một dự án là mười lượt lưu y hệt nhau. Đo ngày 23/09: riêng hai kho này ăn 210 lượt trong tổng 651, mà app chỉ được 1.000 lượt mỗi ngày.",
+    "Nay app so nội dung trước khi lưu: giống hệt thì không lưu lại nữa, khác thì lưu như cũ. Dữ liệu hiện ra vẫn đúng và vẫn nhanh y như trước — chỉ bớt lượt lưu thừa, để dành hạn mức cho việc PMO nhập liệu thật.",
+  ] },
   { v: "3.109.0", date: "17/09/2026", items: [
     "SỬA SAI NGÀY TRÌNH BOD. Trong file nguồn, PMO gạch ngang ngày cũ khi dời hạn (ví dụ “trước 15/09 22/09”, phần 15/09 bị gạch). App trước đây không đọc được gạch ngang nên vớ đúng ngày ĐÃ HUỶ. Đo trên nguồn hôm nay: cả 7 dự án có gạch đều hiện sai hạn.",
     "Nay app đọc được gạch ngang: dò ngày trên phần CÒN HIỆU LỰC, và hiển thị phần bị gạch đúng như trong file (gạch ngang, mờ đi) để còn thấy ngày cũ là gì.",
