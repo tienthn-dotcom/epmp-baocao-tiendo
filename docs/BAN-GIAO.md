@@ -77,6 +77,33 @@ Mã băm phân biệt được cả ba: băm **giống nhau** cả 63 lượt �
 
 **VIỆC NÀY CẦN DEPLOY MỚI CÓ SỐ.** Test soi → Review phán → người dùng bấm deploy → chờ một ngày → Plan đọc số → mới ra được việc sửa thật.
 
+**CỘT `bam` ĐÃ ĐƯỢC THÊM SẴN TRÊN PRODUCTION — Plan chạy tay 24/09/2026.**
+
+```
+truoc : id, ts, kho
+sau   : id, ts, kho, bam
+```
+
+Lý do làm trước: Thực thi nêu đúng một rủi ro - `ALTER TABLE` chạy trên D1 thật mà chưa ai chạy lần nào, và vì hàm đếm nuốt lỗi theo thiết kế nên nếu nó hỏng thì **cột rỗng mãi mãi mà không ai được báo**. Thêm tay trước thì rủi ro đó biến mất: cột đã có, `ALTER` trong code sẽ rơi vào nhánh "đã có cột" và nhánh đó có đường lui.
+
+Thêm một cột rỗng không mất dữ liệu, không ai thấy gì, và app chưa đụng tới nó cho tới khi deploy.
+
+**VẪN PHẢI KIỂM NGAY SAU DEPLOY, ĐỪNG ĐỢI HẾT NGÀY.** Cột có rồi không có nghĩa là băm chạy được - `crypto.subtle` trên Workers là chỗ **chưa ai kiểm trên môi trường thật** (vitest chạy trên Node, không phải Workers).
+
+```bash
+npx wrangler d1 execute pmo-audit --remote --command \
+  "SELECT COUNT(*) tong, COUNT(NULLIF(bam,'')) bam_that FROM kv_write WHERE substr(ts,1,10)='<ngày>'"
+```
+
+| Kết quả | Nghĩa là | Làm gì |
+|---|---|---|
+| `tong` > 0, `bam_that` > 0 | đồng hồ chạy | chờ hết ngày rồi đọc số |
+| `tong` > 0, `bam_that` = 0 | băm luôn hỏng, nhiều khả năng `crypto.subtle` không có trên Workers | **lùi bản**, báo Plan |
+| `tong` = 0 | không ghi được dòng đếm nào - nặng hơn hẳn | **lùi bản ngay**, đây là mất khả năng soi hạn mức (L9) |
+
+Ai bấm deploy thì chạy luôn câu trên trong **cùng phiên đó**, đừng để sang hôm sau.
+
+
 ---
 
 **V2 SAI Ở ĐÂU - giữ lại để không ai đi lại đường cũ**
