@@ -137,58 +137,8 @@ async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
   return null;
 }
 
-/**
- * GHI CACHE `{b64, ts}` — CHỈ khi nội dung b64 KHÁC bản đang giữ. Trả về: có ghi thật hay không.
- *
- * VÌ SAO KHÔNG DÙNG `putNeuKhac` (định nghĩa phía dưới): hàm đó so CẢ CHUỖI đã JSON hoá, dùng được
- * cho kho không mang dấu thời gian. Ở đây giá trị là `{b64, ts}` và `ts` đổi mỗi lượt, nên so cả
- * chuỗi thì LẦN NÀO CŨNG "khác" — đúng con bug phải sửa. Vì thế so trên RIÊNG phần b64.
- *
- * Đo 23/09/2026: hai kho này ăn 210 lượt ghi trong ngày (`sfile` 137 · `spdf2` 73) trên trần 1.000
- * lượt/ngày của gói free, mà phần lớn là ghi đè đúng nội dung y hệt bản đã có: cache ghim theo ngày
- * nên AI mở file lần đầu sau mốc quét cũng kích hoạt một lượt tải lại rồi ghi đè. File không đổi
- * vẫn tốn một lượt, và mỗi người mở là một lượt. Tràn trần thì mọi thao tác lưu hỏng giữa buổi —
- * đã tràn thật ba ngày 09–11/09/2026.
- *
- * `b64Cu === undefined` nghĩa là TRONG TAY KHÔNG CÓ bản cũ để so (cache trượt, lần đầu mở file, hoặc
- * người dùng bấm "Làm mới" nên đã bỏ qua lượt đọc cache) → CỨ GHI. Thà tốn thừa một lượt ghi còn hơn
- * để cache trống rồi lần sau ai mở cũng phải ngồi chờ Drive.
- */
-export async function ghiCacheNeuDoiB64(kv: KVLike, cacheKey: string, b64: string, b64Cu: string | undefined, ttlS: number): Promise<boolean> {
-  if (b64Cu !== undefined && b64Cu === b64) return false;
-  await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: ttlS });
-  return true;
-}
-
-/**
- * CHẶN TẢI LẶP TRONG CÙNG MỘT ISOLATE. Trả về: lượt này có được phép làm mới ở nền hay không.
- *
- * Bỏ ghi khi nội dung không đổi có một hệ quả phải tính tới: `ts` trong cache ĐỨNG YÊN, nên lần mở
- * sau vẫn thấy "cũ hơn mốc quét" và lại kích hoạt làm mới nền. Lượt ghi KV thì tiết kiệm được (trần
- * 1.000/ngày, đang dùng 65%), nhưng mỗi lượt vẫn tải ~2MB từ Drive rồi giải nén + nén lại — nặng
- * CPU, mà trần CPU mỗi lượt Worker chỉ khoảng 2.010.000 µs. L9 trong sổ lỗi: cron chết vì quá trần
- * CPU mỗi ngày suốt một tuần mà không ai biết.
- *
- * Nên: mỗi khoá cache chỉ cho làm mới nền MỘT lần trong 10 phút. Ghim ở tầng module nên KHÔNG tốn
- * thêm lượt ghi KV nào — việc này là GIẢM lượt ghi, không được đẻ thêm đường ghi mới.
- *
- * Isolate chết là mất ghim: chấp nhận, vì mất ghim chỉ tốn thêm một lượt tải Drive (Drive không tính
- * vào hạn mức Cloudflare), KHÔNG làm sai dữ liệu.
- */
-const GHIM_LAM_MOI_MS = 10 * 60_000;
-const lanLamMoiCuoi = new Map<string, number>();
-export function nenLamMoiNen(cacheKey: string, gio: number): boolean {
-  const truoc = lanLamMoiCuoi.get(cacheKey);
-  if (truoc !== undefined && gio - truoc < GHIM_LAM_MOI_MS) return false;
-  // Dọn mục đã quá cửa sổ để Map không phình theo số file đã từng mở trong đời isolate.
-  if (lanLamMoiCuoi.size > 200) for (const [k, t] of lanLamMoiCuoi) if (gio - t >= GHIM_LAM_MOI_MS) lanLamMoiCuoi.delete(k);
-  lanLamMoiCuoi.set(cacheKey, gio);
-  return true;
-}
-
-/** Fetch Drive → (gid: đúng 1 tab · không gid: TÁCH đúng tab `sheet` (mặc định "Summary")) → b64 → cache.
- *  `b64Cu` = bản cache chỗ gọi ĐANG GIỮ trong tay (nếu có) → nội dung không đổi thì khỏi ghi lại. */
-async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string, sheet?: string, full?: boolean, b64Cu?: string): Promise<string> {
+/** Fetch Drive → (gid: đúng 1 tab · không gid: TÁCH đúng tab `sheet` (mặc định "Summary")) → b64 → cache. */
+async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLike | null, cacheKey: string, sheet?: string, full?: boolean): Promise<string> {
   let raw: ArrayBuffer, effGid = gid;
   try {
     raw = await fetchXlsxById(fileId, gid);
@@ -211,7 +161,7 @@ async function refreshAndStore(fileId: string, gid: string | undefined, kv: KVLi
   }
   const b64 = toB64(bytes);
   if (kv) {
-    try { await ghiCacheNeuDoiB64(kv, cacheKey, b64, b64Cu, CACHE_TTL_S); } catch { /* cache lỗi thì bỏ qua */ }
+    try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi thì bỏ qua */ }
     // Ghi fileId vào REGISTRY (sfile:index) để worker cron warm SẴN — CHỈ cho dạng "Summary" (không gid);
     // dạng theo gid (Public…) chưa warm qua cron (vẫn nhanh nhờ file 23KB + cache), tránh phá warmer.
     if (!gid) {
@@ -331,20 +281,11 @@ export const getSummaryFile = createServerFn({ method: "POST" })
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
-        let b64 = hit, ts = 0, dinhDangMoi = false;
-        try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; dinhDangMoi = true; } }
+        let b64 = hit, ts = 0;
+        try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } }
         catch { /* cache đời cũ (b64 thô) → coi như ts=0 để refresh nền 1 lần */ }
-        // cũ hơn mốc quét hôm nay → làm mới ở NỀN. `nenLamMoiNen` chặn lượt tải lặp: bỏ ghi khi nội
-        // dung không đổi làm `ts` đứng yên, nên nếu không chặn thì MỖI lượt mở đều tải lại Drive.
-        const gio = Date.now();
-        if (ts < lastRefreshBoundary(gio) && nenLamMoiNen(cacheKey, gio)) {
-          // Truyền bản đang giữ xuống để so: nội dung y hệt thì KHỎI ghi lại. Bản này đã có sẵn trong
-          // tay (vừa đọc ở trên) nên so được mà KHÔNG tốn thêm lượt đọc KV nào.
-          //
-          // Cache ĐỜI CŨ (b64 thô, chưa bọc {b64, ts}) thì KHÔNG đưa ra so — đưa ra so mà nội dung
-          // trùng thì lượt ghi bị bỏ, và bản cũ nằm lại mãi ở định dạng cũ với ts=0, nên mỗi lượt mở
-          // đều kích hoạt tải nền. Để `undefined` = cứ ghi đúng một lượt, đổi sang định dạng mới.
-          const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full, dinhDangMoi ? b64 : undefined).catch(() => { /* nền, lỗi kệ */ });
+        if (ts < lastRefreshBoundary(Date.now())) {          // cũ hơn mốc quét hôm nay → làm mới ở NỀN
+          const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full).catch(() => { /* nền, lỗi kệ */ });
           const wu = await getWaitUntil();
           if (wu) wu(job);
         }
@@ -384,16 +325,10 @@ export const getSheetPdf = createServerFn({ method: "POST" })
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
-        let b64 = hit, ts = 0, dinhDangMoi = false;
-        try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; dinhDangMoi = true; } } catch { /* cache cũ */ }
-        const gio = Date.now();
-        if (ts < lastRefreshBoundary(gio) && nenLamMoiNen(cacheKey, gio)) {
-          // bản PDF đang giữ — Google render lại ra y hệt thì khỏi ghi đè. Cache đời cũ (b64 thô)
-          // thì để `undefined` = cứ ghi một lượt để đổi sang định dạng mới, xem ghi chú ở getSummaryFile.
-          const b64Cu = dinhDangMoi ? b64 : undefined;
-          const job = fetchSheetPdf(data.fileId, data.gid, data.range)
-            .then((b) => ghiCacheNeuDoiB64(kv, cacheKey, b, b64Cu, CACHE_TTL_S))
-            .catch(() => { /* nền */ });
+        let b64 = hit, ts = 0;
+        try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } } catch { /* cache cũ */ }
+        if (ts < lastRefreshBoundary(Date.now())) {
+          const job = fetchSheetPdf(data.fileId, data.gid, data.range).then((b) => kv.put(cacheKey, JSON.stringify({ b64: b, ts: Date.now() }), { expirationTtl: CACHE_TTL_S })).catch(() => { /* nền */ });
           const wu = await getWaitUntil(); if (wu) wu(job);
         }
         return { b64, cached: true };

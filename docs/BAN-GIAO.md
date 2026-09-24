@@ -94,126 +94,28 @@ Muốn tiết kiệm ở `sfile`/`spdf2` thì phải **hỏi Drive xem file có 
 ## ② THỰC THI
 
 **ĐÃ LÀM**
-
-`src/lib/mtld-install.functions.ts` — bốn thay đổi:
-
-1. Thêm `ghiCacheNeuDoiB64(kv, cacheKey, b64, b64Cu, ttlS)` — ghi `{b64, ts}` CHỈ khi phần b64 khác
-   bản đang giữ. Trả về có ghi thật hay không. **Xuất ra** để bộ kiểm gọi thẳng code thật.
-2. Thêm `nenLamMoiNen(cacheKey, gio)` + một `Map` ở tầng module, cửa sổ 10 phút — chặn tải lặp
-   (ràng buộc 4). Không tốn lượt ghi KV nào.
-3. `refreshAndStore` nhận thêm tham số cuối `b64Cu?: string`, và ghi qua hàm ở mục 1 thay vì
-   `kv.put` vô điều kiện (dòng 164 cũ).
-4. Hai nhánh làm mới nền — `getSummaryFile` và `getSheetPdf` (chỗ `kv.put` trong `.then()`, dòng
-   ~331 cũ) — đều qua cổng `nenLamMoiNen` và truyền bản cache đang cầm trong tay xuống để so.
-
-`tests/kv-ghi-khi-noi-dung-doi.test.ts` — **mới**, 10 phép kiểm, gọi thẳng hai hàm xuất ở trên.
-
-`src/routes/index.tsx` — thêm mục CHANGELOG `v3.110.0 (24/09/2026)`. `APP_VERSION` tự suy từ
-`CHANGELOG[0].v` nên phiên bản app lên 3.110.0 theo.
+<sửa gì, ở file nào>
 
 **VÌ SAO LÀM THẾ**
-
-*So với bản cũ lấy từ đâu — đọc lại KV hay dùng bản đang cầm?* Chọn **bản đang cầm**. Nhánh làm mới
-nền vừa đọc cache xong ở ngay trên, bản cũ đã nằm sẵn trong biến; đọc lại KV là tốn thêm một lượt
-đọc cho đúng thứ đang có trong tay. Cách này cũng tự thoả ràng buộc 3: chỗ nào không cầm bản cũ thì
-tham số là `undefined` và hàm cứ ghi, khỏi phải nhớ thêm luật.
-
-*Vì sao không dùng lại `putNeuKhac` có sẵn trong cùng file.* Hàm đó so **cả chuỗi đã JSON hoá**. Giá
-trị ở đây là `{b64, ts}` mà `ts` đổi mỗi lượt, nên so cả chuỗi thì lần nào cũng ra "khác" — đúng con
-bug đang phải sửa. Vì vậy so trên riêng phần b64. Đã ghi lý do này ngay trên hàm mới để người sau
-đừng "dọn dẹp" bằng cách gộp hai hàm lại.
-
-*Cổng chặn tải lặp đặt ở đâu.* Đặt tại hai nhánh làm mới nền, **không** đặt trong `refreshAndStore`.
-Vì `refreshAndStore` còn được gọi ở nhánh cache trượt, nơi người dùng đang ngồi chờ dữ liệu — chặn
-chỗ đó là để họ nhìn màn hình trống.
-
-*Cache đời cũ (b64 thô, chưa bọc `{b64, ts}`).* Chỗ này suýt lọt. Nếu đem bản thô ra so mà nội dung
-trùng thì lượt ghi bị bỏ, bản cũ nằm lại mãi ở định dạng cũ với `ts = 0`, nên **mỗi** lượt mở đều
-kích hoạt tải nền — tiết kiệm lượt ghi nhưng đổi lấy CPU, đúng bẫy L9. Nay bản đời cũ truyền
-`undefined` để cứ ghi đúng một lượt và đổi sang định dạng mới, giữ nguyên ý định mà ghi chú cũ trong
-code đã nói rõ ("coi như ts=0 để refresh nền 1 lần").
+<quyết định nào có nhiều hơn một đường, và vì sao chọn đường này>
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch (exit 0)
-vitest                : 368 passed | 2 expected fail | 28 file
-                        mốc nền Test đo 21/09: 358 passed | 2 expected fail | 27 file
-                        chênh +10 đúng bằng số phép kiểm tôi thêm — không test đang xanh nào bị đỏ
-build                 : qua, 13,21s
-quét byte điều khiển  : 16 byte · 7 file — ĐÚNG BẰNG mốc nền của Test, ba file tôi đụng thêm 0 byte
-                        (mtld-install.functions.ts sạch · test mới sạch · index.tsx giữ nguyên 6 byte
-                        có sẵn từ trước, thuộc phần việc V1)
-                        Dùng lệnh ĐÃ SỬA ở NEN-TANG phần 6, không dùng lệnh cũ (L13)
-kiểm trên app         : 1440px — badge phiên bản 3.109.0 → 3.110.0; hộp "CÓ GÌ MỚI" hiện mục mới
-                        trên cùng kèm nhãn MỚI NHẤT, ngày 24/09/2026, hai gạch đầu dòng đủ chữ.
-                        375px — scrollWidth = clientWidth = 375, KHÔNG tràn ngang; chữ xuống dòng gọn.
-                        Console: không lỗi mới. Hai lỗi đang có là của sẵn môi trường dev, không
-                        phải của bản sửa: hydration lệch thuộc tính `data-tsd-source` (lệch ở cả
-                        `__root.tsx`, file tôi KHÔNG đụng) và `GET /version.json → 404` (file chỉ có
-                        sau khi deploy).
-ghi KV thêm mỗi lần mở app : 0 — và đây là điểm chính: `getSummaryFile`/`getSheetPdf` KHÔNG chạy lúc
-                        mở app. Đã soi 210 lượt mạng của một lần mở: không có lượt nào gọi hai hàm
-                        này. Chúng chỉ chạy khi có người bấm mở ma trận lắp đặt / bảng PDF của một
-                        dự án. Việc này chỉ BỚT ghi, không thêm đường ghi nào.
-cổng demo             : KHÔNG ÁP DỤNG — không phải effect phía client. Đây là server-fn chạy trên
-cổng đang tải         : KHÔNG ÁP DỤNG   Worker theo đúng một thao tác người dùng; `dataMode` và
-                        `dangTaiKho` là state của client, không tồn tại trong phạm vi này (grep cả
-                        file: 0 chỗ). Ghi "có" vào đây là khai man, nên tôi ghi thẳng là không áp dụng.
+tsc                   : sạch / lỗi
+vitest                : <số> passed
+build                 : qua / hỏng
+quét byte điều khiển  : sạch / có
+kiểm trên app         : <số cụ thể trước và sau, ở 1440px và 375px>
+ghi KV thêm mỗi lần mở app : <số>
+cổng demo             : có / KHÔNG CÓ
+cổng đang tải         : có / KHÔNG CÓ
 ```
 
 **CHỖ TÔI KHÔNG CHẮC**
-
-1. **`spdf2` có thể tiết kiệm được 0 — rủi ro lớn nhất của bản này.** Bản PDF do Google render. Nếu
-   Google nhúng dấu thời gian hoặc ID vào file PDF thì byte đổi mỗi lượt render dù sheet không đổi,
-   phép so không bao giờ khớp, và 73 lượt ghi/ngày của `spdf2` giữ nguyên. Tôi **không kiểm được**:
-   cần gọi Drive thật. Nếu điều này đúng thì mong đợi "210 xuống dưới 60" của Plan phải hạ xuống còn
-   khoảng "137 của `sfile` xuống thấp, `spdf2` giữ nguyên". **Đề nghị Test đo đúng chỗ này trước
-   tiên:** tải PDF cùng một tab hai lần cách nhau vài phút, so hai chuỗi b64.
-
-2. **Cổng 10 phút làm dữ liệu mới về chậm hơn, trong tình huống xấu nhất.** Trước đây mỗi lượt mở
-   sau mốc quét đều kích hoạt tải nền, nên file vừa sửa trên Drive được bắt ở lượt mở kế tiếp. Nay
-   nếu lượt làm mới gần nhất kết luận "không đổi" thì trong 10 phút sau đó không tải lại nữa — ai
-   sửa Drive ngay trong khoảng đó phải đợi hết 10 phút. Chỉ xảy ra ở nhánh "không đổi": hễ nội dung
-   có đổi thật thì `ts` nhích lên và mốc quét tự chặn phần còn lại của ngày.
-   **Đây là bẫy khi Test kiểm tiêu chí quan trọng nhất** ("sửa file trên Drive rồi mở → vẫn ghi"):
-   mở lại ngay sau khi sửa có thể vẫn thấy bản cũ, và đó KHÔNG phải bằng chứng bản sửa hỏng. Đợi quá
-   10 phút, hoặc bấm nút "Làm mới" (đường `force` đi thẳng, không qua cổng nào).
-
-3. **Đường `force` vẫn ghi vô điều kiện.** Bấm "Làm mới" thì code bỏ qua lượt đọc cache nên không
-   cầm bản cũ → cứ ghi, đúng ràng buộc 3. Ai bấm "Làm mới" liên tục thì vẫn tốn lượt ghi như trước.
-   Tôi KHÔNG tự mở rộng sang đọc cache ở đường force để so, vì đó là thêm lượt đọc cho một đường
-   người dùng chủ động đòi bản mới — nếu Plan muốn khác thì nói, đừng để tôi tự quyết.
-
-4. **Cổng chặn tính theo từng isolate.** Cloudflare chạy nhiều isolate song song, nên con số thật
-   không phải "1 lượt tải mỗi 10 phút" mà là "1 lượt mỗi 10 phút **mỗi isolate**". Với 10–17 người
-   một ngày thì số isolate cùng lúc nhỏ, nhưng tôi không đo được nên không dám nêu con số.
-
-5. **Chưa chạy trên KV thật lần nào.** Bộ kiểm dùng KV giả đếm lượt `put`; dev không có binding KV.
-   Mọi con số lượt ghi thật phải đợi một ngày chạy production rồi đo bằng câu SQL ở tiêu chí 3.
-
-6. **`sheetsnap` không được đụng** (đúng PHẠM VI), nên 79 lượt/ngày của nó giữ nguyên. Con số "289 =
-   45% cả ngày" ở phần VIỆC vì thế không phải thứ bản này nhắm tới; phần trong tầm là 210 của
-   `sfile` + `spdf2`. Nêu ra để Review khỏi đối chiếu nhầm mốc.
-
-7. **Bốn dòng CHANGELOG tôi thêm làm lệch số dòng của `index.tsx`, và việc V1 đang ghim số dòng.**
-   Bảng phạm vi của V1 (`git show 19e81d4`) ghi `src/routes/index.tsx` ở 2555 · 2564 · 3058 · 3976
-   (hai chỗ) · 4960. Quét lại sau bản sửa này: **2559 · 2568 · 3062 · 3980 (hai chỗ) · 4964** —
-   lệch đúng +4. Nội dung byte không đổi, chỉ số dòng trôi. Ai làm V1 mà cầm bảng cũ sẽ sửa nhầm
-   dòng. Tôi KHÔNG tự sửa đặc tả V1 vì đó là mục của Plan.
+<liệt kê thẳng. Đây là chỗ Review soi kỹ nhất. Để trống ở một việc không tầm thường là dấu hiệu xấu.>
 
 **CHƯA LÀM**
-
-- **Ba tiêu chí nghiệm thu 1, 2, 3 của Plan** — đều cần KV thật và một ngày chạy production. Tôi chỉ
-  làm được tiêu chí 4 (tsc, vitest) và 5 (phép kiểm mới). Tiêu chí 2 là quan trọng nhất và phải có
-  người mở app thật, đọc kỹ mục 2 phần trên trước khi kết luận.
-- **Không đụng** `sheetsnap` ở `edits.functions.ts:1416`, warmer, `sfile:index`, `CACHE_TTL_S`,
-  `lastRefreshBoundary` — đúng phần NGOÀI của PHẠM VI. Cũng không gộp ba kho.
-- **Không thêm đường ghi KV nào**, kể cả để lưu mã băm (ràng buộc 5). Mã băm sẽ tốn đúng thứ đang
-  khan; so thẳng b64 trong bộ nhớ thì miễn phí.
-- **Không sửa lint.** `npx eslint` trên repo ra 10.180 lỗi, gần hết là `Delete ␍` vì repo dùng CRLF
-  còn cấu hình prettier đòi LF — hỏng sẵn toàn repo, không phải do bản này, và chạy `--fix` là viết
-  lại dấu xuống dòng của hàng trăm file. File mới của tôi dùng CRLF cho khớp phần còn lại.
-- **Không deploy.**
+<phần nào của đặc tả chưa đụng tới, và vì sao>
 
 ---
 
@@ -354,27 +256,3 @@ in tên file · số dòng · mã byte. Chạy lên cây hiện tại ra **16 by
 Đây là chỗ đáng nhớ nhất của lượt này: lỗi ① (Plan sót một file) **không phải Plan cẩu thả** - Plan
 dùng đúng công cụ mà sổ nền tảng đưa cho, và công cụ đó mù với `0x11`. Sửa người thì hỏng lại,
 sửa cái thước thì hết.
-
----
-
-**THỰC THI đề nghị thêm `L14`, và CHƯA tự ghi vào NEN-TANG.md — xin Plan/Test chốt giúp.**
-
-*Vì sao chưa tự ghi:* `docs/NEN-TANG.md` đang có thay đổi CHƯA COMMIT của box Test (bản sửa lệnh
-quét + L13). Tôi sửa tiếp vào đó rồi commit là kéo nguyên phần việc đang dở của Test vào commit của
-mình dưới một thông điệp không nói gì về nó — đúng L12, đúng thứ luật 5.6 vừa cấm. Nên tôi dừng ở
-đề nghị. Test commit xong thì tôi thêm, hoặc Test thêm luôn cũng được.
-
-**L14 · Phép kiểm chốt bằng dấu thời gian có thể XANH GIẢ.** 24/09/2026, lúc viết bộ kiểm cho V2.
-Phép kiểm "bỏ ghi thì `ts` đứng yên" chốt bằng `ts` trước == `ts` sau. Đem chạy lên bản ghi vô điều
-kiện để xác nhận nó đỏ — **nó vẫn xanh**. Lý do: hai lượt ghi liền nhau rơi vào cùng một milli giây
-nên `Date.now()` trả về đúng một số, `ts` sau bằng `ts` trước dù đã ghi đè thật. Phép kiểm đó chứng
-minh được đúng con số không. Chốt lại bằng SỐ LƯỢT `put` thì bắt được ngay.
-→ Phép kiểm phải chốt vào **thứ mình thật sự muốn cấm** (ở đây: lượt ghi), đừng chốt vào **dấu vết
-gián tiếp** của nó. Và mọi phép kiểm mới đều phải đem chạy lên bản chưa sửa một lần — đây là lần
-thứ hai trong hai lượt liên tiếp mà việc "đo lại cái thước" bắt được lỗi, xem L13.
-
-*Kèm một chi tiết nhỏ của cùng buổi, thuộc họ L1:* lúc lùi tạm một dòng để thử, tôi thay bằng
-`node -e` với chuỗi `'...\n'` — không khớp gì cả vì file dùng CRLF, thế là bộ kiểm báo 9/9 xanh và
-suýt nữa tôi ghi "đã xác nhận đỏ" trong khi chưa lùi được dòng nào. Làm lại bằng công cụ sửa file
-thì đúng. Đây chính là lý do L1 bảo đừng nhồi nội dung qua shell, chỉ khác là lần này nó cắn ở chiều
-ĐỌC chứ không phải chiều ghi.
