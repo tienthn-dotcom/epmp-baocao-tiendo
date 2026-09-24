@@ -93,29 +93,117 @@ Muốn tiết kiệm ở `sfile`/`spdf2` thì phải **hỏi Drive xem file có 
 
 ## ② THỰC THI
 
-**ĐÃ LÀM**
-<sửa gì, ở file nào>
+**ĐÃ LÀM — KHÔNG VIẾT DÒNG CODE NÀO. TRẢ VỀ ① PLAN.**
 
-**VÌ SAO LÀM THẾ**
-<quyết định nào có nhiều hơn một đường, và vì sao chọn đường này>
+Đặc tả giao đúng cho tôi một việc tự kiểm chứng: *"tự đi tìm MỌI chỗ đọc `mtld:install:list:v2` và
+xác nhận không chỗ nào phụ thuộc thứ tự. Đừng tin lời Plan. Thấy có thì báo lại."*
+
+Đã đi kiểm. **Ba trên bốn chỗ đọc đều phụ thuộc thứ tự**, và riêng cái cớ để sắp xếp thì không đứng
+được. Nên tôi dừng trước khi gõ, đúng câu dặn.
+
+Việc duy nhất đã đụng tới cây: **thu hồi bản V2 cũ** (`sfile`/`spdf2`) theo lệnh Plan —
+`git revert 81b0ec4` → commit `6de4432`. Mã cũ vẫn nằm nguyên trong lịch sử ở `81b0ec4`, lấy lại
+được bất cứ lúc nào nếu sau này muốn.
+
+**LỖI TRONG ĐẶC TẢ — MỨC: CHẶN**
+
+**① · `dedupInstall()` KHÔNG "gộp và sắp lại". Nó GIỮ PHẦN TỬ ĐẦU TIÊN.**
+
+`app-shell.tsx:229`:
+
+```ts
+for (const p of arr) { const sig = `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`;
+                       if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
+```
+
+Chữ ký gộp là `fileId|gid|formKey` — **không có danh tính dự án trong đó**. Mà chính ghi chú ở
+`index.tsx:2496-2499` nói rõ **nhiều dự án khác nhau vẫn gắn chung một ma trận**, và mảng `named`
+cố ý giữ đủ từng dự án (khoá theo ID cứng ở dòng 2500).
+
+Nên với một ma trận dùng chung, **phần tử nào đứng trước thì dự án đó thắng**, và `name`, `maCT`,
+`region`, `groupDA` hiện trên thẻ MTLĐ là của dự án thắng. Đổi thứ tự = đổi dự án thắng = **đổi
+chữ trên giao diện**. Thẻ đó còn được `app-shell.tsx:380` gom theo `region`, nên đổi cả nhóm vùng.
+
+Đây đúng là họ **L11**: sửa một chỗ làm gãy chỗ khác mà không đụng vào chỗ đó, diff sạch, test xanh,
+giao diện vẫn sai.
+
+**② · Hai chỗ đọc khác cũng giữ-cái-đầu-tiên.**
+
+| Chỗ đọc | Khoá gộp | Phụ thuộc thứ tự? |
+|---|---|---|
+| `app-shell.tsx:229` `dedupInstall` | `fileId\|gid\|formKey` | **CÓ** — thô hơn danh tính dự án |
+| `mtld-v2-app.tsx:43` `pid` | `fileId\|gid\|formKey` | **CÓ** — y hệt. Có `.sort` theo tên nhưng sắp **SAU** khi đã gộp, nên chỉ sửa thứ tự hiện ra, không sửa việc ai thắng |
+| `perf-chart-app.tsx:613` `regionMap` | tên dự án chuẩn hoá | **CÓ** — `if (n && !m[n]) m[n] = r` là first-wins. Có `Object.assign` đè bằng `proj:regions` phía sau nên chỉ là đường lùi, nhưng vẫn phụ thuộc thứ tự |
+| `can-media-app.tsx:107` | `fileId\|gid\|name` | không — khoá có tên dự án, lại còn sắp lại sau |
+
+*Bẫy khi đi kiểm:* `grep` coi `can-media-app.tsx` và `index.tsx` là **"Binary file"** vì trong đó có
+byte NUL (đúng 14 byte của việc V1). Phải `grep -a` mới thấy. Test đã ghi bẫy này ở đặc tả V1 — nó
+cắn thật.
+
+**③ · Cái cớ để sắp xếp không đứng được: thứ tự không có nguồn nào làm nó đổi.**
+
+Đặc tả nói *"mảng `named` được dựng theo thứ tự duyệt `data.items`, thứ tự đổi thì chuỗi đổi"*. Đã
+truy: `data.items` dựng bằng cách đẩy từng dòng khi đi qua sheet (`parser.ts:560`), và **trong cả
+`parser.ts` không có một phép `.sort` nào trên `items`** — phép sort duy nhất là trên `ridTrung`
+dòng 1058, dùng để in câu chẩn đoán. Vòng lặp ở `index.tsx:2488` cũng tất định, hai bộ `seenKey`
+/`seenSig` đều là giữ-cái-đầu.
+
+Nghĩa là thứ tự `named` = **thứ tự dòng trong file Master Plan**, ổn định với cùng một file. Nó chỉ
+đổi khi PMO chèn/dời dòng — tức vài lần một ngày là cùng, không phải 63.
+
+Hệ quả: sắp xếp gần như **không cắt được lượt ghi nào**, mà vẫn phải trả giá ở mục ① và ②. Đổi một
+hành vi đang tất định lấy một hành vi tất định khác, không kèm lợi ích đo được.
+
+**VẬY 63 LƯỢT/NGÀY TỪ ĐÂU RA — ba hướng nên đào, tôi chưa chứng minh được cái nào**
+
+1. `putNeuKhac` **ghi khi đọc hỏng**: `try { if ((await kv.get(key)) === giaTri) return false; } catch {}`.
+   Mà `bocKv` đã nuốt lỗi đọc và trả `null` rồi, nên `null === giaTri` là sai → **ghi**. Mỗi lượt đọc
+   chập chờn là một lượt ghi thừa, im lặng.
+2. **Nội dung đổi thật** vì `sheetViews` (nguồn của `cfg`) là kho PMO sửa được — cần biết ngày 23/09
+   PMO có sửa link nhiều không.
+3. Effect có `dangTaiKho` trong dep array, nên nó chạy lại mỗi lần `useIsFetching()` về 0. Nếu có
+   nhịp nào đó cho ra payload khác nhau giữa hai lần về 0 thì mỗi nhịp là một lượt ghi.
+
+**Cách chốt rẻ nhất, đề nghị Plan quyết:** ghi thêm **mã băm ngắn của payload** vào bảng D1 `kv_write`
+cạnh tên kho. D1 còn 99% hạn mức (100.000 lượt/ngày, đang dùng ~650) nên không đụng gì tới trần KV.
+Một ngày sau là biết ngay 63 lượt đó là 63 payload khác nhau hay 1 payload ghi 63 lần — và câu trả
+lời đó chỉ đúng một trong ba hướng trên. Đoán tiếp mà không có số là cách làm ra **L10**.
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch / lỗi
-vitest                : <số> passed
-build                 : qua / hỏng
-quét byte điều khiển  : sạch / có
-kiểm trên app         : <số cụ thể trước và sau, ở 1440px và 375px>
-ghi KV thêm mỗi lần mở app : <số>
-cổng demo             : có / KHÔNG CÓ
-cổng đang tải         : có / KHÔNG CÓ
+tsc                   : sạch (sau khi revert)
+vitest                : 358 passed | 2 expected fail | 27 file — đúng mốc nền Test đo 21/09
+build                 : không chạy lại — không có thay đổi code nào để dựng
+quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền, không đổi
+kiểm trên app         : không áp dụng — không có thay đổi nào để nhìn
+ghi KV thêm mỗi lần mở app : 0 (không đụng gì)
+cổng demo             : CÓ SẴN ở index.tsx:2482, tôi không đụng
+cổng đang tải         : CÓ SẴN ở index.tsx:2483, tôi không đụng
 ```
 
+Lưu ý mốc nghiệm thu: tiêu chí 5 của ① ghi `vitest 346 passed (+1 = 347)`. **346 là mốc cũ**, đo
+trước khi Test thêm `tests/chu-gach-ngang-ranh-gioi.test.ts` vào cây. Mốc đúng bây giờ là
+**358 passed | 2 expected fail | 27 file**. Ai cầm 346 đi đối chiếu sẽ tưởng có 12 test lạ.
+
 **CHỖ TÔI KHÔNG CHẮC**
-<liệt kê thẳng. Đây là chỗ Review soi kỹ nhất. Để trống ở một việc không tầm thường là dấu hiệu xấu.>
+
+1. **Tôi không chứng minh được thứ tự KHÔNG BAO GIỜ đổi** — chỉ chứng minh được là trong đường code
+   đã đọc thì không có chỗ nào làm nó đổi. Còn `data` có thể bị lọc/sắp ở tầng trên mà tôi chưa soi
+   hết. Nếu Plan có bằng chứng thật rằng payload đổi thứ tự (ví dụ hai bản JSON chụp ở hai thời
+   điểm), thì đưa ra, tôi làm ngay.
+2. **Mức nghiêm trọng của mục ① tuỳ vào việc thực tế có bao nhiêu ma trận dùng chung.** Nếu gần như
+   không có dự án nào gắn chung ma trận thì sắp xếp gần như vô hại. Tôi không đo được con số này vì
+   nó nằm trong dữ liệu thật (`sheetViews` trên KV). **Đây là số Plan nên đo trước khi quyết.**
+3. Tôi **chưa đụng** tới hướng sửa `putNeuKhac` cho nó khỏi ghi khi đọc hỏng, dù tôi nghi hướng đó.
+   Đặc tả ghi rõ NGOÀI phạm vi: "không đổi `putNeuKhac`". Không tự mở rộng.
 
 **CHƯA LÀM**
-<phần nào của đặc tả chưa đụng tới, và vì sao>
+
+- **Toàn bộ phần sửa code của V2 mới.** Lý do ở trên. Chờ Plan quyết một trong ba đường:
+  (a) đo mã băm payload rồi quay lại; (b) đổi khoá gộp của `dedupInstall`/`pid` cho có danh tính dự
+  án — nhưng đó là **đổi hành vi hiển thị**, phải hỏi người dùng chứ không phải việc của hai chúng
+  ta; (c) bỏ V2, quay sang V1 đang nằm trong hàng đợi.
+- Không deploy. Không đụng file nào của box Test.
 
 ---
 
