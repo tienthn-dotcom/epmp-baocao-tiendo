@@ -105,6 +105,9 @@ Không phải lo xa. Mỗi mục là một lần app hỏng, có ngày tháng. �
 **L12 · `git add -A` quét luôn việc của box khác.** Bốn box cùng mở **một thư mục làm việc**, nên cây git là cây dùng chung. Plan chạy `git add -A` và kéo nguyên ba file đang làm dở của box Test vào commit của mình, dưới một thông điệp không nói gì về chúng (21/09/2026, đã tách lại bằng `git reset --soft`).
 → **Chỉ add đúng đường dẫn mình đã sửa.** Chạy `git status --short` trước khi commit, và không bao giờ `git add -A` / `git add .` ở dự án này.
 
+**L13 · Cái thước tự nó sai, và không ai đo lại cái thước.** 21/09/2026: lệnh quét byte điều khiển ở phần 6 chỉ dò 5 giá trị (`0x00, 0x08, 0x0b, 0x0c, 0x1b`), trong khi mã nguồn đang mang cả `0x01` (`src/lib/compliance.ts:203`) lẫn `0x11` (`scripts/bao-cao-hang-ngay.gs:341,342`). Chạy lệnh cũ lên đúng hai file đó thì nó in **`sach`**. **3 trên 16 byte vô hình với chính công cụ của đội.** Mục "ĐÃ ĐO" của cả bốn box đều có dòng `quét byte điều khiển: sạch/có` - và dòng đó đã nói dối bao lâu thì không ai biết. Cũng chính vì cái thước hụt này mà Plan đo V1 ra 14 byte/6 file thay vì 16 byte/7 file, bỏ sót nguyên file Apps Script.
+→ Phép đo nào bốn box dựa vào để nghiệm thu thì **phải tự kiểm cái thước trước**: cho nó chạy lên một mẫu đã biết chắc là bẩn, xem có bắt được không. Lệnh ở phần 6 đã sửa cho phủ hết dải.
+
 ---
 
 ## 5. LUẬT CỨNG - ÁP CHO CẢ BỐN BOX
@@ -172,10 +175,12 @@ npx wrangler deploy         # CHỈ người dùng bấm, sau khi Review đạt
 
 Kiểm trên app: dùng **công cụ preview**, không chạy dev server bằng shell. Phải kiểm ở **1440px và 375px**.
 
-Quét byte điều khiển sau khi sửa file (xem L1):
+Quét byte điều khiển sau khi sửa file (xem L1 và **L13**). Nhận thư mục, tự đi vào trong, in
+**tên file · số dòng · mã byte**. Dải dò: `0x00-0x08 · 0x0b · 0x0c · 0x0e-0x1f` — bỏ qua tab
+(0x09), xuống dòng (0x0a) và CR (0x0d). **Đừng thu hẹp dải này lại** — xem L13.
 
 ```bash
-node -e "const fs=require('fs');const x={0:'NUL',8:'BS',11:'VT',12:'FF',27:'ESC'};for(const f of process.argv.slice(1)){const b=fs.readFileSync(f);const h=[...b].filter(v=>x[v]).length;console.log(f,h?'CO '+h+' BYTE LA':'sach')}" <các file vừa sửa>
+node -e "const fs=require('fs'),p=require('path');const la=v=>v<9||v===11||v===12||(v>13&&v<32);const du=new Set(['.ts','.tsx','.js','.mjs','.cjs','.gs','.md','.json']);let n=0;const di=d=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const f=p.join(d,e.name);if(e.isDirectory()){if(e.name!=='node_modules'&&e.name!=='.git')di(f);continue}if(!du.has(p.extname(e.name)))continue;const b=fs.readFileSync(f);let y=1;for(let i=0;i<b.length;i++){if(b[i]===10){y++;continue}if(la(b[i])){n++;console.log(f+':'+y+'  0x'+b[i].toString(16).padStart(2,'0'))}}}};for(const d of process.argv.slice(1))if(fs.existsSync(d))di(d);console.log(n?'CO '+n+' BYTE LA':'sach')" src tests scripts docs
 ```
 
 ---
