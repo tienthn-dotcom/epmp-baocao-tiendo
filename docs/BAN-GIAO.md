@@ -12,138 +12,78 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V2b · Đo cho ra vì sao danh sách MTLĐ bị ghi 63 lần/ngày, rồi mới sửa**
-Plan mở 24/09/2026. **V2 đã chết** — xem "V2 SAI Ở ĐÂU" cuối mục ①. Không ai được làm theo V2 nữa.
+**V4a · Xuất Excel: ô THẬT thay vì ô chữ**
+Plan mở 25/09/2026. Người dùng chốt "làm đủ cả hai" nên chẻ hai vòng: **V4a ô thật** (vòng này) rồi **V4b phần nhìn**.
 
-*Hàng đợi:*
+*Đang chờ người dùng:* **V2b** (mã băm vào bảng đếm D1) đã xong ② và Test cho **ĐẠT KÈM LƯU Ý** ở ③. Kẹt ở chỗ chưa ai bấm deploy, và chưa có box nào nhận vai Review. Không liên quan V4.
 
-**V3 · Thẻ MTLĐ hiện ĐỦ TÊN những dự án dùng chung một ma trận** — người dùng đã quyết 24/09/2026.
-Đo trên KV **production** cùng ngày (Plan đọc, được người dùng cho phép — box Thực thi bị chặn quyền và đã báo thay vì lách):
-
-```
-tong muc trong mtld:install:list:v2 : 46
-so chu ky ma tran khac nhau         : 37
-chu ky BI DUNG CHUNG                : 6
-so du an nam trong do               : 15   -> 6 the hien ra, 9 du an BI GIAU TEN
-trong 6 nhom do, co 2 nhom KHAC ma CT
-```
-
-Nhóm nặng nhất - **4 dự án, 4 mã CT khác nhau, chỉ hiện tên 1**:
-`CT26-052` Nhà hàng Tây Ban Nha · `CT26-051` Nhà hàng Italia · `CT25-025` Penthouse T3D · `CT26-031` Villa A2.
-
-**Giả thuyết cũ đã bị bác.** Bản chụp cục bộ 10/09 (31 mục, phủ chưa tới 40%) cho ra 1 nhóm / 2 dự án / cùng một mã CT, và gợi ý rằng ma trận dùng chung luôn là "hai khu vực của cùng một công trình" nên hậu quả nhẹ. Production nói ngược lại: **6 nhóm, 15 dự án, 2 nhóm bắc qua nhiều mã CT**. Đây là lý do luật "đo trên dữ liệu thật" tồn tại - mẫu 40% dẫn tới kết luận sai về mức nghiêm trọng.
-
-Việc: `dedupInstall` (`app-shell.tsx:231`) gộp theo `fileId|gid|formKey` rồi **giữ phần tử đầu**, nên 9 dự án kia không hiện tên ở đâu cả. Cho thẻ hiện đủ tên nhóm.
-**Không** đổi cách gộp, **không** tách thẻ - người dùng chọn "một thẻ, ghi đủ tên".
-Nhớ ba chỗ khác cũng giữ-cái-đầu: `mtld-v2-app.tsx:43`, `perf-chart-app.tsx:613`, và `can-media-app.tsx:107` (chỗ này khoá có tên dự án nên không dính).
-
-**V1** (dọn 14 byte điều khiển vô hình) — đặc tả ở `git show 19e81d4`, **cần sửa hai chỗ** trước khi giao lại: ghim theo nội dung thay vì số dòng, và mốc test đổi theo cây hiện tại chứ không phải 346.
+*Hàng đợi:* **V4b** phần nhìn · **V3** thẻ MTLĐ hiện đủ tên (15 dự án, 9 bị giấu tên) · **V1** dọn 14 byte điều khiển.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Thêm **mã băm ngắn của payload** vào bảng D1 `kv_write`, chạy thật một ngày, để biết 63 lượt ghi kia là **63 payload khác nhau** hay **một payload ghi 63 lần**. Chưa sửa gì hết.
+Trong `exportTableXlsx`, ghi ngày ra **kiểu ngày**, phần trăm và số ngày quá hạn ra **kiểu số**, thay vì ghi tất cả thành chữ như hiện nay.
 
 **VÌ SAO CẦN**
-Plan đã đoán sai hai lần liên tiếp về chính con số này. Lần một: "mỗi người mở là một lượt" - sai, thực tế một lượt mỗi khoá mỗi ngày. Lần hai: "thứ tự mảng đổi nên lớp chặn không khớp" - sai, Thực thi truy ra `parser.ts` không sort items, thứ tự là thứ tự dòng trong file, tất định với cùng một file.
+Chú thích của chính app hứa: *"Xuất Excel giống hệt bảng/PDF nhưng là ô THẬT (lọc / sắp xếp / sửa ngay trong Excel)"* (`index.tsx:1127`). Hiện lời hứa đó **chưa đúng**: `XlsxTableRow.cells` khai là `string[]`, mọi ô đều là chữ.
 
-Đoán lần thứ ba mà không có số là đúng cách làm ra **L10**. Dừng đoán.
+Hậu quả đo được: cột ngày đang là chữ `dd/mm/yy`, nên bấm sắp xếp theo ngày trong Excel ra **thứ tự chữ cái chứ không phải thứ tự thời gian** - `01/12/25` đứng trước `02/01/26`. Cột % và Quá hạn cũng không cộng, không lọc "lớn hơn", không dựng biểu đồ được.
 
-D1 đang dùng ~650 trên trần 100.000 dòng/ngày, tức **0,65%**. Thêm một cột băm không đụng gì tới trần KV.
+Người nhận file mở ra, bấm sắp xếp theo hạn, và **tin vào một thứ tự sai**. Đây không phải chuyện thẩm mỹ.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-Người dùng **không thấy gì cả**. Đây là việc gắn đồng hồ đo, không phải việc sửa.
+Nhìn **y hệt hiện nay** - vẫn `dd/mm/yy`, vẫn căn giữa, vẫn màu như cũ. Khác ở chỗ bấm sắp xếp theo ngày thì ra đúng thứ tự thời gian, và bôi đen cột Quá hạn thì Excel cộng được.
 
 **PHẠM VI**
-- Trong: `src/lib/kv-dem.ts` - thêm mã băm ngắn của payload vào dòng ghi D1. Cần thêm cột thì thêm.
-- NGOÀI: **không sửa** `putNeuKhac`, **không sửa** `dedupInstall`, **không sắp xếp** `named`, không đụng `sfile`/`spdf2`/`sheetsnap`, không đổi hành vi nào của app.
+- Trong: `src/lib/excel-export.ts` - `XlsxTableRow.cells` và vòng ghi dòng trong `exportTableXlsx` (dòng 571-681). Và chỗ dựng `cells` trong `src/routes/index.tsx` (`onExportExcel`, ~4597).
+- NGOÀI: **không** đổi màu, **không** đổi cột, **không** đổi thứ tự cột, **không** bỏ ẩn dòng con, **không** đụng `exportMatrixXlsx` (đường xuất ma trận, việc khác), **không** đụng đường xuất PDF. Phần nhìn để dành V4b.
+
+**GIỮ NGUYÊN, NGƯỜI DÙNG ĐÃ CHỐT**
+Dòng công đoạn con **vẫn ẩn sẵn nhưng nhóm lại được để bấm xổ** - đúng như `row.outlineLevel = 1` + `row.hidden = true` đang làm. Đừng đổi. Nhưng **kiểm giúp** là nút xổ thật sự hiện ra trong Excel, vì `summaryBelow: false` đang gán qua `as any`.
 
 **DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-`demGhiKv` được gọi từ **mọi** đường ghi KV. Hỏng nó là hỏng cả bảng đếm, mà bảng đếm là thứ duy nhất đang soi được hạn mức. Băm phải **rẻ và không bao giờ ném lỗi** - băm hỏng thì bỏ qua, tuyệt đối không được làm hỏng lượt ghi thật.
+`XlsxTableRow` là kiểu dùng chung giữa `excel-export.ts` và `index.tsx`. Đổi `cells: string[]` thành kiểu rộng hơn thì **mọi chỗ dựng `cells` phải sửa theo** - trình biên dịch sẽ chỉ ra, nhưng đếm trước cho biết phạm vi.
+`exportMatrixXlsx` **cũng ở trong file này** nhưng là đường khác, không dùng `XlsxTableRow`. Đừng sửa lây.
 
 **RÀNG BUỘC**
-1. Băm là **một chiều và ngắn** (8-12 ký tự hex là đủ). **Không** ghi nguyên payload vào D1 - trong đó có tên dự án và dữ liệu nội bộ.
-2. Băm lỗi → ghi chuỗi rỗng, **không ném**, không chặn lượt ghi KV.
-3. Không thêm lượt ghi **KV** nào. D1 thì được.
-4. Không đổi bất kỳ hành vi nào người dùng thấy được.
+1. **Ô trống phải là Ô TRỐNG, không phải 0, không phải ngày 1900.** Đây là luật 5.2 và là chỗ dễ sai nhất của việc này: `fmtDateVN2(null)` hiện trả `""`, `clampPct` trả `null`. Ghi `0` vào ô % của dòng chưa có số là **báo cáo sai sự thật** - dòng chưa đo thành dòng 0%.
+2. Ngày ghi ra kiểu ngày, định dạng hiển thị `dd/mm/yy` để **nhìn không đổi**.
+3. % ghi ra số. Chọn một trong hai và **nói rõ đã chọn cái nào**: lưu `85` với định dạng `0"%"`, hoặc lưu `0.85` với định dạng `0%`. Cái sau đúng kiểu Excel hơn nhưng ai copy sang chỗ khác sẽ thấy `0.85`.
+4. Quá hạn ghi ra số nguyên.
+5. Cột chữ (Mã, Tên, Người phụ trách, Tình trạng, Vướng mắc, Giải pháp) **giữ nguyên là chữ**. Mã dự án kiểu `CT26-032` mà để Excel tự đoán là nguy hiểm.
+6. Dòng nhóm dự án không có % và Quá hạn - hiện đang đẩy `""`. Giữ **trống**, đừng thành 0.
 
-**ĐÃ ĐO TRƯỚC** (Plan 24/09/2026, đã tự kiểm lại từng chỗ Thực thi chỉ ra)
+**ĐÃ ĐO TRƯỚC** (Plan 25/09/2026)
 ```
-23/09 : write 651/1.000 = 65% · kho mtld 63 luot vao DUNG MOT khoa
-dedupInstall (app-shell.tsx:231) : GIU PHAN TU DAU, chu ky fileId|gid|formKey
-                                   -> KHONG co danh tinh du an trong chu ky
-parser.ts : dung MOT phep .sort, o dong 1058, dung de in chan doan. KHONG sort items.
-putNeuKhac (mtld-install:231) : try/catch nuot loi doc roi ROI XUONG put -> doc hong = ghi thua
-D1 kv_write : ~650 dong/ngay tren tran 100.000 = 0,65%
+Duong xuat Excel  : index.tsx ~4597 -> excel-export.ts exportTableXlsx (dong 590-681)
+Thu vien          : exceljs, nap dong (await import)
+11 cot, chi so 0-based:
+   0 Ngay update   -> NGAY      4 Ngay bat dau  -> NGAY     8 Tinh trang  giu CHU
+   1 Ma            giu CHU      5 Ngay ket thuc -> NGAY      9 Vuong mac   giu CHU
+   2 Ten du an     giu CHU      6 % thuc te     -> SO       10 Giai phap   giu CHU
+   3 Nguoi p.trach giu CHU      7 Qua han       -> SO
+Da co san (DUNG sua o V4a) : thanh tieu de, dong pham vi loc, dong header dong bang (ySplit 3),
+   autoFilter tu dong 3, to mau Tinh trang do/vang/xanh, to do o ngay ket thuc khi qua han,
+   outline nhom dong con
 ```
 
 **CHỖ CÒN MƠ HỒ**
-Ba hướng Thực thi nêu, **chưa hướng nào được chứng minh**:
-- (a) `putNeuKhac` ghi mỗi khi đọc KV chập chờn
-- (b) `sheetViews` đổi thật (PMO sửa link trong ngày)
-- (c) payload khác nhau giữa người dùng, vì mỗi máy parse từ bản cache nguồn khác nhau rồi đè lẫn nhau
-
-Mã băm phân biệt được cả ba: băm **giống nhau** cả 63 lượt → hướng (a). Băm **đổi vài lần** → hướng (b). Băm **nhảy qua lại giữa vài giá trị** → hướng (c).
+Ràng buộc 3 (`85` hay `0.85`) là chỗ Thực thi chọn, nhưng **phải nêu rõ vì sao** trong mục ②. Nếu thấy có lý do mạnh để chọn khác thì báo Plan.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-1. Sau một ngày chạy thật, câu lệnh này trả lời được ngay:
-   ```
-   SELECT kho, bam, COUNT(*) n FROM kv_write
-   WHERE substr(ts,1,10)='<ngày>' AND kho='mtld' GROUP BY 1,2 ORDER BY 3 DESC
-   ```
-2. Số lượt ghi KV mỗi ngày **không tăng** so với trước khi gắn đồng hồ.
-3. `tsc` sạch · `vitest` **358 passed | 2 expected fail | 27 file** (mốc hiện tại, không phải 346).
-4. Phép kiểm: băm ném lỗi thì `demGhiKv` **vẫn chạy trọn** và lượt ghi KV vẫn đi qua. Chốt bằng **số lượt `put`** - xem L14.
-
-**VIỆC NÀY CẦN DEPLOY MỚI CÓ SỐ.** Test soi → Review phán → người dùng bấm deploy → chờ một ngày → Plan đọc số → mới ra được việc sửa thật.
-
-**CỘT `bam` ĐÃ ĐƯỢC THÊM SẴN TRÊN PRODUCTION — Plan chạy tay 24/09/2026.**
-
-```
-truoc : id, ts, kho
-sau   : id, ts, kho, bam
-```
-
-Lý do làm trước: Thực thi nêu đúng một rủi ro - `ALTER TABLE` chạy trên D1 thật mà chưa ai chạy lần nào, và vì hàm đếm nuốt lỗi theo thiết kế nên nếu nó hỏng thì **cột rỗng mãi mãi mà không ai được báo**. Thêm tay trước thì rủi ro đó biến mất: cột đã có, `ALTER` trong code sẽ rơi vào nhánh "đã có cột" và nhánh đó có đường lui.
-
-Thêm một cột rỗng không mất dữ liệu, không ai thấy gì, và app chưa đụng tới nó cho tới khi deploy.
-
-**VẪN PHẢI KIỂM NGAY SAU DEPLOY, ĐỪNG ĐỢI HẾT NGÀY.** Cột có rồi không có nghĩa là băm chạy được - `crypto.subtle` trên Workers là chỗ **chưa ai kiểm trên môi trường thật** (vitest chạy trên Node, không phải Workers).
-
-```bash
-npx wrangler d1 execute pmo-audit --remote --command \
-  "SELECT COUNT(*) tong, COUNT(NULLIF(bam,'')) bam_that FROM kv_write WHERE substr(ts,1,10)='<ngày>'"
-```
-
-| Kết quả | Nghĩa là | Làm gì |
-|---|---|---|
-| `tong` > 0, `bam_that` > 0 | đồng hồ chạy | chờ hết ngày rồi đọc số |
-| `tong` > 0, `bam_that` = 0 | băm luôn hỏng, nhiều khả năng `crypto.subtle` không có trên Workers | **lùi bản**, báo Plan |
-| `tong` = 0 | không ghi được dòng đếm nào - nặng hơn hẳn | **lùi bản ngay**, đây là mất khả năng soi hạn mức (L9) |
-
-Ai bấm deploy thì chạy luôn câu trên trong **cùng phiên đó**, đừng để sang hôm sau.
-
+1. **Phép đo quan trọng nhất:** mở file xuất ra, bấm sắp xếp cột "Ngày kết thúc" tăng dần → ra **đúng thứ tự thời gian**. Trước khi sửa, việc này ra sai. Nêu cụ thể trước và sau.
+2. Bôi đen cột "Quá hạn" → Excel hiện **Sum** ở thanh dưới. Trước: không hiện.
+3. **Dòng chưa có số thì ô % TRỐNG**, không phải 0. Soi thẳng file xuất ra, đừng chỉ tin test.
+4. Nhìn bằng mắt: ngày vẫn hiện `dd/mm/yy`, màu không đổi, cột không xê dịch.
+5. Nút xổ nhóm vẫn bấm được, dòng con vẫn ẩn sẵn.
+6. `tsc` sạch · `vitest` không phép nào đang xanh bị đỏ. Thêm phép kiểm cho hàm dựng ô: trống → trống (không phải 0), ngày hợp lệ → kiểu ngày, % null → trống, % 0 → **số 0 thật** (0% khác với chưa có, đừng gộp).
+7. Không có đường ghi KV nào trong việc này. Lượt ghi phải **không đổi**.
 
 ---
 
-**V2 SAI Ở ĐÂU - giữ lại để không ai đi lại đường cũ**
 
-V2 định sắp xếp mảng `named` cho ổn định trước khi lưu. Thực thi trả về kèm bằng chứng, Plan đã tự kiểm lại từng chỗ và **xác nhận Thực thi đúng cả ba**:
-
-1. **Sắp xếp sẽ ĐỔI CHỮ TRÊN GIAO DIỆN.** `dedupInstall` giữ **phần tử đầu tiên**, chữ ký gộp là `fileId|gid|formKey` - **không có danh tính dự án**. Nhiều dự án gắn chung một ma trận thì phần tử nào đứng trước, tên/mã CT/vùng của dự án đó thắng và hiện lên thẻ MTLĐ. Đổi thứ tự = đổi dự án thắng. Đúng **L11**: sửa một chỗ làm gãy chỗ khác mà không đụng vào nó, diff sạch, test xanh, giao diện vẫn sai. Ba chỗ khác cũng giữ-cái-đầu: `mtld-v2-app.tsx:43`, `perf-chart-app.tsx:613`.
-2. **Sắp xếp cũng chẳng cắt được gì.** `parser.ts` không sort items, vòng lặp ở `index.tsx:2488` tất định, hai bộ `seenKey`/`seenSig` đều giữ-cái-đầu. Thứ tự `named` = thứ tự dòng trong file Master Plan, **ổn định với cùng một file**. Nó chỉ đổi khi PMO chèn/đổi dòng - vài lần một ngày là cùng, không phải 63.
-3. Tức là V2 **trả giá ở mục 1 mà không thu được gì ở mục 2**.
-
-Plan nhận lỗi: đã ghi "thứ tự đổi nên lớp chặn không khớp" mà **không đi đọc `parser.ts` để kiểm**. Đó đúng là thứ mục ĐÃ ĐO TRƯỚC sinh ra để chặn.
-
----
-
-**BẪY KHI ĐỌC CODE NÀY** (Thực thi phát hiện, Plan xác nhận)
-`grep` coi `can-media-app.tsx` và `index.tsx` là **"Binary file"** vì chúng chứa byte NUL - đúng 14 byte của việc V1. `grep` thường **không in ra gì** trong hai file đó. Phải dùng `grep -a`. Đây là một lý do nữa để làm V1.
-
----
 
 
 
