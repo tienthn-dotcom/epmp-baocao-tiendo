@@ -102,6 +102,36 @@ Ràng buộc 3 (`85` hay `0.85`) là chỗ Thực thi chọn, nhưng **phải n�
 
 ---
 
+---
+
+**PLAN SỬA LẠI ĐẶC TẢ — 25/09/2026, sau khi Thực thi chỉ ra**
+
+**Một câu trong đặc tả này SAI.** Ràng buộc 1 viết `fmtDateVN2(null)` trả `""`. Không đúng: hàm đó ở `index.tsx:8242` trả về `"—"` (gạch ngang). Plan đã tự kiểm lại và **Thực thi đúng**.
+
+Hệ quả: bản cũ ghi **chữ `—`** vào ô ngày trống, bản mới để **ô rỗng thật**. Tức **cái nhìn thấy CÓ đổi** ở chỗ này, trái với câu "nhìn y hệt hiện nay" ở phần LÀM XONG THÌ NHÌN THẤY GÌ.
+
+**Plan chốt: đổi như vậy là ĐÚNG, không phải làm thừa.** Để chữ `—` lẫn trong cột ngày là trộn chữ vào cột ngày, phá luôn phép sắp xếp - tức phá đúng thứ mà việc này sinh ra để sửa. Ô trống trong Excel nghĩa là *không có dữ liệu*, đúng luật 5.2. **Test đừng tính mục này là làm thừa.**
+
+**Hai lựa chọn định dạng — Plan duyệt cả hai, lý do của Thực thi đứng vững:**
+- `%` lưu số `85` với định dạng `0"%"`, **không** lưu `0.85`. Lý do nặng nhất: lọc "lớn hơn 80" phải gõ được `80`; với `0.85` thì phải gõ `0.8`, mà lọc là thao tác người nhận làm nhiều nhất sau sắp xếp. Trả giá đã nêu rõ: `0"%"` chỉ là hậu tố hiển thị, ai dựng biểu đồ từ cột này phải tự đặt nhãn trục. Đổi được.
+- `Quá hạn` dùng `0" ngày"`: giá trị vẫn là số nên Excel cộng được, mà mắt vẫn thấy "5 ngày" như bản cũ. Thoả cả ràng buộc 4 lẫn yêu cầu nhìn không đổi.
+
+**MỘT PHÉP KIỂM ĐỎ, KHÔNG LIÊN QUAN VIỆC NÀY.** `findMatrixSheets` trong `tests/matrix-reader.test.ts` quá hạn 5.000 ms. Plan đã **tự tái hiện trên máy mình**: chạy mất 5.943 ms, đỏ thật.
+
+Không phải do V4a:
+```
+src/lib/matrix-reader.ts + tests/matrix-reader.test.ts : khong doi tu commit ec37fc2
+vitest.config / package.json                           : khong doi gan day
+testTimeout                                            : KHONG dat o dau -> dung mac dinh 5.000 ms
+```
+Phép kiểm này đọc file Mini Hotel **thật** rồi parse, vốn đã sát mốc 5 giây và hôm nay trượt qua. Moc nền của Test hôm trước là 0 phép đỏ, nên nó vừa mới vượt ngưỡng chứ không phải mới hỏng.
+
+**Nâng `testTimeout` là quyết định của Test, không phải của Thực thi.** Thực thi đã đúng khi không tự sửa. Test quyết và ghi vào mục ③.
+
+**Một chỗ Thực thi tự khai mà Plan ghi nhận:** bộ kiểm **tự khai lại danh sách cột** (mảng `COLS` là bản chép của `cols` trong `index.tsx`), nên ai đổi `numFmt` một bên mà quên bên kia thì phép kiểm vẫn xanh. Thực thi bù bằng một lượt soi file thật, nhưng lượt đó **làm tay, không tự lặp lại**. Kéo chỗ dựng cột ra khỏi callback JSX là việc đáng làm - Plan xếp vào hàng đợi, **không nhét vào V4a**.
+
+
+
 
 
 
