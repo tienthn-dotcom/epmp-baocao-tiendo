@@ -569,10 +569,35 @@ export async function exportMatrixXlsx(opts: ExportOptions): Promise<void> {
  *  Nhận DỮ LIỆU ĐÃ DỰNG SẴN từ index.tsx (nơi có đủ helper) để module này không phụ thuộc kiểu nội bộ.
  * ═════════════════════════════════════════════════════════════════════════════════════ */
 export type XlsxStatusColor = "RED" | "AMBER" | "GREEN" | null;
+
+/**
+ * Giá trị một ô. `Date` và `number` là Ô THẬT — Excel sắp xếp, lọc "lớn hơn", cộng được.
+ * `null` là Ô TRỐNG THẬT, khác hẳn `0` và khác hẳn chuỗi rỗng: xem `oNgay` bên dưới.
+ */
+export type XlsxCell = string | number | Date | null;
+
+/**
+ * ISO → `Date` cho ô Excel. Không đọc được thì trả `null`, KHÔNG trả ngày 1900 và không trả 0.
+ *
+ * VÌ SAO CẮT CHUỖI CHỨ KHÔNG `new Date(iso)`: `new Date("2026-09-15")` là 00:00 giờ UTC, còn
+ * `new Date("2026-09-15T00:00:00+07:00")` lùi về 17:00 ngày 14 theo giờ UTC — mà exceljs quy Date
+ * ra số thứ tự của Excel theo UTC. Đi đường đó thì một phần dữ liệu **lệch đúng một ngày** trong
+ * im lặng, và đây là bảng dùng để đánh giá PM. Nên lấy thẳng ba số Y-M-D trong chuỗi rồi dựng
+ * UTC midnight — ra ĐÚNG ngày mà `fmtDateVN2` đang hiện trên bảng, vì hàm đó cũng chỉ cắt chuỗi.
+ *
+ * Khác một chỗ với `fmtDateVN2`: hàm đó trả chữ `"—"` khi không có ngày, còn đây trả `null` để ô
+ * TRỐNG THẬT (luật 5.2). Chữ `"—"` nằm trong cột ngày sẽ phá luôn phép sắp xếp của Excel.
+ */
+export function oNgay(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+}
+
 export type XlsxTableRow = {
   kind: "group" | "item";
   /** Giá trị từng cột, ĐÚNG thứ tự columns. */
-  cells: string[];
+  cells: XlsxCell[];
   /** Màu ô "Tình trạng". */
   statusColor?: XlsxStatusColor;
   /** Dòng dự án đã bàn giao → tô XANH LÁ (như bảng). */
@@ -588,7 +613,9 @@ const STATUS_FILL: Record<"RED" | "AMBER" | "GREEN", { bg: string; fg: string }>
 };
 
 export async function exportTableXlsx(opts: {
-  columns: { label: string; width: number; wrap?: boolean; align?: "left" | "center" }[];
+  /** `numFmt` = định dạng HIỂN THỊ của cột (ví dụ `dd/mm/yy`). Giá trị bên dưới vẫn là ngày/số
+   *  thật — đây chỉ là cách Excel vẽ nó ra, để bảng nhìn y hệt bản cũ toàn chữ. */
+  columns: { label: string; width: number; wrap?: boolean; align?: "left" | "center"; numFmt?: string }[];
   /** Chỉ số (0-based) cột "Tình trạng" để tô màu ô đó. */
   statusColIndex: number;
   /** Cột ngày kết thúc (0-based) để tô ĐỎ khi dự án quá hạn. -1 nếu không có. */
@@ -648,6 +675,9 @@ export async function exportTableXlsx(opts: {
       cell.font = { name: "Arial", size: 9.5, bold: isGroup, color: { argb: isGroup ? "FFFFFFFF" : "FF1B1B1B" } };
       cell.alignment = { horizontal: c?.align === "left" ? "left" : "center", vertical: "middle", wrapText: !!c?.wrap };
       cell.border = { bottom: thin, right: thin };
+      // Ô có giá trị thật mới đóng định dạng hiển thị. Ô TRỐNG thì để nguyên trống — đóng `dd/mm/yy`
+      // lên ô rỗng là mời Excel vẽ ra ngày 00/01/00, tức biến "chưa có" thành một ngày có thật.
+      if (c?.numFmt && cell.value != null && cell.value !== "") cell.numFmt = c.numFmt;
       if (isGroup) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r.delivered ? "FF059669" : "FF334155" } };
       }

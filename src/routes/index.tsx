@@ -535,6 +535,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.110.0", date: "25/09/2026", items: [
+    "SỬA SAI THỨ TỰ KHI SẮP XẾP FILE EXCEL. File xuất ra trước đây ghi ngày dưới dạng chữ, nên bấm sắp xếp cột “Ngày kết thúc” trong Excel ra thứ tự chữ cái chứ không phải thứ tự thời gian: 01/12/25 đứng trước 02/01/26. Ai mở file rồi sắp theo hạn là đang nhìn một thứ tự sai.",
+    "Nay ngày là ngày thật, % và số ngày quá hạn là số thật: sắp xếp theo hạn ra đúng thứ tự, lọc “lớn hơn 80%” được, bôi đen cột Quá hạn thì Excel hiện tổng. Bảng vẫn hiện y như cũ — vẫn dd/mm/yy, vẫn “85%”, vẫn “5 ngày”, màu và cột không đổi.",
+    "Ô chưa có số thì nay ĐỂ TRỐNG thật thay vì hiện dấu gạch ngang. Trống nghĩa là chưa đo được, khác hẳn với 0 — để Excel không cộng nhầm và người đọc không hiểu nhầm.",
+  ] },
   { v: "3.109.1", date: "24/09/2026", items: [
     "Gắn thêm đồng hồ đo cho kho chung. App vốn đã đếm mỗi ngày ghi vào kho bao nhiêu lượt, nay ghi thêm một mã ngắn đại diện cho nội dung vừa lưu, để phân biệt được “lưu 63 nội dung khác nhau” với “lưu đi lưu lại đúng một nội dung 63 lần”. Cần biết điều đó mới cắt đúng chỗ đang ăn hạn mức.",
     "Không có gì đổi với người dùng: cùng màn hình, cùng số liệu, cùng tốc độ. Mã ngắn kia không đọc ngược ra nội dung, và không có tên dự án nào trong đó.",
@@ -4598,6 +4603,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           // XUẤT EXCEL "Y HỆT BẢNG/PDF": cùng cột + dòng gộp dự án (xổ công đoạn con) + màu trạng thái,
           // nhưng là Ô THẬT (lọc/sort/sửa trong Excel). Dựng từ CHÍNH `dueMonthGroups` (nguồn bảng gộp).
           if (dueMonthGroups.length === 0) { toast.error("Không có dữ liệu để xuất"); return; }
+          // Nạp sớm hơn chỗ gọi vài dòng để mượn `oNgay` lúc dựng ô. KHÔNG import tĩnh ở đầu file:
+          // làm thế là kéo cả exceljs vào gói chính, mất công tách gói.
+          const { exportTableXlsx, oNgay } = await loadSplit(() => import("@/lib/excel-export"));
           const clean = (s?: string | null) => (s ?? "").replace(/\s*\n+\s*/g, ", ").trim();
           const ALERT_TXT: Record<string, string> = { late: "Trễ tiến độ", trim: "Cần cắt đầu việc", focus: "Cần tập trung" };
           const itemStatus = (it: EnrichedItem): { text: string; color: XlsxStatusColor } => {
@@ -4606,15 +4614,19 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
             if (it._alert && it._alert !== "none") return { text: ALERT_TXT[it._alert] ?? "", color: it._alertColor === "red" ? "RED" : "AMBER" };
             return { text: "", color: null };
           };
+          // `numFmt` giữ cho bảng NHÌN Y HỆT bản cũ (vẫn dd/mm/yy, vẫn "85%", vẫn "5 ngày") trong khi
+          // giá trị bên dưới đã là ngày/số thật — sắp xếp theo hạn ra đúng thứ tự thời gian, bôi đen
+          // cột Quá hạn thì Excel cộng được. Cột CHỮ cố ý không có numFmt: mã kiểu "CT26-032" mà để
+          // Excel tự đoán kiểu là hỏng.
           const cols = [
-            { label: "Ngày update", width: 12, align: "center" as const },
+            { label: "Ngày update", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
             { label: "Mã", width: 15, align: "left" as const },
             { label: "Tên dự án / Hạng mục", width: 42, wrap: true, align: "left" as const },
             { label: "Người phụ trách chính", width: 22, wrap: true, align: "left" as const },
-            { label: "Ngày bắt đầu", width: 12, align: "center" as const },
-            { label: "Ngày kết thúc", width: 12, align: "center" as const },
-            { label: "% thực tế", width: 9, align: "center" as const },
-            { label: "Quá hạn", width: 9, align: "center" as const },
+            { label: "Ngày bắt đầu", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "Ngày kết thúc", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "% thực tế", width: 9, align: "center" as const, numFmt: '0"%"' },
+            { label: "Quá hạn", width: 9, align: "center" as const, numFmt: '0" ngày"' },
             { label: "Tình trạng", width: 15, align: "center" as const },
             { label: "Vướng mắc / Cần xử lý", width: 48, wrap: true, align: "left" as const },
             { label: "Giải pháp / Action plan", width: 48, wrap: true, align: "left" as const },
@@ -4626,8 +4638,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
               kind: "group", delivered: !!g.delivered, late: groupLate,
               statusColor: g.delivered ? "GREEN" : null,
               cells: [
-                fmtDateVN2(g.updateDate), g.maCT || "", g.name || "", clean(g.pm),
-                fmtDateVN2(g.start), fmtDateVN2(g.deadline), "", "",
+                oNgay(g.updateDate), g.maCT || "", g.name || "", clean(g.pm),
+                // Dòng nhóm dự án không có % và Quá hạn → TRỐNG THẬT, không phải 0. Ghi 0 vào đây là
+                // biến một dòng chưa có số thành dòng 0%, tức báo cáo sai sự thật về một PM (luật 5.2).
+                oNgay(g.start), oNgay(g.deadline), null, null,
                 g.delivered ? "Đã bàn giao" : "", visibleText(g.noteMsgs), visibleText(g.actionMsgs),
               ],
             });
@@ -4638,17 +4652,20 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
               rows.push({
                 kind: "item", statusColor: st.color,
                 cells: [
-                  "", stageAbbrOf(it._stageId), it._stageLabel || "",
+                  null, stageAbbrOf(it._stageId), it._stageLabel || "",
                   clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm)),
-                  fmtDateVN2(it.start), doneOn ? fmtDateVN2(doneOn) : fmtDateVN2(it.deadline),
-                  it.pctActual != null ? `${Math.round(it.pctActual)}%` : "",
-                  it.overdueDays ? `${it.overdueDays} ngày` : "",
+                  oNgay(it.start), doneOn ? oNgay(doneOn) : oNgay(it.deadline),
+                  // `!= null` chứ KHÔNG phải kiểm tra rỗng: 0% là một con số THẬT (đã đo, được 0),
+                  // còn chưa đo được thì là TRỐNG. Gộp hai cái lại là xoá mất khác biệt đó.
+                  it.pctActual != null ? Math.round(it.pctActual) : null,
+                  // Giữ nguyên phép kiểm truthy của bản cũ: quá hạn 0 ngày vẫn để trống như trước,
+                  // đổi sang `!= null` là làm hiện thêm một cột "0 ngày" chưa ai yêu cầu.
+                  it.overdueDays ? it.overdueDays : null,
                   st.text, visibleText(it._noteMsgs), visibleText(it._actionMsgs),
                 ],
               });
             }
           }
-          const { exportTableXlsx } = await loadSplit(() => import("@/lib/excel-export"));
           await exportTableXlsx({ columns: cols, statusColIndex: 8, finishColIndex: 5, rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
           const projCount = dueMonthGroups.length;
           const itemCount = rows.length - projCount;

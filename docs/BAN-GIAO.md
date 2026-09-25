@@ -114,127 +114,151 @@ Ràng buộc 3 (`85` hay `0.85`) là chỗ Thực thi chọn, nhưng **phải n�
 
 ## ② THỰC THI
 
-> *Mục ② của vòng trước (trả V2 về Plan kèm bằng chứng) nằm ở commit `e83028f`. Plan đã thu hết nội
-> dung đó vào phần "V2 SAI Ở ĐÂU" của mục ① nên không chép lại ở đây.*
+> *Mục ② của V2b nằm ở commit `40eae6c`. **Đã nhận lỗi ① của Test ở vòng đó:** mục ② khai `index.tsx`
+> chỉ sửa CHANGELOG, thực tế commit còn đổi 16 dòng (2661–2676) từ LF sang CRLF, chiếm 30 trên 36
+> dòng diff. Không đổi hành vi nhưng đúng là không khai. Lần này đã soi trước khi commit:
+> `git diff --ignore-all-space` ra **đúng** 29/12 như diff thường, tức **không có một dòng nhiễu nào**.*
 
 **ĐÃ LÀM**
 
-`src/lib/kv-dem.ts` — gắn đồng hồ đo:
+`src/lib/excel-export.ts`:
+1. Thêm `oNgay(iso)` — ISO → `Date`, không đọc được thì **`null`**. Xuất ra để bộ kiểm gọi thẳng.
+2. `XlsxTableRow.cells` từ `string[]` thành `XlsxCell[]` = `string | number | Date | null`.
+3. `columns[]` nhận thêm `numFmt?` — **định dạng hiển thị**, để giá trị là ngày/số thật mà bảng vẫn
+   nhìn y hệt bản cũ.
+4. Trong vòng ghi dòng: đóng `numFmt` cho ô **có giá trị**, ô trống thì để nguyên.
 
-1. Thêm `bamNgan(giaTri)` — SHA-256 qua `crypto.subtle`, lấy **12 ký tự hex đầu**. Không nội dung
-   nào ném ra ngoài: hỏng thì trả chuỗi rỗng.
-2. `demGhiKv(key)` → `demGhiKv(key, giaTri?)`. Tham số mới **không bắt buộc**, nên đường `delete`
-   (không có nội dung) gọi kiểu cũ vẫn chạy, băm rỗng.
-3. Bảng D1 thêm cột `bam TEXT`: `CREATE TABLE` mang sẵn cột cho máy mới, kèm một câu `ALTER TABLE
-   kv_write ADD COLUMN bam TEXT` cho **bảng đã có sẵn trên production** — `CREATE TABLE IF NOT
-   EXISTS` không bao giờ thêm cột cho bảng đang tồn tại.
-4. Câu chèn có **đường lùi**: chèn ba cột hỏng thì chèn lại hai cột như cũ.
+`src/routes/index.tsx` (`onExportExcel`):
+5. Ba cột ngày dùng `oNgay(...)` thay `fmtDateVN2(...)`; `% thực tế` đẩy số; `Quá hạn` đẩy số.
+6. Khai `numFmt` cho bốn cột đó: `dd/mm/yy`, `0"%"`, `0" ngày"`.
+7. Kéo `loadSplit(() => import("@/lib/excel-export"))` lên **trước** vòng dựng ô để mượn `oNgay`.
+   KHÔNG import tĩnh — làm thế là kéo `exceljs` vào gói chính, mất công tách gói.
+8. Thêm mục CHANGELOG `v3.110.0`.
 
-`src/lib/mtld-install.functions.ts:38` và `src/lib/edits.functions.ts:166` — mỗi file **một dòng**,
-truyền nội dung vừa ghi xuống `demGhiKv`.
-
-`tests/kv-dem-bam.test.ts` — **mới**, 11 phép kiểm, gọi thẳng hàm thật.
-
-`src/routes/index.tsx` — mục CHANGELOG `v3.109.1 (24/09/2026)`.
+`tests/excel-o-that.test.ts` — **mới**, 12 phép kiểm.
 
 **VÌ SAO LÀM THẾ**
 
-*Đụng ra ngoài PHẠM VI hai dòng — nói trước cho Review khỏi phải đi tìm.* Đặc tả ghi "Trong:
-`src/lib/kv-dem.ts`". Nhưng `demGhiKv` **không thể băm thứ nó không được đưa**: nó chỉ nhận mỗi
-`key`. Nên hai chỗ gọi phải truyền thêm nội dung. Mỗi chỗ đúng một dòng, chỉ thêm đối số, không đổi
-hành vi nào. Tôi quyết làm và nêu rõ ở đây theo phần cuối mục 7 NEN-TANG, thay vì dừng lại hỏi một
-việc không có đường nào khác để đi.
+*Chọn lưu `85` với định dạng `0"%"`, KHÔNG lưu `0.85` với `0%`* (ràng buộc 3 để Thực thi quyết).
+Ba lý do, xếp theo sức nặng:
+- **Lọc "lớn hơn 80" phải gõ được số 80.** Với `0.85` thì người dùng gõ 80 ra rỗng, phải gõ `0.8`.
+  Đây là thao tác người nhận file làm nhiều nhất sau sắp xếp.
+- **Copy sang chỗ khác ra đúng thứ đang nhìn thấy.** `0.85` dán sang Word/mail thành "0.85" trong
+  khi bảng ghi "85%" — chính chỗ Plan đã lo.
+- **Khớp với app.** Trên màn hình cột này là số nguyên phần trăm; file xuất ra nên nói cùng một thứ
+  tiếng với bảng mà nó chụp lại.
+Trả giá: `0"%"` chỉ là **hậu tố hiển thị**, không phải kiểu phần trăm thật của Excel. Ai dựng biểu đồ
+từ cột này phải tự đặt nhãn trục, và đổi định dạng ô về General sẽ thấy `85` chứ không phải `0.85`.
+Tôi cho là đổi được: bảng này để đọc và lọc, không phải để dựng biểu đồ.
 
-*Băm bằng `crypto.subtle` chứ không tự viết vòng lặp.* SHA-256 của runtime là mã máy; một vòng
-`for` trong JS chạy trên payload vài trăm KB thì tốn CPU hơn hẳn, mà đây là hàm chạy ở **mọi** lượt
-ghi KV. Trần CPU mỗi lượt Worker khoảng 2.010.000 µs — L9, cron đã chết vì chỗ này.
+*Cột "Quá hạn" dùng `0" ngày"` chứ không phải `0`.* Ràng buộc 4 đòi số nguyên, mà phần LÀM XONG THÌ
+NHÌN THẤY GÌ đòi nhìn không đổi — bản cũ hiện "5 ngày". Hậu tố trong định dạng thoả **cả hai**: giá
+trị vẫn là số 5 nên Excel cộng được, mà mắt vẫn thấy "5 ngày".
 
-*Chỉ băm 128 KB đầu, và nhét độ dài thật vào phần băm.* Lý do y như trên: kho `sfile:` mang cả file
-.xlsx đã base64, có bản trên 2MB. Băm trọn là đốt CPU tỉ lệ với cỡ file, ở đúng chỗ từng chết. Nhét
-độ dài vào để hai payload khác cỡ không bao giờ đụng nhau. Đánh đổi: hai payload trùng **cả** 128 KB
-đầu **lẫn** độ dài sẽ ra cùng một băm. Với `mtld` (danh sách ~85 dự án, vài chục KB) thì không xảy
-ra — mà `mtld` mới là thứ việc này sinh ra để soi.
+*Vì sao `oNgay` cắt chuỗi chứ không `new Date(iso)`.* `new Date("2026-09-15T00:00:00+07:00")` lùi về
+**ngày 14** theo giờ UTC, mà exceljs quy `Date` ra số thứ tự Excel theo UTC. Đi đường đó thì một
+phần dữ liệu lệch đúng một ngày **trong im lặng**, trên bảng dùng để đánh giá PM. Nên lấy thẳng ba
+số Y-M-D rồi dựng UTC midnight — ra đúng ngày `fmtDateVN2` đang hiện, vì hàm đó cũng chỉ cắt chuỗi.
 
-*12 ký tự hex = 48 bit.* Đủ xa để vài chục payload một ngày không đụng nhau, mà vẫn ngắn và **một
-chiều** — không đọc ngược ra tên dự án. Đúng ràng buộc 1: đây là bảng ĐẾM, không phải nhật ký nội
-dung, cùng lý do mà cột `kho` chỉ lấy phần trước dấu hai chấm.
-
-*Vì sao có đường lùi cho câu chèn.* Nếu `ALTER` hỏng vì một lý do nào đó ngoài "đã có cột", câu chèn
-ba cột sẽ hỏng theo và **mất luôn dòng đếm**. Bảng này là thứ **duy nhất** đang soi được hạn mức ghi
-KV; mất nó là mù hẳn, đúng kiểu L9 (cron chết cả tuần mà không ai biết). Thà mất cái băm còn hơn mất
-dòng đếm.
-
-*CHANGELOG tăng PATCH (3.109.1) chứ không phải MINOR.* Người dùng không thấy gì đổi. Nhưng bản này
-**phải deploy mới có số**, mà `APP_VERSION` suy từ `CHANGELOG[0].v` — không thêm mục thì badge phiên
-bản đứng ở 3.109.0 và không ai phân biệt được máy đang chạy bản nào.
+*Giữ nguyên phép kiểm truthy của `overdueDays`.* Bản cũ `it.overdueDays ? ... : ""` nên quá hạn **0
+ngày** để trống. Tôi giữ y thế (`? ... : null`). Đổi sang `!= null` là làm hiện thêm một cột "0 ngày"
+chưa ai yêu cầu, tức đổi cái nhìn thấy trong vòng không được đổi cái nhìn thấy.
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch (exit 0)
-vitest                : 369 passed | 2 expected fail | 28 file
-                        mốc nền 358 | 2 | 27 → chênh +11 đúng bằng phần tôi thêm
-                        (mốc này là 358, KHÔNG phải 346 như tiêu chí 3 của ① đang ghi)
-build                 : qua, 11,60s
-quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. Cả bốn file tôi đụng đều SẠCH
-                        (kv-dem.ts · kv-dem-bam.test.ts · mtld-install.functions.ts · edits.functions.ts)
-kiểm trên app         : 1440px — badge 3.109.0 → 3.109.1, bảng hiện 75 dự án như thường, không tràn.
-                        375px — scrollWidth = clientWidth = 375, không tràn ngang.
-                        Console: không lỗi mới. Vẫn đúng hai lỗi dev có sẵn (hydration lệch
-                        `data-tsd-source`, lệch ở cả `__root.tsx` là file tôi chưa từng đụng; và
-                        `GET /version.json → 404`, file chỉ có sau khi deploy).
-ghi KV thêm mỗi lần mở app : 0. Không thêm một đường ghi KV nào — chỉ thêm MỘT CỘT vào dòng D1 vốn
-                        đã ghi sẵn cho mỗi lượt ghi KV. Số dòng D1 mỗi ngày KHÔNG đổi (~650 trên
-                        trần 100.000). Đúng tiêu chí 2 của ①.
-cổng demo             : KHÔNG ÁP DỤNG — `kv-dem.ts` chạy trên Worker, không phải effect phía client;
-cổng đang tải         : KHÔNG ÁP DỤNG   `dataMode`/`dangTaiKho` không tồn tại trong phạm vi này.
-                        Hai cổng ở `index.tsx:2482-2483` vẫn nguyên, tôi không đụng.
+tsc                   : sạch (exit 0). Cũng trả lời luôn câu Plan dặn "đếm trước cho biết phạm vi":
+                        đổi kiểu `cells` KHÔNG làm vỡ chỗ nào khác — chỉ có ĐÚNG MỘT chỗ dựng `cells`
+                        trong cả cây, ở index.tsx. `exportMatrixXlsx` không đụng tới, đúng như dặn.
+vitest                : 398 passed | 2 expected fail | 1 FAILED | 30 file
+                        Phép đỏ là `findMatrixSheets` trong tests/matrix-reader.test.ts — KHÔNG phải
+                        của tôi, xem mục CHỖ TÔI KHÔNG CHẮC số 4.
+                        Trừ nó ra: mốc nền 387 | 2 | 29 → chênh +12 đúng bằng phần tôi thêm.
+build                 : qua
+quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. Hai file tôi đụng đều SẠCH.
+diff sạch không nhiễu : `git diff --ignore-all-space` = 29/12, khớp diff thường → không dòng nào
+                        đổi mỗi ký tự xuống dòng (lỗi ① Test bắt ở vòng trước, lần này không tái diễn)
+kiểm trên app         : 1440px badge 3.109.1 → 3.110.0, bảng bình thường, không tràn.
+                        375px scrollWidth = clientWidth = 375, không tràn ngang.
+                        Không lỗi console mới.
+ghi KV thêm mỗi lần mở app : 0. Việc này không có một đường ghi KV nào.
+cổng demo             : CÓ SẴN ở index.tsx:2482 — tôi không đụng (đường khác, effect đẩy danh sách).
+cổng đang tải         : CÓ SẴN ở index.tsx:2483 — tôi không đụng.
 ```
 
-Tiêu chí 4 của ① (băm ném lỗi thì `demGhiKv` vẫn chạy trọn, chốt bằng **số lượt `put`** — L14): đã
-có, nhóm kiểm cuối trong file test. Dựng đúng hình dạng `bocKv` đang dùng, cho D1 hỏng toàn tập, rồi
-chốt `soPut === 1` và caller không thấy lỗi.
+**ĐÃ MỞ FILE XUẤT RA VÀ SOI — tiêu chí 1, 2, 3 của ①**
 
-**Đã xác nhận ĐỎ trên bản chưa sửa:** lùi tạm câu chèn về đúng dạng cũ (hai cột, bỏ băm) → **3 phép
-kiểm đỏ**: "ghi đúng một dòng đếm mang theo băm", "hai payload khác nhau ra hai băm khác nhau",
-"đường delete băm rỗng". Phục hồi xong chạy lại 11/11 xanh.
+Không chỉ chạy phép kiểm. Tôi bấm **đúng nút "Xuất Excel" trên app đang chạy**, chặn `URL.createObjectURL`
+để giữ lại file thật, bung zip bằng `fflate` ngay trong trang rồi đọc `sheet1.xml` và `styles.xml`.
+Dữ liệu THẬT, 14 dự án · 38 đầu việc, file 13.246 byte.
+
+*Dòng 4 (dòng dự án CT25-038 "Mini Hotel PQ (B1-B5) Phòng"):*
+```
+A = 46289  (số, không t="s")   → ngày update
+B = t="s"                       → Mã, vẫn là CHỮ
+E = 45840 · F = 46295 (số)      → ngày bắt đầu / kết thúc
+G, H  KHÔNG CÓ <v>              → % và Quá hạn TRỐNG THẬT trên dòng nhóm
+```
+*Dòng 5 (đầu việc):* `E = 45940 · F = 46228` (ngày), **`G = 95`** (%), **`H = 62`** (quá hạn) — số thật.
+*Dòng 7:* ô `G` **không có `<v>`** → dự án chưa có số thì ô % TRỐNG, không phải 0. Đúng tiêu chí 3.
+
+*Đối chiếu để chắc không lệch ngày:* số thứ tự trong file quy ngược ra
+`2026-09-24 · 2025-07-02 · 2026-09-30`; cùng dòng đó trên màn hình hiện `24/09 · 02/07/25 · 30/09/26`.
+**Khớp từng ngày một.**
+
+*`styles.xml` của file thật* khai đúng ba định dạng tự đặt:
+`164 = dd/mm/yy` · `165 = 0"%"` · `166 = 0" ngày"` → nhìn không đổi.
+
+*Tiêu chí 1 — sắp xếp:* chốt bằng phép kiểm trên file dựng thật. Ba hạn `01/12/25 · 02/01/26 · 15/06/25`:
+```
+TRƯỚC (chữ)  : 01/12/25 · 02/01/26 · 15/06/25   ← thứ tự CHỮ CÁI, sai
+SAU   (ngày) : 15/06/25 · 01/12/25 · 02/01/26   ← đúng thứ tự thời gian
+```
+
+*Nút xổ nhóm (Plan nhờ kiểm riêng vì `summaryBelow: false` gán qua `as any`):* đã soi trong file
+đọc ngược — `outlineProperties.summaryBelow === false` **có thật trong file**, `outlineLevel` 0 cho
+dòng dự án và 1 cho dòng con, `hidden === true` cho dòng con. Đúng như người dùng đã chốt, không đổi.
+
+**Đã xác nhận ĐỎ trên bản chưa sửa:** bỏ đúng một dòng đóng `numFmt` → **3 phép kiểm đỏ** (cột ngày,
+cột %, cột Quá hạn). Phục hồi xong 12/12 xanh.
 
 **CHỖ TÔI KHÔNG CHẮC**
 
-1. **`ALTER TABLE` chạy trên D1 production, tôi chưa chạy thật lần nào.** Nếu nó hỏng vì lý do ngoài
-   "đã có cột", đường lùi sẽ giữ được dòng đếm nhưng cột `bam` **rỗng mãi mãi và không ai được báo**
-   — vì cả hàm này nuốt lỗi theo thiết kế. **Đề nghị: ngay sau khi deploy, chạy một câu kiểm**
-   trước khi ngồi đợi cả ngày:
-   ```
-   npx wrangler d1 execute pmo-audit --remote --command \
-     "SELECT COUNT(*) tong, COUNT(bam) co_bam, COUNT(NULLIF(bam,'')) bam_khac_rong FROM kv_write WHERE substr(ts,1,10)='<ngày>'"
-   ```
-   `co_bam` bằng 0 nghĩa là cột chưa có. `bam_khac_rong` bằng 0 mà `co_bam` khác 0 nghĩa là băm
-   luôn hỏng — xem mục 2.
+1. **Ô ngày trống nay TRỐNG THẬT, trước đây hiện dấu gạch ngang — cái nhìn thấy CÓ ĐỔI.** Đặc tả
+   (ràng buộc 1) ghi *"`fmtDateVN2(null)` hiện trả `""`"*. **Không đúng**: hàm đó ở `index.tsx:8225`
+   trả **`"—"`**. Nên bản cũ ghi chữ `"—"` vào ô ngày trống, còn bản này để ô rỗng. Tôi theo ràng
+   buộc 1 và luật 5.2 (ô trống là ô trống) chứ không theo câu "nhìn y hệt", vì để chữ `"—"` trong
+   cột ngày là **phá luôn phép sắp xếp** — đúng thứ việc này sinh ra để sửa. Nhưng đây là thay đổi
+   nhìn thấy được, Plan và người dùng nên biết trước khi Review.
 
-2. **`crypto.subtle` tôi chỉ kiểm được trên Node (vitest), chưa kiểm trên Workers thật.** Tài liệu
-   nói Workers có, nhưng tôi không tự xác nhận được nên không dám khẳng định. Không có thì `bamNgan`
-   trả rỗng, cả việc này thành công cốc mà vẫn "chạy bình thường". Câu SQL ở mục 1 phát hiện được.
+2. **Bộ kiểm tự khai lại danh sách cột, không đọc từ `index.tsx`.** Mảng `COLS` trong file kiểm là
+   bản chép của `cols` ở `index.tsx`. Ai đổi `numFmt` bên đó mà quên bên này thì phép kiểm vẫn xanh.
+   Tôi bù bằng lượt soi file thật ở trên (đường đó đi qua đúng `index.tsx`), nhưng lượt soi ấy là
+   **làm tay, không tự động lặp lại**. Muốn chắc lâu dài thì phải kéo chỗ dựng cột ra khỏi callback
+   JSX — việc đó ngoài phạm vi vòng này.
 
-3. **Mốc cắt 128 KB làm mù một phần các kho file lớn.** Hai payload `sfile:` trùng 128 KB đầu và
-   trùng độ dài sẽ ra cùng băm. Đừng dùng cột này để kết luận về `sfile`/`spdf2` — nó được cắt cho
-   vừa CPU, và chỉ hứa chính xác với `mtld`.
+3. **`0"%"` không phải kiểu phần trăm thật của Excel.** Đã nêu lý do chọn ở trên. Nếu sau này có
+   người cần dựng biểu đồ phần trăm từ file này thì phải đổi sang `0.85` + `0%`, và khi đó cột sẽ
+   copy ra thành `0.85`. Đây là đánh đổi tôi chọn, không phải chỗ code còn thiếu.
 
-4. **Tôi không đo được CPU thêm trên Workers thật.** SHA-256 native trên tối đa 128 KB mỗi lượt ghi,
-   tôi tin là không đáng kể so với trần 2.010.000 µs, nhưng đó là suy luận chứ không phải số đo.
+4. **Một phép kiểm CÓ SẴN đang đỏ trên máy này, không phải do tôi:** `findMatrixSheets` trong
+   `tests/matrix-reader.test.ts`, **quá hạn 5.000 ms** (đo được 6.543 / 7.125 / 8.352 ms ở ba lượt).
+   Bằng chứng nó không liên quan: file đó chỉ import `src/lib/matrix-reader` và `xlsx`;
+   `matrix-reader.ts` chỉ import `xlsx` + một file kiểu — **không có đường nào** tới `excel-export.ts`
+   hay `index.tsx`; cả hai file chưa đổi từ commit `ec37fc2`; và nó đỏ **cả khi chạy một mình lẫn khi
+   loại hẳn file kiểm mới của tôi ra**. Nhưng mốc nền của Test hôm qua là 0 phép đỏ, nên **có gì đó
+   đã chậm đi** — tôi không sửa (ngoài phạm vi, và nâng `testTimeout` là quyết định của Test).
 
-5. **Ba câu lệnh dựng bảng chạy lại mỗi khi có isolate mới** (`banSan` là biến tầng module). Chuyện
-   này **có sẵn từ trước**, tôi không thêm — nhưng nay có thêm câu `ALTER` luôn hỏng-và-bị-nuốt nên
-   mỗi isolate mới tốn thêm một lượt gọi D1. D1 đang dùng 0,65% hạn mức nên không đáng lo, ghi ra
-   đây để Review khỏi tưởng là thứ mới phát sinh.
+5. **Tôi chưa mở file bằng Excel thật.** Mọi kết luận ở trên đọc từ XML trong file `.xlsx` và từ
+   `exceljs`. Chuẩn OOXML nói ô có `numFmtId` trỏ tới `dd/mm/yy` sẽ hiện ra thế, nhưng Excel bản
+   thật trên máy người dùng thì tôi không chạy được. Người kiểm cuối nên mở một lần bằng Excel.
 
 **CHƯA LÀM**
 
-- **Chưa có con số nào** — đó là điểm của việc này. Tiêu chí 1 của ① cần deploy rồi chờ một ngày.
-  Tôi không deploy.
-- **Không sửa** `putNeuKhac`, **không sửa** `dedupInstall`, **không sắp xếp** `named`, không đụng
-  `sfile`/`spdf2`/`sheetsnap`/warmer — đúng phần NGOÀI. Nghi ngờ của tôi về `putNeuKhac` (đọc hỏng
-  thì rơi xuống ghi) vẫn để nguyên đó chờ số, không tự đi sửa.
-- **Không đụng** hai file box Test đang làm dở (`docs/NEN-TANG.md`, `tests/chu-gach-ngang-ranh-gioi.test.ts`).
+- **Phần NHÌN (V4b)** — không đụng màu, cột, thứ tự cột, độ rộng. Đúng phần NGOÀI.
+- **Không đụng** `exportMatrixXlsx` (cùng file nhưng đường khác, không dùng `XlsxTableRow`), không
+  đụng đường xuất PDF, không bỏ ẩn dòng con.
+- **Không sửa** phép kiểm `matrix-reader` đang đỏ — xem mục 4 trên.
+- **Không deploy.** V2b của tôi vẫn nguyên trong cây, chưa deploy, tôi không revert gì.
 ---
 
 ## ③ TEST
