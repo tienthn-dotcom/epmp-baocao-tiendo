@@ -17,7 +17,26 @@ Plan mở 25/09/2026. Người dùng chốt "làm đủ cả hai" nên chẻ hai
 
 *Đang chờ người dùng:* **V2b** (mã băm vào bảng đếm D1) đã xong ② và Test cho **ĐẠT KÈM LƯU Ý** ở ③. Kẹt ở chỗ chưa ai bấm deploy, và chưa có box nào nhận vai Review. Không liên quan V4.
 
-*Hàng đợi:* **V4b** phần nhìn · **V3** thẻ MTLĐ hiện đủ tên (15 dự án, 9 bị giấu tên) · **V1** dọn 14 byte điều khiển.
+*Hàng đợi:*
+
+**V4b · Xuất Excel: phần NHÌN** — giao ngay sau khi V4a xong.
+
+**Đo trước, và nó đổi cả cách đặt mục tiêu:** đường xuất PDF (`src/lib/pdf-export.ts`) **chụp ảnh nguyên bảng web bằng `html2canvas`** rồi cắt theo ranh giới hàng cho vừa A4. Nó giống app y hệt vì **nó chính là ảnh của app**. Excel là ô, không phải ảnh, nên **"giống hệt PDF" là mục tiêu không đạt được** - đừng nhận việc theo cách hiểu đó. Mục tiêu đúng: kéo Excel gần PDF nhất trong giới hạn của ô.
+
+Năm việc, xếp theo mức người dùng cảm nhận được:
+
+1. **Chữ bị cắt cụt - nặng nhất.** `row.height = 20/18` đặt cứng, trong khi cột Vướng mắc rộng 48 và Giải pháp rộng 48 đều bật xuống dòng. Excel chỉ tự giãn chiều cao khi hàng **không** có chiều cao đặt tay. Bỏ `row.height` ở dòng có cột wrap (hoặc tự tính theo số dòng chữ) → ghi chú hiện đủ như PDF.
+2. **Đóng băng thêm cột**, không chỉ hàng. Hiện `ySplit: 3`. Thêm `xSplit` qua cột "Tên dự án / Hạng mục" (chỉ số 2, tức `xSplit: 3`) → cuộn sang phải xem Vướng mắc mà vẫn thấy tên dự án. PDF không cần vì in ra thấy cả trang.
+3. **Data bar cho "% thực tế"** và thang màu cho "Quá hạn" (`ws.addConditionalFormatting`). Đây là thứ gần nhất với thanh tiến độ của PDF mà Excel làm được thật. **Chỉ chạy được sau V4a** - data bar cần ô SỐ.
+4. **Khối chú giải** ở cuối bảng: đỏ = Trễ tiến độ · vàng = Cần cắt đầu việc · xanh = Đã hoàn thành. PDF có, Excel chưa.
+5. **Thiết lập trang in** (`ws.pageSetup`): A4 ngang, `fitToWidth: 1`, lặp hàng tiêu đề ở mọi trang (`printTitlesRow: "3:3"`), lề hẹp. Đây là thứ trả lời thẳng câu "xuất được đẹp như PDF" - người nhận bấm in trong Excel là ra bản gần giống.
+
+**NGOÀI phạm vi:** không đổi cột, không đổi thứ tự, không bỏ ẩn dòng con (người dùng đã chốt giữ nhóm ẩn có nút xổ), không đụng `exportMatrixXlsx`, không đụng đường PDF.
+
+**Cách biết là đúng:** mở file thật, xem ô Vướng mắc dài nhất có hiện đủ chữ không (trước: cụt); bấm Ctrl+P trong Excel xem có vừa bề ngang một trang và có lặp tiêu đề không; cuộn sang phải xem còn thấy tên dự án không.
+
+**V3** thẻ MTLĐ hiện đủ tên (đã đo: 6 nhóm dùng chung, 15 dự án, **9 bị giấu tên**, 2 nhóm bắc qua nhiều mã CT).
+**V1** dọn 14 byte điều khiển vô hình — đặc tả ở `git show 19e81d4`, cần ghim theo nội dung thay vì số dòng.
 
 ---
 
