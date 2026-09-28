@@ -536,6 +536,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.113.0", date: "28/09/2026", items: [
+    "HẾT KHỰNG KHI CHUYỂN QUA LẠI GIỮA CÁC APP. Trước đây mỗi lần rời sang MTLĐ hay Hiệu suất dự án rồi quay về Master Plan là app tải lại và phân tích lại nguyên file nguồn 2 MB — đo được khoảng 2,3 giây mỗi lần. Nay dữ liệu đã tải được giữ lại 5 phút, nên quay đi quay lại không phải chờ nữa.",
+    "Vì sao 5 phút: file nguồn thường cả tuần mới có một đợt cập nhật, nên 5 phút vẫn là rất ngắn so với nhịp thật. Ai cần số mới ngay thì bấm NÚT LÀM MỚI — nút đó vẫn lấy thẳng bản mới, không qua bộ nhớ đệm.",
+    "Dòng “DỮ LIỆU TÍNH ĐẾN” ở đầu trang luôn là mốc của chính dữ liệu đang hiện, không phải giờ hiện tại — nên nhìn vào đó là biết số trên bảng cũ tới đâu.",
+  ] },
   { v: "3.112.0", date: "28/09/2026", items: [
     "BÁO CÁO TUÂN THỦ NAY LỌC ĐƯỢC. Ba cách lọc, bật cùng lúc cũng được: chỉ dự án CẦN PM TRÌNH MASTER PLAN BOD phê duyệt, theo NGƯỜI PHỤ TRÁCH, và gõ tìm TÊN DỰ ÁN (gõ không dấu vẫn ra). Đầu bảng ghi rõ đang xem bao nhiêu trên tổng bao nhiêu, và đang bật bộ lọc nào.",
     "Lọc “Cần PM trình Master Plan BOD” lấy ĐÚNG những dự án có ghi hạn ở cột đó — ô nào hiện “trước dd/mm” thì lọt, ô nào để trống thì không. Cái mắt nhìn thấy và cái bộ lọc làm là một.",
@@ -1538,7 +1543,31 @@ function Dashboard() {
         return { ...parsed, source: "google", sourceLabel: r.fetchedAt, fetchedAt: r.fetchedAt };
       }
     },
-    staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false,
+    /* GIỮ DỮ LIỆU ĐÃ TẢI 5 PHÚT, thay vì coi là cũ ngay khi vừa về.
+     *
+     * Trước đây `staleTime: 0, gcTime: 0` — hợp với dữ liệu đổi từng giây, nhưng file Master Plan
+     * đổi theo TUẦN. Hậu quả đo được 28/09/2026: mỗi lần rời sang app khác rồi quay lại "Project
+     * Master Plan" là một lượt tải + parse lại file 2 MB. Đo thật: 2 lần quay lại = 2 lượt
+     * `fetchSheetXlsx`, mỗi lượt ~2.294 ms và kéo theo 2 lượt ghi KV. Đúng cái người dùng gọi là
+     * "load lên liên tục thì bị lag".
+     *
+     * VÌ SAO 5 PHÚT: dữ liệu đổi theo tuần nên 5 phút là rất ngắn so với nhịp thật, mà đã cắt sạch
+     * cảnh tải lại theo từng thao tác. Dài hơn thì lợi thêm rất ít mà rủi ro nhìn số cũ tăng lên.
+     *
+     * VÌ SAO `gcTime` DÀI HƠN `staleTime`: hết hạn mềm thì bản cũ vẫn còn trong bộ nhớ để hiện ngay
+     * trong lúc lấy bản mới, thay vì trắng bảng rồi chờ 2 giây.
+     *
+     * BA THỨ ĐÃ KIỂM để chắc con số này không phá gì (đừng kiểm lại, nhưng đừng bỏ khi sửa quanh đây):
+     *  · `resetPipeline` huỷ cache bằng `removeQueries` TƯỜNG MINH → không dựa vào `gcTime`.
+     *  · Nút "Làm mới" gọi `gQuery.refetch()`, mà `refetch` BỎ QUA `staleTime` → van thoát còn nguyên.
+     *  · Nhãn "DỮ LIỆU TÍNH ĐẾN" lấy `freshAt = liveData.fetchedAt`, mà `fetchedAt` đóng dấu lúc
+     *    tải và ĐI KÈM dữ liệu → phục vụ từ cache thì nhãn tự già theo, không nói dối.
+     *
+     * KHÔNG gate theo `modifiedTime` của Drive: đã đo 28/09, file Master Plan trả về
+     * `modifiedTime = 2026-07-07` trong khi nội dung là của hôm nay (đối chứng: file tuân thủ trả
+     * đúng 2026-09-28). Sheet này nhiều khả năng kéo nội dung bằng công thức nên FILE không bị ghi.
+     * Gate theo tín hiệu đó là ghim app vào dữ liệu tháng 7. */
+    staleTime: 5 * 60_000, gcTime: 30 * 60_000, refetchOnWindowFocus: false, refetchOnReconnect: false,
   });
 
   const liveData: ReportData | undefined =
