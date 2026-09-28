@@ -536,6 +536,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.111.0", date: "28/09/2026", items: [
+    "MỞ APP LÀ THẤY ĐỦ ĐẦU VIỆC, kể cả việc đã xong. Trước đây mặc định giấu việc đã xong đi, muốn xem phải bấm nút mỗi lần vào.",
+    "Ai thích bảng gọn thì cứ tắt nút “Hiện tất cả đầu việc” như cũ — và lần sau vào MÁY ĐÓ vẫn gọn y vậy, khỏi bấm lại. Nhớ riêng từng máy, giống như bề rộng cột: máy khác và người khác không bị ảnh hưởng.",
+    "Các con số trên đầu trang (Dự án hiện hành, Trễ tiến độ, Cần cắt đầu việc, Cần tập trung) KHÔNG đổi theo nút này — đã đo: bật lên hiện thêm 199 đầu việc mà cả sáu con số giữ nguyên.",
+  ] },
   { v: "3.110.0", date: "25/09/2026", items: [
     "SỬA SAI THỨ TỰ KHI SẮP XẾP FILE EXCEL. File xuất ra trước đây ghi ngày dưới dạng chữ, nên bấm sắp xếp cột “Ngày kết thúc” trong Excel ra thứ tự chữ cái chứ không phải thứ tự thời gian: 01/12/25 đứng trước 02/01/26. Ai mở file rồi sắp theo hạn là đang nhìn một thứ tự sai.",
     "Nay ngày là ngày thật, % và số ngày quá hạn là số thật: sắp xếp theo hạn ra đúng thứ tự, lọc “lớn hơn 80%” được, bôi đen cột Quá hạn thì Excel hiện tổng. Bảng vẫn hiện y như cũ — vẫn dd/mm/yy, vẫn “85%”, vẫn “5 ngày”, màu và cột không đổi.",
@@ -3399,7 +3404,32 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   }, [enrichedAll, hiddenKeys, showHidden]);
   // Việc ĐÃ HOÀN THÀNH (pct ≥ 100, còn Show) — CHỈ dựng khi bật "Hiện tất cả đầu việc". Enrich y
   // hệt việc đang làm. KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng.
-  const [showDone, setShowDone] = useState(false);
+  // MẶC ĐỊNH BẬT: mở app là thấy đủ đầu việc, kể cả việc đã xong. Ai muốn gọn thì tắt đi, và lựa
+  // chọn đó nhớ RIÊNG TỪNG MÁY — giống hệt cách bề rộng cột đang nhớ (xem LS_COLW).
+  //
+  // `useState` phải giữ ĐÚNG mặc định cho lượt vẽ đầu, KHÔNG đọc localStorage ở đây: lượt vẽ đầu
+  // của trình duyệt phải khớp bản máy chủ dựng ra, đọc kho cục bộ ngay tại chỗ này là lệch
+  // hydration. Bản đã lưu nạp ở `useEffect` bên dưới, tức SAU khi gắn vào trang.
+  const [showDone, setShowDone] = useState(true);
+  useEffect(() => {
+    // Đọc hỏng, dữ liệu rác, hay trình duyệt chặn lưu trữ (ẩn danh, chặn cookie) → im lặng rơi về
+    // mặc định BẬT. Chỉ nhận đúng hai chữ đã ghi, còn lại coi như chưa có gì.
+    try {
+      const v = localStorage.getItem(LS_SHOW_DONE);
+      if (v === "0") setShowDone(false);
+      else if (v === "1") setShowDone(true);
+    } catch { /* không đọc được kho cục bộ thì thôi, giữ mặc định */ }
+  }, []);
+  /** Đổi lựa chọn "hiện việc đã xong" và ghi nhớ trên ĐÚNG máy này. KHÔNG đụng tới KV: đây là
+   *  thiết lập của từng máy, mà mỗi lượt bấm nhân với 10–17 người là đủ ăn vào trần 1.000 lượt
+   *  ghi/ngày. Ghi hỏng thì bỏ qua — mất trí nhớ còn hơn ném lỗi vào mặt người đang bấm nút. */
+  const doiShowDone = useCallback(() => {
+    setShowDone((v) => {
+      const moi = !v;
+      try { localStorage.setItem(LS_SHOW_DONE, moi ? "1" : "0"); } catch { /* */ }
+      return moi;
+    });
+  }, []);
   const doneEnriched: EnrichedItem[] = useMemo(() => {
     if (!showDone) return [];
     const out: EnrichedItem[] = [];
@@ -4594,7 +4624,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         sortChain={sortChain}
         onSort={toggleSort}
         showDone={showDone}
-        onToggleDone={() => setShowDone(v => !v)}
+        onToggleDone={doiShowDone}
         showHidden={showHidden}
         onToggleShowHidden={() => setShowHidden(v => !v)}
         hiddenCount={hiddenKeys.size}
@@ -4891,6 +4921,11 @@ const DEFAULT_COL_W = [3.9, 5.2, 11.0, 4.2, 3.4, 12, 4.0, 4.0, 3.8, 3.5, 5, 15.8
 //     cắt kể cả @1024, đã đo). 1.3% dôi ra dồn cho Tên dự án (13.8 → 15.1, cột clamp 3 dòng
 //     hay chật nhất). Tổng vẫn 100%.
 const LS_COLW = "pmo.master.colw.v4";
+
+/** Nhớ lựa chọn "hiện việc đã xong" theo TỪNG MÁY, cùng lối với LS_COLW. Giá trị: "1" bật, "0" tắt,
+ *  chưa có thì mặc định BẬT. Hậu tố phiên bản để sau này đổi cách lưu thì bản cũ tự bị bỏ qua chứ
+ *  không phải đi đoán xem chuỗi trong kho là đời nào. Dùng ở khối khai `showDone`. */
+const LS_SHOW_DONE = "pmo.master.showdone.v1";
 
 /** Bố cục cột RIÊNG cho bảng NHÓM theo dự án (theo cấu trúc file PMP import): BỎ "Hạng mục"
  *  (dồn mã viết tắt vào "Mã"), "Mã CT"→"Mã", "Tên dự án"→"Mô tả", VÀ (24/07) BỎ luôn cột "Bàn giao"

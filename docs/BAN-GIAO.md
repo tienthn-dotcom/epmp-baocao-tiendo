@@ -121,242 +121,126 @@ Lọc một PM → bảng chỉ còn dự án của PM đó → bấm Xuất PDF
 
 ## ② THỰC THI
 
-> *Mục ② của V4a nằm ở commit `c188f92`. V4a và V4b lên cùng một lần nên gộp vào **đúng một mục
-> CHANGELOG `v3.110.0`** — tôi nối thêm ba dòng vào mục V4a đã có thay vì mở `v3.111.0` cho một bản
-> chưa từng ra riêng.*
+> *Mục ② của V4a/V4b nằm ở các commit `c188f92` · `a914b2f` · `f9c901b`.*
 
-**ĐÃ LÀM — bảy việc của đặc tả, cộng hai thứ làm thêm**
+**CÂU PLAN NHỜ KIỂM — TRẢ LỜI BẰNG SỐ TRƯỚC, VÌ NÓ QUYẾT ĐỊNH CÓ ĐƯỢC LÀM HAY KHÔNG**
 
-`src/lib/excel-export.ts`:
-1. **Chữ hết bị cắt.** Bỏ `row.height` ở mọi dòng dữ liệu. Ba dòng đầu vẫn đặt tay.
-2. **Bảng màu `MAU`** chép từ hằng `GC`, thay hết mã màu rời rạc: thanh tiêu đề và hàng tiêu đề cột
-   về `#334155`, dòng dự án `#334964`, dòng con `#F8FAFC`, hàng quá hạn nền `#FCEFDD` + mép trái
-   `#E0A458`.
-3. **Thanh màu trong ô "% thực tế"** — `dataBar` màu `#5EE9B5`, thang cố định 0–100.
-4. **Cột "Quá hạn" tô theo bậc** — hai luật `cellIs`: `>= 14` nền đỏ chữ trắng, `> 0` nền ấm.
-5. **Khối chú giải cuối bảng.**
-6. **Đóng băng thêm cột** — `xSplit: 3`.
-7. **Thiết lập trang in** — A4 ngang, `fitToPage` + `fitToWidth: 1` + `fitToHeight: 0`,
-   `printTitlesRow: "3:3"`, lề hẹp, căn giữa ngang, và **số trang ở chân** (`&C Trang &P / &N`).
+Plan hỏi: *KPI đầu trang có đếm theo tập đang hiện không? Nếu có thì đổi mặc định là đổi con số
+báo cáo lên Ban điều hành.*
 
-`src/routes/index.tsx`: truyền `pctColIndex` · `overdueColIndex` · `overdueAlertDays`; gắn cờ
-`overdue` cho từng đầu việc; nối ba dòng vào mục CHANGELOG `v3.110.0`.
+**Đo trên app thật, dữ liệu thật, 69 dự án.** Bật nút lên thì bảng hiện thêm **199 đầu việc 100%**
+(đếm chuỗi `100%` trên trang: 5 → 204). Cả sáu con số đầu trang **giữ nguyên tuyệt đối**:
 
-`tests/excel-o-that.test.ts`: 12 → **21** phép kiểm. `tests/excel-mau-khop-app.test.ts`: **mới**, 10 phép.
+| | tắt | bật |
+|---|---|---|
+| Dự án hiện hành | 69 | **69** |
+| Trễ tiến độ | 79 | **79** |
+| Cần cắt đầu việc | 59 | **59** |
+| Cần tập trung | 90 | **90** |
+| Bàn giao tháng này | 7 | **7** |
+| Top 20 | 36 | **36** |
 
-**HAI THỨ LÀM THÊM NGOÀI BẢY MỤC** — Plan nói cứ làm cho đạt chuẩn rồi khai:
-- **Số trang ở chân trang in.** Mục 7 không nhắc. Bản in 8 trang mà không đánh số thì rời ra là lẫn,
-  mà "đẹp như PDF" thì phải in được ra tử tế.
-- **Phép kiểm chống trôi bảng màu** (`excel-mau-khop-app.test.ts`). Nó đọc thẳng hằng `GC` trong
-  `index.tsx` bằng regex rồi so với `MAU`, và chốt luôn là `index.tsx` truyền `OD_ALERT_DAYS` chứ
-  không gõ số cứng. Đây là cái giá phải trả cho quyết định chép màu bên dưới — không có nó thì
-  người chỉnh màu Gantt sẽ không bao giờ biết mình vừa làm lệch file Excel.
+Đo **hai lần**: một lần không lọc, một lần bật bộ lọc tìm kiếm — vì hai nhánh này tính khác nhau
+(xem dưới). Cả hai lần đều không đổi một con số nào.
+
+**Nhưng đường code thì KHÔNG đơn giản như con số**, và chỗ này Plan nên biết:
+
+- `tableItems` (3767) **có** nối `doneEnriched` vào khi bật, và `sortedAlerts` chảy ra từ đó. Ba số
+  Trễ / Cần cắt / Cần tập trung đếm `_alert` **trên chính `sortedAlerts`** (4268–4271). Chúng không
+  đổi vì việc đã xong không mang nhãn cảnh báo nào — **đo được, không phải suy luận**.
+- `tableProjectCount` (4343) rẽ hai nhánh: **không lọc** thì lấy `activeProjectCount` (độc lập hẳn,
+  an toàn tuyệt đối); **có lọc** thì đếm số dự án khác nhau trong `sortedAlerts`. Nhánh thứ hai
+  **về nguyên tắc có thể đổi** — nếu tồn tại một dự án mà mọi đầu việc đều đã xong thì nó chỉ hiện
+  khi bật nút, và số dự án sẽ tăng. Hôm nay **không có dự án nào như vậy** (69 → 69), nên số không
+  nhúc nhích. Ghi ra để sau này ai thấy số nhảy thì biết ngay chỗ tìm, chứ không đi mò lại từ đầu.
+- Ghi chú ở dòng 3400 nói `showDone` "KHÔNG đưa vào enriched/panelActive/KPI". Phần
+  `panelActive` **đúng** — `showDone` đi vào `ganttSource` (3913) chứ không đụng `panelActive`.
+  Phần "KPI" thì **đúng về kết quả nhưng không đúng về đường đi**: KPI có đọc `sortedAlerts`, mà
+  `sortedAlerts` có chứa việc đã xong. An toàn là nhờ việc đã xong không mang nhãn, không phải nhờ
+  nó bị chặn khỏi KPI.
+
+Kết luận: **số không nhảy, nên tôi đi tiếp** thay vì dừng. Điều kiện Plan đặt ra ("nếu đổi mặc định
+làm đổi con số trên đầu trang") không xảy ra.
+
+**ĐÃ LÀM**
+
+`src/routes/index.tsx`, ba chỗ:
+
+1. `LS_SHOW_DONE = "pmo.master.showdone.v1"` — khoá lưu, đặt cạnh `LS_COLW` theo đúng lối của file,
+   có hậu tố phiên bản.
+2. `useState(false)` → **`useState(true)`**, kèm một `useEffect` nạp bản đã lưu **sau khi gắn vào
+   trang**. Chép đúng khuôn `flatColW`/`groupColW` (~6162): lượt vẽ đầu phải khớp bản máy chủ dựng
+   ra, đọc kho cục bộ ngay trong `useState` là lệch hydration.
+3. `onToggleDone` từ hàm ẩn danh `() => setShowDone(v => !v)` thành `doiShowDone` — cùng lúc đổi
+   trạng thái và ghi nhớ.
+
+Chỉ nhận đúng hai chuỗi `"1"` và `"0"`; rác thì bỏ qua và giữ mặc định BẬT. `try/catch` bọc **cả
+đọc lẫn ghi** — trình duyệt ẩn danh hoặc máy chặn lưu trữ thì app vẫn chạy, chỉ là không nhớ.
 
 **VÌ SAO LÀM THẾ**
 
-*Chép màu sang `excel-export.ts`, KHÔNG kéo `GC` ra dùng chung* (chỗ Plan để tôi chọn). `GC` khai
-**bên trong** component Gantt đang chạy. Kéo nó ra là sửa vào đường render của Gantt để phục vụ một
-việc thuần trình bày của Excel — đúng loại **L11**: diff sạch, test xanh, giao diện vẫn hỏng, và
-loại đó không soi ra được bằng diff. Cái giá của việc chép là trôi, nên tôi trả giá đó bằng phép
-kiểm nói trên chứ không bằng một lời hứa.
+*Vì sao không đọc `localStorage` thẳng trong `useState`.* Gọn hơn một `useEffect`, nhưng máy chủ
+dựng HTML không có `localStorage`, nên lượt vẽ đầu của trình duyệt sẽ khác bản máy chủ và React
+báo lệch hydration. Chú thích tại khuôn bề rộng cột đã nói rõ điều này — tôi chép cả lý do chứ
+không chỉ chép hình dạng.
 
-*Chú giải nói MÀU = MỨC NGHIÊM TRỌNG, không gán mỗi nhãn một màu.* Đây là chỗ tôi **làm khác đặc
-tả**, cố ý. Mục 5 viết "mỗi mục một ô tô đúng màu của nó", ngầm hiểu mỗi nhãn có một màu cố định.
-Không có chuyện đó: ghi chú ở `index.tsx` (~dòng 1381) nói nguyên văn *"MÀU TÁCH RỜI NHÃN… 'Cần tập
-trung' vàng khi dự án còn xa hạn, nhưng ĐỎ khi dự án sắp bàn giao; 'Cần cắt đầu việc' vàng ở far,
-đỏ từ d30. Vì vậy KHÔNG được suy màu từ `kind`"*. In ra một chú giải gán chết nhãn↔màu là **in ra
-một luật mà app không chạy theo** — người đọc báo cáo sẽ suy ngược từ màu ra nhãn và suy sai. Nên
-chú giải có hai phần: dải màu nói mức (Nặng · Cần chú ý · Đã hoàn thành) kèm đúng câu giải thích,
-rồi liệt kê bốn nhãn riêng.
+*Vì sao `localStorage` chứ không phải KV.* Đây là thiết lập của từng máy. Đẩy lên KV thì mỗi lượt
+bấm của 10–17 người ăn thẳng vào trần 1.000 lượt ghi/ngày — thứ đang phải giữ. Việc này **không
+thêm một đường ghi KV nào**.
 
-*Cột Quá hạn dùng hai bậc `cellIs`, không dùng thang màu liên tục.* Mục 4 cho chọn "thang màu hoặc
-nền đỏ khi vượt ngưỡng". App chia đúng hai bậc (`lib/filter.ts:138`: `>= OD_ALERT_DAYS` là A, `> 0`
-là B). Thang màu liên tục là tự chế một luật thứ ba mà app không có.
-
-*Ngưỡng lấy thẳng `OD_ALERT_DAYS` từ `lib/filter`, không gõ lại số 14.* Đã tra: **chỉ có một ngưỡng**
-(`filter.ts:34`, `export const OD_ALERT_DAYS = 14`), nên không phải báo Plan. Đổi ngưỡng ở đó thì
-file Excel đổi theo, khỏi lệch âm thầm với cảnh báo trên bảng.
+*Vì sao chỉ nhận `"1"`/`"0"` chứ không `JSON.parse`.* Hai chữ thì không có gì để hỏng. `JSON.parse`
+trên chuỗi rác sẽ ném, mà ném ở đây là chặn cả lượt vẽ chỉ vì một thiết lập hiển thị.
 
 **ĐÃ ĐO**
 ```
 tsc                   : sạch (exit 0)
-vitest                : 417 passed | 2 expected fail | 1 FAILED | 31 file
-                        Trừ phép đỏ (không phải của tôi, xem CHỖ TÔI KHÔNG CHẮC số 4) thì mốc nền
-                        398 | 2 | 30 → chênh +19 đúng bằng phần tôi thêm (9 phép nối vào file cũ
-                        + 10 phép của file màu mới).
-build                 : qua, 11,73s
-quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. File tôi đụng đều sạch.
-DUNG LƯỢNG (ràng buộc 4): cùng bộ dữ liệu 69 dự án · 305 đầu việc
-                        V4a: 36.959 byte → V4b: 38.353 byte = **+1.394 byte, +3,8%**
-kiểm trên app         : 1440px badge 3.110.0, 69 dự án, không tràn. 375px không tràn ngang.
-                        Không lỗi console mới.
-ghi KV thêm mỗi lần mở app : 0. Việc này không có một đường ghi KV nào.
-cổng demo / đang tải  : CÓ SẴN ở index.tsx:2482-2483, tôi không đụng.
+vitest                : 433 passed | 2 expected fail | 32 file | 0 FAILED — đúng mốc nền, không
+                        phép nào đang xanh bị đỏ
+build                 : qua, 16,28s
+quét byte điều khiển  : 16 byte · 7 file = mốc nền. index.tsx giữ nguyên 6 byte có sẵn (việc V1)
+kiểm trên app         : xem bảng ba trạng thái bên dưới. 1440px không tràn · 375px scrollWidth =
+                        clientWidth = 375, không tràn ngang · không lỗi console mới
+ghi KV thêm mỗi lần mở app : 0 — việc này không đụng tới một đường ghi KV nào
+cổng demo / đang tải  : KHÔNG ÁP DỤNG — không có effect ghi kho nào ở đây. Hai cổng ở
+                        index.tsx:2482-2483 thuộc effect khác, tôi không đụng.
 ```
 
-**ĐÃ MỞ FILE THẬT VÀ SOI** — xuất từ app đang chạy, dữ liệu thật, 69 dự án · 305 đầu việc, 382 dòng:
-```
-đóng băng     : xSplit 3 · ySplit 3
-trang in      : landscape · fitToWidth 1 · printTitlesRow "3:3"
-chiều cao     : dòng 1 = 22 · dòng 3 = 26 · dòng 4,5 = KHÔNG ĐẶT → Excel tự giãn
-định dạng ĐK  : G4:G377 → dataBar   ·   H4:H377 → cellIs, cellIs
-chú giải      : "CHÚ GIẢI · Nặng · Cần chú ý · Đã hoàn thành · Màu nói MỨC NGHIÊM TRỌNG…"
-```
+**PHÉP ĐO CHÍNH — tắt nút, TẢI LẠI TRANG** (Plan nêu đây mới là phép đo thật, không phải test xanh)
 
-*Tiêu chí 2 — ô ghi chú dài nhất:* **571 ký tự**, dòng 135, công đoạn SX
-("CẬP NHẬT TIẾN ĐỘ HỌP VỚI LÃNH ĐẠO: Public B1: 25/08 XONG 100%…").
-Cột rộng 48 → ước **12 dòng chữ**. TRƯỚC: cao cứng 18pt hiện ~**1 dòng**, cụt 11 dòng.
-SAU: hiện đủ **12 dòng**.
+| Trạng thái | Nhãn nút sau khi tải lại | `pmo.master.showdone.v1` |
+|---|---|---|
+| Máy mới, chưa có gì trong kho | **✓ Đang hiện việc đã xong** (BẬT) | `null` |
+| Tắt nút rồi tải lại | **Hiện tất cả đầu việc** (vẫn TẮT) | `"0"` |
+| Bật lại rồi tải lại | **✓ Đang hiện việc đã xong** (vẫn BẬT) | `"1"` |
 
-*Tiêu chí 5 — ô % chưa có số:* trong file có **305 ô có số** và **69 ô TRỐNG** (đúng bằng số dòng
-dự án). Trong 305 ô có số thì **129 ô là số 0 THẬT**. Nếu gộp trống thành 0 thì sẽ có 198 dòng hiện
-"0%", tức bịa thêm 69 dòng chưa đo thành đã đo và được 0. Data bar không vẽ gì trên ô rỗng.
-
-*Cột Quá hạn:* **110 ô từ 14 ngày trở lên** sẽ tô đỏ.
-
-**Đã xác nhận ĐỎ trên bản chưa sửa:** đặt lại `row.height = isGroup ? 20 : 18` → phép kiểm "chữ hết
-bị cắt" đỏ. Phục hồi xong 21/21 xanh.
+Dòng đầu bảng cũng chính là phép kiểm "cửa sổ ẩn danh": xoá khoá đi = máy chưa từng vào, và nó về
+đúng mặc định BẬT. Chứng minh lựa chọn lưu theo **máy** chứ không theo tài khoản.
 
 **CHỖ TÔI KHÔNG CHẮC**
 
-1. **Tôi chưa mở file bằng Excel thật, và đây là việc chấm bằng mắt.** Mọi kết luận trên đọc từ XML
-   trong file và từ `exceljs`. Ba thứ tôi **không tự nghiệm thu được**, cần người mở Excel xem:
-   **(a)** chiều cao tự giãn — Excel tính lúc mở, tôi chỉ chứng minh được là đã bỏ chiều cao đặt
-   tay, không chứng minh được chữ hiện đủ trên màn hình thật; **(b)** data bar vẽ ra trông thế nào;
-   **(c)** Ctrl+P ra đúng một trang bề ngang. **Đã đính kèm file cho người dùng tự nhìn.**
+1. **Chưa thử trên cửa sổ ẩn danh thật.** Tôi giả lập bằng cách xoá khoá, tương đương về mặt trạng
+   thái kho, nhưng ẩn danh còn có thể **chặn hẳn** `localStorage` — lúc đó lệnh ghi ném lỗi. Tôi
+   đã bọc `try/catch` cả hai chiều nên đường đó an toàn về lý thuyết, nhưng **chưa chạy thật**.
 
-2. **Chưa đặt cạnh bản PDF** (tiêu chí 1 đòi xuất cùng lúc cùng bộ lọc rồi so). Đường PDF dùng
-   `html2canvas` chụp giao diện, cần trình duyệt thật và tôi không mở được Excel để so song song.
-   **Đây là phần nghiệm thu tôi chưa làm được, không phải phần tôi bỏ qua.**
+2. **`tableProjectCount` ở nhánh CÓ LỌC vẫn là một cửa để số đổi** — hôm nay đóng vì không có dự án
+   nào toàn việc đã xong. Tôi không sửa (ngoài phạm vi, và nó là hành vi có sẵn từ trước), chỉ ghi
+   ra. Nếu Plan muốn khoá hẳn thì đó là việc riêng.
 
-3. **Chiều cao tự giãn có thể làm bản in dài ra đáng kể.** Một ô 571 ký tự thành 12 dòng thì hàng đó
-   cao gấp hơn chục lần. Đổi lại là chữ không mất. Nếu người dùng thấy bản in quá dài thì hướng sửa
-   là giới hạn chiều cao tối đa mỗi hàng — nhưng đó là quyết định đánh đổi "gọn" với "đủ chữ", phải
-   hỏi chứ tôi không tự chọn.
+3. **Người quen bảng gọn sẽ mở app thấy dài ra.** Plan cho là không cần báo gì trên giao diện, và
+   tôi **đồng ý** — người dùng đã dặn đừng hiện mấy dòng chữ chỉ admin mới cần. Tôi không tự thêm.
+   Nhưng đã viết dòng CHANGELOG cho người dùng đọc, nói rõ mặc định đổi và cách tắt đi. Đó là chỗ
+   đúng để nói.
 
-4. **Phép kiểm `findMatrixSheets` vẫn đỏ, và nay hỏng KHÁC trước.** Vòng V4a nó quá hạn 5.000 ms
-   (đo 6.543 / 7.125 / 8.352 ms); lượt này nó đỏ trong **3 ms**. `tests/matrix-reader.test.ts` đang
-   có thay đổi chưa commit trong cây — **box khác đang sửa nó**, nên tôi để yên (luật 5.6). Vẫn
-   không liên quan tới tôi: file đó chỉ import `matrix-reader` + `xlsx`.
-
-5. **`showValue: true` trên data bar** — tôi chọn để vẫn hiện số "85%" bên cạnh thanh. Nếu muốn chỉ
-   thanh không số thì đổi một chữ, nhưng giấu số trên một bảng báo cáo thì tôi cho là dở hơn.
-
-6. **Tôi không đo được ảnh hưởng của xSplit tới bản in.** Đóng băng chỉ ảnh hưởng lúc xem, không
-   ảnh hưởng lúc in — theo hiểu biết của tôi về Excel, nhưng tôi không chạy Excel để xác nhận.
+4. **Không đo được chi phí render khi bật mặc định.** Bật lên là bảng dựng thêm 199 dòng ngay từ
+   lượt vẽ đầu, mọi lần mở app, cho mọi người. Máy tôi không thấy chậm, nhưng "không thấy chậm trên
+   máy tôi" không phải một phép đo.
 
 **CHƯA LÀM**
 
-- **Không đổi** danh sách cột, thứ tự cột, độ rộng cột, hay bất kỳ giá trị dữ liệu nào. Ràng buộc 1
-  giữ nguyên: đây là vòng đổi cách trình bày.
-- **Không đụng** `exportMatrixXlsx` (cùng file, đường khác — đã phải neo thêm ngữ cảnh khi sửa vì
-  hai hàm có đoạn mã giống hệt nhau, suýt sửa nhầm), không đụng đường PDF, không bỏ ẩn dòng con.
-- **Không sửa** phép kiểm `matrix-reader` đang đỏ.
-- **Không deploy.** V2b và V4a vẫn nguyên trong cây, tôi không revert gì.
-
----
-
-### Bổ sung sau khi Review soi — commit `a8119f2`
-
-Review (box `ePMP Tester`) chỉ ba chỗ trên `a914b2f`. Đã tự kiểm lại từng cái rồi sửa cả ba.
-
-**1. `showGridLines: false`.** Một dòng, và đổi nhiều nhất về cảm nhận trên mỗi đồng công bỏ ra:
-còn lưới thì mắt đọc ra "bảng tính", tắt đi mới ra "báo cáo". Bản PDF không có lưới vì nó chụp
-giao diện web. Đã xác nhận trước đó không có ở đâu trong `excel-export.ts`.
-
-**2. Chú giải dùng ĐÚNG chữ của app.** Tôi đã tự đặt chữ mới (Nặng / Cần chú ý) và thiếu hẳn mục
-xám thứ tư. Chú giải thật trên app (`index.tsx` ~4802) là **Hoàn thành · Cảnh báo đỏ · Cảnh báo
-vàng · Đang triển khai**. Nay lấy đúng bốn chữ đó. **Màu thì vẫn giữ của file này** (`STATUS_FILL`)
-chứ không lấy sắc độ chip trên app: chú giải phải giải thích đúng những ô đang nằm trong bảng, lấy
-màu chỗ khác là chú giải một thứ không có trong file. Mục xám trên app tương ứng với **ô Tình trạng
-để trống** trong file, nên ghi thẳng "(ô trống)" chứ không để người đọc tự đoán trống là thiếu
-dữ liệu.
-
-**3. Ghi rõ một ràng buộc ngầm mà Review phát hiện:** thang `cfvo 0..100` của thanh màu **chỉ đúng
-vì V4a chọn lưu `85` chứ không lưu `0.85`**. Ai đổi sang lối `0.85` + định dạng `0%` mà quên đổi
-`cfvo` xuống `0..1` thì mọi thanh màu co lại còn khoảng 1% bề ngang ô, mà **không có gì báo lỗi** —
-test vẫn xanh, file vẫn mở được. Đã ghi vào ngay chỗ đặt `cfvo`.
-
-**Đo lại sau ba sửa:** file thật `38.353 → 38.392` byte. Lưới **đã tắt**, chú giải bốn mục đúng chữ
-app. `tsc` sạch · `vitest` **419 passed | 2 expected fail | 31 file, 0 failed** · build qua · byte
-điều khiển 16 = mốc nền.
-
-**Một chỗ Review nhận lầm, đã kiểm lại:** Review mô tả `tests/matrix-reader.test.ts` còn dở
-(`wbChung` chưa khai). Mô tả đó **đã lỗi thời lúc tôi đọc**: box Test kia commit `2ba7ebd` đặt mốc
-riêng 20 giây cho phép kiểm đọc file 2,1 MB, và giờ file đó **xanh 5/5**. Tôi grep lại: không còn
-`wbChung` ở đâu, `HAN_DOC_LAI_FILE` khai ở dòng 23 và **có dùng** ở dòng 72. Con số 3 ms tôi báo ở
-vòng trước là của bản đang hỏng giữa chừng, không phải bản hiện tại.
-
-**HAI KHỐI EXCEL CÒN THIẾU SO VỚI PDF — chưa làm, cần Plan quyết.** Review đọc `pdf-export.ts` và
-chỉ ra bản PDF gồm ba khối: `#pdf-title`, `#pdf-kpi` (dải 6 thẻ KPI), `#pdf-stages` (7 thẻ giai
-đoạn), rồi mới tới `#pdf-table`. File Excel hiện **không có hai khối giữa**. Đặt cạnh nhau thì
-người thứ ba thấy thiếu. Tôi không tự làm vì nó vượt hẳn bảy mục của ①, nhưng **phải nói với người
-dùng trước khi anh ấy mở file ra mới thấy**.
-
-*Kèm một bẫy cho ai làm việc đó:* `tests/excel-o-that.test.ts` **neo hàng cứng ở 32 chỗ**
-(`getRow(4)` là dòng dữ liệu đầu, vùng định dạng điều kiện bắt đầu từ `G4`). V4b chỉ thêm hàng ở
-CUỐI nên không xê. Thêm bất kỳ khối nào **phía trên bảng** sẽ đẩy mọi hàng xuống và làm đỏ hàng
-loạt phép kiểm **trong khi file xuất ra hoàn toàn đúng**. Phải neo động trước (tìm hàng có nhãn
-"Ngày update" rồi cộng 1), đừng ngồi sửa 32 con số bằng tay.
-
----
-
-### Bổ sung lượt cuối — commit `29af58e` và `e1f9877`
-
-**1. Gỡ `defaultRowHeight` khỏi `properties` (`29af58e`).** Review soi XML và thấy `<sheetFormatPr>`
-mang cờ `customHeight="1"`, sinh ra từ `defaultRowHeight: 16` tôi khai. Theo chuẩn thì cờ đó nói về
-**mặc định của sheet** chứ không đánh dấu từng hàng, nên đáng lẽ không cản việc tự giãn — nhưng
-"đáng lẽ" là thứ không kiểm được nếu không mở Excel thật, mà tự giãn chiều cao lại đúng là **việc
-nặng nhất** của vòng này. Đã soi file thật trước và sau:
-```
-trước : <sheetFormatPr defaultRowHeight="16" outlineLevelRow="1" … customHeight="1"/>
-sau   : <sheetFormatPr defaultRowHeight="15" outlineLevelRow="1" outlineLevelCol="0" …/>
-hàng 4 trở đi : không `ht`, không `customHeight`  (cả trước lẫn sau)
-```
-Giờ không còn cờ nào ở bất kỳ tầng nào nói rằng chiều cao là do người đặt. **Đánh đổi:** hàng không
-có chữ dài nay cao theo cỡ chữ (~15pt) thay vì 16pt — sít hơn một chút. Bỏ một thuộc tính trang trí
-để gỡ hẳn một khả năng hỏng ở đúng chỗ quan trọng nhất thì đáng.
-
-**2. Viền mảnh cho ô chú giải "Đang triển khai (ô trống)".** Nó tô `#F8FAFC` gần như trắng, đứng
-cạnh ba ô đỏ/vàng/xanh đậm thì trông như ô rỗng lỡ tay chứ không như một mục chú giải.
-
-**3. Phép kiểm chặn một con hỏng IM LẶNG (`e1f9877`, không đổi dòng code sản phẩm nào).**
-`exceljs` ghi data bar ra **hai khối**: khối cũ `<dataBar>` chỉ mang `cfvo` + màu, còn
-`minLength` · `maxLength` · `gradient` đi vào khối `<x14:dataBar>` trong `extLst` — và **Excel 2010
-trở lên đọc khối x14**. Đã tự soi file thật:
-```
-<x14:dataBar minLength="0" maxLength="100" gradient="0">
-showValue : KHÔNG vào file — nhưng mặc định của chuẩn đã là bật, trùng ý muốn nên vô hại
-```
-Bỏ `gradient: false` là để Excel quay về mặc định **chuyển sắc**: thanh đổi từ đặc sang gradient,
-tức đổi đúng cái người dùng nhìn, mà trước đó **không phép kiểm nào bắt**. Nay có. Đã thử bỏ dòng
-đó ra để chắc phép kiểm đỏ thật.
-
-**MỘT CHỖ TÔI VẤP, ghi lại vì nó đúng loại dễ lặp.** Phép kiểm đầu tiên tôi viết cho mục 1 soi
-`WS.properties.defaultRowHeight` trên **mô hình exceljs** — và nó **đỏ trong khi file hoàn toàn
-đúng**, vì đọc lại bằng exceljs thì nó tự điền giá trị mặc định của nó. Review đã cảnh báo đúng
-điều này ở lượt ngay trước ("thứ người dùng mở là file XML, hai chỗ đó có thể lệch"), tôi đọc xong
-gật đầu rồi vẫn viết sai ở mục kế tiếp. Đã viết lại cho nó bung zip soi thẳng XML. **Thứ Excel đọc
-là FILE, không phải mô hình.**
-
-**MỘT CHỖ TÔI ĐƯỢC KHEN NHƯNG KHÔNG NHẬN.** Review khen dải định dạng điều kiện dừng đúng dòng dữ
-liệu cuối nên khối chú giải thêm ở dưới không bị tô lây. Thành thật: tôi tính `dongCuoi = 3 +
-rows.length` **trước** khi thêm chú giải, không phải vì lường trước được. May hơn là giỏi. Nay đã
-thành ràng buộc có chủ ý — ai chèn khối vào giữa thì con số đó phải tính lại.
-
-**ĐO LẠI SAU CÙNG** (Review đo ở cây riêng sạch tại `29af58e`, khớp từng số):
-```
-tsc sạch · vitest 433 passed | 2 expected fail | 32 file | 0 FAILED · build qua
-byte điều khiển 16 · 7 file · 14 dòng = đúng mốc nền
-file thật 38.410 byte  (V4a 36.959 → +1.451 byte, +3,9%)
-0 đường ghi KV trong cả vòng
-```
-
-**BA ĐIỀU KIỆN CÒN LẠI — không nằm trong code, chỉ mắt người mở file trả lời được.** Xếp theo thứ
-tự nên xem: **(a)** chiều cao có tự giãn thật không, tức ô Vướng mắc có hiện đủ chữ; **(b)** thanh
-màu ở ô giá trị `0` có khác ô trống đủ rõ không; **(c)** Ctrl+P có vừa một trang bề ngang không.
-Đã gửi file cho người dùng kèm đúng thứ tự này.
-
+- **Không đổi** luật lọc, cách tính KPI, `showHidden`, hay bề rộng cột — đúng phần NGOÀI.
+- **Không thêm** thông báo nào trên giao diện (xem mục 3 trên).
+- **Không đụng V6** (lọc trong báo cáo tuân thủ) — Plan dặn làm xong V5 đã.
+- **Không deploy.**
 ---
 
 ## ③ TEST
