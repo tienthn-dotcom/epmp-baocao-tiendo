@@ -539,6 +539,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.118.0", date: "28/09/2026", items: [
+    "CỘT “CẦN PM TRÌNH MASTER PLAN BOD PHÊ DUYỆT” NAY CHẠY THẲNG TỪ Ô VƯỚNG MẮC. Trước đây dự án phải được cắm cờ thì mới hiện hạn; dự án ghi rõ “trước 22/09” mà chưa cắm cờ thì để trống và không bị trừ điểm. Nay có ghi hạn là hiện hạn, số tuần tính từ ngày đó tới hôm nay.",
+    "SỬA MỘT CHỖ LÀM MẤT HẠN: khi câu “trình BOD … bitrix trước dd/mm” nằm ở FILE NGUỒN mà dự án lại có ghi chú gõ trong app, app đè mất câu của file nguồn nên cột hạn hiện “–”. Nay đọc đúng câu có nhắc trình BOD, dù nó ở file nguồn hay trong app. Kết quả: 13 → 23 dự án hiện hạn, 4 dự án bị trừ điểm.",
+    "ĐẦU BÁO CÁO TUÂN THỦ NAY GHI HAI MỐC RÕ RÀNG: “Kỳ chấm” (cột tuần đang chấm) và “Số liệu tính đến” (lúc dữ liệu được tải về). Trước đây chỉ có một dòng ghi “Ngày cập nhật” nhưng lại là ngày của cột tuần — có thể là ngày chưa tới, người nhận báo cáo đọc thành ngày chốt số liệu.",
+  ] },
   { v: "3.117.1", date: "28/09/2026", items: [
     "Badge tên người gõ ghi chú nay cùng một kiểu với badge OCC (nền trắng, chữ xanh navy). Cái cho biết câu đó của ai là CHỮ trong badge và gạch ngăn, không phải kiểu badge.",
   ] },
@@ -4674,6 +4679,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         mpFlaggedNames={mpFlaggedNames}
         mpDeadlineByName={mpDeadlineByName}
         today={today}
+        fetchedAt={complianceFileQuery.dataUpdatedAt}
         canManage={canSeeSystem}
         canEdit={me.isAdmin}
         onRetry={() => complianceFileQuery.refetch()}
@@ -9091,9 +9097,11 @@ function cmpVietGivenName(a: string, b: string): number {
   return given(a).localeCompare(given(b), "vi") || a.localeCompare(b, "vi");
 }
 
-function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, canManage, canEdit, onRetry, onClose }: {
+function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, fetchedAt, canManage, canEdit, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
-  regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; mpDeadlineByName: Map<string, string>; today: string; canManage?: boolean; canEdit?: boolean; onRetry: () => void; onClose: () => void;
+  regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; mpDeadlineByName: Map<string, string>; today: string;
+  /** Luc file tuan thu duoc TAI VE (dataUpdatedAt). Moc THAT cua so lieu dang hien, khong phai gio hien tai. */
+  fetchedAt?: number; canManage?: boolean; canEdit?: boolean; onRetry: () => void; onClose: () => void;
 }) {
   const narrowCpl = useIsMobile();   // điện thoại: bảng giữ khổ đọc được rồi cuộn ngang
   void canManage;
@@ -9169,6 +9177,15 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     const yr = +m[2] > repMon ? repYear - 1 : repYear;
     return `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}/${yr}`;
   }, [data, curWeekIdx, repMon, repYear, today]);
+  /* MỐC THẬT CỦA SỐ LIỆU ĐANG HIỆN = lúc file tuân thủ được TẢI VỀ (dataUpdatedAt của chính truy vấn
+     đọc nó), KHÔNG phải Date.now(). Hai cái khác nhau thật: mở hộp thoại lúc 9h rồi để đó tới trưa
+     thì Date.now() nói 12h trong khi số liệu vẫn là bản 9h. Chưa có dữ liệu → "—", không bịa giờ. */
+  const mocSoLieu = useMemo(() => {
+    if (!fetchedAt) return "—";
+    const d = new Date(fetchedAt);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }, [fetchedAt]);
   const vungOptions = useMemo(() => {
     const s = new Set<string>();
     for (const r of data?.rows ?? []) { const v = vungVN(regionByName.get(normProjName(r.name)) ?? ""); if (v && v !== "—") s.add(v); }
@@ -9436,7 +9453,12 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
               {/* Đang lọc thì hiện SỐ ĐANG XEM / tổng, chứ không hiện mỗi tổng: bảng còn 12 dòng mà
                   đầu trang ghi "Tổng số 69" là tự mâu thuẫn ngay trên cùng một bản in. */}
-              <div className="mt-0.5 text-[11px] text-slate-500">Ngày cập nhật: <b className="tabular-nums text-slate-700">{updateDateLabel}</b> · {phamViLoc
+              {/* HAI MỐC, NÓI RÕ LÀ HAI THỨ KHÁC NHAU — 28/09/2026, anh Tiến hỏi "sao lại là 30-09,
+                  nay mới 28-09 mà". Con số vẫn đúng như cũ, CÁI TÊN thì sai: "Ngày cập nhật" thật ra
+                  là ngày của CỘT TUẦN đang chấm (curWeekIdx), một mốc trong tương lai gần. Bản này
+                  gửi Ban điều hành, người nhận đọc "Ngày cập nhật 30/09" sẽ hiểu là số liệu tính đến
+                  30/09 — một ngày chưa tới, mà không ai nghi vì con số trông hợp lý. */}
+              <div className="mt-0.5 text-[11px] text-slate-500">Kỳ chấm: <b className="tabular-nums text-slate-700">{updateDateLabel}</b> · Số liệu tính đến: <b className="tabular-nums text-slate-700">{mocSoLieu}</b> · {phamViLoc
                 ? <>Đang xem: <b className="tabular-nums text-slate-700">{baseRows.length}</b> / {tongDuAn} dự án</>
                 : <>Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</>}</div>
               {/* NẰM TRONG headerRef nên đi vào bản PDF. Không có dòng này thì người nhận file thấy
