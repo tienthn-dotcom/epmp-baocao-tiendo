@@ -540,7 +540,7 @@ const CHANGELOG: readonly ChangelogEntry[] = [
     "BÁO CÁO TUÂN THỦ NAY LỌC ĐƯỢC. Ba cách lọc, bật cùng lúc cũng được: chỉ dự án CẦN PM TRÌNH MASTER PLAN BOD phê duyệt, theo NGƯỜI PHỤ TRÁCH, và gõ tìm TÊN DỰ ÁN (gõ không dấu vẫn ra). Đầu bảng ghi rõ đang xem bao nhiêu trên tổng bao nhiêu, và đang bật bộ lọc nào.",
     "Lọc “Cần PM trình Master Plan BOD” lấy ĐÚNG những dự án có ghi hạn ở cột đó — ô nào hiện “trước dd/mm” thì lọt, ô nào để trống thì không. Cái mắt nhìn thấy và cái bộ lọc làm là một.",
     "Lọc ra không còn dự án nào thì bảng nói thẳng là không có dự án nào khớp, và hàng nút lọc VẪN CÒN để bấm bỏ lọc. Trước đây gặp cảnh này app báo nhầm là file không có dữ liệu, rồi hàng nút biến mất nên phải đóng hộp thoại mới thoát ra được.",
-    "CHƯA XONG, nói trước để khỏi mất công: nút “Xuất PDF” của báo cáo tuân thủ đang lỗi sẵn từ trước, nên chưa xuất được bản PDF theo phần đã lọc. Đang sửa. Bản PDF gửi mail hằng tuần KHÔNG bị ảnh hưởng, vẫn ra đều.",
+    "Lọc xong bấm “Xuất PDF” thì bản PDF ra ĐÚNG phần đang lọc — vì PDF chụp chính cái bảng đang hiện, và dòng ghi đang lọc gì cũng nằm trong bản in.",
   ] },
   { v: "3.111.0", date: "28/09/2026", items: [
     "MỞ APP LÀ THẤY ĐỦ ĐẦU VIỆC, kể cả việc đã xong. Trước đây mặc định giấu việc đã xong đi, muốn xem phải bấm nút mỗi lần vào.",
