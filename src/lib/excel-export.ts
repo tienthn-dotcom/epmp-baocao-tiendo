@@ -662,7 +662,10 @@ export async function exportTableXlsx(opts: {
   const ws = wb.addWorksheet("Báo cáo", {
     // Đóng băng CẢ CỘT lẫn hàng: cuộn sang phải đọc Vướng mắc / Giải pháp vẫn thấy đang ở dự án
     // nào. xSplit 3 = giữ lại Ngày update · Mã · Tên dự án.
-    views: [{ state: "frozen", xSplit: 3, ySplit: 3 }],
+    // `showGridLines: false` — một dòng nhưng đổi nhiều nhất về cảm nhận. Còn lưới thì mắt đọc ra
+    // "bảng tính"; tắt đi, cùng với dải màu và khối tiêu đề, mới đọc ra "báo cáo". Bản PDF không có
+    // lưới vì nó chụp giao diện web (card trắng trên nền xám), đây là chỗ Excel bám gần nó nhất.
+    views: [{ state: "frozen", xSplit: 3, ySplit: 3, showGridLines: false }],
     properties: { outlineLevelRow: 1, defaultRowHeight: 16 } as any,
     pageSetup: {
       orientation: "landscape", paperSize: 9,              // 9 = A4
@@ -755,6 +758,10 @@ export async function exportTableXlsx(opts: {
     // đã là Ô SỐ (việc V4a) — data bar không vẽ gì trên ô chữ.
     // Ô TRỐNG KHÔNG ĐƯỢC VẼ GÌ: Excel bỏ qua ô rỗng khi vẽ data bar, nên "chưa đo" vẫn là một ô
     // trắng trơn chứ không thành thanh dài 0 trông như 0%. Luật 5.2 áp cho cả phần nhìn.
+    //
+    // THANG 0..100 DÍNH CHẶT VÀO CÁCH CỘT NÀY LƯU SỐ: cột % đang lưu `85` (kèm định dạng hiển thị
+    // `0"%"`), không lưu `0.85`. Ai đổi sang lối `0.85` + định dạng `0%` thì PHẢI đổi `cfvo` xuống
+    // 0..1, nếu không mọi thanh màu co lại còn khoảng 1% bề ngang ô mà chẳng có gì báo lỗi.
     if (opts.pctColIndex != null && opts.pctColIndex >= 0) {
       const c = chuCot(opts.pctColIndex);
       ws.addConditionalFormatting({
@@ -806,12 +813,19 @@ export async function exportTableXlsx(opts: {
     o.alignment = { horizontal: "center", vertical: "middle" };
   };
 
+  // CHỮ lấy ĐÚNG chú giải trên app (`index.tsx` ~4802: Hoàn thành · Cảnh báo đỏ · Cảnh báo vàng ·
+  // Đang triển khai), để ai đặt file cạnh màn hình không thấy hai cách gọi khác nhau cho một thứ.
+  // MÀU thì lấy của chính file này (STATUS_FILL) chứ không lấy màu chip trên app: chú giải phải
+  // giải thích đúng những ô đang nằm trong bảng, chứ không phải một sắc độ khác ở chỗ khác.
   const hangMau = ws.addRow([]);
-  oMau(hangMau, 1, "Nặng", STATUS_FILL.RED.bg, STATUS_FILL.RED.fg);
-  oMau(hangMau, 2, "Cần chú ý", STATUS_FILL.AMBER.bg, STATUS_FILL.AMBER.fg);
-  oMau(hangMau, 3, "Đã hoàn thành", STATUS_FILL.GREEN.bg, STATUS_FILL.GREEN.fg);
-  hangMau.getCell(4).value = "Màu nói MỨC NGHIÊM TRỌNG, không dính chết vào nhãn: cùng một nhãn có thể vàng khi dự án còn xa hạn và đỏ khi sắp bàn giao.";
-  hangMau.getCell(4).font = { name: "Arial", italic: true, size: 9, color: { argb: "FF5B6B7E" } };
+  oMau(hangMau, 1, "Hoàn thành", STATUS_FILL.GREEN.bg, STATUS_FILL.GREEN.fg);
+  oMau(hangMau, 2, "Cảnh báo đỏ", STATUS_FILL.RED.bg, STATUS_FILL.RED.fg);
+  oMau(hangMau, 3, "Cảnh báo vàng", STATUS_FILL.AMBER.bg, STATUS_FILL.AMBER.fg);
+  // Trên app đây là chip xám; trong file thì "đang triển khai" = ô Tình trạng ĐỂ TRỐNG, nên phải
+  // nói ra chứ đừng để người đọc tự đoán ô trống nghĩa là thiếu dữ liệu.
+  oMau(hangMau, 4, "Đang triển khai (ô trống)", MAU.nenCon, "FF1B1B1B");
+  hangMau.getCell(5).value = "Màu nói MỨC NGHIÊM TRỌNG, không dính chết vào nhãn: cùng một nhãn có thể vàng khi dự án còn xa hạn và đỏ khi sắp bàn giao.";
+  hangMau.getCell(5).font = { name: "Arial", italic: true, size: 9, color: { argb: "FF5B6B7E" } };
 
   const hangNhan = ws.addRow([]);
   hangNhan.getCell(1).value = "Nhãn tình trạng:";

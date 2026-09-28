@@ -269,8 +269,13 @@ describe("phần nhìn — chỉ chốt được thứ máy soi được", () =>
     // Ghi chú ở index.tsx (~1381) nói rõ: màu tách rời nhãn, "KHÔNG được suy màu từ kind".
     // Chú giải phải nói MÀU = MỨC NGHIÊM TRỌNG, nếu không là in ra một luật app không chạy theo.
     expect(chu).toContain("MỨC NGHIÊM TRỌNG");
-    expect(chu).toContain("Nặng");
-    expect(chu).toContain("Cần chú ý");
+    // Chữ phải TRÙNG chú giải trên app (index.tsx ~4802), đừng đặt từ mới cho cùng một thứ.
+    for (const t of ["Hoàn thành", "Cảnh báo đỏ", "Cảnh báo vàng", "Đang triển khai"])
+      expect(chu, `thiếu mục chú giải "${t}"`).toContain(t);
+  });
+
+  it("tắt đường lưới — có lưới thì mắt đọc ra bảng tính, tắt đi mới ra báo cáo", () => {
+    expect(WS.views?.[0]?.showGridLines).toBe(false);
   });
 
   it("chú giải nêu đúng ngưỡng quá hạn đã truyền vào, không phải số tự chế", () => {
