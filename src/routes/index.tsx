@@ -3403,7 +3403,32 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     return base.map(trimBlocks);
   }, [enrichedAll, hiddenKeys, showHidden]);
   // Việc ĐÃ HOÀN THÀNH (pct ≥ 100, còn Show) — CHỈ dựng khi bật "Hiện tất cả đầu việc". Enrich y
-  // hệt việc đang làm. KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng.
+  // hệt việc đang làm.
+  //
+  // ĐƯỜNG ĐI THẬT CỦA NÓ, đọc kỹ trước khi tin là có hàng rào nào đó (ghi chú cũ ở đây nói
+  // "KHÔNG đưa vào enriched/panelActive/KPI" — nửa sau CỦA CÂU ĐÓ SAI, xem bên dưới):
+  //
+  //  • `enriched` và `panelActive`: KHÔNG đụng. Đúng như ghi chú cũ. `showDone` đi vào
+  //    `ganttSource` chứ không đi vào `panelActive`.
+  //  • `tableItems` (≈3767): CÓ nối `doneEnriched` vào. Mà `sortedAlerts` chảy ra từ `tableItems`,
+  //    còn KPI đầu trang thì ĐỌC `sortedAlerts`. Tức việc đã xong CÓ vào tới KPI — **không có
+  //    hàng rào nào chặn cả**.
+  //
+  // Vậy vì sao số vẫn không nhảy? Vì hai lý do KHÁC NHAU, và chỉ lý do đầu là chắc:
+  //
+  //  1. Ba số Trễ / Cần cắt / Cần tập trung đếm `_alert` trên `sortedAlerts`. Việc đã xong không
+  //     mang nhãn cảnh báo nào nên không cộng vào đâu. ĐÃ ĐO 28/09/2026 trên 69 dự án thật: bật
+  //     nút lên hiện thêm 199 đầu việc 100%, sáu số đầu trang đứng yên tuyệt đối
+  //     (69·79·59·90·7·36), đo cả nhánh không lọc lẫn nhánh có lọc.
+  //  2. `tableProjectCount` (≈4343) rẽ hai nhánh. Không lọc thì lấy `activeProjectCount`, độc lập
+  //     hẳn, an toàn tuyệt đối. CÓ LỌC thì đếm số dự án khác nhau trong `sortedAlerts` — và nhánh
+  //     này VỀ NGUYÊN TẮC CÓ THỂ ĐỔI: nếu tồn tại một dự án mà MỌI đầu việc đều đã xong thì nó
+  //     chỉ hiện khi bật nút, và số dự án tăng lên. Hôm nay không có dự án nào như vậy (69 → 69),
+  //     nên số đứng yên — nhưng đó là tính chất của DỮ LIỆU hôm nay, không phải của code.
+  //
+  // → Ai sau này thấy "Dự án hiện hành" nhảy số khi bật/tắt nút thì tìm ngay ở mục 2, đừng đi mò
+  //   lại từ đầu. Và đừng viết lại ghi chú này thành "đã chặn khỏi KPI": nói thế là dựng ra một
+  //   hàng rào chưa từng tồn tại, rồi người sau yên tâm vì một lý do sai.
   // MẶC ĐỊNH BẬT: mở app là thấy đủ đầu việc, kể cả việc đã xong. Ai muốn gọn thì tắt đi, và lựa
   // chọn đó nhớ RIÊNG TỪNG MÁY — giống hệt cách bề rộng cột đang nhớ (xem LS_COLW).
   //

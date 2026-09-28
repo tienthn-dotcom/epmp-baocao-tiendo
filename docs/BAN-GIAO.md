@@ -235,6 +235,27 @@ Dòng đầu bảng cũng chính là phép kiểm "cửa sổ ẩn danh": xoá k
    lượt vẽ đầu, mọi lần mở app, cho mọi người. Máy tôi không thấy chậm, nhưng "không thấy chậm trên
    máy tôi" không phải một phép đo.
 
+**BỔ SUNG — viết lại ghi chú sai ở `index.tsx:3406` (Plan duyệt, nằm trong phạm vi V5)**
+
+Ghi chú cũ viết *"KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng"*. Nửa đầu
+đúng, **nửa sau sai**: `tableItems` có nối `doneEnriched` vào, `sortedAlerts` chảy ra từ đó, và KPI
+đọc `sortedAlerts`. Không có hàng rào nào chặn cả.
+
+Đây đúng thứ **luật 5.4** sinh ra để chặn — ghi chú đang làm người đọc yên tâm vì **một lý do sai**.
+Người sau đọc xong tưởng có hàng rào, rồi một ngày việc đã xong mang nhãn nào đó và hàng rào ấy hoá
+ra chưa từng tồn tại.
+
+Bản mới nói đúng đường đi, và tách bạch **hai lý do khác nhau** khiến số không nhảy:
+- Ba số cảnh báo an toàn vì việc đã xong **không mang nhãn** — kèm số đo 28/09 (199 đầu việc hiện
+  thêm, sáu số đứng yên `69·79·59·90·7·36`, đo cả hai nhánh).
+- `tableProjectCount` ở nhánh **có lọc** thì **về nguyên tắc CÓ THỂ đổi** nếu tồn tại một dự án mà
+  mọi đầu việc đều đã xong. Hôm nay không có — nhưng đó là tính chất của **dữ liệu hôm nay**, không
+  phải của code. Ghi rõ để ai thấy số nhảy thì tìm ngay đúng chỗ.
+- Kèm một câu dặn: **đừng viết lại thành "đã chặn khỏi KPI"**.
+
+Chỉ đổi ghi chú, không đổi một dòng code chạy nào: diff 26/1, và `git diff --ignore-all-space` ra
+đúng 26/1 nên không có dòng nhiễu nào.
+
 **CHƯA LÀM**
 
 - **Không đổi** luật lọc, cách tính KPI, `showHidden`, hay bề rộng cột — đúng phần NGOÀI.
