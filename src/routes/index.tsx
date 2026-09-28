@@ -8972,6 +8972,13 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   // Vẫn gom theo Vùng → Người phụ trách; trong mỗi nhóm xếp tên A→Z.
   const [sort] = useState<{ key: "vung" | "pm" | "mp" | "name" | "score" | "count"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
   const [vungSel, setVungSel] = useState<string[]>([]);
+  /* BỘ LỌC CỦA BẢNG TUÂN THỦ — tất cả đi qua ĐÚNG MỘT CỬA `baseRows` bên dưới.
+     Vì sao chỉ một cửa: `byPm`, `byVung` và cả cái bảng đều dựng TỪ `baseRows`, còn hàm xuất PDF
+     thì chụp chính cái bảng đang hiện. Nối vào đây là bản PDF tự đúng theo. Dựng đường lọc thứ hai
+     là mở ra khả năng bảng một đằng, PDF một nẻo — mà không ai nhìn ra cho tới lúc gửi đi rồi. */
+  const [canTrinhMp, setCanTrinhMp] = useState(false);   // chỉ dự án CẦN trình Master Plan BOD phê duyệt
+  const [pmSel, setPmSel] = useState<string[]>([]);      // lọc theo người phụ trách chính
+  const [qTen, setQTen] = useState("");                  // gõ tìm tên dự án, khớp KHÔNG DẤU
   // CHỈ CÒN 1 báo cáo (bỏ "Tóm tắt") — bảng chi tiết "Báo cáo tuân thủ cập nhật Master Plan".
   const view = "detail" as const;
   const scoreLabel = (s: number | null) => (s == null ? "—" : String(s));
@@ -9027,10 +9034,40 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     const s = rs.map(r => finalScoreOf(r)).filter((v): v is number => v != null);
     return s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : null;
   };
-  const baseRows = useMemo(
-    () => (vungSel.length ? (data?.rows ?? []).filter(r => vungSel.includes(vungVN(regionByName.get(normProjName(r.name)) ?? ""))) : (data?.rows ?? [])),
-    [data, vungSel, regionByName],
-  );
+  /** CỬA DUY NHẤT của mọi bộ lọc. Nhiều bộ lọc cùng bật thì GIAO NHAU (và), không phải hợp.
+   *  Lọc ra 0 dòng là một câu trả lời hợp lệ — KHÔNG âm thầm bỏ lọc để lấp đầy bảng. */
+  const baseRows = useMemo(() => {
+    // Bỏ dấu CẢ HAI VẾ rồi mới so: gõ "phu quoc" phải ra "Phú Quốc". Bỏ dấu một vế là không bao
+    // giờ khớp — xem L2 trong sổ lỗi, ranh giới từ và dấu tiếng Việt đã cắn chỗ này một lần rồi.
+    const q = normProjName(qTen);
+    return (data?.rows ?? []).filter(r => {
+      if (vungSel.length && !vungSel.includes(vungVN(regionByName.get(normProjName(r.name)) ?? ""))) return false;
+      if (canTrinhMp && !r.needsMp) return false;
+      if (pmSel.length && !pmSel.includes(pmFirstOf(r.pm) || "—")) return false;
+      if (q && !normProjName(r.name).includes(q)) return false;
+      return true;
+    });
+  }, [data, vungSel, regionByName, canTrinhMp, pmSel, qTen]);
+  /** Đang lọc những gì — chữ này đi VÀO BẢN PDF (nằm trong headerRef), không chỉ hiện trên màn hình.
+   *  Đây là chỗ nguy hiểm nhất của việc lọc: điểm trung bình PM tính trên PHẦN ĐÃ LỌC, nên nó đúng
+   *  trong ngữ cảnh này mà đặt sang ngữ cảnh khác là sai — người nhận file dễ tưởng đó là điểm cả
+   *  kỳ. Một con số đúng đặt nhầm chỗ thì nhìn không ra, nên phải ghi phạm vi ngay cạnh nó. */
+  const phamViLoc = useMemo(() => {
+    const p: string[] = [];
+    if (canTrinhMp) p.push("Cần trình Master Plan BOD phê duyệt");
+    if (vungSel.length) p.push(`Vùng: ${vungSel.join(", ")}`);
+    if (pmSel.length) p.push(`Người phụ trách: ${pmSel.join(", ")}`);
+    if (qTen.trim()) p.push(`Tìm: "${qTen.trim()}"`);
+    return p.join("  ·  ");
+  }, [canTrinhMp, vungSel, pmSel, qTen]);
+  /** Danh sách PM để chọn — lấy từ TOÀN BỘ dữ liệu, không lấy từ `baseRows`: lọc theo một PM rồi
+   *  thì danh sách không được co lại chỉ còn PM đó, không thì bấm xong hết đường quay ra. */
+  const pmOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of data?.rows ?? []) s.add(pmFirstOf(r.pm) || "—");
+    return [...s].sort(cmpVietGivenName);
+  }, [data]);
+  const soCanTrinhMp = useMemo(() => (data?.rows ?? []).filter(r => r.needsMp).length, [data]);
   // DANH SÁCH ĐIỂM TB PM (góc trên phải, gọn) — xếp CAO→THẤP.
   const byPm = useMemo(() => {
     const m = new Map<string, ComplianceFileRow[]>();
@@ -9240,7 +9277,14 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             <div ref={headerRef} className="text-left">
               <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ cập nhật Master Plan - Tháng {today.slice(5, 7)}/{today.slice(0, 4)}</div>
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
-              <div className="mt-0.5 text-[11px] text-slate-500">Ngày cập nhật: <b className="tabular-nums text-slate-700">{updateDateLabel}</b> · Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</div>
+              {/* Đang lọc thì hiện SỐ ĐANG XEM / tổng, chứ không hiện mỗi tổng: bảng còn 12 dòng mà
+                  đầu trang ghi "Tổng số 69" là tự mâu thuẫn ngay trên cùng một bản in. */}
+              <div className="mt-0.5 text-[11px] text-slate-500">Ngày cập nhật: <b className="tabular-nums text-slate-700">{updateDateLabel}</b> · {phamViLoc
+                ? <>Đang xem: <b className="tabular-nums text-slate-700">{baseRows.length}</b> / {tongDuAn} dự án</>
+                : <>Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</>}</div>
+              {/* NẰM TRONG headerRef nên đi vào bản PDF. Không có dòng này thì người nhận file thấy
+                  điểm trung bình PM của 3 dự án mà tưởng là điểm cả kỳ. */}
+              {phamViLoc && <div className="mt-0.5 text-[11px] font-semibold text-amber-700">Đang lọc: {phamViLoc}</div>}
             </div>
           </div>
           <div className="absolute right-4 top-3 z-10 flex shrink-0 items-center gap-2 print:hidden">
@@ -9366,6 +9410,32 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               </div>
             );
           })()}
+          {/* HÀNG BỘ LỌC — `print:hidden` nên KHÔNG lọt vào bản PDF; thứ đi vào PDF là dòng
+              "Đang lọc: …" nằm trong headerRef phía trên. Nút bấm in ra giấy thì vô nghĩa. */}
+          <div className="mb-2 flex flex-wrap items-center gap-2 print:hidden">
+            <button type="button" onClick={() => setCanTrinhMp(v => !v)}
+              title="Chỉ hiện dự án CẦN trình Master Plan BOD phê duyệt — lọc ra đúng nhóm này rồi Xuất PDF để gửi đi."
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold ${canTrinhMp
+                ? "bg-amber-600 text-white hover:bg-amber-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
+              {canTrinhMp ? "✓ " : ""}Cần trình MP <span className="tabular-nums opacity-70">{soCanTrinhMp}</span>
+            </button>
+            <select value={pmSel[0] ?? ""} onChange={(e) => setPmSel(e.target.value ? [e.target.value] : [])}
+              title="Lọc theo người phụ trách chính"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700">
+              <option value="">Người phụ trách: Tất cả</option>
+              {pmOptions.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <input value={qTen} onChange={(e) => setQTen(e.target.value)} placeholder="Tìm tên dự án…"
+              className="w-48 rounded-md border border-slate-300 px-2 py-1 text-[11px] text-slate-700" />
+            {(canTrinhMp || pmSel.length || qTen.trim() || vungSel.length) && (
+              <button type="button" onClick={() => { setCanTrinhMp(false); setPmSel([]); setQTen(""); setVungSel([]); }}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 underline hover:text-slate-700">Bỏ lọc</button>
+            )}
+            <span className="text-[11px] text-slate-500">
+              {/* Lọc ra 0 dòng là một câu trả lời HỢP LỆ, phải nói rõ chứ không được âm thầm bỏ lọc. */}
+              {phamViLoc ? <>Còn <b className="tabular-nums text-slate-700">{baseRows.length}</b> / {tongDuAn} dự án</> : null}
+            </span>
+          </div>
           {/* ĐIỆN THOẠI: 11 cột ép vào 301px (bề ngang popup) → mỗi cột ~27px, chữ đè nhau y như
               bảng chính trước đây. Giữ khổ đọc được rồi cuộn ngang trong khung popup.
               Không đụng cỡ chữ: fontPx là cỡ PMO tự chỉnh và dùng chung với bản in PDF. */}
@@ -9401,6 +9471,13 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               </tr>
             </thead>
             <tbody>
+              {/* Lọc ra 0 dự án là một câu trả lời HỢP LỆ — nói thẳng ra, đừng để bảng trống trơn
+                  cho người ta tưởng app hỏng, và tuyệt đối đừng âm thầm bỏ lọc để lấp đầy. */}
+              {!byVung.length && (
+                <tr><td colSpan={colW.length} className="px-3 py-6 text-center text-[12px] text-slate-500">
+                  Không có dự án nào khớp bộ lọc đang bật{phamViLoc ? <> — <span className="font-semibold text-slate-600">{phamViLoc}</span></> : null}.
+                </td></tr>
+              )}
               {byVung.map((region, ri) => (
                 region.pmGroups.map((g, gi) => (
                   g.rows.map((r, i) => {
