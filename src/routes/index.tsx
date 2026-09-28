@@ -3591,8 +3591,20 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       // "trước dd/mm" vớ đúng ngày ĐÃ HUỶ. Xem parser.ts · doanCuaRich().
       const fileNote = p.projectNoteSach ?? p.projectNote ?? "";
       const appNote = visibleText(edits[key]?.noteMsgs).trim();
-      if (noteSaysTrinhBodBitrix(fileNote) || (appNote && noteSaysTrinhBodBitrix(appNote)))
-        m.set(key, appNote || fileNote);
+      const fileNoi = noteSaysTrinhBodBitrix(fileNote);
+      const appNoi = !!appNote && noteSaysTrinhBodBitrix(appNote);
+      if (!fileNoi && !appNoi) continue;
+      // CHỈ GIỮ ghi chú NÀO THẬT SỰ nói tới trình BOD/bitrix. Trước đây là `appNote || fileNote`:
+      // hễ dự án có BẤT KỲ ghi chú nào gõ trong app là chữ đó đè chữ file nguồn, kể cả khi câu
+      // "trình BOD ... bitrix trước 22/09" nằm ở FILE NGUỒN. Hệ quả: dự án vào được bộ lọc MP (điều
+      // kiện trên xét CẢ HAI ghi chú) nhưng cột hạn ở báo cáo tuân thủ lại dò ngày trên một câu
+      // không có ngày nào → hiện "–". Bắt được ngày 28/09/2026 bằng "Tàu khách Emerald Raiya - EWO4":
+      // file nguồn ghi "Dự án mới cần PM trình master plan BOD phê duyệt bitrix trước 22/09", ghi chú
+      // trong app nói chuyện BOT giao hàng — và app thắng, nên hạn 22/09 mất.
+      // THỨ TỰ file trước, app sau là CÓ Ý: parseMpDeadlineIso chỉ nhận ngày nằm sau cụm "bitrix"
+      // CUỐI CÙNG, nên khi cả hai cùng nói tới bitrix thì ghi chú gõ trong app (tin mới hơn) thắng —
+      // đúng nếp "tin mới nhất là tin đang có hiệu lực". Ghép không làm ngày của file rò sang.
+      m.set(key, [fileNoi ? fileNote : "", appNoi ? appNote : ""].filter(Boolean).join("\n"));
     }
     return m;
   }, [data.projects, edits, pkProj]);
