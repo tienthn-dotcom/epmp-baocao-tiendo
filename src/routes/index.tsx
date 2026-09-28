@@ -8976,7 +8976,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
      Vì sao chỉ một cửa: `byPm`, `byVung` và cả cái bảng đều dựng TỪ `baseRows`, còn hàm xuất PDF
      thì chụp chính cái bảng đang hiện. Nối vào đây là bản PDF tự đúng theo. Dựng đường lọc thứ hai
      là mở ra khả năng bảng một đằng, PDF một nẻo — mà không ai nhìn ra cho tới lúc gửi đi rồi. */
-  const [canTrinhMp, setCanTrinhMp] = useState(false);   // chỉ dự án CẦN trình Master Plan BOD phê duyệt
+  const [canTrinhMp, setCanTrinhMp] = useState(false);   // chỉ dự án CÓ hạn trình Master Plan BOD
   const [pmSel, setPmSel] = useState<string[]>([]);      // lọc theo người phụ trách chính
   const [qTen, setQTen] = useState("");                  // gõ tìm tên dự án, khớp KHÔNG DẤU
   // CHỈ CÒN 1 báo cáo (bỏ "Tóm tắt") — bảng chi tiết "Báo cáo tuân thủ cập nhật Master Plan".
@@ -9042,19 +9042,26 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     const q = normProjName(qTen);
     return (data?.rows ?? []).filter(r => {
       if (vungSel.length && !vungSel.includes(vungVN(regionByName.get(normProjName(r.name)) ?? ""))) return false;
-      if (canTrinhMp && !r.needsMp) return false;
+      // DÙNG ĐÚNG PHÉP MÀ Ô ĐANG DÙNG ĐỂ HIỆN CHỮ, không dựng phép tương đương: ô "Cần PM trình
+      // Master Plan BOD phê duyệt" hiện "trước dd/mm" khi `mpDeadlineByName` có giá trị, và hiện
+      // "–" khi không. Lọc bằng đúng cái đó thì cái mắt thấy và cái bộ lọc làm luôn là MỘT.
+      //
+      // Vì sao không lọc theo `needsMp` của file tuân thủ (đã xoá hẳn trường đó, xem
+      // compliance-file.ts): hai tập KHÔNG trùng nhau. Bản đầu của V6 lọc theo `needsMp` ra 15
+      // dòng mà 14 dòng cột này hiện "–" — bộ lọc nói một đằng, cột nói một nẻo, ngay cạnh nhau.
+      if (canTrinhMp && !mpDeadlineByName.get(normProjName(r.name))) return false;
       if (pmSel.length && !pmSel.includes(pmFirstOf(r.pm) || "—")) return false;
       if (q && !normProjName(r.name).includes(q)) return false;
       return true;
     });
-  }, [data, vungSel, regionByName, canTrinhMp, pmSel, qTen]);
+  }, [data, vungSel, regionByName, canTrinhMp, pmSel, qTen, mpDeadlineByName]);
   /** Đang lọc những gì — chữ này đi VÀO BẢN PDF (nằm trong headerRef), không chỉ hiện trên màn hình.
    *  Đây là chỗ nguy hiểm nhất của việc lọc: điểm trung bình PM tính trên PHẦN ĐÃ LỌC, nên nó đúng
    *  trong ngữ cảnh này mà đặt sang ngữ cảnh khác là sai — người nhận file dễ tưởng đó là điểm cả
    *  kỳ. Một con số đúng đặt nhầm chỗ thì nhìn không ra, nên phải ghi phạm vi ngay cạnh nó. */
   const phamViLoc = useMemo(() => {
     const p: string[] = [];
-    if (canTrinhMp) p.push("Cần trình Master Plan BOD phê duyệt");
+    if (canTrinhMp) p.push("Cần PM trình Master Plan BOD phê duyệt");
     if (vungSel.length) p.push(`Vùng: ${vungSel.join(", ")}`);
     if (pmSel.length) p.push(`Người phụ trách: ${pmSel.join(", ")}`);
     if (qTen.trim()) p.push(`Tìm: "${qTen.trim()}"`);
@@ -9067,7 +9074,10 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     for (const r of data?.rows ?? []) s.add(pmFirstOf(r.pm) || "—");
     return [...s].sort(cmpVietGivenName);
   }, [data]);
-  const soCanTrinhMp = useMemo(() => (data?.rows ?? []).filter(r => r.needsMp).length, [data]);
+  const soCanTrinhMp = useMemo(
+    () => (data?.rows ?? []).filter(r => !!mpDeadlineByName.get(normProjName(r.name))).length,
+    [data, mpDeadlineByName],
+  );
   // DANH SÁCH ĐIỂM TB PM (góc trên phải, gọn) — xếp CAO→THẤP.
   const byPm = useMemo(() => {
     const m = new Map<string, ComplianceFileRow[]>();
@@ -9313,7 +9323,12 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               <div className="mx-auto mt-1 max-w-lg whitespace-pre-wrap text-[11px] text-slate-500">{error.message}</div>
               <button onClick={onRetry} className="mt-3 rounded-md bg-teal-700 px-3 py-1 text-xs font-semibold text-white hover:bg-teal-800">Thử lại</button>
             </div>
-          ) : !data || !byPm.length ? (
+          ) : !data || !data.rows.length ? (
+            // CHỈ báo "file rỗng" khi file THẬT SỰ rỗng. Trước đây điều kiện là `!byPm.length`, mà
+            // `byPm` dựng từ `baseRows` — nên từ khi có bộ lọc, lọc ra 0 dòng cũng rơi vào đây và
+            // app đổ lỗi cho file trong khi file vẫn đủ 83 dòng. Tệ hơn: cả vùng này bị thay nên
+            // HÀNG NÚT LỌC biến mất luôn, người dùng hết đường bấm bỏ lọc. Trường hợp lọc-ra-rỗng
+            // nay do một dòng trong `<tbody>` lo, và hàng nút vẫn còn đó.
             <div className="py-16 text-center text-sm text-slate-500">File không có dòng dữ liệu nào.</div>
           ) : (
           <>
@@ -9414,10 +9429,12 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               "Đang lọc: …" nằm trong headerRef phía trên. Nút bấm in ra giấy thì vô nghĩa. */}
           <div className="mb-2 flex flex-wrap items-center gap-2 print:hidden">
             <button type="button" onClick={() => setCanTrinhMp(v => !v)}
-              title="Chỉ hiện dự án CẦN trình Master Plan BOD phê duyệt — lọc ra đúng nhóm này rồi Xuất PDF để gửi đi."
+              title="Chỉ hiện dự án CÓ hạn trình Master Plan BOD — đúng những dòng mà cột “Cần PM trình Master Plan BOD phê duyệt” hiện “trước dd/mm”, bỏ các dòng hiện “–”. Lọc ra rồi Xuất PDF để gửi đi."
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold ${canTrinhMp
                 ? "bg-amber-600 text-white hover:bg-amber-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
-              {canTrinhMp ? "✓ " : ""}Cần trình MP <span className="tabular-nums opacity-70">{soCanTrinhMp}</span>
+              {/* Nhãn phải gọi ĐÚNG TÊN CỘT nó lọc. Đặt tên lệch là mời hiểu nhầm lần nữa — bản đầu
+                  ghi "Cần trình MP" trong khi cột tên "Cần PM trình Master Plan BOD phê duyệt". */}
+              {canTrinhMp ? "✓ " : ""}Cần PM trình MP BOD <span className="tabular-nums opacity-70">{soCanTrinhMp}</span>
             </button>
             <select value={pmSel[0] ?? ""} onChange={(e) => setPmSel(e.target.value ? [e.target.value] : [])}
               title="Lọc theo người phụ trách chính"

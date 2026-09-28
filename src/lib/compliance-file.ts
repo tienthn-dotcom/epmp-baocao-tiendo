@@ -17,7 +17,6 @@ export type ComplianceFileRow = {
   name: string;
   pm: string;                 // dòng ĐẦU ô "Người phụ trách chính" (bỏ ghi chú phụ)
   lastUpdate: string | null;  // dd/mm giữ nguyên như file
-  needsMp: boolean;           // ô "Cần lập MP mới" khác rỗng
   marks: CMark[];             // khớp `weeks` (các tuần THÁNG CHẤM)
   countX: number;
   countO: number;
@@ -91,7 +90,15 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
   const cLast = findHas("Ngày cập nhật");
   const cName = find("Tên dự án");
   const cPm = findHas("Người phụ trách");
-  const cNeed = findHas("Cần lập MP");
+  /* ĐÃ BỎ cột "Cần lập MP mới" (trường `needsMp`). Nó KHÔNG phải nguồn sự thật cho "dự án cần
+     trình Master Plan BOD" — nguồn duy nhất là VƯỚNG MẮC CẤP DỰ ÁN, đọc qua
+     `noteSaysTrinhBodBitrix` (parser.ts) → `mpInfo` → `mpComputed` → `mpDeadlineByName`, và đó
+     cũng chính là thứ dựng ra cột trên báo cáo tuân thủ lẫn bộ lọc "Cần cập nhật MP" ở bảng chính.
+     Hai tập KHÔNG trùng nhau: 30/09/2026 lọc theo `needsMp` ra 15 dòng mà 14 dòng có cột kia hiện
+     "–". Trường này chưa từng có ai đọc — chỉ khai ra, gán giá trị rồi để đó — mà cái TÊN của nó
+     thì đọc như đáp án, nên nó đã kéo được một bản đặc tả đi sai. Xoá hẳn thay vì dán ghi chú
+     cảnh báo: ghi chú không chặn được người ta grep thấy tên rồi dùng.
+     Cần đọc lại cột này thì thêm `findHas("Cần lập MP")` — một dòng, và git giữ nguyên bản cũ. */
   const cScore = findHas("Điểm");   // cột J: điểm dự án Apps Script đã chấm (100−25x−10o[−BOD])
 
   // 2) THÁNG CHẤM: đọc "THÁNG MM/YYYY" ở các dòng phía trên header.
@@ -136,7 +143,6 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
       name,
       pm: (r[cPm] || "").split("\n")[0].trim(),
       lastUpdate: (r[cLast] || "").trim() || null,
-      needsMp: cNeed >= 0 && !!(r[cNeed] || "").trim(),
       marks, countX, countO,
       score: sheetScore != null ? sheetScore : (hasAny ? Math.min(100, 100 - 25 * countX - 10 * countO) : null),
     });
