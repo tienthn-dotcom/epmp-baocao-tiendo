@@ -12,123 +12,116 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V4a · Xuất Excel: ô THẬT thay vì ô chữ**
-Plan mở 25/09/2026. Người dùng chốt "làm đủ cả hai" nên chẻ hai vòng: **V4a ô thật** (vòng này) rồi **V4b phần nhìn**.
+**V4b · Xuất Excel đạt CHẤT LƯỢNG ngang bản PDF**
+Plan mở 28/09/2026, viết lại theo chuẩn người dùng giao trực tiếp.
 
-*Đang chờ người dùng:* **V2b** (mã băm vào bảng đếm D1) đã xong ② và Test cho **ĐẠT KÈM LƯU Ý** ở ③. Kẹt ở chỗ chưa ai bấm deploy, và chưa có box nào nhận vai Review. Không liên quan V4.
+---
 
-*Hàng đợi:*
+## ⚠ CHUẨN NGHIỆM THU LÀ CỦA NGƯỜI DÙNG, KHÔNG PHẢI CỦA ĐẶC TẢ NÀY
 
-**V4b · Xuất Excel: phần NHÌN** — giao ngay sau khi V4a xong.
+Nguyên văn: *"tôi muốn file excel phải đẹp như PDF luôn, về màu sắc, bố cục, nói chung là nâng cấp cho xuất excel để ra kết quả chất lượng"*.
 
-**Đo trước, và nó đổi cả cách đặt mục tiêu:** đường xuất PDF (`src/lib/pdf-export.ts`) **chụp ảnh nguyên bảng web bằng `html2canvas`** rồi cắt theo ranh giới hàng cho vừa A4. Nó giống app y hệt vì **nó chính là ảnh của app**. Excel là ô, không phải ảnh, nên **"giống hệt PDF" là mục tiêu không đạt được** - đừng nhận việc theo cách hiểu đó. Mục tiêu đúng: kéo Excel gần PDF nhất trong giới hạn của ô.
+**Cách chấm:** mở file Excel xuất ra đặt CẠNH bản PDF xuất ra cùng lúc, cùng bộ lọc. Người thứ ba nhìn hai cái phải thấy **cùng một báo cáo, cùng một bộ màu, cùng một bố cục**. Chấm bằng mắt trên file thật, không chấm bằng test xanh.
 
-Năm việc, xếp theo mức người dùng cảm nhận được:
-
-1. **Chữ bị cắt cụt - nặng nhất.** `row.height = 20/18` đặt cứng, trong khi cột Vướng mắc rộng 48 và Giải pháp rộng 48 đều bật xuống dòng. Excel chỉ tự giãn chiều cao khi hàng **không** có chiều cao đặt tay. Bỏ `row.height` ở dòng có cột wrap (hoặc tự tính theo số dòng chữ) → ghi chú hiện đủ như PDF.
-2. **Đóng băng thêm cột**, không chỉ hàng. Hiện `ySplit: 3`. Thêm `xSplit` qua cột "Tên dự án / Hạng mục" (chỉ số 2, tức `xSplit: 3`) → cuộn sang phải xem Vướng mắc mà vẫn thấy tên dự án. PDF không cần vì in ra thấy cả trang.
-3. **Data bar cho "% thực tế"** và thang màu cho "Quá hạn" (`ws.addConditionalFormatting`). Đây là thứ gần nhất với thanh tiến độ của PDF mà Excel làm được thật. **Chỉ chạy được sau V4a** - data bar cần ô SỐ.
-4. **Khối chú giải** ở cuối bảng: đỏ = Trễ tiến độ · vàng = Cần cắt đầu việc · xanh = Đã hoàn thành. PDF có, Excel chưa.
-5. **Thiết lập trang in** (`ws.pageSetup`): A4 ngang, `fitToWidth: 1`, lặp hàng tiêu đề ở mọi trang (`printTitlesRow: "3:3"`), lề hẹp. Đây là thứ trả lời thẳng câu "xuất được đẹp như PDF" - người nhận bấm in trong Excel là ra bản gần giống.
-
-**NGOÀI phạm vi:** không đổi cột, không đổi thứ tự, không bỏ ẩn dòng con (người dùng đã chốt giữ nhóm ẩn có nút xổ), không đụng `exportMatrixXlsx`, không đụng đường PDF.
-
-**Cách biết là đúng:** mở file thật, xem ô Vướng mắc dài nhất có hiện đủ chữ không (trước: cụt); bấm Ctrl+P trong Excel xem có vừa bề ngang một trang và có lặp tiêu đề không; cuộn sang phải xem còn thấy tên dự án không.
-
-**V3** thẻ MTLĐ hiện đủ tên (đã đo: 6 nhóm dùng chung, 15 dự án, **9 bị giấu tên**, 2 nhóm bắc qua nhiều mã CT).
-**V1** dọn 14 byte điều khiển vô hình — đặc tả ở `git show 19e81d4`, cần ghim theo nội dung thay vì số dòng.
+**V4a (`c188f92`) MỘT MÌNH KHÔNG ĐẠT CHUẨN NÀY** - và đó không phải lỗi của Thực thi. V4a sửa một thứ **đang sai** (sắp xếp ngày ra thứ tự chữ cái) nhưng **người dùng mở file ra gần như không thấy khác**. Nó là nền cho V4b, không phải câu trả lời cho yêu cầu.
+→ **Không deploy V4a một mình.** Ghép với V4b rồi lên một lần.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Trong `exportTableXlsx`, ghi ngày ra **kiểu ngày**, phần trăm và số ngày quá hạn ra **kiểu số**, thay vì ghi tất cả thành chữ như hiện nay.
+Nâng phần nhìn của file Excel xuất ra: màu, bố cục, và bản in - ngang chất lượng bản PDF.
 
 **VÌ SAO CẦN**
-Chú thích của chính app hứa: *"Xuất Excel giống hệt bảng/PDF nhưng là ô THẬT (lọc / sắp xếp / sửa ngay trong Excel)"* (`index.tsx:1127`). Hiện lời hứa đó **chưa đúng**: `XlsxTableRow.cells` khai là `string[]`, mọi ô đều là chữ.
+Người dùng gửi file này cho người khác đọc. PDF đẹp vì nó **chụp ảnh nguyên bảng web** (`pdf-export.ts`, `html2canvas`) nên giống app y hệt. Excel dựng từ ô nên hiện đang khô: chữ ghi chú **bị cắt cụt**, không chú giải, không thanh tiến độ, in ra vỡ trang.
 
-Hậu quả đo được: cột ngày đang là chữ `dd/mm/yy`, nên bấm sắp xếp theo ngày trong Excel ra **thứ tự chữ cái chứ không phải thứ tự thời gian** - `01/12/25` đứng trước `02/01/26`. Cột % và Quá hạn cũng không cộng, không lọc "lớn hơn", không dựng biểu đồ được.
-
-Người nhận file mở ra, bấm sắp xếp theo hạn, và **tin vào một thứ tự sai**. Đây không phải chuyện thẩm mỹ.
+**THẲNG THẮN VỀ MỘT ĐIỂM:** không thể làm Excel **giống hệt từng pixel** với PDF, vì PDF là ảnh còn Excel là ô. Nhưng **"đẹp ngang" thì làm được**, và đó mới là thứ người dùng yêu cầu. Excel còn hơn PDF hai thứ: lọc được và sửa được. Đích là một file mà người nhận mở ra thấy **chỉn chu như một báo cáo**, không phải như một bảng dữ liệu thô.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-Nhìn **y hệt hiện nay** - vẫn `dd/mm/yy`, vẫn căn giữa, vẫn màu như cũ. Khác ở chỗ bấm sắp xếp theo ngày thì ra đúng thứ tự thời gian, và bôi đen cột Quá hạn thì Excel cộng được.
+Mở file ra: khối tiêu đề đậm, hàng tiêu đề cột nổi bật, dòng dự án có dải màu riêng tách khỏi dòng công đoạn, ô ghi chú **hiện đủ chữ**, cột % có thanh màu chạy trong ô, cuối bảng có chú giải màu. Bấm Ctrl+P ra bản in gọn gàng, lặp tiêu đề mỗi trang.
 
 **PHẠM VI**
-- Trong: `src/lib/excel-export.ts` - `XlsxTableRow.cells` và vòng ghi dòng trong `exportTableXlsx` (dòng 571-681). Và chỗ dựng `cells` trong `src/routes/index.tsx` (`onExportExcel`, ~4597).
-- NGOÀI: **không** đổi màu, **không** đổi cột, **không** đổi thứ tự cột, **không** bỏ ẩn dòng con, **không** đụng `exportMatrixXlsx` (đường xuất ma trận, việc khác), **không** đụng đường xuất PDF. Phần nhìn để dành V4b.
+- Trong: `src/lib/excel-export.ts` → `exportTableXlsx`. Và chỗ khai `cols` trong `src/routes/index.tsx` (`onExportExcel`, ~4597) nếu cần thêm thuộc tính cột.
+- NGOÀI: không đổi **danh sách cột**, không đổi **thứ tự cột**, không đổi dữ liệu, không bỏ ẩn dòng con, không đụng `exportMatrixXlsx`, không đụng đường PDF.
 
-**GIỮ NGUYÊN, NGƯỜI DÙNG ĐÃ CHỐT**
-Dòng công đoạn con **vẫn ẩn sẵn nhưng nhóm lại được để bấm xổ** - đúng như `row.outlineLevel = 1` + `row.hidden = true` đang làm. Đừng đổi. Nhưng **kiểm giúp** là nút xổ thật sự hiện ra trong Excel, vì `summaryBelow: false` đang gán qua `as any`.
+**BẢY VIỆC, xếp theo mức người dùng cảm nhận được**
+
+**1. Chữ hết bị cắt cụt — NẶNG NHẤT, làm trước.**
+`row.height = 20/18` đang đặt cứng, trong khi cột Vướng mắc (rộng 48) và Giải pháp (rộng 48) đều bật xuống dòng. Excel **chỉ tự giãn chiều cao khi hàng KHÔNG có chiều cao đặt tay**. Bỏ `row.height` ở dòng có cột wrap, hoặc tự tính theo số dòng chữ ước lượng. Đây là thứ hỏng rõ nhất khi đặt cạnh PDF.
+
+**2. Dải màu dòng dự án, lấy ĐÚNG màu của app.**
+Bảng màu app đang dùng (`index.tsx` ~7509, hằng `GC`) và bảng màu Excel hiện có phải **khớp nhau**:
+```
+thanh tieu de / header : #334155  (GC.headerBg)      Excel dang dung #16202E / #1E293B -> thong nhat
+dong du an             : #334964  (GC.bar)
+dong du an DA BAN GIAO : #059669  giu nguyen
+nen dong con           : #F8FAFC  (GC.childBg)  -> hien Excel de trang, cho no dai mau nhat
+hang qua han           : nen #FCEFDD, mep #E0A458  (GC.overdueBg / overdueEdge)
+trang thai do/vang/xanh: #EF4444 / #F59E0B / #059669  giu nguyen
+```
+Thực thi **tự đọc lại hằng `GC`** để lấy số chính xác, đừng chép từ đây - đây là bản ghi lúc Plan đo, có thể lệch.
+
+**3. Ô "% thực tế" có thanh màu trong ô.**
+`ws.addConditionalFormatting` kiểu `dataBar`, màu `#5EE9B5` - **đúng màu "% đã hoàn thành" của Gantt** (`GC.done`). Đây là thứ gần nhất với thanh tiến độ của PDF mà Excel làm được thật.
+**Chỉ chạy được nhờ V4a** - data bar cần ô SỐ. Đây là lý do V4a phải đi cùng chứ không lên riêng.
+
+**4. Cột "Quá hạn" tô thang màu** từ nhạt tới đỏ đậm, hoặc tô nền đỏ khi vượt ngưỡng. Lấy ngưỡng đang dùng trong app, đừng tự đặt số mới.
+
+**5. Khối chú giải cuối bảng**, đúng chữ như chú giải trên app:
+```
+Trễ tiến độ  ·  Cần cắt đầu việc  ·  Cần tập trung  ·  Đã hoàn thành
+```
+Mỗi mục một ô tô đúng màu của nó. PDF có, Excel chưa.
+
+**6. Đóng băng thêm CỘT.** Hiện chỉ `ySplit: 3`. Thêm `xSplit` qua cột "Tên dự án / Hạng mục" → cuộn sang phải đọc Vướng mắc vẫn thấy đang ở dự án nào. PDF không cần vì in ra thấy cả trang.
+
+**7. Thiết lập trang in** (`ws.pageSetup`): A4 **ngang**, `fitToPage` + `fitToWidth: 1`, lặp hàng tiêu đề mọi trang (`printTitlesRow: "3:3"`), lề hẹp, đánh số trang ở chân. Đây là thứ trả lời thẳng câu "đẹp như PDF": người nhận bấm in trong Excel ra bản gần giống bản PDF.
 
 **DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-`XlsxTableRow` là kiểu dùng chung giữa `excel-export.ts` và `index.tsx`. Đổi `cells: string[]` thành kiểu rộng hơn thì **mọi chỗ dựng `cells` phải sửa theo** - trình biên dịch sẽ chỉ ra, nhưng đếm trước cho biết phạm vi.
-`exportMatrixXlsx` **cũng ở trong file này** nhưng là đường khác, không dùng `XlsxTableRow`. Đừng sửa lây.
+- Hằng `GC` nằm **trong** component ở `index.tsx`, không export. Muốn Excel dùng chung màu thì phải **kéo ra một chỗ dùng chung** - và kéo ra là đụng cả bảng Gantt đang chạy. Nếu Thực thi thấy rủi ro thì **chép giá trị màu sang `excel-export.ts` kèm ghi chú trỏ về nguồn**, đừng kéo bừa. Báo Plan biết đã chọn đường nào.
+- `exportMatrixXlsx` nằm cùng file nhưng là đường khác. Đừng sửa lây.
+- `STATUS_FILL` đang dùng cho ô Tình trạng - đổi nó là đổi cả chỗ khác trong hàm.
 
 **RÀNG BUỘC**
-1. **Ô trống phải là Ô TRỐNG, không phải 0, không phải ngày 1900.** Đây là luật 5.2 và là chỗ dễ sai nhất của việc này: `fmtDateVN2(null)` hiện trả `""`, `clampPct` trả `null`. Ghi `0` vào ô % của dòng chưa có số là **báo cáo sai sự thật** - dòng chưa đo thành dòng 0%.
-2. Ngày ghi ra kiểu ngày, định dạng hiển thị `dd/mm/yy` để **nhìn không đổi**.
-3. % ghi ra số. Chọn một trong hai và **nói rõ đã chọn cái nào**: lưu `85` với định dạng `0"%"`, hoặc lưu `0.85` với định dạng `0%`. Cái sau đúng kiểu Excel hơn nhưng ai copy sang chỗ khác sẽ thấy `0.85`.
-4. Quá hạn ghi ra số nguyên.
-5. Cột chữ (Mã, Tên, Người phụ trách, Tình trạng, Vướng mắc, Giải pháp) **giữ nguyên là chữ**. Mã dự án kiểu `CT26-032` mà để Excel tự đoán là nguy hiểm.
-6. Dòng nhóm dự án không có % và Quá hạn - hiện đang đẩy `""`. Giữ **trống**, đừng thành 0.
+1. **Không đổi dữ liệu, chỉ đổi cách trình bày.** Việc này không được làm sai một con số nào.
+2. Ô trống vẫn phải **trống** - data bar và thang màu **không được vẽ gì** ở ô chưa có số. Vẽ thanh dài 0 ở ô chưa đo là biến "chưa đo" thành "0%" bằng hình ảnh. Luật 5.2 áp cả cho phần nhìn.
+3. Dòng con **vẫn ẩn sẵn, vẫn nhóm lại được để bấm xổ** - người dùng đã chốt, đừng đổi.
+4. File không được phình quá mức. Đo dung lượng trước và sau.
+5. Màu phải **lấy từ app**, không tự chế bảng màu mới.
 
-**ĐÃ ĐO TRƯỚC** (Plan 25/09/2026)
+**ĐÃ ĐO TRƯỚC** (Plan 28/09/2026)
 ```
-Duong xuat Excel  : index.tsx ~4597 -> excel-export.ts exportTableXlsx (dong 590-681)
-Thu vien          : exceljs, nap dong (await import)
-11 cot, chi so 0-based:
-   0 Ngay update   -> NGAY      4 Ngay bat dau  -> NGAY     8 Tinh trang  giu CHU
-   1 Ma            giu CHU      5 Ngay ket thuc -> NGAY      9 Vuong mac   giu CHU
-   2 Ten du an     giu CHU      6 % thuc te     -> SO       10 Giai phap   giu CHU
-   3 Nguoi p.trach giu CHU      7 Qua han       -> SO
-Da co san (DUNG sua o V4a) : thanh tieu de, dong pham vi loc, dong header dong bang (ySplit 3),
-   autoFilter tu dong 3, to mau Tinh trang do/vang/xanh, to do o ngay ket thuc khi qua han,
-   outline nhom dong con
+exportTableXlsx      : src/lib/excel-export.ts dong 590-681
+Da co san            : thanh tieu de, dong pham vi loc, header dong bang ySplit 3, autoFilter,
+                       to mau Tinh trang, to do o ngay ket thuc qua han, outline nhom dong con
+Dang THIEU           : chieu cao tu gian, dai mau dong con, data bar, thang mau Qua han,
+                       chu giai, xSplit, pageSetup
+Duong PDF            : pdf-export.ts - html2canvas chup anh bang web, cat theo ranh gioi hang, A4
+Bang mau app         : index.tsx ~7509, hang GC (KHONG export)
+Bang mau Excel       : excel-export.ts, STATUS_FILL + cac ma argb roi rac trong exportTableXlsx
 ```
 
 **CHỖ CÒN MƠ HỒ**
-Ràng buộc 3 (`85` hay `0.85`) là chỗ Thực thi chọn, nhưng **phải nêu rõ vì sao** trong mục ②. Nếu thấy có lý do mạnh để chọn khác thì báo Plan.
+Mục 4 (ngưỡng Quá hạn) - Plan **chưa đo** ngưỡng app đang dùng. Thực thi đọc `OD_ALERT_DAYS` trong `lib/filter` rồi dùng đúng số đó; thấy có nhiều ngưỡng khác nhau thì **báo Plan**, đừng tự chọn một cái.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-1. **Phép đo quan trọng nhất:** mở file xuất ra, bấm sắp xếp cột "Ngày kết thúc" tăng dần → ra **đúng thứ tự thời gian**. Trước khi sửa, việc này ra sai. Nêu cụ thể trước và sau.
-2. Bôi đen cột "Quá hạn" → Excel hiện **Sum** ở thanh dưới. Trước: không hiện.
-3. **Dòng chưa có số thì ô % TRỐNG**, không phải 0. Soi thẳng file xuất ra, đừng chỉ tin test.
-4. Nhìn bằng mắt: ngày vẫn hiện `dd/mm/yy`, màu không đổi, cột không xê dịch.
-5. Nút xổ nhóm vẫn bấm được, dòng con vẫn ẩn sẵn.
-6. `tsc` sạch · `vitest` không phép nào đang xanh bị đỏ. Thêm phép kiểm cho hàm dựng ô: trống → trống (không phải 0), ngày hợp lệ → kiểu ngày, % null → trống, % 0 → **số 0 thật** (0% khác với chưa có, đừng gộp).
-7. Không có đường ghi KV nào trong việc này. Lượt ghi phải **không đổi**.
+Chấm bằng **file thật đặt cạnh nhau**, không chấm bằng test xanh.
+1. Xuất **cùng lúc** một bản PDF và một bản Excel, **cùng bộ lọc**. Mở cạnh nhau. Nêu rõ chỗ nào còn khác.
+2. Ô Vướng mắc dài nhất trong file: **hiện đủ chữ**. Trước: cụt. Nêu cụ thể dự án nào, trước bao nhiêu dòng chữ, sau bao nhiêu.
+3. Ctrl+P trong Excel: vừa **một trang bề ngang**, tiêu đề **lặp** ở trang 2 trở đi.
+4. Cuộn sang phải tới cột Giải pháp: vẫn thấy tên dự án.
+5. Ô % chưa có số: **không có thanh màu nào**. Đây là ràng buộc 2, soi thẳng file.
+6. Màu dòng dự án và màu trạng thái **khớp mắt** với bảng trên app.
+7. Dung lượng file trước và sau.
+8. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
+9. Không có đường ghi KV nào. Lượt ghi **không đổi**.
+
+**GỬI KÈM CHO NGƯỜI DÙNG:** khi báo xong, đính **chính file Excel xuất ra** để người dùng tự nhìn. Yêu cầu này chấm bằng mắt, mô tả bằng chữ không thay được.
 
 ---
 
----
 
-**PLAN SỬA LẠI ĐẶC TẢ — 25/09/2026, sau khi Thực thi chỉ ra**
-
-**Một câu trong đặc tả này SAI.** Ràng buộc 1 viết `fmtDateVN2(null)` trả `""`. Không đúng: hàm đó ở `index.tsx:8242` trả về `"—"` (gạch ngang). Plan đã tự kiểm lại và **Thực thi đúng**.
-
-Hệ quả: bản cũ ghi **chữ `—`** vào ô ngày trống, bản mới để **ô rỗng thật**. Tức **cái nhìn thấy CÓ đổi** ở chỗ này, trái với câu "nhìn y hệt hiện nay" ở phần LÀM XONG THÌ NHÌN THẤY GÌ.
-
-**Plan chốt: đổi như vậy là ĐÚNG, không phải làm thừa.** Để chữ `—` lẫn trong cột ngày là trộn chữ vào cột ngày, phá luôn phép sắp xếp - tức phá đúng thứ mà việc này sinh ra để sửa. Ô trống trong Excel nghĩa là *không có dữ liệu*, đúng luật 5.2. **Test đừng tính mục này là làm thừa.**
-
-**Hai lựa chọn định dạng — Plan duyệt cả hai, lý do của Thực thi đứng vững:**
-- `%` lưu số `85` với định dạng `0"%"`, **không** lưu `0.85`. Lý do nặng nhất: lọc "lớn hơn 80" phải gõ được `80`; với `0.85` thì phải gõ `0.8`, mà lọc là thao tác người nhận làm nhiều nhất sau sắp xếp. Trả giá đã nêu rõ: `0"%"` chỉ là hậu tố hiển thị, ai dựng biểu đồ từ cột này phải tự đặt nhãn trục. Đổi được.
-- `Quá hạn` dùng `0" ngày"`: giá trị vẫn là số nên Excel cộng được, mà mắt vẫn thấy "5 ngày" như bản cũ. Thoả cả ràng buộc 4 lẫn yêu cầu nhìn không đổi.
-
-**MỘT PHÉP KIỂM ĐỎ, KHÔNG LIÊN QUAN VIỆC NÀY.** `findMatrixSheets` trong `tests/matrix-reader.test.ts` quá hạn 5.000 ms. Plan đã **tự tái hiện trên máy mình**: chạy mất 5.943 ms, đỏ thật.
-
-Không phải do V4a:
-```
-src/lib/matrix-reader.ts + tests/matrix-reader.test.ts : khong doi tu commit ec37fc2
-vitest.config / package.json                           : khong doi gan day
-testTimeout                                            : KHONG dat o dau -> dung mac dinh 5.000 ms
-```
-Phép kiểm này đọc file Mini Hotel **thật** rồi parse, vốn đã sát mốc 5 giây và hôm nay trượt qua. Moc nền của Test hôm trước là 0 phép đỏ, nên nó vừa mới vượt ngưỡng chứ không phải mới hỏng.
-
-**Nâng `testTimeout` là quyết định của Test, không phải của Thực thi.** Thực thi đã đúng khi không tự sửa. Test quyết và ghi vào mục ③.
-
-**Một chỗ Thực thi tự khai mà Plan ghi nhận:** bộ kiểm **tự khai lại danh sách cột** (mảng `COLS` là bản chép của `cols` trong `index.tsx`), nên ai đổi `numFmt` một bên mà quên bên kia thì phép kiểm vẫn xanh. Thực thi bù bằng một lượt soi file thật, nhưng lượt đó **làm tay, không tự lặp lại**. Kéo chỗ dựng cột ra khỏi callback JSX là việc đáng làm - Plan xếp vào hàng đợi, **không nhét vào V4a**.
 
 
 
