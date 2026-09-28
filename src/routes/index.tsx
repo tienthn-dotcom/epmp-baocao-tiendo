@@ -1791,7 +1791,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
             </div>
             {!narrowHd && (
               <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-teal-700 sm:text-[10px]">
-                OCC · Bộ phận Project Planning
+                OCC · Phòng Điều hành Trung tâm
               </div>
             )}
           </div>
@@ -9450,7 +9450,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             {/* THỨ TỰ (chốt với sếp): 1) Tên báo cáo — 2) Bộ phận — 3) Kỳ/ngày ("quan trọng để lên trước"). */}
             <div ref={headerRef} className="text-left">
               <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ cập nhật Master Plan - Tháng {today.slice(5, 7)}/{today.slice(0, 4)}</div>
-              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">Bộ phận Project Planning</div>
+              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Phòng Điều hành Trung tâm</div>
               {/* Đang lọc thì hiện SỐ ĐANG XEM / tổng, chứ không hiện mỗi tổng: bảng còn 12 dòng mà
                   đầu trang ghi "Tổng số 69" là tự mâu thuẫn ngay trên cùng một bản in. */}
               {/* HAI MỐC, NÓI RÕ LÀ HAI THỨ KHÁC NHAU — 28/09/2026, anh Tiến hỏi "sao lại là 30-09,
