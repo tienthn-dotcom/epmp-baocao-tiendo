@@ -278,6 +278,26 @@ describe("phần nhìn — chỉ chốt được thứ máy soi được", () =>
     expect(WS.views?.[0]?.showGridLines).toBe(false);
   });
 
+  it("thanh màu là thanh ĐẶC, và ba tuỳ chọn của nó thật sự vào file", async () => {
+    // exceljs ghi data bar ra HAI khối: khối cũ `<dataBar>` chỉ mang cfvo + màu, còn ba tuỳ chọn
+    // minLength / maxLength / gradient đi vào khối `<x14:dataBar>` trong extLst — và Excel 2010 trở
+    // lên ĐỌC KHỐI x14. Ai chỉ grep khối cũ sẽ kết luận nhầm là ba tuỳ chọn đó vô hiệu rồi dọn đi.
+    //
+    // Bỏ `gradient: false` là để Excel quay về mặc định CHUYỂN SẮC: thanh đổi từ đặc sang gradient,
+    // tức đổi đúng cái người dùng nhìn, mà không có gì báo. Phép kiểm này để chỗ đó hết im lặng.
+    // (`showValue` thì KHÔNG vào file, nhưng mặc định của chuẩn đã là bật — trùng ý muốn, vô hại.)
+    const { unzipSync, strFromU8 } = await import("fflate");
+    const z = unzipSync(new Uint8Array(await (batDuoc as unknown as Blob).arrayBuffer()),
+      { filter: (f) => /worksheets\/sheet1\.xml$/.test(f.name) });
+    const xml = strFromU8(Object.values(z)[0]);
+    const x14 = /<x14:dataBar[^>]*>/.exec(xml)?.[0] ?? "";
+    expect(x14, "không thấy khối x14:dataBar — Excel 2010+ đọc khối này").toBeTruthy();
+    expect(x14).toContain('gradient="0"');     // thanh ĐẶC, không chuyển sắc
+    expect(x14).toContain('minLength="0"');
+    expect(x14).toContain('maxLength="100"');
+    expect(xml).toContain("FF5EE9B5");         // đúng màu "% hoàn thành" của app
+  });
+
   it("XML của sheet KHÔNG mang cờ customHeight — điều kiện cần của việc tự giãn", async () => {
     // Soi THẲNG XML chứ không soi mô hình exceljs: đọc lại bằng exceljs thì nó tự điền
     // defaultRowHeight mặc định, nên mô hình nói một đằng mà file nói một nẻo. Thứ Excel đọc là
