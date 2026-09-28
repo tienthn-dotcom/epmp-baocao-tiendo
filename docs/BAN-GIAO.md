@@ -269,6 +269,52 @@ bị cắt" đỏ. Phục hồi xong 21/21 xanh.
   hai hàm có đoạn mã giống hệt nhau, suýt sửa nhầm), không đụng đường PDF, không bỏ ẩn dòng con.
 - **Không sửa** phép kiểm `matrix-reader` đang đỏ.
 - **Không deploy.** V2b và V4a vẫn nguyên trong cây, tôi không revert gì.
+
+---
+
+### Bổ sung sau khi Review soi — commit `a8119f2`
+
+Review (box `ePMP Tester`) chỉ ba chỗ trên `a914b2f`. Đã tự kiểm lại từng cái rồi sửa cả ba.
+
+**1. `showGridLines: false`.** Một dòng, và đổi nhiều nhất về cảm nhận trên mỗi đồng công bỏ ra:
+còn lưới thì mắt đọc ra "bảng tính", tắt đi mới ra "báo cáo". Bản PDF không có lưới vì nó chụp
+giao diện web. Đã xác nhận trước đó không có ở đâu trong `excel-export.ts`.
+
+**2. Chú giải dùng ĐÚNG chữ của app.** Tôi đã tự đặt chữ mới (Nặng / Cần chú ý) và thiếu hẳn mục
+xám thứ tư. Chú giải thật trên app (`index.tsx` ~4802) là **Hoàn thành · Cảnh báo đỏ · Cảnh báo
+vàng · Đang triển khai**. Nay lấy đúng bốn chữ đó. **Màu thì vẫn giữ của file này** (`STATUS_FILL`)
+chứ không lấy sắc độ chip trên app: chú giải phải giải thích đúng những ô đang nằm trong bảng, lấy
+màu chỗ khác là chú giải một thứ không có trong file. Mục xám trên app tương ứng với **ô Tình trạng
+để trống** trong file, nên ghi thẳng "(ô trống)" chứ không để người đọc tự đoán trống là thiếu
+dữ liệu.
+
+**3. Ghi rõ một ràng buộc ngầm mà Review phát hiện:** thang `cfvo 0..100` của thanh màu **chỉ đúng
+vì V4a chọn lưu `85` chứ không lưu `0.85`**. Ai đổi sang lối `0.85` + định dạng `0%` mà quên đổi
+`cfvo` xuống `0..1` thì mọi thanh màu co lại còn khoảng 1% bề ngang ô, mà **không có gì báo lỗi** —
+test vẫn xanh, file vẫn mở được. Đã ghi vào ngay chỗ đặt `cfvo`.
+
+**Đo lại sau ba sửa:** file thật `38.353 → 38.392` byte. Lưới **đã tắt**, chú giải bốn mục đúng chữ
+app. `tsc` sạch · `vitest` **419 passed | 2 expected fail | 31 file, 0 failed** · build qua · byte
+điều khiển 16 = mốc nền.
+
+**Một chỗ Review nhận lầm, đã kiểm lại:** Review mô tả `tests/matrix-reader.test.ts` còn dở
+(`wbChung` chưa khai). Mô tả đó **đã lỗi thời lúc tôi đọc**: box Test kia commit `2ba7ebd` đặt mốc
+riêng 20 giây cho phép kiểm đọc file 2,1 MB, và giờ file đó **xanh 5/5**. Tôi grep lại: không còn
+`wbChung` ở đâu, `HAN_DOC_LAI_FILE` khai ở dòng 23 và **có dùng** ở dòng 72. Con số 3 ms tôi báo ở
+vòng trước là của bản đang hỏng giữa chừng, không phải bản hiện tại.
+
+**HAI KHỐI EXCEL CÒN THIẾU SO VỚI PDF — chưa làm, cần Plan quyết.** Review đọc `pdf-export.ts` và
+chỉ ra bản PDF gồm ba khối: `#pdf-title`, `#pdf-kpi` (dải 6 thẻ KPI), `#pdf-stages` (7 thẻ giai
+đoạn), rồi mới tới `#pdf-table`. File Excel hiện **không có hai khối giữa**. Đặt cạnh nhau thì
+người thứ ba thấy thiếu. Tôi không tự làm vì nó vượt hẳn bảy mục của ①, nhưng **phải nói với người
+dùng trước khi anh ấy mở file ra mới thấy**.
+
+*Kèm một bẫy cho ai làm việc đó:* `tests/excel-o-that.test.ts` **neo hàng cứng ở 32 chỗ**
+(`getRow(4)` là dòng dữ liệu đầu, vùng định dạng điều kiện bắt đầu từ `G4`). V4b chỉ thêm hàng ở
+CUỐI nên không xê. Thêm bất kỳ khối nào **phía trên bảng** sẽ đẩy mọi hàng xuống và làm đỏ hàng
+loạt phép kiểm **trong khi file xuất ra hoàn toàn đúng**. Phải neo động trước (tìm hàng có nhãn
+"Ngày update" rồi cộng 1), đừng ngồi sửa 32 con số bằng tay.
+
 ---
 
 ## ③ TEST
