@@ -164,6 +164,11 @@ export async function exportDashboardPdf(opts: {
     pdf.setFillColor(...PAGE_BG_RGB); pdf.rect(0, 0, pageW, pageH, "F");  // NỀN XÁM nhạt cả trang (card trắng nổi lên như mẫu)
     const cvs: HTMLCanvasElement[] = [];
     for (const b of opts.blocks) cvs.push(await snap(b, PAGE_BG_HEX));
+    // Cùng lý do với chỗ chặn ảnh BẢNG bên dưới: khối nào chụp ra rộng 0 thì phép chia dưới đây ra
+    // Infinity/NaN rồi jsPDF ném một câu tiếng Anh không ai hiểu. Chặn sớm, nói bằng tiếng Việt.
+    if (cvs.some(c => !c.width || !c.height)) {
+      throw new Error("Không chụp được phần tiêu đề để dựng PDF (ảnh chụp rộng 0). Cửa sổ đang quá hẹp — mở rộng cửa sổ rồi xuất lại.");
+    }
     const contentH = cvs.reduce((s, cv) => s + (cv.height / cv.width) * innerW, 0);
     const gaps = GAP * (cvs.length - 1);
     const avail = bottomY - y;
@@ -342,6 +347,22 @@ export async function exportDashboardPdf(opts: {
   if (savedColW) {                                             // trả lại width % cho <col> (keepColWidths đã sửa tạm → px)
     Array.from(tbl.querySelectorAll("col")).forEach((c, i) => { (c as HTMLElement).style.width = savedColW![i] ?? ""; });
     savedColW = null;
+  }
+
+  /* ẢNH BẢNG RỘNG 0 HOẶC CAO 0 → DỪNG NGAY, đừng đi tiếp. Đặt SAU khối khôi phục ở trên để bảng
+     trên màn hình đã được trả lại style gốc rồi mới ném — ném sớm là để lại cái bảng méo.
+
+     Vì sao phải chặn: CẢ BA nhánh vẽ bảng bên dưới đều chia cho `cv.width` để suy chiều cao theo
+     tỉ lệ (`(cv.height / cv.width) * innerW`). Chia cho 0 ra Infinity/NaN, `pdf.addImage` nhận NaN,
+     và jsPDF ném đúng một câu tiếng Anh vô nghĩa với người dùng: "Invalid argument passed to
+     jsPDF.scale". Người dùng đọc câu đó thì không biết phải làm gì.
+
+     Đo 30/09/2026: khi vùng chính của app co lại còn khoảng 24px bề ngang thì html2canvas trả về
+     ảnh rộng 0 và xuất PDF chết đúng kiểu trên. Ở 375 · 700 · 1000 · 1024 · 1440px thì chụp bình
+     thường — tức đây là trạng thái bố cục suy biến chứ không phải lỗi gặp ở khổ cửa sổ thường dùng.
+     Hỏng thì phải hỏng TO và nói được việc người dùng làm được. */
+  if (!cv.width || !cv.height) {
+    throw new Error("Không chụp được bảng để dựng PDF (ảnh chụp rộng 0). Cửa sổ đang quá hẹp — mở rộng cửa sổ rồi xuất lại.");
   }
   if (!hadOwnId) tbl.removeAttribute("id");
   window.dispatchEvent(new Event("resize"));
