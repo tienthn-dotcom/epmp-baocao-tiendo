@@ -604,6 +604,8 @@ export type XlsxTableRow = {
   delivered?: boolean;
   /** Dòng dự án quá hạn bàn giao → cột ngày kết thúc ĐỎ (như badge trên bảng). */
   late?: boolean;
+  /** Đầu việc đang quá hạn → cả hàng tô nền ấm + mép trái, như hàng quá hạn trên app. */
+  overdue?: boolean;
 };
 
 const STATUS_FILL: Record<"RED" | "AMBER" | "GREEN", { bg: string; fg: string }> = {
@@ -611,6 +613,27 @@ const STATUS_FILL: Record<"RED" | "AMBER" | "GREEN", { bg: string; fg: string }>
   AMBER: { bg: "FFF59E0B", fg: "FF1B1B1B" },
   GREEN: { bg: "FF059669", fg: "FFFFFFFF" },
 };
+
+/**
+ * BẢNG MÀU — CHÉP TỪ APP, nguồn gốc là hằng `GC` trong `src/routes/index.tsx` (~dòng 7530).
+ *
+ * VÌ SAO CHÉP CHỨ KHÔNG KÉO `GC` RA DÙNG CHUNG: `GC` khai BÊN TRONG component Gantt đang chạy và
+ * không export. Kéo nó ra là sửa vào đường render của bảng Gantt để phục vụ một việc thuần trình
+ * bày của Excel — đúng loại thay đổi L11 (sửa một chỗ làm gãy chỗ khác, diff sạch, test xanh, giao
+ * diện vẫn hỏng). Cái giá của việc chép là hai bảng màu có thể trôi xa nhau, nên đã có
+ * `tests/excel-mau-khop-app.test.ts` đọc thẳng `GC` trong index.tsx và bắt lệch.
+ *
+ * ĐỔI Ở ĐÂY THÌ ĐỔI CẢ `GC`, và ngược lại.
+ */
+const MAU = {
+  header:     "FF334155",   // GC.headerBg  — thanh tiêu đề + hàng tiêu đề cột
+  duAn:       "FF334964",   // GC.bar       — dòng dự án
+  duAnXong:   "FF059669",   // dự án đã bàn giao (đã dùng sẵn, giữ nguyên)
+  nenCon:     "FFF8FAFC",   // GC.childBg   — nền dòng công đoạn con
+  quaHanNen:  "FFFCEFDD",   // GC.overdueBg — nền hàng quá hạn
+  quaHanMep:  "FFE0A458",   // GC.overdueEdge — mép trái hàng quá hạn
+  hoanThanh:  "FF5EE9B5",   // GC.done      — thanh % chạy trong ô
+} as const;
 
 export async function exportTableXlsx(opts: {
   /** `numFmt` = định dạng HIỂN THỊ của cột (ví dụ `dd/mm/yy`). Giá trị bên dưới vẫn là ngày/số
@@ -620,6 +643,12 @@ export async function exportTableXlsx(opts: {
   statusColIndex: number;
   /** Cột ngày kết thúc (0-based) để tô ĐỎ khi dự án quá hạn. -1 nếu không có. */
   finishColIndex: number;
+  /** Cột "% thực tế" (0-based) — để chạy thanh màu trong ô. -1 nếu không có. */
+  pctColIndex?: number;
+  /** Cột "Quá hạn" (0-based) — để tô theo bậc cảnh báo. -1 nếu không có. */
+  overdueColIndex?: number;
+  /** Ngưỡng quá hạn NẶNG, ngày. Lấy từ `OD_ALERT_DAYS` của lib/filter, đừng đặt số mới ở đây. */
+  overdueAlertDays?: number;
   rows: XlsxTableRow[];
   todayIso: string;
   filterSummary: string;
@@ -631,10 +660,21 @@ export async function exportTableXlsx(opts: {
   wb.created = new Date();
 
   const ws = wb.addWorksheet("Báo cáo", {
-    views: [{ state: "frozen", ySplit: 3 }],
+    // Đóng băng CẢ CỘT lẫn hàng: cuộn sang phải đọc Vướng mắc / Giải pháp vẫn thấy đang ở dự án
+    // nào. xSplit 3 = giữ lại Ngày update · Mã · Tên dự án.
+    views: [{ state: "frozen", xSplit: 3, ySplit: 3 }],
     properties: { outlineLevelRow: 1, defaultRowHeight: 16 } as any,
+    pageSetup: {
+      orientation: "landscape", paperSize: 9,              // 9 = A4
+      fitToPage: true, fitToWidth: 1, fitToHeight: 0,      // vừa MỘT trang bề ngang, dài bao nhiêu trang cũng được
+      printTitlesRow: "3:3",                               // lặp hàng tiêu đề cột ở mọi trang
+      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+      horizontalCentered: true,
+    } as any,
   });
   (ws.properties as any).outlineProperties = { summaryBelow: false, summaryRight: false };
+  // Số trang ở chân mỗi trang in — bản in nhiều trang mà không đánh số thì rời ra là lẫn.
+  (ws as any).headerFooter = { oddFooter: "&C&9Trang &P / &N", evenFooter: "&C&9Trang &P / &N" };
 
   const N = opts.columns.length;
   ws.columns = opts.columns.map((c) => ({ width: c.width }));
@@ -643,7 +683,7 @@ export async function exportTableXlsx(opts: {
   const titleRow = ws.addRow([`Báo cáo tiến độ Master Plan — tính đến ${fmtVN(opts.todayIso)}${opts.updatedAt ? ` · Dữ liệu cập nhật ${fmtVN(opts.updatedAt)}` : ""}`]);
   ws.mergeCells(1, 1, 1, N);
   titleRow.getCell(1).font = { name: "Arial", bold: true, size: 13, color: { argb: "FFFFFFFF" } };
-  titleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF16202E" } };
+  titleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: MAU.header } };
   titleRow.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
   titleRow.height = 22;
 
@@ -657,9 +697,9 @@ export async function exportTableXlsx(opts: {
   headerRow.height = 26;
   headerRow.eachCell((cell, col) => {
     cell.font = { name: "Arial", bold: true, size: 10, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: MAU.header } };
     cell.alignment = { horizontal: opts.columns[col - 1]?.align === "left" ? "left" : "center", vertical: "middle", wrapText: true };
-    cell.border = { bottom: { style: "thin", color: { argb: "FF334155" } } };
+    cell.border = { bottom: { style: "medium", color: { argb: MAU.quaHanMep } } };
   });
 
   const thin = { style: "thin" as const, color: { argb: "FFE2E8F0" } };
@@ -668,18 +708,26 @@ export async function exportTableXlsx(opts: {
     const isGroup = r.kind === "group";
     row.outlineLevel = isGroup ? 0 : 1;
     if (!isGroup) row.hidden = true; // công đoạn con thu lại mặc định (mở nhóm để xem)
-    row.height = isGroup ? 20 : 18;
+    // KHÔNG đặt `row.height`. Excel CHỈ tự giãn chiều cao khi hàng không có chiều cao đặt tay —
+    // đặt cứng 20/18 như bản cũ thì hai cột Vướng mắc / Giải pháp (rộng 48, có xuống dòng) bị CẮT
+    // CỤT, mất hẳn phần chữ phía dưới. Đây là thứ hỏng rõ nhất khi đặt file cạnh bản PDF.
     row.eachCell({ includeEmpty: true }, (cell, col) => {
       const cidx = col - 1;
       const c = opts.columns[cidx];
       cell.font = { name: "Arial", size: 9.5, bold: isGroup, color: { argb: isGroup ? "FFFFFFFF" : "FF1B1B1B" } };
       cell.alignment = { horizontal: c?.align === "left" ? "left" : "center", vertical: "middle", wrapText: !!c?.wrap };
       cell.border = { bottom: thin, right: thin };
+      // Dòng công đoạn con: nền xám rất nhạt để tách khỏi dòng dự án; đang quá hạn thì nền ấm +
+      // mép trái dày, đúng như hàng quá hạn trên app.
+      if (!isGroup) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r.overdue ? MAU.quaHanNen : MAU.nenCon } };
+        if (r.overdue && cidx === 0) cell.border = { bottom: thin, right: thin, left: { style: "medium", color: { argb: MAU.quaHanMep } } };
+      }
       // Ô có giá trị thật mới đóng định dạng hiển thị. Ô TRỐNG thì để nguyên trống — đóng `dd/mm/yy`
       // lên ô rỗng là mời Excel vẽ ra ngày 00/01/00, tức biến "chưa có" thành một ngày có thật.
       if (c?.numFmt && cell.value != null && cell.value !== "") cell.numFmt = c.numFmt;
       if (isGroup) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r.delivered ? "FF059669" : "FF334155" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r.delivered ? MAU.duAnXong : MAU.duAn } };
       }
       // Ô ngày kết thúc dự án quá hạn → nền đỏ chữ trắng (như badge đỏ trên bảng).
       if (isGroup && r.late && cidx === opts.finishColIndex) {
@@ -696,6 +744,89 @@ export async function exportTableXlsx(opts: {
   }
 
   ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: N } };
+
+  const dongDau = 4;                        // 3 dòng đầu là tiêu đề / phạm vi lọc / header cột
+  const dongCuoi = 3 + opts.rows.length;
+  const chuCot = (i: number) => { let s = "", n = i + 1; while (n > 0) { const d = (n - 1) % 26; s = String.fromCharCode(65 + d) + s; n = Math.floor((n - 1) / 26); } return s; };
+
+  if (opts.rows.length) {
+    // ── THANH MÀU TRONG Ô "% THỰC TẾ" ────────────────────────────────────────────────────────
+    // Thứ gần nhất với thanh tiến độ của bản PDF mà Excel làm được thật. CHỈ chạy được vì cột này
+    // đã là Ô SỐ (việc V4a) — data bar không vẽ gì trên ô chữ.
+    // Ô TRỐNG KHÔNG ĐƯỢC VẼ GÌ: Excel bỏ qua ô rỗng khi vẽ data bar, nên "chưa đo" vẫn là một ô
+    // trắng trơn chứ không thành thanh dài 0 trông như 0%. Luật 5.2 áp cho cả phần nhìn.
+    if (opts.pctColIndex != null && opts.pctColIndex >= 0) {
+      const c = chuCot(opts.pctColIndex);
+      ws.addConditionalFormatting({
+        ref: `${c}${dongDau}:${c}${dongCuoi}`,
+        rules: [{
+          type: "dataBar", priority: 1, gradient: false,
+          minLength: 0, maxLength: 100, showValue: true,
+          cfvo: [{ type: "num", value: 0 }, { type: "num", value: 100 }],
+          color: { argb: MAU.hoanThanh },
+        } as any],
+      });
+    }
+
+    // ── CỘT "QUÁ HẠN" TÔ THEO BẬC CẢNH BÁO CỦA APP ───────────────────────────────────────────
+    // KHÔNG tự chế thang màu liên tục. App chia đúng hai bậc (lib/filter.ts:138):
+    // quá hạn >= OD_ALERT_DAYS là bậc A, còn > 0 là bậc B. Tô theo đúng hai bậc đó.
+    // Ô trống: Excel coi ô rỗng là không khớp `greaterThan 0`, nên "chưa có số" không bị tô.
+    if (opts.overdueColIndex != null && opts.overdueColIndex >= 0) {
+      const c = chuCot(opts.overdueColIndex);
+      const nguong = opts.overdueAlertDays ?? 14;
+      ws.addConditionalFormatting({
+        ref: `${c}${dongDau}:${c}${dongCuoi}`,
+        rules: [
+          { type: "cellIs", operator: "greaterThanOrEqual", priority: 1, formulae: [String(nguong)],
+            style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: STATUS_FILL.RED.bg } },
+                     font: { bold: true, color: { argb: "FFFFFFFF" } } } } as any,
+          { type: "cellIs", operator: "greaterThan", priority: 2, formulae: ["0"],
+            style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: MAU.quaHanNen } } } } as any,
+        ],
+      });
+    }
+  }
+
+  // ── CHÚ GIẢI CUỐI BẢNG ───────────────────────────────────────────────────────────────────
+  // PDF có, Excel chưa. Viết theo ĐÚNG luật của app, và luật đó KHÔNG phải "mỗi nhãn một màu":
+  // ghi chú ở index.tsx (~1381) nói rõ màu tách rời nhãn — "Cần tập trung" vàng khi dự án còn xa
+  // hạn nhưng ĐỎ khi sắp bàn giao, "Cần cắt đầu việc" vàng ở far và đỏ từ d30 — kèm câu
+  // "KHÔNG được suy màu từ kind". Nên chú giải nói MÀU = MỨC NGHIÊM TRỌNG, rồi liệt kê nhãn
+  // riêng. Gán chết mỗi nhãn một màu là in ra một luật mà app không chạy theo.
+  ws.addRow([]);
+  const cgTieuDe = ws.addRow(["CHÚ GIẢI"]);
+  cgTieuDe.getCell(1).font = { name: "Arial", bold: true, size: 10, color: { argb: MAU.header } };
+
+  const oMau = (r: ExcelJSType.Row, cot: number, chu: string, bg: string, fg: string) => {
+    const o = r.getCell(cot);
+    o.value = chu;
+    o.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+    o.font = { name: "Arial", size: 9, bold: true, color: { argb: fg } };
+    o.alignment = { horizontal: "center", vertical: "middle" };
+  };
+
+  const hangMau = ws.addRow([]);
+  oMau(hangMau, 1, "Nặng", STATUS_FILL.RED.bg, STATUS_FILL.RED.fg);
+  oMau(hangMau, 2, "Cần chú ý", STATUS_FILL.AMBER.bg, STATUS_FILL.AMBER.fg);
+  oMau(hangMau, 3, "Đã hoàn thành", STATUS_FILL.GREEN.bg, STATUS_FILL.GREEN.fg);
+  hangMau.getCell(4).value = "Màu nói MỨC NGHIÊM TRỌNG, không dính chết vào nhãn: cùng một nhãn có thể vàng khi dự án còn xa hạn và đỏ khi sắp bàn giao.";
+  hangMau.getCell(4).font = { name: "Arial", italic: true, size: 9, color: { argb: "FF5B6B7E" } };
+
+  const hangNhan = ws.addRow([]);
+  hangNhan.getCell(1).value = "Nhãn tình trạng:";
+  hangNhan.getCell(1).font = { name: "Arial", bold: true, size: 9, color: { argb: "FF1B1B1B" } };
+  hangNhan.getCell(2).value = "Trễ tiến độ  ·  Cần cắt đầu việc  ·  Cần tập trung  ·  Đã hoàn thành";
+  hangNhan.getCell(2).font = { name: "Arial", size: 9, color: { argb: "FF1B1B1B" } };
+
+  const hangKhac = ws.addRow([]);
+  hangKhac.getCell(1).value = "Dòng bảng:";
+  hangKhac.getCell(1).font = { name: "Arial", bold: true, size: 9, color: { argb: "FF1B1B1B" } };
+  oMau(hangKhac, 2, "Dự án", MAU.duAn, "FFFFFFFF");
+  oMau(hangKhac, 3, "Đã bàn giao", MAU.duAnXong, "FFFFFFFF");
+  oMau(hangKhac, 4, "Đầu việc quá hạn", MAU.quaHanNen, "FF1B1B1B");
+  hangKhac.getCell(5).value = `Cột "Quá hạn" tô đỏ khi từ ${opts.overdueAlertDays ?? 14} ngày trở lên. Ô trống = chưa có số, khác với 0.`;
+  hangKhac.getCell(5).font = { name: "Arial", italic: true, size: 9, color: { argb: "FF5B6B7E" } };
 
   const buf = await wb.xlsx.writeBuffer();
   const dStr = opts.todayIso.replace(/-/g, "");

@@ -36,6 +36,7 @@ import {
   deadlineBucketOf,
   NEAR_DEADLINE_DAYS,
   IMMINENT_DEADLINE_DAYS,
+  OD_ALERT_DAYS,
   type AlertColor,
   type FilterCriteria,
   type StageMatcher,
@@ -539,6 +540,9 @@ const CHANGELOG: readonly ChangelogEntry[] = [
     "SỬA SAI THỨ TỰ KHI SẮP XẾP FILE EXCEL. File xuất ra trước đây ghi ngày dưới dạng chữ, nên bấm sắp xếp cột “Ngày kết thúc” trong Excel ra thứ tự chữ cái chứ không phải thứ tự thời gian: 01/12/25 đứng trước 02/01/26. Ai mở file rồi sắp theo hạn là đang nhìn một thứ tự sai.",
     "Nay ngày là ngày thật, % và số ngày quá hạn là số thật: sắp xếp theo hạn ra đúng thứ tự, lọc “lớn hơn 80%” được, bôi đen cột Quá hạn thì Excel hiện tổng. Bảng vẫn hiện y như cũ — vẫn dd/mm/yy, vẫn “85%”, vẫn “5 ngày”, màu và cột không đổi.",
     "Ô chưa có số thì nay ĐỂ TRỐNG thật thay vì hiện dấu gạch ngang. Trống nghĩa là chưa đo được, khác hẳn với 0 — để Excel không cộng nhầm và người đọc không hiểu nhầm.",
+    "FILE EXCEL NAY NHÌN NGANG BẢN PDF. Ô Vướng mắc / Giải pháp hiện ĐỦ CHỮ, không còn cắt cụt — ô dài nhất trong bản hôm nay là 571 ký tự, trước đây chỉ thấy dòng đầu. Dòng dự án, dòng công đoạn con và hàng quá hạn nay dùng đúng bảng màu của bảng trên app.",
+    "Cột % có thanh màu chạy trong ô như thanh tiến độ; cột Quá hạn tô đỏ từ 14 ngày trở lên, đúng ngưỡng cảnh báo app đang dùng. Cuối bảng có khối chú giải màu.",
+    "Cuộn sang phải đọc Vướng mắc vẫn thấy tên dự án (đóng băng thêm cột). Bấm in ra A4 ngang, vừa một trang bề ngang, tiêu đề lặp lại ở mọi trang và có đánh số trang.",
   ] },
   { v: "3.109.1", date: "24/09/2026", items: [
     "Gắn thêm đồng hồ đo cho kho chung. App vốn đã đếm mỗi ngày ghi vào kho bao nhiêu lượt, nay ghi thêm một mã ngắn đại diện cho nội dung vừa lưu, để phân biệt được “lưu 63 nội dung khác nhau” với “lưu đi lưu lại đúng một nội dung 63 lần”. Cần biết điều đó mới cắt đúng chỗ đang ăn hạn mức.",
@@ -4650,7 +4654,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
               // Chưa 100% thì KHÔNG hiện ngày kết thúc thực tế, dù kho còn lưu — xem ngayKetThucThucTe.
             const doneOn = ngayKetThucThucTe(completedDates, it._key, it.pctActual);
               rows.push({
-                kind: "item", statusColor: st.color,
+                // Đầu việc đang quá hạn → cả hàng tô nền ấm như trên app. Dùng ĐÚNG phép kiểm
+                // truthy của cột Quá hạn để hàng được tô đúng bằng tập hàng có số trong cột đó.
+                kind: "item", statusColor: st.color, overdue: !!it.overdueDays,
                 cells: [
                   null, stageAbbrOf(it._stageId), it._stageLabel || "",
                   clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm)),
@@ -4666,7 +4672,11 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
               });
             }
           }
-          await exportTableXlsx({ columns: cols, statusColIndex: 8, finishColIndex: 5, rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
+          // Ngưỡng quá hạn lấy THẲNG từ lib/filter, không gõ lại số: đổi ngưỡng ở đó thì file Excel
+          // đổi theo, khỏi lệch âm thầm với cảnh báo trên bảng.
+          await exportTableXlsx({ columns: cols, statusColIndex: 8, finishColIndex: 5, pctColIndex: 6,
+            overdueColIndex: 7, overdueAlertDays: OD_ALERT_DAYS,
+            rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
           const projCount = dueMonthGroups.length;
           const itemCount = rows.length - projCount;
           track("export_excel", `Lọc: ${filterSummary} · ${projCount} dự án, ${itemCount} đầu việc`.slice(0, 300));

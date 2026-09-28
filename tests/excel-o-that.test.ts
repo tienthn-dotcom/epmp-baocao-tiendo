@@ -57,7 +57,7 @@ const DONG: XlsxTableRow[] = [
   { kind: "group", delivered: false, late: false, statusColor: null,
     cells: [oNgay("2026-09-20"), "CT26-032", "Dự án A", "Nguyễn Văn A",
             oNgay("2025-01-01"), oNgay(HAN[0]), null, null, "", "", ""] },
-  { kind: "item", statusColor: null,
+  { kind: "item", statusColor: null, overdue: true,
     cells: [null, "TK", "Thiết kế", "B", oNgay("2025-02-01"), oNgay(HAN[1]), 85, 5, "Trễ tiến độ", "vướng", "giải"] },
   { kind: "item", statusColor: null,
     cells: [null, "MA", "Duyệt mẫu", "C", oNgay("2025-03-01"), oNgay(HAN[2]), 0, null, "", "", ""] },
@@ -75,7 +75,8 @@ beforeAll(async () => {
   const { exportTableXlsx } = await import("@/lib/excel-export");
   batDuoc = null;
   await exportTableXlsx({
-    columns: COLS, statusColIndex: 8, finishColIndex: 5, rows: DONG,
+    columns: COLS, statusColIndex: 8, finishColIndex: 5, pctColIndex: 6,
+    overdueColIndex: 7, overdueAlertDays: 14, rows: DONG,
     todayIso: "2026-09-25", filterSummary: "Tất cả", updatedAt: "2026-09-24",
   });
   expect(batDuoc).not.toBeNull();
@@ -191,5 +192,91 @@ describe("file .xlsx dựng ra — soi ngược từng ô", () => {
     expect(ws.getRow(3).getCell(6).value).toBe("Ngày kết thúc");
     expect(ws.views?.[0]?.ySplit).toBe(3);
     expect(ws.autoFilter).toBeTruthy();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════
+ *  PHẦN NHÌN (V4b) — mấy thứ dưới đây chấm cuối cùng bằng MẮT trên file thật đặt cạnh bản PDF.
+ *  Phép kiểm ở đây chỉ chốt phần MÁY kiểm được: thứ nào phải có trong file thì phải có thật,
+ *  và thứ nào luật cấm thì phải vắng mặt.
+ * ═════════════════════════════════════════════════════════════════════════════════════════ */
+describe("phần nhìn — chỉ chốt được thứ máy soi được", () => {
+  it("CHỮ HẾT BỊ CẮT: dòng dữ liệu KHÔNG có chiều cao đặt tay", () => {
+    // Excel chỉ tự giãn chiều cao khi hàng không có chiều cao đặt tay. Đặt cứng 20/18 như bản cũ
+    // là cắt cụt hai cột ghi chú rộng 48 có xuống dòng — thứ hỏng rõ nhất khi đặt cạnh PDF.
+    for (let r = 4; r <= 7; r++) {
+      const h = (WS.getRow(r) as unknown as { height?: number }).height;
+      expect(h == null, `dòng ${r} vẫn bị đặt chiều cao ${h}`).toBe(true);
+    }
+    // Ba dòng đầu thì VẪN đặt tay — chúng không có chữ dài, và cần cao đều để làm khối tiêu đề.
+    expect((WS.getRow(1) as unknown as { height?: number }).height).toBe(22);
+    expect((WS.getRow(3) as unknown as { height?: number }).height).toBe(26);
+  });
+
+  it("đóng băng thêm CỘT: cuộn sang phải vẫn thấy tên dự án", () => {
+    expect(WS.views?.[0]?.xSplit).toBe(3);
+    expect(WS.views?.[0]?.state).toBe("frozen");
+  });
+
+  it("thiết lập trang in: A4 ngang, vừa một trang bề ngang, lặp tiêu đề mọi trang", () => {
+    const ps = WS.pageSetup as unknown as Record<string, unknown>;
+    expect(ps.orientation).toBe("landscape");
+    expect(ps.fitToPage).toBe(true);
+    expect(ps.fitToWidth).toBe(1);
+    expect(ps.fitToHeight).toBe(0);     // dài bao nhiêu trang cũng được, đừng nén cho vừa một trang
+    expect(WS.pageSetup.printTitlesRow).toBe("3:3");
+  });
+
+  it("dòng công đoạn con có nền riêng; đầu việc quá hạn tô nền ấm + mép trái", () => {
+    const nen = (r: number, c: number) =>
+      (WS.getRow(r).getCell(c).fill as unknown as { fgColor?: { argb?: string } })?.fgColor?.argb;
+    expect(nen(5, 3)).toBe("FFFCEFDD");   // dòng 5 là đầu việc ĐANG quá hạn → nền ấm
+    expect(nen(6, 3)).toBe("FFF8FAFC");   // dòng 6 không quá hạn → nền xám rất nhạt
+    const mep = (WS.getRow(5).getCell(1).border as unknown as { left?: { color?: { argb?: string } } })?.left;
+    expect(mep?.color?.argb).toBe("FFE0A458");
+  });
+
+  it("dòng dự án dùng đúng màu navy của app, dự án đã bàn giao thì xanh", () => {
+    const nen = (WS.getRow(4).getCell(3).fill as unknown as { fgColor?: { argb?: string } })?.fgColor?.argb;
+    expect(nen).toBe("FF334964");         // GC.bar
+  });
+
+  it("có thanh màu trong ô % và có tô bậc cho cột Quá hạn", () => {
+    const cf = (WS as unknown as { conditionalFormattings?: { ref: string; rules: { type: string }[] }[] })
+      .conditionalFormattings ?? [];
+    const kieu = cf.flatMap((x) => x.rules.map((r) => x.ref + ":" + r.type));
+    expect(kieu.some((k) => k.startsWith("G4") && k.endsWith("dataBar")), JSON.stringify(kieu)).toBe(true);
+    expect(kieu.filter((k) => k.startsWith("H4") && k.endsWith("cellIs")).length).toBe(2);
+  });
+
+  it("Ô % CHƯA CÓ SỐ KHÔNG ĐƯỢC VẼ GÌ — luật 5.2 áp cho cả phần nhìn", () => {
+    // Thanh dài 0 ở ô chưa đo là biến "chưa đo" thành "0%" bằng hình ảnh. Excel bỏ qua ô rỗng khi
+    // vẽ data bar, nên điều cần chốt là ô đó THẬT SỰ rỗng chứ không phải mang số 0.
+    expect(WS.getRow(7).getCell(7).value == null).toBe(true);
+    expect(WS.getRow(7).getCell(7).value).not.toBe(0);
+    // Còn ô 0% thật thì vẫn phải là 0 và vẫn được vẽ thanh (thanh ngắn nhất).
+    expect(WS.getRow(6).getCell(7).value).toBe(0);
+  });
+
+  it("có khối chú giải cuối bảng, và nó KHÔNG gán chết mỗi nhãn một màu", () => {
+    let chu = "";
+    for (let r = 8; r <= WS.rowCount; r++)
+      for (let c = 1; c <= 6; c++) chu += " " + String(WS.getRow(r).getCell(c).value ?? "");
+    expect(chu).toContain("CHÚ GIẢI");
+    expect(chu).toContain("Trễ tiến độ");
+    expect(chu).toContain("Cần cắt đầu việc");
+    expect(chu).toContain("Cần tập trung");
+    // Ghi chú ở index.tsx (~1381) nói rõ: màu tách rời nhãn, "KHÔNG được suy màu từ kind".
+    // Chú giải phải nói MÀU = MỨC NGHIÊM TRỌNG, nếu không là in ra một luật app không chạy theo.
+    expect(chu).toContain("MỨC NGHIÊM TRỌNG");
+    expect(chu).toContain("Nặng");
+    expect(chu).toContain("Cần chú ý");
+  });
+
+  it("chú giải nêu đúng ngưỡng quá hạn đã truyền vào, không phải số tự chế", () => {
+    let chu = "";
+    for (let r = 8; r <= WS.rowCount; r++)
+      for (let c = 1; c <= 6; c++) chu += " " + String(WS.getRow(r).getCell(c).value ?? "");
+    expect(chu).toContain("14 ngày trở lên");
   });
 });
