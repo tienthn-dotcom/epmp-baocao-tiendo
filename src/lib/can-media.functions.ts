@@ -302,28 +302,126 @@ export const listProjectMedia = createServerFn({ method: "POST" })
     return { cans: out };
   });
 
-/** DỰ ÁN NÀO TRONG CÂY MEDIA ĐÃ CÓ ÍT NHẤT 1 FILE — để dashboard ePMP chỉ hiện nút "🎬 Media" ở những
- *  dự án thật sự có ảnh/video (dự án trống thì đừng bày nút cho rối).
- *  Quét theo LÔ (mỗi cấp 1-vài lượt gọi) chứ không đi từng dự án; kết quả nên cache lâu ở client. */
-export const listMediaProjects = createServerFn({ method: "GET" })
-  .handler(async (): Promise<{ projects: string[] }> => {
-    const drive = await import("@/lib/drive.functions");
-    if (!(await drive.driveIsConfigured())) return { projects: [] };
-    const root = await drive.driveListChildrenImpl(["ePMP", "Media"]);
-    if (!root.folders.length) return { projects: [] };
-    const owner = new Map<string, string>();            // id thư mục con → tên dự án gốc
-    for (const p of root.folders) owner.set(p.id, p.name);
-    let level = root.folders.map((f) => f.id);
-    const has = new Set<string>();
-    // File nằm SÂU 4 cấp: <Dự án>/<Toà>/<Phòng>/(Hình ảnh|Video)/file — nên phải đi đủ 4-5 cấp,
-    // dừng sớm ở cấp 3 thì không gặp file nào và kết luận "dự án nào cũng trống".
-    for (let depth = 0; depth < 5 && level.length; depth++) {
-      for (const f of await drive.driveListFilesByParents(level)) {
-        const nm = owner.get(f.parent); if (nm) has.add(nm);
-      }
-      const next = await drive.driveListFoldersByParents(level);
-      for (const f of next) { const nm = owner.get(f.parent); if (nm) owner.set(f.id, nm); }
-      level = next.map((f) => f.id).filter((id) => owner.has(id));
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ *  DẤU "DỰ ÁN CÓ ẢNH" — ĐỌC TỪ KHO, KHÔNG QUÉT DRIVE Ở ĐƯỜNG NGƯỜI DÙNG
+ *
+ *  Đo 28/09/2026 trên app thật: `listMediaProjects` mất **14.167 ms** và trả về đúng **2 tên dự án**.
+ *  Mười bốn giây quét Drive cho một cái dấu hiệu, chạy lại mỗi 10 phút, CHO TỪNG NGƯỜI. Tệ hơn con
+ *  số: lượt gọi đó giữ một trong khoảng sáu kết nối đồng thời của trình duyệt suốt 14 giây, nên nó
+ *  không chỉ tự chậm mà còn CHẶN HÀNG các lượt gọi khác — khớp với chỗ sáu hàm `fetch*` của
+ *  edits.functions cùng về ở mốc 4,58 giây như nhau.
+ *
+ *  Nay: người dùng đọc KHO (một lượt đọc KV rẻ), còn việc quét Drive chạy Ở NỀN và nhiều nhất
+ *  MỘT LƯỢT mỗi 6 giờ cho cả hệ thống.
+ *
+ *  VÌ SAO CHỌN "ĐỌC KHO + LÀM MỚI Ở NỀN" chứ không phải "hoãn tới khi mở Media": cái dấu này nằm
+ *  ngay trên bảng chính, hoãn đi thì bảng chính mất dấu cho tới khi ai đó mở Media — mà người ta
+ *  nhìn bảng chính để biết dự án nào có ảnh, chứ không mở Media ra để biết.
+ *
+ *  RÀNG BUỘC ĐÃ GIỮ — "dấu hiệu KHÔNG ĐƯỢC SAI": danh sách trong kho là ảnh chụp của lần quét gần
+ *  nhất. Sai lệch duy nhất có thể xảy ra là THIẾU một dấu (dự án vừa có ảnh trong vòng 6 giờ qua),
+ *  đúng phía "chỉ khó chịu". Chiều ngược lại — hiện dấu cho dự án đã xoá sạch ảnh — cũng tự hết sau
+ *  lượt quét kế.
+ *
+ *  LƯỢT GHI KV: một lượt mỗi 6 giờ, KHÔNG chạy theo số người dùng. Chỗ đúng đắn hơn là để cron của
+ *  warmer quét rồi ghi, còn đây chỉ đọc; nhưng warmer là worker riêng phải deploy riêng, nên tạm
+ *  thời tự làm mới ở nền. Khi nào cron nhận việc này thì bỏ khối làm mới đi, phần đọc giữ nguyên.
+ * ════════════════════════════════════════════════════════════════════════════════════════════ */
+const MEDIA_COANH_KEY = "media:coanh:v1";
+const MEDIA_COANH_HAN_MS = 6 * 3_600_000;          // 6 giờ
+/** Chặn nhiều lượt quét chồng nhau trong CÙNG một isolate. Ghim ở tầng module nên không tốn KV. */
+let dangQuetTu = 0;
+
+async function khoKv(): Promise<{ get(k: string): Promise<string | null>; put(k: string, v: string): Promise<void> } | null> {
+  try {
+    const env = await serverEnv();
+    const kv = env.PMO_EDITS as { get(k: string): Promise<string | null>; put(k: string, v: string): Promise<void> } | undefined;
+    return kv ?? null;
+  } catch { return null; }
+}
+
+async function chayNen(p: Promise<unknown>): Promise<void> {
+  try {
+    const mod = (await import("@tanstack/react-start/server")) as Record<string, unknown>;
+    const ev = (mod.getEvent as undefined | (() => unknown))?.() as
+      { context?: { cloudflare?: { context?: { waitUntil?: (x: Promise<unknown>) => void } } } } | undefined;
+    const wu = ev?.context?.cloudflare?.context?.waitUntil;
+    if (wu) { wu(p); return; }
+  } catch { /* runtime khác */ }
+  void p.catch(() => { /* nền, lỗi kệ */ });
+}
+
+/**
+ * ĐỌC NHANH danh sách dự án có ảnh. KHÔNG quét Drive ở đường này.
+ * Kho trống hoặc quá hạn → trả bản đang có (có thể rỗng) rồi hẹn quét lại Ở NỀN. Thà thiếu một cái
+ * dấu trong vài phút còn hơn bắt người mở app ngồi chờ 14 giây.
+ */
+export const getMediaCoAnh = createServerFn({ method: "POST" })
+  .handler(async (): Promise<{ projects: string[]; ts: number }> => {
+    const kv = await khoKv();
+    let cu: { projects: string[]; ts: number } = { projects: [], ts: 0 };
+    if (kv) {
+      try {
+        const raw = await kv.get(MEDIA_COANH_KEY);
+        if (raw) { const o = JSON.parse(raw) as { projects?: string[]; ts?: number };
+          if (Array.isArray(o.projects)) cu = { projects: o.projects, ts: o.ts ?? 0 }; }
+      } catch { /* đọc hỏng → coi như chưa có, vẫn trả rỗng chứ không ném */ }
     }
-    return { projects: [...has] };
+    const gio = Date.now();
+    const quaHan = gio - cu.ts > MEDIA_COANH_HAN_MS;
+
+    // CHƯA CÓ GÌ TRONG KHO → QUÉT NGAY TẠI CHỖ, đừng trả mảng rỗng.
+    //
+    // Đây là chỗ chọn HỎNG VỀ PHÍA AN TOÀN. Trả rỗng thì nhanh, nhưng nếu vì lý do nào đó kho không
+    // bao giờ được ghi (không có binding KV — đúng cảnh đang thấy khi chạy dev) thì MỌI dấu 🎬 biến
+    // mất vĩnh viễn mà không ai báo. Quét tại chỗ thì lượt đầu sau mỗi cửa sổ 6 giờ vẫn tốn ~14
+    // giây đúng như hôm nay, nhưng KHÔNG BAO GIỜ tệ hơn hôm nay, và mọi lượt sau đó chỉ còn ~7 ms.
+    // Đổi 14 giây của một người mỗi 6 giờ lấy 14 giây của MỌI người mỗi 10 phút.
+    if (!cu.projects.length) {
+      const ra = await quetMediaCoAnh();
+      if (kv && ra.length) {
+        try { await kv.put(MEDIA_COANH_KEY, JSON.stringify({ projects: ra, ts: gio })); } catch { /* ghi hỏng thì thôi */ }
+      }
+      return { projects: ra, ts: gio };
+    }
+
+    // CÓ SẴN NHƯNG QUÁ HẠN → trả bản cũ NGAY, quét lại ở nền. Người dùng không phải chờ, và cái dấu
+    // chậm nhất là cũ 6 tiếng — thứ chỉ đổi khi có người tải ảnh mới lên.
+    if (kv && quaHan && gio - dangQuetTu > 10 * 60_000) {
+      dangQuetTu = gio;
+      await chayNen((async () => {
+        const ra = await quetMediaCoAnh();
+        // Quét hụt (Drive lỗi) → ĐỪNG ghi đè danh sách cũ bằng mảng rỗng: làm thế là xoá sạch dấu
+        // của mọi dự án chỉ vì một lượt gọi Drive hỏng.
+        if (ra.length) await kv.put(MEDIA_COANH_KEY, JSON.stringify({ projects: ra, ts: Date.now() }));
+      })());
+    }
+    return cu;
   });
+
+/** Phần quét Drive thật — tách ra để vừa dùng cho server-fn cũ vừa dùng cho lượt làm mới ở nền. */
+async function quetMediaCoAnh(): Promise<string[]> {
+  const drive = await import("@/lib/drive.functions");
+  if (!(await drive.driveIsConfigured())) return [];
+  const root = await drive.driveListChildrenImpl(["ePMP", "Media"]);
+  if (!root.folders.length) return [];
+  const owner = new Map<string, string>();
+  for (const p of root.folders) owner.set(p.id, p.name);
+  let level = root.folders.map((f) => f.id);
+  const has = new Set<string>();
+  for (let depth = 0; depth < 5 && level.length; depth++) {
+    for (const f of await drive.driveListFilesByParents(level)) {
+      const nm = owner.get(f.parent); if (nm) has.add(nm);
+    }
+    const next = await drive.driveListFoldersByParents(level);
+    for (const f of next) { const nm = owner.get(f.parent); if (nm) owner.set(f.id, nm); }
+    level = next.map((f) => f.id).filter((id) => owner.has(id));
+  }
+  return [...has];
+}
+
+/** DỰ ÁN NÀO TRONG CÂY MEDIA ĐÃ CÓ ÍT NHẤT 1 FILE — quét Drive THẬT, mất ~14 giây.
+ *  KHÔNG gọi hàm này từ đường mở app nữa: dùng `getMediaCoAnh` ở trên. Giữ lại để cron / người
+ *  quản trị ép quét lại, và để còn một đường lấy số tươi khi cần đối chiếu. */
+export const listMediaProjects = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ projects: string[] }> => ({ projects: await quetMediaCoAnh() }));

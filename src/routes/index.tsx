@@ -45,7 +45,7 @@ import { TABLE_FONT_CSS } from "@/lib/table-scale";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { AppShell, MTLD_INSTALL_LS } from "@/lib/app-shell";
 import { CanMediaDialog } from "@/lib/can-media-app";
-import { listMediaProjects, startItemPdfUpload, readItemPdf } from "@/lib/can-media.functions";
+import { getMediaCoAnh, startItemPdfUpload, readItemPdf } from "@/lib/can-media.functions";
 import { mediaProjectFolder, mediaSafe } from "@/lib/media-path";
 import { VersionBanner, useUnsavedGuard, chatDraftStore } from "@/lib/version-guard";
 
@@ -536,6 +536,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.115.0", date: "28/09/2026", items: [
+    "MỞ APP NHANH HƠN HẲN. Mỗi lần mở app, app đi quét toàn bộ thư mục Media trên Drive chỉ để biết dự án nào có ảnh — đo được mất 14 giây, và trong suốt 14 giây đó nó chiếm một đường truyền khiến các phần khác của trang phải xếp hàng chờ theo.",
+    "Nay kết quả đó được ghi nhớ và dùng lại, nên các lần mở sau gần như tức thì. Dấu 🎬 vẫn đúng dự án như cũ; chậm nhất là một dự án vừa được tải ảnh lên trong vài giờ qua thì dấu hiện trễ một nhịp.",
+  ] },
   { v: "3.114.0", date: "28/09/2026", items: [
     "ĐỔI TÊN BỘ PHẬN: PMO nay hiển thị là OCC. Badge trước tên trong ô Vướng mắc / Giải pháp, mục Phân cấp người dùng, bộ lọc cấp trong Nhật ký giám sát, các dòng tiêu đề và mọi câu thông báo quyền đều đã đổi theo.",
     "QUYỀN KHÔNG ĐỔI MỘT CHÚT NÀO. Đây chỉ là đổi chữ hiển thị — ai đang sửa, ẩn, gắn link được thì vẫn làm được y như trước, không ai phải phân lại cấp.",
@@ -2505,7 +2509,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   const [mediaView, setMediaView] = useState<{ name: string; hid?: string; maCT?: string } | null>(null);
   /** Dự án nào THẬT SỰ có ảnh/video trên Drive — chỉ những dự án đó mới hiện nút "🎬 Media".
    *  Quét 1 lần, cache lâu (cây Media đổi chậm). Khớp CẢ tên có ID cứng lẫn tên trần (folder cũ). */
-  const mediaProjQuery = useQuery({ queryKey: ["media-projects"], queryFn: () => listMediaProjects(), staleTime: 10 * 60 * 1000 });
+  // Dau "du an co anh": DOC TU KHO, khong quet Drive o duong mo app. Xem ghi chu dai o
+  // can-media.functions.ts — lan quet that mat 14.167 ms va giu mot ket noi cua trinh duyet suot
+  // ca quang do, nen no khong chi tu cham ma con chan hang cac luot goi khac.
+  const mediaProjQuery = useQuery({ queryKey: ["media-co-anh"], queryFn: () => getMediaCoAnh(), staleTime: 10 * 60 * 1000 });
   const mediaProjSet = useMemo(() => new Set(mediaProjQuery.data?.projects ?? []), [mediaProjQuery.data]);
   // Link PMO gắn thẳng cho từng dự án (khoá bền Mã CT + Tên) — đọc CÔNG KHAI để mọi người thấy 📊.
   /* ── CỔNG "TẢI XONG MỚI ĐƯỢC GHI" ────────────────────────────────────────────────────────────
