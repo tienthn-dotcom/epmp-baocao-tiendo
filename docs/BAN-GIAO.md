@@ -12,79 +12,76 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V10 · Thôi tải lại file nguồn khi nó chưa đổi**
-Plan mở 28/09/2026. Người dùng chỉ thẳng nguyên nhân, và chỉ đúng.
+**V10 · Thôi tải lại file nguồn liên tục — bản viết lại lần 2**
+Plan mở 28/09/2026, **viết lại** sau khi Thực thi bác tiền đề bằng số đo.
 
-*Vừa xong, chờ deploy:* **V6** lọc trong báo cáo tuân thủ (`6c43124`) - đo trên app thật: 83 → **13 dòng**, cả 13 đều có "trước dd/mm", **0 dòng** hiện "–".
-*Đang hỏng trên production:* **V8** - nút Xuất PDF của báo cáo tuân thủ ném `jsPDF.scale`, hỏng sẵn từ trước V6.
-*Hàng đợi:* V9 (hai hướng còn lại của giảm lag) · V4c · V7 · V1 · ba nợ gọn gàng.
+*Đang chạy trên production:* v3.112.0 (`a873f767`) - bộ lọc báo cáo tuân thủ + chốt chặn ảnh chụp rộng 0.
+*Hàng đợi:* V9 (gắn đồng hồ, hoãn nạp hộp thoại) · V4c · V7 · V1 · ba nợ gọn gàng.
+
+---
+
+## ⚠ TIỀN ĐỀ CỦA BẢN ĐẦU ĐÃ BỊ BÁC — đọc trước khi làm
+
+Bản đầu (`24a3606`) bảo: hỏi `getLinkUpdatedAt` xem file sửa lần cuối lúc nào, chỉ tải lại khi mốc đó đổi. **Không làm được.** Thực thi đo trước khi viết dòng nào:
+
+```
+getLinkUpdatedAt(Master Plan, force:true) -> modifiedTime 2026-07-07T07:47:12Z  (gan 3 THANG truoc)
+Noi dung app dang hien                    -> cua HOM NAY
+Doi chung, file tuan thu                  -> 2026-09-28T06:44:55Z  = dung
+```
+Hàm chạy đúng. **Tín hiệu của riêng file Master Plan là thứ hỏng** - nhiều khả năng vì sheet kéo nội dung bằng công thức, nội dung đổi mà file không bị ghi nên Drive không nhích mốc.
+
+**Làm theo bản đầu thì app GHIM VĨNH VIỄN vào dữ liệu tháng 7** - không phải sai cái nhãn giờ, mà **sai số hạn trên bảng đánh giá PM**. Thực thi dừng đúng chỗ và không tự đổi cơ chế.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Đừng tải lại và phân tích lại file Master Plan 2 MB khi **file chưa hề đổi**. Hỏi Drive một câu rẻ xem file sửa lần cuối lúc nào; chỉ tải khi mốc đó khác lần trước.
+Chỉ làm một việc: **nới thời gian giữ dữ liệu đã tải** (`staleTime`, `gcTime`) của `gQuery`. **Không** hỏi `modifiedTime`. **Không** đặt lịch.
 
-**VÌ SAO CẦN**
-Nguyên văn người dùng: *"nó liên tục lấy data từ file nguồn... dữ liệu phần này chỉ thay đổi khi chúng tôi cập nhật bên app, nên tôi thấy đặt lịch hay gì đó là được rồi, chứ load lên liên tục thì bị lag"* và *"có khi mỗi tuần mới có 1 loạt thông tin mới up lên"*.
-
-**Người dùng chỉ đúng chỗ.** Plan đo được:
-```
-gQuery (truy van tai + parse file 2 MB) dat: staleTime: 0, gcTime: 0
-  staleTime 0 -> du lieu VUA VE DA BI COI LA CU
-  gcTime 0    -> KHONG giu trong bo nho mot giay nao
-=> bat ky luc nao co thu gi do dang ky lai truy van, no tai lai TRON BO
-Do that tren app: mot lan tai lai = 2.294 ms chi rieng fetchSheetXlsx, cong 2 luot ghi KV
-App de yen 25 giay: 0 luot goi -> KHONG co vong chay nen. No tai lai vi THAO TAC.
-```
-Đặt như vậy hợp với dữ liệu đổi từng giây. File Master Plan đổi theo **tuần**. Sai cặp đôi giữa cách giữ cache và nhịp đổi thật của dữ liệu.
-
-**CÔNG CỤ ĐÃ CÓ SẴN, ĐỪNG DỰNG MỚI**
-`getLinkUpdatedAt` (`mtld-install.functions.ts:445`) trả `{ modifiedTime, nguoiSua }`, có cache riêng qua `docFMeta`/`conTuoi`. App **đang dùng nó** cho link ma trận (`index.tsx:5287`, `6185`) nhưng **KHÔNG dùng cho file Master Plan chính**. Đó là mảnh còn thiếu.
-
-**LÀM XONG THÌ NHÌN THẤY GÌ**
-Mở app, chuyển qua lại giữa các màn, đóng mở hộp thoại - **không còn khựng 2 giây** vì tải lại file. Khi PMO thật sự sửa file nguồn thì app vẫn nhận bản mới. Nút "Làm mới" vẫn ép lấy bản mới ngay lập tức.
+**VÌ SAO ĐỦ**
+Người dùng phàn nàn: *"load lên liên tục thì bị lag"*. Plan đã đo: app để yên 25 giây thì **0 lượt gọi** - nó tải lại vì **thao tác**, không vì vòng chạy nền. Mà thứ khiến mỗi thao tác kéo theo một lần tải lại **chính là** `staleTime: 0, gcTime: 0`. Chặn ở đó là chặn đúng chỗ, và **không phụ thuộc vào một tín hiệu vừa chứng minh là hỏng**.
 
 **PHẠM VI**
-- Trong: chỗ khai `gQuery` trong `src/routes/index.tsx` (~1535) - `staleTime`, `gcTime`, và thêm một truy vấn nhẹ hỏi `modifiedTime`.
-- NGOÀI: **không** đụng `lastRefreshBoundary` hay cache phía Worker (đó là tầng khác, đang chạy đúng), không đụng warmer, không đụng đường `sfile`/`spdf2`, không đổi `parseXlsx`, không đụng nút "Làm mới".
+- Trong: đúng dòng `staleTime: 0, gcTime: 0` của `gQuery` trong `src/routes/index.tsx` (~1535).
+- NGOÀI: **không** thêm truy vấn nào, **không** gọi `getLinkUpdatedAt`, không đụng `resetPipeline`, không đụng nút "Làm mới", không đụng cache phía Worker, không đụng warmer.
 
-**DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-`gQuery.data` là **nguồn của gần như mọi thứ trên màn hình chính**: `enriched`, `tableItems`, KPI, Gantt, bộ lọc, báo cáo. Giữ cache lâu hơn là đổi **thời điểm** mọi thứ đó thấy dữ liệu mới. Đây là việc có bán kính rộng nhất trong các việc gần đây - đo kỹ.
-Và `gcTime: 0` hiện tại **có thể đang được ai đó dựa vào** để ép lấy bản mới ở một đường nào đó. Thực thi phải tìm xem có chỗ nào cố ý huỷ cache không, thấy thì **báo Plan** trước khi đổi.
+**BA CHỖ THỰC THI ĐÃ KIỂM HỘ — Plan ghi lại để khỏi kiểm lại**
+1. `resetPipeline` (`~1497`) gọi `removeQueries(["sheet-csv"])` - huỷ **tường minh**, không dựa vào `gcTime`. Nới `gcTime` không làm gãy nó.
+2. Nút "Làm mới" gọi `gQuery.refetch()` (`~1587`), mà `refetch` **bỏ qua** `staleTime`. Van thoát vẫn nguyên.
+3. **Ràng buộc "nhãn giờ phải đúng" TỰ ĐẠT.** `freshAt = liveData.fetchedAt`, và `fetchedAt` được đóng dấu lúc tải rồi **đi kèm dữ liệu** (`~1532`). Phục vụ từ cache thì nhãn tự già theo. Bản đầu lo chỗ này sẽ sai - thực tế nó đúng sẵn.
 
 **RÀNG BUỘC**
-1. **Không được để người dùng nhìn số cũ mà không biết.** Có sẵn nhãn "DỮ LIỆU TÍNH ĐẾN <giờ>" trên đầu trang - phải phản ánh đúng mốc của dữ liệu **đang hiện**, không phải giờ hiện tại. Sai chỗ này là làm người ta tin một con số cũ.
-2. Nút **"Làm mới" vẫn ép lấy bản mới ngay**, không qua cache. Đó là van thoát.
-3. Hỏi `modifiedTime` phải **rẻ**: không tải nội dung file. Hỏng thì **rơi về hành vi cũ** (cứ tải), đừng chặn người dùng.
-4. **Không thêm đường ghi KV nào.** Việc này phải **giảm** lượt ghi, vì mỗi lần tải lại đang kéo theo 2 lượt ghi.
-5. Chọn nhịp hỏi `modifiedTime` thì **nói rõ đã chọn bao lâu và vì sao**. Dữ liệu đổi theo tuần, nên vài phút là quá đủ.
+1. **Nút "Làm mới" phải lấy bản mới NGAY**, không qua cache. Đây là van duy nhất còn lại sau khi bỏ `modifiedTime`, nên nó phải chắc.
+2. Nhãn "DỮ LIỆU TÍNH ĐẾN" phải là mốc của **dữ liệu đang hiện**. Thực thi nói nó đúng sẵn - **xác nhận lại bằng mắt**, đừng tin suông.
+3. **Không thêm đường ghi KV nào.** Việc này phải **giảm** lượt ghi: mỗi lần tải lại đang kéo theo 2 lượt ghi.
+4. Không đụng cơ chế nào khác. Đây là việc đổi **một** cặp con số.
 
-**ĐÃ ĐO TRƯỚC** (Plan 28/09/2026, trên app thật đang chạy)
-```
-bam "Lam moi" mot lan:
-  fetchSheetXlsx      2.294 ms   <- tai + parse file 2 MB
-  saveMediaProjects     133 ms   <- ghi KV
-  saveInstallList       121 ms   <- ghi KV
-App dung yen 25 giay : 0 luot goi  -> khong co vong chay nen
-Cloudflare hom nay   : CPU p50 3.793 us · cho p50 206.038 us · cho p99 12,8 GIAY
-                       -> Worker khong ton CPU, no NGOI CHO. Khop voi viec tai file lap.
-Cong cu san co       : getLinkUpdatedAt (mtld-install.functions.ts:445)
-```
+**CON SỐ: 5 PHÚT.** Plan chốt, Thực thi cứ làm; người dùng đổi sau nếu thấy chưa hợp.
+Lý do: dữ liệu đổi theo **tuần**, nên 5 phút là rất ngắn so với nhịp thật, mà đã đủ cắt sạch cảnh tải lại theo từng thao tác. Chọn dài hơn thì lợi thêm rất ít mà rủi ro "nhìn số cũ" tăng. `gcTime` để **dài hơn** `staleTime` - hết hạn mềm thì vẫn còn bản cũ để hiện ngay trong lúc lấy bản mới, thay vì trắng bảng.
 
-**CHỖ CÒN MƠ HỒ**
-Plan **chưa đo** file Master Plan thật sự đổi bao nhiêu lần một ngày. Người dùng nói "có khi mỗi tuần mới có 1 loạt". Thực thi đo giúp bằng `getLinkUpdatedAt` qua vài thời điểm, hoặc nói rõ là chưa đo được - **đừng chọn nhịp dựa trên cảm giác**.
+**ĐÃ ĐO TRƯỚC**
+```
+Mot lan tai lai : fetchSheetXlsx 2.294 ms + saveMediaProjects 133 ms + saveInstallList 121 ms
+                  -> 2 luot ghi KV moi lan tai lai
+App de yen 25s  : 0 luot goi -> khong co vong chay nen
+getLinkUpdatedAt: 576-681 ms moi luot, va luot force:true ton 1 luot ghi KV (ghiFMeta)
+                  -> khong mien phi, va KHONG DUNG DUOC cho file nay (xem phan tien de)
+```
 
 **CÁCH BIẾT LÀ ĐÚNG**
-1. **Phép đo chính**, làm trên app thật: mở app, thao tác qua lại 5 phút, đếm số lần gọi `fetchSheetXlsx`. Trước: nhiều lần. Sau: **1 lần**, trừ khi file thật sự đổi hoặc người dùng bấm "Làm mới". Nêu cả hai con số.
-2. Sửa thật file trên Drive → trong vòng nhịp đã chọn, app **phải** lấy bản mới. Đây là phép đo quan trọng nhất: tiết kiệm mà làm dữ liệu cũ đọng lại thì tệ hơn hẳn lag.
-3. Bấm "Làm mới" → lấy bản mới **ngay**, không chờ.
-4. Nhãn "DỮ LIỆU TÍNH ĐẾN" khớp mốc của dữ liệu đang hiện.
-5. Lượt ghi KV mỗi ngày **giảm** hoặc không đổi. Đo bằng bảng đếm D1.
-6. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
+1. **Phép đo chính**: mở app, thao tác qua lại 5 phút, đếm số lần gọi `fetchSheetXlsx`. Nêu **cả hai** con số trước và sau.
+2. Bấm "Làm mới" → lấy bản mới **ngay**. Phép này quan trọng hơn phép 1: nó là van duy nhất.
+3. Nhãn "DỮ LIỆU TÍNH ĐẾN" khớp mốc dữ liệu đang hiện, kể cả khi phục vụ từ cache.
+4. Lượt ghi KV mỗi ngày **giảm**. Đo bằng bảng đếm D1.
+5. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
+
+**PHẢI NÓI VỚI NGƯỜI DÙNG KHI XONG:** sau khi PMO cập nhật file, người dùng thấy số mới **trong vòng 5 phút**, hoặc bấm "Làm mới" để thấy ngay. Đó là cái giá của việc hết lag, và người dùng phải biết trước chứ không phát hiện sau.
 
 ---
+
+
 
 
 
