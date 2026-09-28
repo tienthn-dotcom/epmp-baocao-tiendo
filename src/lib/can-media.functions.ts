@@ -306,10 +306,18 @@ export const listProjectMedia = createServerFn({ method: "POST" })
  *  DẤU "DỰ ÁN CÓ ẢNH" — ĐỌC TỪ KHO, KHÔNG QUÉT DRIVE Ở ĐƯỜNG NGƯỜI DÙNG
  *
  *  Đo 28/09/2026 trên app thật: `listMediaProjects` mất **14.167 ms** và trả về đúng **2 tên dự án**.
- *  Mười bốn giây quét Drive cho một cái dấu hiệu, chạy lại mỗi 10 phút, CHO TỪNG NGƯỜI. Tệ hơn con
- *  số: lượt gọi đó giữ một trong khoảng sáu kết nối đồng thời của trình duyệt suốt 14 giây, nên nó
- *  không chỉ tự chậm mà còn CHẶN HÀNG các lượt gọi khác — khớp với chỗ sáu hàm `fetch*` của
- *  edits.functions cùng về ở mốc 4,58 giây như nhau.
+ *  Mười bốn giây quét Drive cho một cái dấu hiệu, chạy lại mỗi 10 phút, CHO TỪNG NGƯỜI.
+ *
+ *  NÓ CHẶN CÁI GÌ — ghi đúng, vì bản đầu của ghi chú này ghi SAI. Tôi từng viết rằng nó chặn hàng
+ *  sáu hàm `fetch*` của edits.functions; box Test đo waterfall và bác: **17 lượt đọc xong hết ở mốc
+ *  1.275 ms**, chúng không chờ gì cả. Thứ nó thật sự chặn là **BA LƯỢT GHI** —
+ *  `saveProjRegions` · `saveInstallList` · `saveMediaProjects` — vì cả ba nằm sau cổng
+ *  `dangTaiKho > 0`, mà cổng đó chỉ mở khi MỌI truy vấn xong, kể cả lượt media 14 giây này.
+ *  Đo lại tại chỗ: media bắt đầu ở 9.295 ms, ba lượt ghi nổ ở 23.796–23.799 ms, mỗi hàm ĐÚNG một
+ *  lượt. Tức bỏ lượt media ra thì ba lượt ghi chạy SỚM HƠN ~14 giây, KHÔNG chạy nhiều hơn.
+ *
+ *  Và nó chiếm gần trọn khung thời gian mở app: bỏ lượt media ra thì khung **14.346 ms còn
+ *  2.880 ms** (số của box Test) — mọi thứ không dính media đã xong từ mốc 4.047 ms.
  *
  *  Nay: người dùng đọc KHO (một lượt đọc KV rẻ), còn việc quét Drive chạy Ở NỀN và nhiều nhất
  *  MỘT LƯỢT mỗi 6 giờ cho cả hệ thống.
