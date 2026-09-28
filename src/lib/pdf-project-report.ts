@@ -12,6 +12,8 @@
 import type { PptReportInput } from "@/lib/ppt-report";
 import { analyze, statusOf, fmtDate } from "@/lib/ppt-report";
 import { AA_LOGO_DATA_URI } from "@/lib/aa-logo";
+// Hang so id tin lay tu file nguon - dung CHUNG voi bang tren app, khong go lai chuoi.
+import { MSG_NGUON } from "@/lib/types";
 
 /* ── Palette (đồng bộ tông điều hành với bản slide) ─────────────────────────── */
 const C = {
@@ -175,7 +177,9 @@ function consistencyIssues(input: PptReportInput, m: ReturnType<typeof analyze>)
 }
 
 /** Dựng HTML báo cáo 1 trang A4 (794px ~ A4@96dpi). */
-function buildHtml(input: PptReportInput): string {
+/* export DE TEST GOI DUOC: ham nay chi dung chuoi HTML, khong dung API trinh duyet nao.
+   Kiem thu no la cach duy nhat chung minh bao cao KHONG RUNG chu cua file nguon. */
+export function buildHtml(input: PptReportInput): string {
   const m = analyze(input);
   const checks = consistencyIssues(input, m);
   const redChecks = checks.filter((c) => c.sev >= 2).length;
@@ -241,11 +245,36 @@ function buildHtml(input: PptReportInput): string {
         <span style="width:8px;height:8px;border-radius:50%;background:#5ee9b5"></span>Rà soát dữ liệu: không phát hiện mâu thuẫn logic.</div>`;
 
   const projNoteMsgs = (input.projNoteMsgs ?? []).filter((x) => !x.hidden && (x.text ?? "").trim());
-  const projNote = projNoteMsgs.length ? projNoteMsgs[projNoteMsgs.length - 1].text.trim() : "";
-  const noteHtml = projNote
+  // TRƯỚC ĐÂY chỗ này chỉ in TIN CUỐI CÙNG. Ô vướng mắc cấp dự án trộn hai nguồn — câu của bộ phận
+  // OCC ghi trong file nguồn đứng trước, rồi tới ghi chú gõ trong app — nên chỉ cần một người gõ
+  // thêm một câu là câu của OCC RỤNG KHỎI BÁO CÁO mà không ai biết. Nay in ĐỦ, mỗi tin một khối,
+  // và khối của file nguồn có nhãn OCC để người đọc biết muốn đổi thì phải đổi ở đâu.
+  const khoiNote = (m: { id?: string; text: string; author?: string; at?: string }) => {
+    const nguon = m.id === MSG_NGUON;
+    const ai = nguon ? "OCC · file nguồn" : ((m.author || "").split("@")[0] || "gõ trong app");
+    return `<div style="border-left:3px solid ${nguon ? C.navy : "#d99a00"};background:${nguon ? "#eef3f9" : "#fff8e6"};padding:8px 12px;border-radius:0 8px 8px 0;font-size:12px;color:${C.ink};line-height:1.4">
+        <div style="font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:${nguon ? C.navy : C.mute};margin-bottom:3px">${esc(ai)}${m.at && !nguon ? ` · ${esc(fmtDate(m.at))}` : ""}</div>
+        ${esc(clip(m.text.trim(), 400))}</div>`;
+  };
+  // TRẦN CÓ NÓI RA. Báo cáo này ép vừa MỘT trang A4 bằng cách thu nhỏ cả trang, nên ghi chú càng
+  // nhiều thì chữ của CẢ báo cáo càng bé. Đo trên dữ liệu thật 28/09/2026: nhiều nhất 2 tin một dự
+  // án, ô dài nhất 311 ký tự — hôm nay chưa chạm trần, đặt sẵn để mai kia không âm thầm co chữ.
+  // Chạm trần thì GHI RÕ còn bao nhiêu tin chưa in, chứ không lặng lẽ bỏ — im lặng chính là cái lỗi
+  // vừa sửa ở trên.
+  const TRAN_TIN = 5, TRAN_CHU = 900;
+  const inRa: typeof projNoteMsgs = [];
+  let demChu = 0;
+  for (const m of projNoteMsgs) {
+    if (inRa.length >= TRAN_TIN || demChu > TRAN_CHU) break;
+    inRa.push(m);
+    demChu += m.text.trim().length;
+  }
+  const conLai = projNoteMsgs.length - inRa.length;
+  const noteHtml = projNoteMsgs.length
     ? `<div style="margin-top:14px">
         <div style="font-size:12px;font-weight:800;color:${C.navy};letter-spacing:.3px;margin-bottom:4px">VƯỚNG MẮC CẤP DỰ ÁN</div>
-        <div style="border-left:3px solid #d99a00;background:#fff8e6;padding:8px 12px;border-radius:0 8px 8px 0;font-size:12px;color:${C.ink};line-height:1.4">${esc(clip(projNote, 400))}</div>
+        <div style="display:flex;flex-direction:column;gap:6px">${inRa.map(khoiNote).join("")}</div>
+        ${conLai > 0 ? `<div style="margin-top:4px;font-size:10px;color:${C.mute}">… còn ${conLai} ghi chú nữa, xem đầy đủ trên app.</div>` : ""}
       </div>` : "";
 
   const imgs = (input.images ?? []).slice(0, 4);

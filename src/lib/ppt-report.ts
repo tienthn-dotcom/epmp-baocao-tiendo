@@ -156,7 +156,12 @@ function cleanName(s?: string): string {
 }
 /** Chuẩn hoá text để so trùng vướng mắc (bỏ hoa/thường, gộp khoảng trắng, bỏ dấu câu đuôi). */
 function normText(s: string): string {
-  return (s || "").toLowerCase().replace(/\s+/g, " ").replace(/[.,;:·`'"]+$/g, "").trim();
+  // BỎ NHÃN BỘ PHẬN MỞ ĐẦU ("OCC:" / "PMO:") trước khi so trùng. Câu vướng mắc cấp dự án lấy từ file
+  // nguồn đã được chỗ hiển thị cắt nhãn đi, còn ghi chú gõ trong app thì hay chép NGUYÊN câu kèm cả
+  // nhãn. Không cắt ở đây thì hai câu y hệt nhau bị tính là khác nhau, và một vướng mắc nhân bản
+  // thành nhiều dòng trong báo cáo — đúng thứ mà chỗ so trùng này sinh ra để chặn.
+  // CHỈ dùng làm KHOÁ SO SÁNH (cả 4 chỗ gọi đều vậy), không đụng tới chữ in ra.
+  return (s || "").toLowerCase().replace(/^\s*(?:pmo|occ)\s*[:：]\s*/, "").replace(/\s+/g, " ").replace(/[.,;:·`'"]+$/g, "").trim();
 }
 /** CÔ ĐỌNG cho slide: lấy trọn các CÂU/gạch đầu đầu tiên vừa trong giới hạn (không cắt cụt giữa
  *  câu), thêm "…" nếu còn nội dung phía sau. Chi tiết đầy đủ vẫn xem trong app. */

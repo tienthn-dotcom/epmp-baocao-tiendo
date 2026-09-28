@@ -220,3 +220,8 @@ export type ReportData = {
    *  file xlsx đã tải (không parse trên Worker). Rỗng nếu nguồn CSV/cache/demo. */
   installLinks?: Record<string, string>;
 };
+
+/** ID của tin VƯỚNG MẮC lấy từ FILE NGUỒN (cột U dòng cha), KHÔNG nằm trong kho của app.
+ *  Đặt ở đây — file thuần type, không phụ thuộc gì — để cả bảng trên app lẫn các bản xuất
+ *  (PDF/Excel) nhận ra cùng MỘT hằng số, khỏi gõ lại chuỗi "src:file-nguon" ở ba nơi rồi lệch. */
+export const MSG_NGUON = "src:file-nguon";

@@ -27,6 +27,8 @@ import {
   X, SlidersHorizontal} from "lucide-react";
 
 import type { BlockChild, CodeCount, DataQualityCheck, DoanGhiChu, ItemRow, ReportData } from "@/lib/types";
+// Hằng số (không phải type) — tin vướng mắc lấy từ file nguồn. Xem ghi chú tại chỗ khai báo.
+import { MSG_NGUON } from "@/lib/types";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -537,6 +539,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.117.0", date: "28/09/2026", items: [
+    "Ô VƯỚNG MẮC CẤP DỰ ÁN NAY TÁCH RÕ HAI NGUỒN. Câu do bộ phận OCC ghi trong file nguồn nằm một khối riêng (badge OCC), các ghi chú gõ trong app nằm khối dưới, có gạch ngăn, và mỗi câu mang tên người gõ. Trước đây hai thứ xếp sát nhau cùng một kiểu chữ nên gõ thêm một câu là nó đọc ra thành một khối chung.",
+    "Hết cảnh hiện nhãn hai lần: ô vừa có badge OCC vừa có chữ “OCC:” đứng đầu câu.",
+    "BÁO CÁO PDF TỪNG DỰ ÁN KHÔNG CÒN LÀM RỤNG CHỮ. Trước đây phần Vướng mắc cấp dự án chỉ in câu cuối cùng, nên chỉ cần ai gõ thêm một ghi chú là câu của OCC biến mất khỏi báo cáo. Nay in đủ, ghi rõ câu nào của file nguồn, câu nào ai gõ.",
+    "File Excel xuất ra cũng đánh dấu “[OCC · file nguồn]” trước câu lấy từ file nguồn, vì trong Excel không có badge để phân biệt.",
+  ] },
   { v: "3.116.0", date: "28/09/2026", items: [
     "BỎ KÝ HIỆU ⌀ Ở CHIP NGÀY CẬP NHẬT. Nó đánh dấu trường hợp nguồn ghi ngày mới nhưng số liệu thật không đổi — ý nghĩa thì đúng, nhưng nhìn vào không ai đoán ra nó là gì.",
     "Dấu hiệu vẫn còn, chỉ là nói bằng tiếng Việt thay vì bằng ký hiệu: chip đó vẫn viền vàng, và rê chuột vào vẫn thấy câu “ghi ngày mới nhưng số liệu không đổi”.",
@@ -2215,11 +2223,15 @@ const itemKeysOf = (it: ItemRow): string[] => {
 };
 
 
-/** ID của tin VƯỚNG MẮC lấy từ cột U dòng cha trong FILE NGUỒN — không nằm trong kho, nên chỗ
- *  hiển thị phải nhận ra để KHÔNG cho sửa/ẩn/xoá (sửa thì sửa trong file). */
-const MSG_NGUON = "src:file-nguon";
-/** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn (bảng chỉ hiện phần này; xuất Excel/PDF/lọc dùng đây). */
+/** TEXT rút gọn của box chat = ghép các message KHÔNG ẩn. Dùng cho LỌC/TÌM và cho các ô Excel.
+ *  KHÔNG phải cái bảng vẽ ra: bảng vẽ từ chính mảng message (ChatCell) nên tách được từng tin. */
 const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.hidden).map((m) => m.text).join("\n");
+/** Bản dùng để XUẤT EXCEL của ô VƯỚNG MẮC CẤP DỰ ÁN. Ô đó gộp hai nguồn: câu của bộ phận OCC ghi
+ *  trong file nguồn, và các ghi chú gõ trong app. Trên bảng chúng có badge OCC + gạch ngăn để phân
+ *  biệt, nhưng Excel là văn bản phẳng — nối trơn vào một ô thì người đọc file không biết câu nào
+ *  phải sửa trong file nguồn, câu nào sửa trong app. Nên đánh dấu đúng câu của file nguồn. */
+const textXuat = (msgs?: ChatMsg[]): string =>
+  (msgs ?? []).filter((m) => !m.hidden).map((m) => (m.id === MSG_NGUON ? `[OCC · file nguồn] ${m.text}` : m.text)).join("\n");
 const fmtMsgTime = (iso: string): string => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -4334,13 +4346,20 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     const v = vuongMacNguon.get(key);
     if (!v) return [];
     const t = v.chu;
-    // Bỏ chữ "PMO:" mở đầu — danh tính đó đã nằm trong badge PMO, để cả hai là lặp.
-    const chu = (t ?? "").replace(/^\s*PMO\s*[:：]\s*/i, "").trim();
+    // Bỏ nhãn bộ phận mở đầu — danh tính đó đã nằm trong badge, để cả hai là lặp.
+    // NHẬN CẢ "OCC:" LẪN "PMO:": file nguồn nay ghi "OCC:" (đo trên bảng 28/09/2026: 68/69 dòng bắt
+    // đầu bằng "OCC:", 0 dòng "PMO:"), nên đoạn cắt chỉ biết "PMO" là đã thành đồ chết — mọi ô đều
+    // hiện nhãn hai lần. Giữ lại "PMO" cho dữ liệu cũ, còn ai gõ nhãn khác thì để nguyên chữ họ gõ.
+    const chu = (t ?? "").replace(/^\s*(?:PMO|OCC)\s*[:：]\s*/i, "").trim();
     if (!chu) return [];
     // Cắt tiền tố ở ĐÚNG đoạn đầu để các đoạn sau (nhất là đoạn bị gạch) không xê dịch.
     let doan = v.doan;
     if (doan?.length) {
-      doan = doan.map((d, i) => (i === 0 ? { ...d, chu: d.chu.replace(/^s*PMOs*[:：]s*/i, "") } : d));
+      // Regex này từng bị MẤT DẤU \ — chỗ đáng là \s thành s trơn — nên chỉ cắt được đúng chuỗi
+      // "PMO:" sát nhau; "PMO :" hay có khoảng trắng đứng trước thì badge OCC và chữ "PMO:" hiện CẢ
+      // HAI. Đây là nhánh có đoạn gạch bỏ, ít dự án rơi vào nên lâu nay không ai thấy.
+      // Có test gác: tests/pdf-vuong-mac-hai-nguon.test.ts.
+      doan = doan.map((d, i) => (i === 0 ? { ...d, chu: d.chu.replace(/^\s*(?:PMO|OCC)\s*[:：]\s*/i, "") } : d));
       while (doan.length && !doan[0].chu.trim()) doan = doan.slice(1);
     }
     return [{ id: MSG_NGUON, text: chu, author: "", at: luc ?? "", ...(doan?.length ? { doan } : {}) }];
@@ -4779,7 +4798,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
                 // Dòng nhóm dự án không có % và Quá hạn → TRỐNG THẬT, không phải 0. Ghi 0 vào đây là
                 // biến một dòng chưa có số thành dòng 0%, tức báo cáo sai sự thật về một PM (luật 5.2).
                 oNgay(g.start), oNgay(g.deadline), null, null,
-                g.delivered ? "Đã bàn giao" : "", visibleText(g.noteMsgs), visibleText(g.actionMsgs),
+                // textXuat (không phải visibleText) vì ô này CÓ câu của file nguồn trộn cùng ghi chú
+                // gõ trong app; hàng hạng mục bên dưới chỉ có tin gõ trong app nên giữ visibleText.
+                g.delivered ? "Đã bàn giao" : "", textXuat(g.noteMsgs), visibleText(g.actionMsgs),
               ],
             });
             for (const it of g.items) {
@@ -5855,14 +5876,39 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
   // DARK (hàng dự án): giữ nguyên kiểu cũ — chữ trắng đậm, không bong bóng (mở/sửa qua dialog do <td> lo).
   if (dark) {
     if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">＋ nhập…</span>;
+    // Ô này GỘP HAI NGUỒN vào một mảng: tin của file nguồn (bộ phận OCC ghi) đứng trước, rồi tới các
+    // ghi chú gõ trong app. Trước đây cả hai cùng cỡ chữ, cùng màu, chỉ cách nhau 4px → gõ thêm một
+    // câu là nó đọc ra thành MỘT khối với vướng mắc cấp dự án. Nay tách làm hai khối có gạch ngăn, và
+    // mỗi ghi chú gõ trong app đeo tên người gõ, để nhìn là biết câu nào của ai và phải sửa ở đâu.
+    const tNguon = vis.filter((m) => m.id === MSG_NGUON);
+    const tGo = vis.filter((m) => m.id !== MSG_NGUON);
+    const veChu = (m: ChatMsg) => (m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />);
     return (
-      <div className="space-y-1 font-bold leading-snug text-white">
-        {vis.map((m) => (
-          <div key={m.id} className="whitespace-pre-line">
-            {m.id === MSG_NGUON && <span title="Bộ phận OCC — ghi trong file nguồn" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">OCC</span>}
-            {m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />}
+      <div className="font-bold leading-snug text-white">
+        {tNguon.length > 0 && (
+          <div className="space-y-1">
+            {tNguon.map((m) => (
+              <div key={m.id} className="whitespace-pre-line">
+                <span title="Bộ phận OCC ghi trong FILE NGUỒN — muốn đổi thì đổi trong file, không sửa được ở đây" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">OCC</span>
+                {veChu(m)}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
+        {tGo.length > 0 && (
+          <div className={tNguon.length ? "mt-1 space-y-1 border-t border-dashed border-white/45 pt-1" : "space-y-1"}>
+            {tGo.map((m) => {
+              const ai = m.author && m.author !== "(cũ)" ? m.author.split("@")[0] : "";
+              return (
+                <div key={m.id} className="whitespace-pre-line">
+                  <span title={`Gõ trong app${m.author && m.author !== "(cũ)" ? ` · ${m.author}` : ""}${m.at ? ` · ${m.at}` : ""}`}
+                    className="mr-1 inline-block shrink-0 rounded border border-white/70 px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-white">{ai || "app"}</span>
+                  {veChu(m)}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
