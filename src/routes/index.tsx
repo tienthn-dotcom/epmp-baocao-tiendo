@@ -3406,29 +3406,42 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // hệt việc đang làm.
   //
   // ĐƯỜNG ĐI THẬT CỦA NÓ, đọc kỹ trước khi tin là có hàng rào nào đó (ghi chú cũ ở đây nói
-  // "KHÔNG đưa vào enriched/panelActive/KPI" — nửa sau CỦA CÂU ĐÓ SAI, xem bên dưới):
+  // "KHÔNG đưa vào enriched/panelActive/KPI" — nửa sau CỦA CÂU ĐÓ SAI, xem bên dưới).
+  // Dẫn theo TÊN HẰNG, không theo số dòng: bốn box sửa chung một cây nên số dòng trôi bất cứ lúc
+  // nào, và một số dòng lệch còn tệ hơn không có số — nó chỉ người đọc tới đúng một `useMemo`
+  // khác rồi để họ tưởng mình đang đứng đúng chỗ.
   //
   //  • `enriched` và `panelActive`: KHÔNG đụng. Đúng như ghi chú cũ. `showDone` đi vào
   //    `ganttSource` chứ không đi vào `panelActive`.
-  //  • `tableItems` (≈3767): CÓ nối `doneEnriched` vào. Mà `sortedAlerts` chảy ra từ `tableItems`,
-  //    còn KPI đầu trang thì ĐỌC `sortedAlerts`. Tức việc đã xong CÓ vào tới KPI — **không có
-  //    hàng rào nào chặn cả**.
+  //  • `tableItems`: CÓ nối `doneEnriched` vào. Mà `sortedAlerts` chảy ra từ `tableItems`, còn KPI
+  //    đầu trang thì ĐỌC `sortedAlerts`. Tức việc đã xong CÓ vào tới KPI — **không có hàng rào
+  //    nào chặn cả**.
   //
-  // Vậy vì sao số vẫn không nhảy? Vì hai lý do KHÁC NHAU, và chỉ lý do đầu là chắc:
+  // Vậy vì sao số vẫn không nhảy? Ba số cảnh báo thì CHẮC, còn số dự án thì tuỳ dữ liệu:
   //
-  //  1. Ba số Trễ / Cần cắt / Cần tập trung đếm `_alert` trên `sortedAlerts`. Việc đã xong không
-  //     mang nhãn cảnh báo nào nên không cộng vào đâu. ĐÃ ĐO 28/09/2026 trên 69 dự án thật: bật
-  //     nút lên hiện thêm 199 đầu việc 100%, sáu số đầu trang đứng yên tuyệt đối
-  //     (69·79·59·90·7·36), đo cả nhánh không lọc lẫn nhánh có lọc.
-  //  2. `tableProjectCount` (≈4343) rẽ hai nhánh. Không lọc thì lấy `activeProjectCount`, độc lập
-  //     hẳn, an toàn tuyệt đối. CÓ LỌC thì đếm số dự án khác nhau trong `sortedAlerts` — và nhánh
-  //     này VỀ NGUYÊN TẮC CÓ THỂ ĐỔI: nếu tồn tại một dự án mà MỌI đầu việc đều đã xong thì nó
-  //     chỉ hiện khi bật nút, và số dự án tăng lên. Hôm nay không có dự án nào như vậy (69 → 69),
-  //     nên số đứng yên — nhưng đó là tính chất của DỮ LIỆU hôm nay, không phải của code.
+  //  1. CHẮC, VÌ CODE CHẶN — không phải vì dữ liệu may. Ba số Trễ / Cần cắt / Cần tập trung đếm
+  //     `_alert` trên `sortedAlerts`, mà việc đã xong bị loại khỏi mọi nhãn ở **ba chỗ độc lập**
+  //     ngay trong khối dựng `alertKind` phía trên: `isDone` đứng trong `forcedLate`, đứng ở
+  //     nhánh thứ hai của `alertKind` (TRƯỚC cả `forcedLate`), và đứng trong `alertColor`. Việc
+  //     đã xong luôn ra `"none"`, nên không cộng vào ba số đó được.
+  //     ĐỐI CHỨNG bằng phép đo 28/09/2026 trên 69 dự án thật: bật nút lên hiện thêm 199 đầu việc
+  //     100%, sáu số đầu trang đứng yên (69·79·59·90·7·36), đo cả nhánh lọc lẫn không lọc. Phép
+  //     đo chỉ để XÁC NHẬN cái code đã bảo đảm, đừng dùng nó làm lý do chính.
+  //  2. TUỲ DỮ LIỆU — `tableProjectCount` rẽ **BA** nhánh, và **HAI** trong ba mang cùng một rủi ro:
+  //       (a) `filters.mpOnly` → `mpProjectRows.length`. Rủi ro: `mpProjectRows` lọc bằng
+  //           `hasCtx ? r.active > 0 : true`, mà `active` đếm từ `tableItems` — tức CÓ việc đã
+  //           xong. Dự án nào mà mọi đầu việc khớp lọc đều đã xong thì `active = 0` khi tắt nút và
+  //           hiện lên khi bật. Số dự án tăng.
+  //       (b) có lọc → đếm số dự án khác nhau trong `sortedAlerts`. Cùng rủi ro: dự án toàn việc
+  //           đã xong chỉ xuất hiện khi bật nút.
+  //       (c) còn lại → `activeProjectCount`. Độc lập hẳn, an toàn tuyệt đối.
+  //     Hôm nay không có dự án nào toàn việc đã xong (69 → 69) nên số đứng yên — nhưng đó là tính
+  //     chất của DỮ LIỆU hôm nay, không phải của code.
   //
-  // → Ai sau này thấy "Dự án hiện hành" nhảy số khi bật/tắt nút thì tìm ngay ở mục 2, đừng đi mò
-  //   lại từ đầu. Và đừng viết lại ghi chú này thành "đã chặn khỏi KPI": nói thế là dựng ra một
-  //   hàng rào chưa từng tồn tại, rồi người sau yên tâm vì một lý do sai.
+  // → Thấy "Dự án hiện hành" nhảy số khi bật/tắt nút thì tìm ở mục 2, và nhớ soi CẢ nhánh (a):
+  //   ở chế độ gộp theo dự án, `sortedAlerts` không tham gia nên soi nhánh (b) sẽ không ra gì.
+  //   Và đừng viết lại ghi chú này thành "đã chặn khỏi KPI": nói thế là dựng ra một hàng rào chưa
+  //   từng tồn tại, rồi người sau yên tâm vì một lý do sai.
   // MẶC ĐỊNH BẬT: mở app là thấy đủ đầu việc, kể cả việc đã xong. Ai muốn gọn thì tắt đi, và lựa
   // chọn đó nhớ RIÊNG TỪNG MÁY — giống hệt cách bề rộng cột đang nhớ (xem LS_COLW).
   //
