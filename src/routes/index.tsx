@@ -8393,7 +8393,8 @@ function fmtDateTimeVN(iso: string | null | undefined): string {
  *  tuân thủ ("quá 7 ngày = không cập nhật"): càng nhiều chu kỳ bỏ lỡ càng đỏ. */
 /** Chip ngày update. `fpAt` = ngày SỐ LIỆU thật sự đổi (app tự chấm bằng vân tay dòng), khác với
  *  `date` là ngày người ta gõ tay trong nguồn. Hai thứ lệch nhau chính là chỗ cần nhìn: khai vừa
- *  cập nhật mà số không nhúc nhích thì chip đeo thêm dấu ⌀ và nói rõ trong chú thích. */
+ *  cập nhật mà số không nhúc nhích thì chip đeo VIỀN VÀNG và nói rõ trong chú thích.
+ *  (Trước 28/09/2026 chỗ này còn hiện thêm ký tự "⌀" — đã bỏ, xem ghi chú tại `khaiSuong`.) */
 function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; today: string; fpAt?: string }) {
   if (!date && !fpAt) return <span className="text-[9px] text-slate-300">—</span>;
   const cachNgay = (iso: string) => Math.round(
