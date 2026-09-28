@@ -12,114 +12,98 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V4b · Xuất Excel đạt CHẤT LƯỢNG ngang bản PDF**
-Plan mở 28/09/2026, viết lại theo chuẩn người dùng giao trực tiếp.
+**V5 · Mặc định HIỆN TẤT CẢ đầu việc, và nhớ lựa chọn của từng máy**
+Plan mở 28/09/2026. Yêu cầu từ người dùng, sếp của họ chốt.
 
----
+*Vừa lên production 28/09:* v3.110.0 (`c4d8be55`) - Excel ô thật + phần nhìn + đồng hồ đo lượt ghi. Đã xác nhận `crypto.subtle` chạy được trên Workers (mã băm thật `cf5c0c99fb92` lúc 04:12:43), Worker 121 lượt 0 lỗi.
 
-## ⚠ CHUẨN NGHIỆM THU LÀ CỦA NGƯỜI DÙNG, KHÔNG PHẢI CỦA ĐẶC TẢ NÀY
-
-Nguyên văn: *"tôi muốn file excel phải đẹp như PDF luôn, về màu sắc, bố cục, nói chung là nâng cấp cho xuất excel để ra kết quả chất lượng"*.
-
-**Cách chấm:** mở file Excel xuất ra đặt CẠNH bản PDF xuất ra cùng lúc, cùng bộ lọc. Người thứ ba nhìn hai cái phải thấy **cùng một báo cáo, cùng một bộ màu, cùng một bố cục**. Chấm bằng mắt trên file thật, không chấm bằng test xanh.
-
-**V4a (`c188f92`) MỘT MÌNH KHÔNG ĐẠT CHUẨN NÀY** - và đó không phải lỗi của Thực thi. V4a sửa một thứ **đang sai** (sắp xếp ngày ra thứ tự chữ cái) nhưng **người dùng mở file ra gần như không thấy khác**. Nó là nền cho V4b, không phải câu trả lời cho yêu cầu.
-→ **Không deploy V4a một mình.** Ghép với V4b rồi lên một lần.
+*Hàng đợi:* **V6** lọc trong báo cáo tuân thủ (đặc tả đầy đủ ở cuối mục ①) · **V4c** dải thẻ KPI đầu file Excel (người dùng CHƯA quyết) · ba nợ gọn gàng ở `55a11bc`.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Nâng phần nhìn của file Excel xuất ra: màu, bố cục, và bản in - ngang chất lượng bản PDF.
+Đổi mặc định của "Hiện tất cả đầu việc" từ **tắt** sang **bật**, và nhớ lựa chọn riêng của từng máy - giống hệt cách bề rộng cột đang nhớ.
 
 **VÌ SAO CẦN**
-Người dùng gửi file này cho người khác đọc. PDF đẹp vì nó **chụp ảnh nguyên bảng web** (`pdf-export.ts`, `html2canvas`) nên giống app y hệt. Excel dựng từ ô nên hiện đang khô: chữ ghi chú **bị cắt cụt**, không chú giải, không thanh tiến độ, in ra vỡ trang.
+Nguyên văn người dùng: *"setup mặc định của ePMP là hiện tất cả đầu việc (tức gồm cả xong) nha. Còn ai muốn đổi thì có thể đổi, và nếu setup đổi (ẩn đã xong) thì lần sau máy đó vô lại cũng y vậy. Tức nó giống tính năng bề rộng cột."*
 
-**THẲNG THẮN VỀ MỘT ĐIỂM:** không thể làm Excel **giống hệt từng pixel** với PDF, vì PDF là ảnh còn Excel là ô. Nhưng **"đẹp ngang" thì làm được**, và đó mới là thứ người dùng yêu cầu. Excel còn hơn PDF hai thứ: lọc được và sửa được. Đích là một file mà người nhận mở ra thấy **chỉn chu như một báo cáo**, không phải như một bảng dữ liệu thô.
+Hiện `const [showDone, setShowDone] = useState(false)` (`index.tsx:3402`) - tắt cứng, và **không nhớ gì cả**: ai bật lên, tải lại trang là mất.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-Mở file ra: khối tiêu đề đậm, hàng tiêu đề cột nổi bật, dòng dự án có dải màu riêng tách khỏi dòng công đoạn, ô ghi chú **hiện đủ chữ**, cột % có thanh màu chạy trong ô, cuối bảng có chú giải màu. Bấm Ctrl+P ra bản in gọn gàng, lặp tiêu đề mỗi trang.
+Mở app lần đầu: thấy **đủ** đầu việc, kể cả việc đã xong. Ai muốn gọn thì tắt nút đi, và **lần sau vào vẫn gọn** trên đúng máy đó. Máy khác, người khác không bị ảnh hưởng.
 
 **PHẠM VI**
-- Trong: `src/lib/excel-export.ts` → `exportTableXlsx`. Và chỗ khai `cols` trong `src/routes/index.tsx` (`onExportExcel`, ~4597) nếu cần thêm thuộc tính cột.
-- NGOÀI: không đổi **danh sách cột**, không đổi **thứ tự cột**, không đổi dữ liệu, không bỏ ẩn dòng con, không đụng `exportMatrixXlsx`, không đụng đường PDF.
-
-**BẢY VIỆC, xếp theo mức người dùng cảm nhận được**
-
-**1. Chữ hết bị cắt cụt — NẶNG NHẤT, làm trước.**
-`row.height = 20/18` đang đặt cứng, trong khi cột Vướng mắc (rộng 48) và Giải pháp (rộng 48) đều bật xuống dòng. Excel **chỉ tự giãn chiều cao khi hàng KHÔNG có chiều cao đặt tay**. Bỏ `row.height` ở dòng có cột wrap, hoặc tự tính theo số dòng chữ ước lượng. Đây là thứ hỏng rõ nhất khi đặt cạnh PDF.
-
-**2. Dải màu dòng dự án, lấy ĐÚNG màu của app.**
-Bảng màu app đang dùng (`index.tsx` ~7509, hằng `GC`) và bảng màu Excel hiện có phải **khớp nhau**:
-```
-thanh tieu de / header : #334155  (GC.headerBg)      Excel dang dung #16202E / #1E293B -> thong nhat
-dong du an             : #334964  (GC.bar)
-dong du an DA BAN GIAO : #059669  giu nguyen
-nen dong con           : #F8FAFC  (GC.childBg)  -> hien Excel de trang, cho no dai mau nhat
-hang qua han           : nen #FCEFDD, mep #E0A458  (GC.overdueBg / overdueEdge)
-trang thai do/vang/xanh: #EF4444 / #F59E0B / #059669  giu nguyen
-```
-Thực thi **tự đọc lại hằng `GC`** để lấy số chính xác, đừng chép từ đây - đây là bản ghi lúc Plan đo, có thể lệch.
-
-**3. Ô "% thực tế" có thanh màu trong ô.**
-`ws.addConditionalFormatting` kiểu `dataBar`, màu `#5EE9B5` - **đúng màu "% đã hoàn thành" của Gantt** (`GC.done`). Đây là thứ gần nhất với thanh tiến độ của PDF mà Excel làm được thật.
-**Chỉ chạy được nhờ V4a** - data bar cần ô SỐ. Đây là lý do V4a phải đi cùng chứ không lên riêng.
-
-**4. Cột "Quá hạn" tô thang màu** từ nhạt tới đỏ đậm, hoặc tô nền đỏ khi vượt ngưỡng. Lấy ngưỡng đang dùng trong app, đừng tự đặt số mới.
-
-**5. Khối chú giải cuối bảng**, đúng chữ như chú giải trên app:
-```
-Trễ tiến độ  ·  Cần cắt đầu việc  ·  Cần tập trung  ·  Đã hoàn thành
-```
-Mỗi mục một ô tô đúng màu của nó. PDF có, Excel chưa.
-
-**6. Đóng băng thêm CỘT.** Hiện chỉ `ySplit: 3`. Thêm `xSplit` qua cột "Tên dự án / Hạng mục" → cuộn sang phải đọc Vướng mắc vẫn thấy đang ở dự án nào. PDF không cần vì in ra thấy cả trang.
-
-**7. Thiết lập trang in** (`ws.pageSetup`): A4 **ngang**, `fitToPage` + `fitToWidth: 1`, lặp hàng tiêu đề mọi trang (`printTitlesRow: "3:3"`), lề hẹp, đánh số trang ở chân. Đây là thứ trả lời thẳng câu "đẹp như PDF": người nhận bấm in trong Excel ra bản gần giống bản PDF.
+- Trong: `src/routes/index.tsx` - dòng khai `showDone` (~3402) và chỗ `onToggleDone` (~4596).
+- NGOÀI: **không** đổi luật lọc, **không** đổi cách tính KPI, **không** đụng `showHidden` (đó là việc khác, của admin), không đụng bề rộng cột.
 
 **DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-- Hằng `GC` nằm **trong** component ở `index.tsx`, không export. Muốn Excel dùng chung màu thì phải **kéo ra một chỗ dùng chung** - và kéo ra là đụng cả bảng Gantt đang chạy. Nếu Thực thi thấy rủi ro thì **chép giá trị màu sang `excel-export.ts` kèm ghi chú trỏ về nguồn**, đừng kéo bừa. Báo Plan biết đã chọn đường nào.
-- `exportMatrixXlsx` nằm cùng file nhưng là đường khác. Đừng sửa lây.
-- `STATUS_FILL` đang dùng cho ô Tình trạng - đổi nó là đổi cả chỗ khác trong hàm.
+`showDone` là đầu vào của **bốn** khối tính: `doneEnriched` (3404), bộ lọc bảng (3767), `panelActive` (3913), và bảng Gantt. Đổi giá trị mặc định là đổi thứ **bốn** chỗ đó nhận ngay từ lượt vẽ đầu tiên.
+Đáng chú ý: KPI ở đầu trang có đếm theo tập đang hiện không? Nếu có thì đổi mặc định là **đổi con số trên đầu trang** - Thực thi phải kiểm và **báo Plan** nếu thấy vậy, đừng âm thầm để số nhảy.
 
 **RÀNG BUỘC**
-1. **Không đổi dữ liệu, chỉ đổi cách trình bày.** Việc này không được làm sai một con số nào.
-2. Ô trống vẫn phải **trống** - data bar và thang màu **không được vẽ gì** ở ô chưa có số. Vẽ thanh dài 0 ở ô chưa đo là biến "chưa đo" thành "0%" bằng hình ảnh. Luật 5.2 áp cả cho phần nhìn.
-3. Dòng con **vẫn ẩn sẵn, vẫn nhóm lại được để bấm xổ** - người dùng đã chốt, đừng đổi.
-4. File không được phình quá mức. Đo dung lượng trước và sau.
-5. Màu phải **lấy từ app**, không tự chế bảng màu mới.
+1. **Chép đúng khuôn bề rộng cột** (`index.tsx` ~6162): `useState` giữ mặc định cho lượt vẽ ĐẦU, rồi `useEffect` nạp bản đã lưu SAU khi gắn vào trang. Chú thích tại chỗ đó nói rõ vì sao: lượt vẽ đầu phải khớp máy chủ, không thì lệch hydration.
+2. Khoá lưu đặt tên theo lối đang dùng, **thêm hậu tố phiên bản** như các khoá khác.
+3. Đọc hỏng, dữ liệu rác, hoặc trình duyệt chặn lưu trữ → **rơi về mặc định BẬT**, không được ném lỗi. Bọc `try/catch` cả đọc lẫn ghi.
+4. **Không ghi gì lên KV.** Đây là lựa chọn của từng máy, đúng chỗ của `localStorage`. Thêm một đường ghi KV ở đây là 10-17 người nhân lên mỗi lần bấm.
+5. Không đổi chữ trên nút.
 
 **ĐÃ ĐO TRƯỚC** (Plan 28/09/2026)
 ```
-exportTableXlsx      : src/lib/excel-export.ts dong 590-681
-Da co san            : thanh tieu de, dong pham vi loc, header dong bang ySplit 3, autoFilter,
-                       to mau Tinh trang, to do o ngay ket thuc qua han, outline nhom dong con
-Dang THIEU           : chieu cao tu gian, dai mau dong con, data bar, thang mau Qua han,
-                       chu giai, xSplit, pageSetup
-Duong PDF            : pdf-export.ts - html2canvas chup anh bang web, cat theo ranh gioi hang, A4
-Bang mau app         : index.tsx ~7509, hang GC (KHONG export)
-Bang mau Excel       : excel-export.ts, STATUS_FILL + cac ma argb roi rac trong exportTableXlsx
+showDone khai tai : index.tsx:3402  useState(false)  -- tat cung, KHONG nho
+showDone dung tai : 3404 doneEnriched · 3767 bo loc bang · 3913 panelActive · 4596 truyen xuong
+Khuon de chep     : index.tsx ~6162 flatColW/groupColW — localStorage, nap SAU mount
+Khoa dang dung    : LS_COLW, LS_COLW_GROUP
 ```
 
 **CHỖ CÒN MƠ HỒ**
-Mục 4 (ngưỡng Quá hạn) - Plan **chưa đo** ngưỡng app đang dùng. Thực thi đọc `OD_ALERT_DAYS` trong `lib/filter` rồi dùng đúng số đó; thấy có nhiều ngưỡng khác nhau thì **báo Plan**, đừng tự chọn một cái.
+Người đã quen bảng gọn sẽ mở app thấy dài ra và tưởng hỏng. Plan cho rằng **không cần báo gì trên giao diện** - người dùng đã dặn "đừng hiện mấy dòng chữ mà chỉ admin mới cần biết". Thực thi thấy cần thì hỏi, đừng tự thêm.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-Chấm bằng **file thật đặt cạnh nhau**, không chấm bằng test xanh.
-1. Xuất **cùng lúc** một bản PDF và một bản Excel, **cùng bộ lọc**. Mở cạnh nhau. Nêu rõ chỗ nào còn khác.
-2. Ô Vướng mắc dài nhất trong file: **hiện đủ chữ**. Trước: cụt. Nêu cụ thể dự án nào, trước bao nhiêu dòng chữ, sau bao nhiêu.
-3. Ctrl+P trong Excel: vừa **một trang bề ngang**, tiêu đề **lặp** ở trang 2 trở đi.
-4. Cuộn sang phải tới cột Giải pháp: vẫn thấy tên dự án.
-5. Ô % chưa có số: **không có thanh màu nào**. Đây là ràng buộc 2, soi thẳng file.
-6. Màu dòng dự án và màu trạng thái **khớp mắt** với bảng trên app.
-7. Dung lượng file trước và sau.
-8. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
-9. Không có đường ghi KV nào. Lượt ghi **không đổi**.
-
-**GỬI KÈM CHO NGƯỜI DÙNG:** khi báo xong, đính **chính file Excel xuất ra** để người dùng tự nhìn. Yêu cầu này chấm bằng mắt, mô tả bằng chữ không thay được.
+1. Xoá sạch lưu trữ của trình duyệt rồi mở app → thấy **đủ** đầu việc, nút ở trạng thái bật.
+2. Tắt nút đi, **tải lại trang** → vẫn tắt. Đây là phép đo chính.
+3. Mở ở **cửa sổ ẩn danh** → về lại mặc định bật. Chứng minh là lưu theo máy chứ không theo tài khoản.
+4. Dựng hỏng dữ liệu đã lưu (ghi bừa một chuỗi) rồi mở app → **không trắng bảng**, rơi về mặc định.
+5. **Số trên đầu trang trước và sau phải KHỚP** (hoặc nêu rõ nếu đổi và vì sao).
+6. Lượt ghi KV mỗi lần mở app: **không đổi**.
+7. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ · thêm phép kiểm cho hàm đọc/ghi lựa chọn.
 
 ---
+
+## HÀNG ĐỢI — V6 · Lọc trong báo cáo tuân thủ
+
+**VIỆC**
+Thêm bộ lọc theo cột cho bảng **Báo cáo tuân thủ**, và bản PDF xuất ra chứa **đúng phần đã lọc**.
+
+**TIN TỐT, ĐÃ ĐO:** việc này **nhẹ hơn nhiều** so với vẻ ngoài, vì hai thứ đã có sẵn:
+1. Bảng đã có **một** bộ lọc theo Vùng, chảy qua đúng một cửa: `baseRows` (`index.tsx:8957`). Mọi thứ khác (`byPm`, `byVung`, bảng) đều dựng TỪ `baseRows`.
+2. Hàm xuất PDF chụp `tableRef.current` - tức **chính cái bảng đang hiện trên màn hình**. Nên **lọc gì thì PDF ra nấy, tự động**, không phải làm thêm gì.
+→ Chỉ cần nối bộ lọc mới vào `baseRows`. **Không dựng đường lọc thứ hai**, không đụng hàm xuất PDF.
+
+**Các cột lọc được** (từ `ComplianceFileRow` trong `compliance-file.ts:14`):
+```
+vung        Vung            -> DA CO, giu nguyen cach lam
+pm          Nguoi phu trach -> chon nhieu, giong bo loc PM ben bang chinh
+name        Ten du an       -> o go chu, khop khong dau
+needsMp     Can lap MP moi  -> co / khong
+score       Diem            -> theo nguong, hoac nhom RAG (>=80 / 50-79 / <50)
+countX      So lan khong CN -> theo nguong
+```
+Plan **chưa hỏi người dùng** cột nào cần nhất. Thực thi làm `pm` + `name` + `needsMp` trước (ba cái rõ ràng nhất), rồi Plan hỏi người dùng về `score`/`countX` - **đừng tự chọn ngưỡng**, đó là mục 7.2 của NEN-TANG.
+
+**RÀNG BUỘC**
+1. Nhiều bộ lọc cùng bật thì **giao nhau** (và), không phải hợp.
+2. Lọc xong còn **0 dòng** thì hiện bảng rỗng cho biết, **không** âm thầm bỏ lọc để lấp đầy.
+3. Điểm trung bình của PM ở góc trên phải tính **trên phần đã lọc** - vì `byPm` vốn dựng từ `baseRows`. Đây là hệ quả đúng: lọc 3 dự án thì điểm là của 3 dự án đó. Nhưng **phải nói rõ trên bản PDF là đang lọc gì**, kẻo người nhận tưởng đó là điểm cả kỳ.
+4. Không ghi gì lên KV.
+
+**CÁCH BIẾT LÀ ĐÚNG**
+Lọc một PM → bảng chỉ còn dự án của PM đó → bấm Xuất PDF → **file PDF cũng chỉ có ngần ấy dòng**, và có ghi phạm vi lọc. Đây là phép đo chính, làm trên file thật.
+
+---
+
+
 
 
 
