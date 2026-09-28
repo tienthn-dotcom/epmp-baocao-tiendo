@@ -129,27 +129,69 @@ Nhánh A ra bản sửa, nhánh B ra số chứng minh bản sửa đáng giá b
 
 ---
 
+---
 
+## HÀNG ĐỢI — V12 · Ô vướng mắc cấp dự án chỉ hiện MỘT tin, tin cũ TỰ ẨN
 
+Người dùng chốt 28/09/2026, và chọn cách **app tự ẩn** thay vì bấm tay.
 
+**ĐÂY LÀ VIỆC APP TỰ SỬA DỮ LIỆU CỦA NGƯỜI DÙNG.** Khác hẳn mọi việc trước, nên đặc tả này chặt hơn. Đoán sai luật là **giấu mất ghi chú của người khác** mà họ không biết.
 
+**Nguyên văn người dùng:**
+*"dữ liệu bên app nhập vào là ngày 23/09, mà trong ngày 25/09 có thông tin mới, tôi update vào, thì show lên thông tin mới hơn (tức là 25/09) mới là đúng... rồi cỡ tuần sau thông tin mới hơn được sync qua, là ngày 28/09 đi, thì khi sync qua ẩn cái cmt ngày 25/09 là đủ"*
+và *"tôi muốn là vướng mắc cấp dự án chỉ có 1 cmt, nên nếu có thông tin mới thì ưu tiên chiếu 1 thông tin mới, trừ khi tôi bỏ ẩn thì mới hiện 2 cmt"*.
 
+### LUẬT
 
+Trên **dòng cấp dự án**, ô Vướng mắc chỉ còn **một tin đang hiện**: tin **mới nhất**. Mọi tin cũ hơn bị **ẩn** (không xoá). Bỏ ẩn thì hiện lại đủ.
 
+### CHỖ KHÓ NHẤT, ĐỌC KỸ
 
+Có **hai loại tin** và chúng không ẩn được như nhau:
 
+```
+tin NGUON (id = MSG_NGUON) : tong hop tu file nguon moi luot ve, KHONG nam trong kho
+                             -> KHONG an duoc bang duong an thong thuong
+tin NGUOI DUNG go          : nam trong kho edits -> an duoc
+```
 
+→ **Chỉ tự ẩn TIN NGƯỜI DÙNG.** Tin nguồn luôn hiện.
+Khớp đúng luồng người dùng kể: khi nguồn sync tin mới hơn (28/09), thứ cần ẩn là **tin app 25/09**, chứ không phải ngược lại.
 
+### SO SÁNH THEO CÁI GÌ
 
+Mỗi tin có mốc `at`. Tin nguồn lấy `at` = ngày cập nhật của dòng dự án.
+Tin người dùng **cũ hơn tin mới nhất** (dù tin mới nhất là của nguồn hay của người) thì ẩn.
 
+### BẢY RÀNG BUỘC, thiếu một là KHÔNG ĐẠT
 
+1. **CHỈ ẨN, TUYỆT ĐỐI KHÔNG XOÁ.** Bỏ ẩn phải lấy lại nguyên vẹn.
+2. **KHÔNG BAO GIỜ ẨN TIN MỚI NHẤT.** Kể cả khi mốc `at` trống hoặc đọc không ra. Không chắc thì **không ẩn**.
+3. **CHỈ áp cho DÒNG CẤP DỰ ÁN.** Dòng đầu việc giữ nguyên, nhiều tin vẫn hiện đủ.
+4. **CHỈ ghi khi THẬT SỰ có gì đổi.** Chạy lần hai trên cùng dữ liệu phải ghi **0 lượt**. Hội tụ rồi thì im.
+5. **Hai cổng bắt buộc**: `if (dataMode === "demo") return;` và `if (dangTaiKho > 0) return;` — xem L5, L6. Thiếu là **KHÔNG ĐẠT dù test xanh hết**.
+6. **Đo lượt ghi KV thêm vào.** Đây là đường ghi MỚI, chạy trên khoảng 85 dự án, trần 1.000 lượt/ngày. Nêu số: lượt đầu sau khi lên tốn bao nhiêu, ngày thứ hai tốn bao nhiêu (phải gần 0).
+7. **Đi qua bộ đếm `demGhiKv`.** Nhánh A vừa thêm một điểm mù vào bảng đếm, đừng thêm cái thứ hai.
 
+### CHỖ CÒN MƠ HỒ — HỎI PLAN, ĐỪNG TỰ QUYẾT
 
+- Hai tin **cùng mốc ngày** thì giữ cái nào?
+- Tin người dùng **không có mốc `at`** thì coi là cũ hay mới?
+- Người dùng **đã bỏ ẩn** một tin cũ, lần sau có tin mới hơn nữa thì có **ẩn lại** không? Ẩn lại là cãi lại thao tác tay của họ.
 
+Ba câu này Plan **chưa hỏi người dùng**. Thực thi gặp thì **dừng và báo**, đừng chọn bừa.
 
+### CÁCH BIẾT LÀ ĐÚNG — dựng đúng ca người dùng kể, trên app thật
 
+1. Gõ tin 23/09 → hiện 1 tin.
+2. Gõ tin 25/09 → ô hiện **đúng 1 tin là 25/09**; tin 23/09 ẩn nhưng **còn trong kho**.
+3. Bỏ ẩn → hiện **2 tin**.
+4. Nguồn sync tin 28/09 → ô hiện **đúng tin nguồn**; tin 25/09 ẩn.
+5. Tải lại trang, không làm gì → **0 lượt ghi KV thêm**.
+6. Dòng đầu việc: nhiều tin **vẫn hiện đủ**, không bị ẩn cái nào.
+7. Bản xuất PDF và Excel hiện đúng thứ ô trên bảng hiện.
 
-
+**PHẢI GỬI PLAN TRƯỚC KHI DEPLOY:** số dự án bị ẩn bớt tin ở lượt chạy đầu. Con số đó lớn bất thường thì **DỪNG**, vì nghĩa là luật đang ẩn nhầm.
 
 ---
 
