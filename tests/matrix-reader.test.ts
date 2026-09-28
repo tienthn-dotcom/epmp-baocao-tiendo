@@ -8,6 +8,19 @@ import * as XLSX from "xlsx";
  *  bắt được cờ chất lượng, KHÔNG phụ thuộc số cột vật tư. */
 const buf = readFileSync(fileURLToPath(new URL("./fixtures/minihotel-matrix.xlsx", import.meta.url)));
 const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+/**
+ * Mốc riêng cho phép kiểm cuối, thay vì nâng `testTimeout` toàn cục.
+ *
+ * Phép kiểm ấy đọc lại nguyên file 2,1 MB lần thứ hai nên nó nặng nhất cả bộ, và thời gian chạy
+ * **trôi nổi theo máy** chứ không phải mới chậm đi: cùng một commit, cùng một file nguồn, đo được
+ * 1.263 ms (máy box Review) · 5.943 ms (máy box Plan) · 6.140–8.352 ms (máy box Thực thi và máy
+ * này). Mốc mặc định của vitest là 5.000 ms, nên trên máy chậm nó đỏ mà chẳng có lỗi nào thật.
+ *
+ * Vì sao không nâng `testTimeout` toàn cục: làm thế là hạ ngưỡng cho cả hơn 400 phép kiểm để đỡ
+ * đúng một phép. Mốc riêng giữ ngưỡng chặt cho mọi phép còn lại, mà vẫn còn một mốc thật ở đây —
+ * chạm 20 giây thì đúng là có gì đó chậm đi và phải đi tìm.
+ */
+const HAN_DOC_LAI_FILE = 20_000;
 
 describe("matrix-reader · Mini Hotel thật", () => {
   const out = parseMatrixWorkbook(ab);
@@ -49,9 +62,12 @@ describe("matrix-reader · Mini Hotel thật", () => {
   });
 
   it("findMatrixSheets bỏ qua sheet không phải ma trận; sheet rỗng → ok:false", () => {
+    // Phép kiểm này đọc lại NGUYÊN file 2,1 MB lần thứ hai: `parseMatrixWorkbook` ở trên đã parse
+    // một lượt, còn `findMatrixSheets` cần chính đối tượng workbook nên phải có lượt riêng. Vì thế
+    // nó là phép kiểm nặng nhất cả bộ, và chi phí đó nằm TRONG vùng bấm giờ.
     const wb = XLSX.read(ab, { type: "array", cellFormula: true, cellDates: true });
     expect(findMatrixSheets(wb).length).toBe(5);
     const empty = readMatrixSheet({} as XLSX.WorkSheet);
     expect(empty.ok).toBe(false);
-  });
+  }, HAN_DOC_LAI_FILE);
 });
