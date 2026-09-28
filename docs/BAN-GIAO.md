@@ -12,74 +12,124 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V10 · Thôi tải lại file nguồn liên tục — bản viết lại lần 2**
-Plan mở 28/09/2026, **viết lại** sau khi Thực thi bác tiền đề bằng số đo.
+**V11 · GIẢM LAG — ba nhánh chạy SONG SONG**
+Plan mở 28/09/2026. Người dùng: *"cần 4 người ngồi lại phát triển cho app bớt lag"*.
 
-*Đang chạy trên production:* v3.112.0 (`a873f767`) - bộ lọc báo cáo tuân thủ + chốt chặn ảnh chụp rộng 0.
-*Hàng đợi:* V9 (gắn đồng hồ, hoãn nạp hộp thoại) · V4c · V7 · V1 · ba nợ gọn gàng.
-
----
-
-## ⚠ TIỀN ĐỀ CỦA BẢN ĐẦU ĐÃ BỊ BÁC — đọc trước khi làm
-
-Bản đầu (`24a3606`) bảo: hỏi `getLinkUpdatedAt` xem file sửa lần cuối lúc nào, chỉ tải lại khi mốc đó đổi. **Không làm được.** Thực thi đo trước khi viết dòng nào:
-
-```
-getLinkUpdatedAt(Master Plan, force:true) -> modifiedTime 2026-07-07T07:47:12Z  (gan 3 THANG truoc)
-Noi dung app dang hien                    -> cua HOM NAY
-Doi chung, file tuan thu                  -> 2026-09-28T06:44:55Z  = dung
-```
-Hàm chạy đúng. **Tín hiệu của riêng file Master Plan là thứ hỏng** - nhiều khả năng vì sheet kéo nội dung bằng công thức, nội dung đổi mà file không bị ghi nên Drive không nhích mốc.
-
-**Làm theo bản đầu thì app GHIM VĨNH VIỄN vào dữ liệu tháng 7** - không phải sai cái nhãn giờ, mà **sai số hạn trên bảng đánh giá PM**. Thực thi dừng đúng chỗ và không tự đổi cơ chế.
+**Đây là việc đầu tiên chạy song song.** Ba box nhận ba nhánh KHÔNG đụng nhau, làm cùng lúc, rồi gặp nhau ở cuối. Lý do đổi cách: dây chuyền tuần tự làm ba box rảnh trong lúc một box làm, và Plan đã để việc nằm chờ nhiều lần.
 
 ---
 
-## ① PLAN
+## ① PLAN — SỐ ĐO, chung cho cả ba nhánh
 
-**VIỆC**
-Chỉ làm một việc: **nới thời gian giữ dữ liệu đã tải** (`staleTime`, `gcTime`) của `gQuery`. **Không** hỏi `modifiedTime`. **Không** đặt lịch.
+### Đo trên app thật (máy chủ nội bộ, đã nóng máy, dữ liệu thật 83 dự án)
 
-**VÌ SAO ĐỦ**
-Người dùng phàn nàn: *"load lên liên tục thì bị lag"*. Plan đã đo: app để yên 25 giây thì **0 lượt gọi** - nó tải lại vì **thao tác**, không vì vòng chạy nền. Mà thứ khiến mỗi thao tác kéo theo một lần tải lại **chính là** `staleTime: 0, gcTime: 0`. Chặn ở đó là chặn đúng chỗ, và **không phụ thuộc vào một tín hiệu vừa chứng minh là hỏng**.
-
-**PHẠM VI**
-- Trong: đúng dòng `staleTime: 0, gcTime: 0` của `gQuery` trong `src/routes/index.tsx` (~1535).
-- NGOÀI: **không** thêm truy vấn nào, **không** gọi `getLinkUpdatedAt`, không đụng `resetPipeline`, không đụng nút "Làm mới", không đụng cache phía Worker, không đụng warmer.
-
-**BA CHỖ THỰC THI ĐÃ KIỂM HỘ — Plan ghi lại để khỏi kiểm lại**
-1. `resetPipeline` (`~1497`) gọi `removeQueries(["sheet-csv"])` - huỷ **tường minh**, không dựa vào `gcTime`. Nới `gcTime` không làm gãy nó.
-2. Nút "Làm mới" gọi `gQuery.refetch()` (`~1587`), mà `refetch` **bỏ qua** `staleTime`. Van thoát vẫn nguyên.
-3. **Ràng buộc "nhãn giờ phải đúng" TỰ ĐẠT.** `freshAt = liveData.fetchedAt`, và `fetchedAt` được đóng dấu lúc tải rồi **đi kèm dữ liệu** (`~1532`). Phục vụ từ cache thì nhãn tự già theo. Bản đầu lo chỗ này sẽ sai - thực tế nó đúng sẵn.
-
-**RÀNG BUỘC**
-1. **Nút "Làm mới" phải lấy bản mới NGAY**, không qua cache. Đây là van duy nhất còn lại sau khi bỏ `modifiedTime`, nên nó phải chắc.
-2. Nhãn "DỮ LIỆU TÍNH ĐẾN" phải là mốc của **dữ liệu đang hiện**. Thực thi nói nó đúng sẵn - **xác nhận lại bằng mắt**, đừng tin suông.
-3. **Không thêm đường ghi KV nào.** Việc này phải **giảm** lượt ghi: mỗi lần tải lại đang kéo theo 2 lượt ghi.
-4. Không đụng cơ chế nào khác. Đây là việc đổi **một** cặp con số.
-
-**CON SỐ: 5 PHÚT.** Plan chốt, Thực thi cứ làm; người dùng đổi sau nếu thấy chưa hợp.
-Lý do: dữ liệu đổi theo **tuần**, nên 5 phút là rất ngắn so với nhịp thật, mà đã đủ cắt sạch cảnh tải lại theo từng thao tác. Chọn dài hơn thì lợi thêm rất ít mà rủi ro "nhìn số cũ" tăng. `gcTime` để **dài hơn** `staleTime` - hết hạn mềm thì vẫn còn bản cũ để hiện ngay trong lúc lấy bản mới, thay vì trắng bảng.
-
-**ĐÃ ĐO TRƯỚC**
 ```
-Mot lan tai lai : fetchSheetXlsx 2.294 ms + saveMediaProjects 133 ms + saveInstallList 121 ms
-                  -> 2 luot ghi KV moi lan tai lai
-App de yen 25s  : 0 luot goi -> khong co vong chay nen
-getLinkUpdatedAt: 576-681 ms moi luot, va luot force:true ton 1 luot ghi KV (ghiFMeta)
-                  -> khong mien phi, va KHONG DUNG DUOC cho file nay (xem phan tien de)
+28 luot goi may chu luc mo app  ·  TONG THOI GIAN CHO 82.442 ms
+
+14.592 ms   listMediaProjects        <- quet Drive 5 cap
+ 5.718 ms   index.tsx
+ 5.050 ms   index.tsx
+ 4.657 ms   index.tsx
+ 4.609 ms   index.tsx
+ 4.581 ms   fetchUpdateHistory   ┐
+ 4.580 ms   fetchCompletedDates  │
+ 4.579 ms   fetchEdits           │  SAU luot, thoi gian GIONG HET NHAU
+ 4.579 ms   fetchMpFlags         │
+ 4.578 ms   fetchHiddenRows      │
+ 4.563 ms   fetchNoteAnchors     ┘
+ 4.046 ms   index.tsx
 ```
 
-**CÁCH BIẾT LÀ ĐÚNG**
-1. **Phép đo chính**: mở app, thao tác qua lại 5 phút, đếm số lần gọi `fetchSheetXlsx`. Nêu **cả hai** con số trước và sau.
-2. Bấm "Làm mới" → lấy bản mới **ngay**. Phép này quan trọng hơn phép 1: nó là van duy nhất.
-3. Nhãn "DỮ LIỆU TÍNH ĐẾN" khớp mốc dữ liệu đang hiện, kể cả khi phục vụ từ cache.
-4. Lượt ghi KV mỗi ngày **giảm**. Đo bằng bảng đếm D1.
-5. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
+**Sáu lượt trùng nhau tới từng mili giây = chúng KHÔNG chậm, chúng BỊ XẾP HÀNG.** Đây là nghẽn cổ chai, không phải 28 chỗ chậm riêng lẻ. Sửa cái đầu có thể kéo theo cả đám.
 
-**PHẢI NÓI VỚI NGƯỜI DÙNG KHI XONG:** sau khi PMO cập nhật file, người dùng thấy số mới **trong vòng 5 phút**, hoặc bấm "Làm mới" để thấy ngay. Đó là cái giá của việc hết lag, và người dùng phải biết trước chứ không phát hiện sau.
+### Đo trên production (Cloudflare, 1.476 lượt ngày 28/09)
+
+```
+CPU  p50    3.793 us  (3,8 ms)        <- Worker gan nhu khong tinh gi
+CPU  p99  100.400 us
+Cho  p50  206.038 us  (206 ms)        <- gap 54 lan CPU
+Cho  p99  12.813.716 us (12,8 GIAY)
+```
+
+Hai phép đo **độc lập, cùng chỉ một hướng**: Worker ngồi chờ bên ngoài. Và 12,8 giây khớp cỡ với 14,6 giây của `listMediaProjects`.
+
+### Thủ phạm số một, đã truy tới gốc
+
+`index.tsx` gọi `listMediaProjects` lúc mở app (`staleTime` 10 phút). Hàm đó (`can-media.functions.ts:308`) **đi sâu 5 cấp qua toàn bộ thư mục Media trên Drive**:
+
+```
+for (depth = 0; depth < 5; depth++) {
+  await driveListFilesByParents(level);     // goi Drive
+  await driveListFoldersByParents(level);   // goi Drive
+}
+```
+85 dự án × toà × phòng × (Hình ảnh|Video). Nó trả về **một danh sách tên dự án có ảnh** - dùng cho một dấu hiệu hiển thị. **14,6 giây cho một cái dấu.**
+Chạy lại mỗi 10 phút cho **từng người**; 10-17 người thì Drive bị gọi gần như liên tục.
+
+### Chỗ Plan CHƯA biết, nói thẳng
+
+- Bốn lượt `index.tsx` 4-5,7 giây **chưa truy được là gì**. Có thể là mã trang, có thể là server-fn khác. Chưa đo xong.
+- Số ở trên là **máy chủ nội bộ**, không phải production, và là **một máy** - máy của Plan. App **không có một phép đo thời gian nào** (`grep performance.now` ra rỗng) nên không ai biết máy người dùng thật ra sao.
+- Chưa biết `listMediaProjects` có thật sự chặn năm lượt kia không, hay chúng chờ vì lý do khác. **Đó là việc của nhánh B.**
 
 ---
+
+## BA NHÁNH, KHÔNG ĐỤNG NHAU
+
+### NHÁNH A — box THỰC THI — giết lượt quét Drive 14,6 giây
+
+**Việc:** `listMediaProjects` thôi quét Drive ở mỗi lượt mở app của mỗi người.
+
+Ba hướng, Thực thi chọn và **nói rõ vì sao chọn**:
+1. **Cron quét sẵn, lưu vào kho** - warmer chạy một lần, mọi người đọc kết quả. Đổi 14,6 giây của mỗi người thành một lượt quét mỗi ngày.
+2. **Hoãn tới khi cần** - chỉ gọi khi người dùng mở phần Media. Màn hình chính không cần biết dự án nào có ảnh ngay lúc mở.
+3. **Cả hai.**
+
+**Ràng buộc:**
+- Dấu hiệu "dự án có ảnh" **không được sai**. Mất một cái dấu thì chỉ khó chịu; **hiện sai** thì người ta mở ra rồi thấy trống, tệ hơn.
+- Nếu đi hướng 1: **không được thêm đường ghi KV nào chạy theo người dùng**. Cron ghi thì được, mỗi lượt mở app ghi thì không.
+- Không đụng `CanMediaDialog`, không đụng đường tải ảnh.
+
+**Cách biết là đúng:** đếm lại 28 lượt gọi lúc mở app. Nêu **cả hai** con số: tổng thời gian chờ trước và sau. Và xác nhận dấu hiệu "có ảnh" vẫn đúng trên ít nhất 5 dự án có ảnh thật và 5 dự án không có.
+
+### NHÁNH B — box TEST — đo cho ra chỗ nghẽn thật
+
+**Việc:** chứng minh hoặc bác bỏ giả thuyết "sáu lượt kia bị xếp hàng sau `listMediaProjects`".
+
+Đây **không phải** việc viết phép kiểm. Đây là việc đo. Bốn câu cần trả lời bằng số:
+1. Sáu lượt `fetch*` kia **bắt đầu** lúc nào, **kết thúc** lúc nào? Trùng thời gian vì xếp hàng, hay vì cùng chờ một thứ?
+2. Bốn lượt `index.tsx` 4-5,7 giây **là gì**? Plan chưa truy được.
+3. Bỏ `listMediaProjects` ra (chặn tạm ở máy) thì 27 lượt còn lại mất bao lâu? **Đây là phép đo quyết định** - nó nói cho cả đội biết nhánh A đáng giá bao nhiêu.
+4. Có lượt nào **chờ lẫn nhau** không - tức phải xong cái này mới chạy cái kia?
+
+**Không sửa code sản phẩm.** Đo xong báo số.
+
+### NHÁNH C — box REVIEW — gắn đồng hồ vào app
+
+**Việc:** app **không có một phép đo thời gian nào**. Mọi số của cả đội đều từ máy Plan. Gắn ba mốc, ghi vào bảng D1 sẵn có (đang dùng 0,65% hạn mức, **không đụng trần KV**): tải trang xong, dữ liệu về xong, đọc xong file nguồn.
+
+Đây là nhánh **quan trọng nhất về lâu dài**: không có nó thì lần sau lại đoán.
+
+**Ràng buộc:**
+- **Không bao giờ ném lỗi**, không chặn đường nào. Nó chạy ở mọi lượt mở app - hỏng thì bỏ qua, y như `demGhiKv`.
+- **Không ghi lên KV.** D1 thì được.
+- Không ghi thêm thứ nhận dạng cá nhân ngoài những gì nhật ký **đã** ghi.
+- Vai Review vốn không sửa code sản phẩm. Lần này **được phép**, vì đây là việc đo chứ không đổi hành vi, và vì cả đội đang mù. Nói rõ trong mục ④ là đã sửa gì.
+
+**Cách biết là đúng:** một ngày sau, một câu SQL ra được bảng thời gian **theo người và theo giờ**.
+
+---
+
+## GẶP NHAU Ở CUỐI
+
+Nhánh A ra bản sửa, nhánh B ra số chứng minh bản sửa đáng giá bao nhiêu, nhánh C ra đồng hồ để đo trên máy người dùng thật.
+**Không deploy nhánh nào một mình.** Gộp lại, Plan soát, rồi người dùng bấm.
+
+**Thứ tự nếu phải chọn:** A trước (cắt nhiều nhất), C ngay sau (để lần sau khỏi đoán), B chạy song song vì nó không đụng code.
+
+---
+
+
 
 
 
