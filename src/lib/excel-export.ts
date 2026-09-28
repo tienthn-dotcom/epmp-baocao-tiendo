@@ -666,7 +666,15 @@ export async function exportTableXlsx(opts: {
     // "bảng tính"; tắt đi, cùng với dải màu và khối tiêu đề, mới đọc ra "báo cáo". Bản PDF không có
     // lưới vì nó chụp giao diện web (card trắng trên nền xám), đây là chỗ Excel bám gần nó nhất.
     views: [{ state: "frozen", xSplit: 3, ySplit: 3, showGridLines: false }],
-    properties: { outlineLevelRow: 1, defaultRowHeight: 16 } as any,
+    // KHÔNG khai `defaultRowHeight` ở đây. Khai nó thì exceljs đóng thêm `customHeight="1"` vào
+    // `<sheetFormatPr>`, tức báo với Excel rằng chiều cao mặc định của sheet là do người đặt. Theo
+    // chuẩn thì cờ đó nói về MẶC ĐỊNH CỦA SHEET chứ không đánh dấu từng hàng, nên đáng lẽ không
+    // chặn việc tự giãn — nhưng "đáng lẽ" là thứ không kiểm được nếu không mở Excel thật, mà tự
+    // giãn chiều cao lại đúng là việc NẶNG NHẤT của vòng này (chữ ghi chú bị cắt cụt). Bỏ một
+    // thuộc tính trang trí để đổi lấy việc gỡ hẳn một khả năng hỏng thì đáng.
+    // Hàng không có chữ dài sẽ cao theo cỡ chữ thay vì 16pt — thấp hơn chút, chấp nhận được.
+    // NẾU CHỮ VẪN CỤT thì đừng quay lại đặt `row.height`: đặt lại là tái tạo đúng con bug.
+    properties: { outlineLevelRow: 1 } as any,
     pageSetup: {
       orientation: "landscape", paperSize: 9,              // 9 = A4
       fitToPage: true, fitToWidth: 1, fitToHeight: 0,      // vừa MỘT trang bề ngang, dài bao nhiêu trang cũng được
@@ -824,6 +832,12 @@ export async function exportTableXlsx(opts: {
   // Trên app đây là chip xám; trong file thì "đang triển khai" = ô Tình trạng ĐỂ TRỐNG, nên phải
   // nói ra chứ đừng để người đọc tự đoán ô trống nghĩa là thiếu dữ liệu.
   oMau(hangMau, 4, "Đang triển khai (ô trống)", MAU.nenCon, "FF1B1B1B");
+  // Ô này gần như trắng. Đứng cạnh ba ô đỏ/vàng/xanh đậm mà không có viền thì nó trông như một ô
+  // rỗng lỡ tay chứ không như một mục chú giải — thêm viền mảnh để nó ra hình một ô thật.
+  hangMau.getCell(4).border = {
+    top: { style: "thin", color: { argb: MAU.quaHanMep } }, bottom: { style: "thin", color: { argb: MAU.quaHanMep } },
+    left: { style: "thin", color: { argb: MAU.quaHanMep } }, right: { style: "thin", color: { argb: MAU.quaHanMep } },
+  };
   hangMau.getCell(5).value = "Màu nói MỨC NGHIÊM TRỌNG, không dính chết vào nhãn: cùng một nhãn có thể vàng khi dự án còn xa hạn và đỏ khi sắp bàn giao.";
   hangMau.getCell(5).font = { name: "Arial", italic: true, size: 9, color: { argb: "FF5B6B7E" } };
 

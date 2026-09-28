@@ -278,6 +278,22 @@ describe("phần nhìn — chỉ chốt được thứ máy soi được", () =>
     expect(WS.views?.[0]?.showGridLines).toBe(false);
   });
 
+  it("XML của sheet KHÔNG mang cờ customHeight — điều kiện cần của việc tự giãn", async () => {
+    // Soi THẲNG XML chứ không soi mô hình exceljs: đọc lại bằng exceljs thì nó tự điền
+    // defaultRowHeight mặc định, nên mô hình nói một đằng mà file nói một nẻo. Thứ Excel đọc là
+    // file. (Đã vấp đúng chỗ này lúc viết: phép kiểm soi mô hình đỏ trong khi file hoàn toàn đúng.)
+    const { unzipSync, strFromU8 } = await import("fflate");
+    const z = unzipSync(new Uint8Array(await (batDuoc as unknown as Blob).arrayBuffer()),
+      { filter: (f) => /worksheets\/sheet1\.xml$/.test(f.name) });
+    const xml = strFromU8(Object.values(z)[0]);
+    const fmt = /<sheetFormatPr[^>]*>/.exec(xml)?.[0] ?? "";
+    expect(fmt, "không thấy sheetFormatPr").toBeTruthy();
+    expect(fmt).not.toContain("customHeight");     // cờ này sinh ra từ defaultRowHeight
+    expect(fmt).toContain('outlineLevelRow="1"');  // nhóm xổ thì vẫn phải giữ
+    // Và hàng dữ liệu vẫn không được mang chiều cao đặt tay.
+    expect(/<row r="4"[^>]*>/.exec(xml)?.[0] ?? "").not.toContain("ht=");
+  });
+
   it("chú giải nêu đúng ngưỡng quá hạn đã truyền vào, không phải số tự chế", () => {
     let chu = "";
     for (let r = 8; r <= WS.rowCount; r++)
