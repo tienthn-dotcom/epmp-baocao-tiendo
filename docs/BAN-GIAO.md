@@ -103,6 +103,59 @@ Lọc một PM → bảng chỉ còn dự án của PM đó → bấm Xuất PDF
 
 ---
 
+---
+
+**PLAN GHI NHẬN SAU KHI TEST BÁO — 28/09/2026**
+
+**TIÊU CHÍ 7 CỦA ĐẶC TẢ NÀY: CHƯA ĐẠT, và Plan chấp nhận.**
+Đặc tả đòi "thêm phép kiểm cho hàm đọc/ghi lựa chọn". Test đo lại: `grep -ril showDone tests/` ra **rỗng**, và cả hai commit V5 không đụng thư mục `tests/`. Plan tự kiểm lại, đúng vậy.
+
+Nguyên nhân là **cấu trúc, không phải lười**: phép đọc/ghi nằm inline trong thân component, không export, nên **không có gì để gọi từ bộ kiểm**.
+
+Test **đúng khi không viết một phép kiểm chép lại logic** sang file kiểm — chép là tạo bản thứ hai rồi hai bản trôi xa nhau, đúng cái bẫy đã ghi nhận ở V4a (bộ kiểm tự khai lại danh sách cột). Thà thiếu một phép kiểm còn hơn có một phép kiểm nói dối.
+
+Hành vi đã được đo **trực tiếp trên app thật** qua ba lần tải trang, nên việc này không bị chặn. Nhưng phép đo ấy **làm tay, không tự lặp lại**.
+
+**ĐÂY LÀ LẦN THỨ BA CÙNG MỘT NGUYÊN NHÂN** - đủ để thành một việc riêng, không phải một dòng ghi chú nữa:
+```
+V4a  cho dung danh sach cot        nam trong callback JSX  -> bo kiem phai CHEP LAI
+V5   doc/ghi lua chon showDone     nam inline trong body    -> khong co gi de goi
+V5   tableProjectCount + pkItem    nam trong body           -> khong chot duoc bang phep kiem
+```
+
+---
+
+## HÀNG ĐỢI — V7 · Kéo ba mảnh logic ra khỏi thân component
+
+**VIỆC**
+Tách ba mảnh logic thuần ra khỏi thân `index.tsx` để bộ kiểm gọi được, **không đổi một hành vi nào**.
+
+**VÌ SAO CẦN**
+Ba vòng liên tiếp đều vấp cùng một chỗ, và mỗi lần đều kết thúc bằng "đo tay rồi ghi chưa kiểm được". Cái giá không phải là thiếu phép kiểm - mà là **mỗi lần sửa lại phải đo tay lại từ đầu**, và ai quên đo thì không có gì báo.
+
+**PHẠM VI**
+- Trong: kéo ra ba hàm **thuần** (nhận vào, trả ra, không chạm React):
+  1. đọc/ghi lựa chọn `showDone` từ kho của trình duyệt
+  2. dựng danh sách cột cho xuất Excel (đang nằm trong callback JSX, `onExportExcel`)
+  3. phép đếm số dự án của `tableProjectCount` + `pkItem`
+- NGOÀI: **không** đổi hành vi, **không** đổi giao diện, **không** gộp ba cái thành một, không đụng gì khác trong `index.tsx`.
+
+**RÀNG BUỘC**
+1. Đây là phép **dời chỗ tương đương**. Diff phải đọc được là "cắt ra, dán vào, gọi lại" - ai thấy mình đang *sửa* logic là đã đi quá.
+2. Bộ kiểm sau khi kéo ra phải **gọi đúng hàm thật**, không chép lại. Đó là toàn bộ mục đích.
+3. Riêng mảnh 2: khi có hàm thật rồi thì `tests/excel-o-that.test.ts` **bỏ mảng `COLS` tự khai** đi và gọi hàm - nếu không thì việc này chưa xong một nửa.
+4. Mảnh 3 chốt được trường hợp Test chỉ ra mà chưa chốt nổi: **một dự án mà MỌI đầu việc đều đã xong** thì ở nhánh có lọc, số dự án **sẽ tăng** khi bật nút. Đọc ra được từ code, hôm nay dữ liệu không có ca nào. Kéo ra rồi thì dựng dữ liệu tự tạo mà chốt.
+
+**CÁCH BIẾT LÀ ĐÚNG**
+1. `grep -ril showDone tests/` **ra kết quả** (trước: rỗng).
+2. `tests/excel-o-that.test.ts` **không còn** mảng cột tự khai.
+3. Không phép kiểm nào đang xanh bị đỏ, và **không con số nào trên app đổi**.
+4. Ba phép kiểm mới phải **đỏ trên bản chưa kéo** - nếu không thì chúng không kiểm gì cả.
+
+---
+
+
+
 
 
 
