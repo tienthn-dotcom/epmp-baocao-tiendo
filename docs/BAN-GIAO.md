@@ -137,151 +137,138 @@ Chấm bằng **file thật đặt cạnh nhau**, không chấm bằng test xanh
 
 ## ② THỰC THI
 
-> *Mục ② của V2b nằm ở commit `40eae6c`. **Đã nhận lỗi ① của Test ở vòng đó:** mục ② khai `index.tsx`
-> chỉ sửa CHANGELOG, thực tế commit còn đổi 16 dòng (2661–2676) từ LF sang CRLF, chiếm 30 trên 36
-> dòng diff. Không đổi hành vi nhưng đúng là không khai. Lần này đã soi trước khi commit:
-> `git diff --ignore-all-space` ra **đúng** 29/12 như diff thường, tức **không có một dòng nhiễu nào**.*
+> *Mục ② của V4a nằm ở commit `c188f92`. V4a và V4b lên cùng một lần nên gộp vào **đúng một mục
+> CHANGELOG `v3.110.0`** — tôi nối thêm ba dòng vào mục V4a đã có thay vì mở `v3.111.0` cho một bản
+> chưa từng ra riêng.*
 
-**ĐÃ LÀM**
+**ĐÃ LÀM — bảy việc của đặc tả, cộng hai thứ làm thêm**
 
 `src/lib/excel-export.ts`:
-1. Thêm `oNgay(iso)` — ISO → `Date`, không đọc được thì **`null`**. Xuất ra để bộ kiểm gọi thẳng.
-2. `XlsxTableRow.cells` từ `string[]` thành `XlsxCell[]` = `string | number | Date | null`.
-3. `columns[]` nhận thêm `numFmt?` — **định dạng hiển thị**, để giá trị là ngày/số thật mà bảng vẫn
-   nhìn y hệt bản cũ.
-4. Trong vòng ghi dòng: đóng `numFmt` cho ô **có giá trị**, ô trống thì để nguyên.
+1. **Chữ hết bị cắt.** Bỏ `row.height` ở mọi dòng dữ liệu. Ba dòng đầu vẫn đặt tay.
+2. **Bảng màu `MAU`** chép từ hằng `GC`, thay hết mã màu rời rạc: thanh tiêu đề và hàng tiêu đề cột
+   về `#334155`, dòng dự án `#334964`, dòng con `#F8FAFC`, hàng quá hạn nền `#FCEFDD` + mép trái
+   `#E0A458`.
+3. **Thanh màu trong ô "% thực tế"** — `dataBar` màu `#5EE9B5`, thang cố định 0–100.
+4. **Cột "Quá hạn" tô theo bậc** — hai luật `cellIs`: `>= 14` nền đỏ chữ trắng, `> 0` nền ấm.
+5. **Khối chú giải cuối bảng.**
+6. **Đóng băng thêm cột** — `xSplit: 3`.
+7. **Thiết lập trang in** — A4 ngang, `fitToPage` + `fitToWidth: 1` + `fitToHeight: 0`,
+   `printTitlesRow: "3:3"`, lề hẹp, căn giữa ngang, và **số trang ở chân** (`&C Trang &P / &N`).
 
-`src/routes/index.tsx` (`onExportExcel`):
-5. Ba cột ngày dùng `oNgay(...)` thay `fmtDateVN2(...)`; `% thực tế` đẩy số; `Quá hạn` đẩy số.
-6. Khai `numFmt` cho bốn cột đó: `dd/mm/yy`, `0"%"`, `0" ngày"`.
-7. Kéo `loadSplit(() => import("@/lib/excel-export"))` lên **trước** vòng dựng ô để mượn `oNgay`.
-   KHÔNG import tĩnh — làm thế là kéo `exceljs` vào gói chính, mất công tách gói.
-8. Thêm mục CHANGELOG `v3.110.0`.
+`src/routes/index.tsx`: truyền `pctColIndex` · `overdueColIndex` · `overdueAlertDays`; gắn cờ
+`overdue` cho từng đầu việc; nối ba dòng vào mục CHANGELOG `v3.110.0`.
 
-`tests/excel-o-that.test.ts` — **mới**, 12 phép kiểm.
+`tests/excel-o-that.test.ts`: 12 → **21** phép kiểm. `tests/excel-mau-khop-app.test.ts`: **mới**, 10 phép.
+
+**HAI THỨ LÀM THÊM NGOÀI BẢY MỤC** — Plan nói cứ làm cho đạt chuẩn rồi khai:
+- **Số trang ở chân trang in.** Mục 7 không nhắc. Bản in 8 trang mà không đánh số thì rời ra là lẫn,
+  mà "đẹp như PDF" thì phải in được ra tử tế.
+- **Phép kiểm chống trôi bảng màu** (`excel-mau-khop-app.test.ts`). Nó đọc thẳng hằng `GC` trong
+  `index.tsx` bằng regex rồi so với `MAU`, và chốt luôn là `index.tsx` truyền `OD_ALERT_DAYS` chứ
+  không gõ số cứng. Đây là cái giá phải trả cho quyết định chép màu bên dưới — không có nó thì
+  người chỉnh màu Gantt sẽ không bao giờ biết mình vừa làm lệch file Excel.
 
 **VÌ SAO LÀM THẾ**
 
-*Chọn lưu `85` với định dạng `0"%"`, KHÔNG lưu `0.85` với `0%`* (ràng buộc 3 để Thực thi quyết).
-Ba lý do, xếp theo sức nặng:
-- **Lọc "lớn hơn 80" phải gõ được số 80.** Với `0.85` thì người dùng gõ 80 ra rỗng, phải gõ `0.8`.
-  Đây là thao tác người nhận file làm nhiều nhất sau sắp xếp.
-- **Copy sang chỗ khác ra đúng thứ đang nhìn thấy.** `0.85` dán sang Word/mail thành "0.85" trong
-  khi bảng ghi "85%" — chính chỗ Plan đã lo.
-- **Khớp với app.** Trên màn hình cột này là số nguyên phần trăm; file xuất ra nên nói cùng một thứ
-  tiếng với bảng mà nó chụp lại.
-Trả giá: `0"%"` chỉ là **hậu tố hiển thị**, không phải kiểu phần trăm thật của Excel. Ai dựng biểu đồ
-từ cột này phải tự đặt nhãn trục, và đổi định dạng ô về General sẽ thấy `85` chứ không phải `0.85`.
-Tôi cho là đổi được: bảng này để đọc và lọc, không phải để dựng biểu đồ.
+*Chép màu sang `excel-export.ts`, KHÔNG kéo `GC` ra dùng chung* (chỗ Plan để tôi chọn). `GC` khai
+**bên trong** component Gantt đang chạy. Kéo nó ra là sửa vào đường render của Gantt để phục vụ một
+việc thuần trình bày của Excel — đúng loại **L11**: diff sạch, test xanh, giao diện vẫn hỏng, và
+loại đó không soi ra được bằng diff. Cái giá của việc chép là trôi, nên tôi trả giá đó bằng phép
+kiểm nói trên chứ không bằng một lời hứa.
 
-*Cột "Quá hạn" dùng `0" ngày"` chứ không phải `0`.* Ràng buộc 4 đòi số nguyên, mà phần LÀM XONG THÌ
-NHÌN THẤY GÌ đòi nhìn không đổi — bản cũ hiện "5 ngày". Hậu tố trong định dạng thoả **cả hai**: giá
-trị vẫn là số 5 nên Excel cộng được, mà mắt vẫn thấy "5 ngày".
+*Chú giải nói MÀU = MỨC NGHIÊM TRỌNG, không gán mỗi nhãn một màu.* Đây là chỗ tôi **làm khác đặc
+tả**, cố ý. Mục 5 viết "mỗi mục một ô tô đúng màu của nó", ngầm hiểu mỗi nhãn có một màu cố định.
+Không có chuyện đó: ghi chú ở `index.tsx` (~dòng 1381) nói nguyên văn *"MÀU TÁCH RỜI NHÃN… 'Cần tập
+trung' vàng khi dự án còn xa hạn, nhưng ĐỎ khi dự án sắp bàn giao; 'Cần cắt đầu việc' vàng ở far,
+đỏ từ d30. Vì vậy KHÔNG được suy màu từ `kind`"*. In ra một chú giải gán chết nhãn↔màu là **in ra
+một luật mà app không chạy theo** — người đọc báo cáo sẽ suy ngược từ màu ra nhãn và suy sai. Nên
+chú giải có hai phần: dải màu nói mức (Nặng · Cần chú ý · Đã hoàn thành) kèm đúng câu giải thích,
+rồi liệt kê bốn nhãn riêng.
 
-*Vì sao `oNgay` cắt chuỗi chứ không `new Date(iso)`.* `new Date("2026-09-15T00:00:00+07:00")` lùi về
-**ngày 14** theo giờ UTC, mà exceljs quy `Date` ra số thứ tự Excel theo UTC. Đi đường đó thì một
-phần dữ liệu lệch đúng một ngày **trong im lặng**, trên bảng dùng để đánh giá PM. Nên lấy thẳng ba
-số Y-M-D rồi dựng UTC midnight — ra đúng ngày `fmtDateVN2` đang hiện, vì hàm đó cũng chỉ cắt chuỗi.
+*Cột Quá hạn dùng hai bậc `cellIs`, không dùng thang màu liên tục.* Mục 4 cho chọn "thang màu hoặc
+nền đỏ khi vượt ngưỡng". App chia đúng hai bậc (`lib/filter.ts:138`: `>= OD_ALERT_DAYS` là A, `> 0`
+là B). Thang màu liên tục là tự chế một luật thứ ba mà app không có.
 
-*Giữ nguyên phép kiểm truthy của `overdueDays`.* Bản cũ `it.overdueDays ? ... : ""` nên quá hạn **0
-ngày** để trống. Tôi giữ y thế (`? ... : null`). Đổi sang `!= null` là làm hiện thêm một cột "0 ngày"
-chưa ai yêu cầu, tức đổi cái nhìn thấy trong vòng không được đổi cái nhìn thấy.
+*Ngưỡng lấy thẳng `OD_ALERT_DAYS` từ `lib/filter`, không gõ lại số 14.* Đã tra: **chỉ có một ngưỡng**
+(`filter.ts:34`, `export const OD_ALERT_DAYS = 14`), nên không phải báo Plan. Đổi ngưỡng ở đó thì
+file Excel đổi theo, khỏi lệch âm thầm với cảnh báo trên bảng.
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch (exit 0). Cũng trả lời luôn câu Plan dặn "đếm trước cho biết phạm vi":
-                        đổi kiểu `cells` KHÔNG làm vỡ chỗ nào khác — chỉ có ĐÚNG MỘT chỗ dựng `cells`
-                        trong cả cây, ở index.tsx. `exportMatrixXlsx` không đụng tới, đúng như dặn.
-vitest                : 398 passed | 2 expected fail | 1 FAILED | 30 file
-                        Phép đỏ là `findMatrixSheets` trong tests/matrix-reader.test.ts — KHÔNG phải
-                        của tôi, xem mục CHỖ TÔI KHÔNG CHẮC số 4.
-                        Trừ nó ra: mốc nền 387 | 2 | 29 → chênh +12 đúng bằng phần tôi thêm.
-build                 : qua
-quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. Hai file tôi đụng đều SẠCH.
-diff sạch không nhiễu : `git diff --ignore-all-space` = 29/12, khớp diff thường → không dòng nào
-                        đổi mỗi ký tự xuống dòng (lỗi ① Test bắt ở vòng trước, lần này không tái diễn)
-kiểm trên app         : 1440px badge 3.109.1 → 3.110.0, bảng bình thường, không tràn.
-                        375px scrollWidth = clientWidth = 375, không tràn ngang.
+tsc                   : sạch (exit 0)
+vitest                : 417 passed | 2 expected fail | 1 FAILED | 31 file
+                        Trừ phép đỏ (không phải của tôi, xem CHỖ TÔI KHÔNG CHẮC số 4) thì mốc nền
+                        398 | 2 | 30 → chênh +19 đúng bằng phần tôi thêm (9 phép nối vào file cũ
+                        + 10 phép của file màu mới).
+build                 : qua, 11,73s
+quét byte điều khiển  : 16 byte · 7 file — đúng mốc nền. File tôi đụng đều sạch.
+DUNG LƯỢNG (ràng buộc 4): cùng bộ dữ liệu 69 dự án · 305 đầu việc
+                        V4a: 36.959 byte → V4b: 38.353 byte = **+1.394 byte, +3,8%**
+kiểm trên app         : 1440px badge 3.110.0, 69 dự án, không tràn. 375px không tràn ngang.
                         Không lỗi console mới.
 ghi KV thêm mỗi lần mở app : 0. Việc này không có một đường ghi KV nào.
-cổng demo             : CÓ SẴN ở index.tsx:2482 — tôi không đụng (đường khác, effect đẩy danh sách).
-cổng đang tải         : CÓ SẴN ở index.tsx:2483 — tôi không đụng.
+cổng demo / đang tải  : CÓ SẴN ở index.tsx:2482-2483, tôi không đụng.
 ```
 
-**ĐÃ MỞ FILE XUẤT RA VÀ SOI — tiêu chí 1, 2, 3 của ①**
-
-Không chỉ chạy phép kiểm. Tôi bấm **đúng nút "Xuất Excel" trên app đang chạy**, chặn `URL.createObjectURL`
-để giữ lại file thật, bung zip bằng `fflate` ngay trong trang rồi đọc `sheet1.xml` và `styles.xml`.
-Dữ liệu THẬT, 14 dự án · 38 đầu việc, file 13.246 byte.
-
-*Dòng 4 (dòng dự án CT25-038 "Mini Hotel PQ (B1-B5) Phòng"):*
+**ĐÃ MỞ FILE THẬT VÀ SOI** — xuất từ app đang chạy, dữ liệu thật, 69 dự án · 305 đầu việc, 382 dòng:
 ```
-A = 46289  (số, không t="s")   → ngày update
-B = t="s"                       → Mã, vẫn là CHỮ
-E = 45840 · F = 46295 (số)      → ngày bắt đầu / kết thúc
-G, H  KHÔNG CÓ <v>              → % và Quá hạn TRỐNG THẬT trên dòng nhóm
-```
-*Dòng 5 (đầu việc):* `E = 45940 · F = 46228` (ngày), **`G = 95`** (%), **`H = 62`** (quá hạn) — số thật.
-*Dòng 7:* ô `G` **không có `<v>`** → dự án chưa có số thì ô % TRỐNG, không phải 0. Đúng tiêu chí 3.
-
-*Đối chiếu để chắc không lệch ngày:* số thứ tự trong file quy ngược ra
-`2026-09-24 · 2025-07-02 · 2026-09-30`; cùng dòng đó trên màn hình hiện `24/09 · 02/07/25 · 30/09/26`.
-**Khớp từng ngày một.**
-
-*`styles.xml` của file thật* khai đúng ba định dạng tự đặt:
-`164 = dd/mm/yy` · `165 = 0"%"` · `166 = 0" ngày"` → nhìn không đổi.
-
-*Tiêu chí 1 — sắp xếp:* chốt bằng phép kiểm trên file dựng thật. Ba hạn `01/12/25 · 02/01/26 · 15/06/25`:
-```
-TRƯỚC (chữ)  : 01/12/25 · 02/01/26 · 15/06/25   ← thứ tự CHỮ CÁI, sai
-SAU   (ngày) : 15/06/25 · 01/12/25 · 02/01/26   ← đúng thứ tự thời gian
+đóng băng     : xSplit 3 · ySplit 3
+trang in      : landscape · fitToWidth 1 · printTitlesRow "3:3"
+chiều cao     : dòng 1 = 22 · dòng 3 = 26 · dòng 4,5 = KHÔNG ĐẶT → Excel tự giãn
+định dạng ĐK  : G4:G377 → dataBar   ·   H4:H377 → cellIs, cellIs
+chú giải      : "CHÚ GIẢI · Nặng · Cần chú ý · Đã hoàn thành · Màu nói MỨC NGHIÊM TRỌNG…"
 ```
 
-*Nút xổ nhóm (Plan nhờ kiểm riêng vì `summaryBelow: false` gán qua `as any`):* đã soi trong file
-đọc ngược — `outlineProperties.summaryBelow === false` **có thật trong file**, `outlineLevel` 0 cho
-dòng dự án và 1 cho dòng con, `hidden === true` cho dòng con. Đúng như người dùng đã chốt, không đổi.
+*Tiêu chí 2 — ô ghi chú dài nhất:* **571 ký tự**, dòng 135, công đoạn SX
+("CẬP NHẬT TIẾN ĐỘ HỌP VỚI LÃNH ĐẠO: Public B1: 25/08 XONG 100%…").
+Cột rộng 48 → ước **12 dòng chữ**. TRƯỚC: cao cứng 18pt hiện ~**1 dòng**, cụt 11 dòng.
+SAU: hiện đủ **12 dòng**.
 
-**Đã xác nhận ĐỎ trên bản chưa sửa:** bỏ đúng một dòng đóng `numFmt` → **3 phép kiểm đỏ** (cột ngày,
-cột %, cột Quá hạn). Phục hồi xong 12/12 xanh.
+*Tiêu chí 5 — ô % chưa có số:* trong file có **305 ô có số** và **69 ô TRỐNG** (đúng bằng số dòng
+dự án). Trong 305 ô có số thì **129 ô là số 0 THẬT**. Nếu gộp trống thành 0 thì sẽ có 198 dòng hiện
+"0%", tức bịa thêm 69 dòng chưa đo thành đã đo và được 0. Data bar không vẽ gì trên ô rỗng.
+
+*Cột Quá hạn:* **110 ô từ 14 ngày trở lên** sẽ tô đỏ.
+
+**Đã xác nhận ĐỎ trên bản chưa sửa:** đặt lại `row.height = isGroup ? 20 : 18` → phép kiểm "chữ hết
+bị cắt" đỏ. Phục hồi xong 21/21 xanh.
 
 **CHỖ TÔI KHÔNG CHẮC**
 
-1. **Ô ngày trống nay TRỐNG THẬT, trước đây hiện dấu gạch ngang — cái nhìn thấy CÓ ĐỔI.** Đặc tả
-   (ràng buộc 1) ghi *"`fmtDateVN2(null)` hiện trả `""`"*. **Không đúng**: hàm đó ở `index.tsx:8225`
-   trả **`"—"`**. Nên bản cũ ghi chữ `"—"` vào ô ngày trống, còn bản này để ô rỗng. Tôi theo ràng
-   buộc 1 và luật 5.2 (ô trống là ô trống) chứ không theo câu "nhìn y hệt", vì để chữ `"—"` trong
-   cột ngày là **phá luôn phép sắp xếp** — đúng thứ việc này sinh ra để sửa. Nhưng đây là thay đổi
-   nhìn thấy được, Plan và người dùng nên biết trước khi Review.
+1. **Tôi chưa mở file bằng Excel thật, và đây là việc chấm bằng mắt.** Mọi kết luận trên đọc từ XML
+   trong file và từ `exceljs`. Ba thứ tôi **không tự nghiệm thu được**, cần người mở Excel xem:
+   **(a)** chiều cao tự giãn — Excel tính lúc mở, tôi chỉ chứng minh được là đã bỏ chiều cao đặt
+   tay, không chứng minh được chữ hiện đủ trên màn hình thật; **(b)** data bar vẽ ra trông thế nào;
+   **(c)** Ctrl+P ra đúng một trang bề ngang. **Đã đính kèm file cho người dùng tự nhìn.**
 
-2. **Bộ kiểm tự khai lại danh sách cột, không đọc từ `index.tsx`.** Mảng `COLS` trong file kiểm là
-   bản chép của `cols` ở `index.tsx`. Ai đổi `numFmt` bên đó mà quên bên này thì phép kiểm vẫn xanh.
-   Tôi bù bằng lượt soi file thật ở trên (đường đó đi qua đúng `index.tsx`), nhưng lượt soi ấy là
-   **làm tay, không tự động lặp lại**. Muốn chắc lâu dài thì phải kéo chỗ dựng cột ra khỏi callback
-   JSX — việc đó ngoài phạm vi vòng này.
+2. **Chưa đặt cạnh bản PDF** (tiêu chí 1 đòi xuất cùng lúc cùng bộ lọc rồi so). Đường PDF dùng
+   `html2canvas` chụp giao diện, cần trình duyệt thật và tôi không mở được Excel để so song song.
+   **Đây là phần nghiệm thu tôi chưa làm được, không phải phần tôi bỏ qua.**
 
-3. **`0"%"` không phải kiểu phần trăm thật của Excel.** Đã nêu lý do chọn ở trên. Nếu sau này có
-   người cần dựng biểu đồ phần trăm từ file này thì phải đổi sang `0.85` + `0%`, và khi đó cột sẽ
-   copy ra thành `0.85`. Đây là đánh đổi tôi chọn, không phải chỗ code còn thiếu.
+3. **Chiều cao tự giãn có thể làm bản in dài ra đáng kể.** Một ô 571 ký tự thành 12 dòng thì hàng đó
+   cao gấp hơn chục lần. Đổi lại là chữ không mất. Nếu người dùng thấy bản in quá dài thì hướng sửa
+   là giới hạn chiều cao tối đa mỗi hàng — nhưng đó là quyết định đánh đổi "gọn" với "đủ chữ", phải
+   hỏi chứ tôi không tự chọn.
 
-4. **Một phép kiểm CÓ SẴN đang đỏ trên máy này, không phải do tôi:** `findMatrixSheets` trong
-   `tests/matrix-reader.test.ts`, **quá hạn 5.000 ms** (đo được 6.543 / 7.125 / 8.352 ms ở ba lượt).
-   Bằng chứng nó không liên quan: file đó chỉ import `src/lib/matrix-reader` và `xlsx`;
-   `matrix-reader.ts` chỉ import `xlsx` + một file kiểu — **không có đường nào** tới `excel-export.ts`
-   hay `index.tsx`; cả hai file chưa đổi từ commit `ec37fc2`; và nó đỏ **cả khi chạy một mình lẫn khi
-   loại hẳn file kiểm mới của tôi ra**. Nhưng mốc nền của Test hôm qua là 0 phép đỏ, nên **có gì đó
-   đã chậm đi** — tôi không sửa (ngoài phạm vi, và nâng `testTimeout` là quyết định của Test).
+4. **Phép kiểm `findMatrixSheets` vẫn đỏ, và nay hỏng KHÁC trước.** Vòng V4a nó quá hạn 5.000 ms
+   (đo 6.543 / 7.125 / 8.352 ms); lượt này nó đỏ trong **3 ms**. `tests/matrix-reader.test.ts` đang
+   có thay đổi chưa commit trong cây — **box khác đang sửa nó**, nên tôi để yên (luật 5.6). Vẫn
+   không liên quan tới tôi: file đó chỉ import `matrix-reader` + `xlsx`.
 
-5. **Tôi chưa mở file bằng Excel thật.** Mọi kết luận ở trên đọc từ XML trong file `.xlsx` và từ
-   `exceljs`. Chuẩn OOXML nói ô có `numFmtId` trỏ tới `dd/mm/yy` sẽ hiện ra thế, nhưng Excel bản
-   thật trên máy người dùng thì tôi không chạy được. Người kiểm cuối nên mở một lần bằng Excel.
+5. **`showValue: true` trên data bar** — tôi chọn để vẫn hiện số "85%" bên cạnh thanh. Nếu muốn chỉ
+   thanh không số thì đổi một chữ, nhưng giấu số trên một bảng báo cáo thì tôi cho là dở hơn.
+
+6. **Tôi không đo được ảnh hưởng của xSplit tới bản in.** Đóng băng chỉ ảnh hưởng lúc xem, không
+   ảnh hưởng lúc in — theo hiểu biết của tôi về Excel, nhưng tôi không chạy Excel để xác nhận.
 
 **CHƯA LÀM**
 
-- **Phần NHÌN (V4b)** — không đụng màu, cột, thứ tự cột, độ rộng. Đúng phần NGOÀI.
-- **Không đụng** `exportMatrixXlsx` (cùng file nhưng đường khác, không dùng `XlsxTableRow`), không
-  đụng đường xuất PDF, không bỏ ẩn dòng con.
-- **Không sửa** phép kiểm `matrix-reader` đang đỏ — xem mục 4 trên.
-- **Không deploy.** V2b của tôi vẫn nguyên trong cây, chưa deploy, tôi không revert gì.
+- **Không đổi** danh sách cột, thứ tự cột, độ rộng cột, hay bất kỳ giá trị dữ liệu nào. Ràng buộc 1
+  giữ nguyên: đây là vòng đổi cách trình bày.
+- **Không đụng** `exportMatrixXlsx` (cùng file, đường khác — đã phải neo thêm ngữ cảnh khi sửa vì
+  hai hàm có đoạn mã giống hệt nhau, suýt sửa nhầm), không đụng đường PDF, không bỏ ẩn dòng con.
+- **Không sửa** phép kiểm `matrix-reader` đang đỏ.
+- **Không deploy.** V2b và V4a vẫn nguyên trong cây, tôi không revert gì.
 ---
 
 ## ③ TEST
@@ -488,35 +475,436 @@ mà tiêu chí 3 của Plan yêu cầu, nên Thực thi và Review đo lại s�
 
 ## ④ REVIEW
 
-**PHÁN QUYẾT** — ĐẠT / ĐẠT KÈM ĐIỀU KIỆN / KHÔNG ĐẠT
+Review nhận vai 28/09/2026 (trước đó session này làm Test vòng V1). Hai bản chờ, **mỗi bản một
+phán quyết riêng** ở dưới. Tôi chưa đụng vào cả hai bản này ở vòng nào, nên soi được độc lập.
 
-**ĐÃ TỰ CHẠY LẠI**
+### PHÁN QUYẾT NGẮN
+
+| Bản | Commit | Phán quyết |
+|---|---|---|
+| **V2b** · băm vào bảng đếm D1 | `40eae6c` (v3.109.1) | **ĐẠT KÈM ĐIỀU KIỆN** |
+| **V4a** · xuất Excel ô thật | `c188f92` (v3.110.0) | **ĐẠT KÈM ĐIỀU KIỆN** |
+
+Không tìm được lỗi nào trong hai bản đủ để chặn. Điều kiện là **bốn việc phải làm**, không phải bốn
+chỗ phải sửa code — liệt kê ở cuối. Điều kiện số 1 là điều kiện quan trọng nhất, và nó không nằm
+trong code của bản nào.
+
+### ĐÃ TỰ CHẠY LẠI
+
+**Đo ở CÂY RIÊNG, ghim vào đúng commit đang phán quyết.** Cây làm việc chung không dùng để đo được
+(lý do ở mục kế tiếp), nên tôi dựng `git worktree` tách ra ở `8763e2a` — cây **sạch**, không một
+dòng chưa commit — rồi chạy ở đó. Không đụng file nào của ai.
+
 ```
-tsc                  : <kết quả>
-vitest               : <kết quả>
-build                : <kết quả>
-quét byte điều khiển : <kết quả>
+worktree tại 8763e2a (chứa cả V2b lẫn V4a), git status TRỐNG:
+tsc                  : sạch (exit 0)
+vitest               : 387 passed | 0 failed | 0 expected fail | 29 file
+build                : qua (exit 0)
+quét byte điều khiển : 16 byte · 7 file · 14 dòng — ĐÚNG mốc nền, không bản nào thêm byte
+                       (0x00 ×13 · 0x01 ×1 · 0x11 ×2)
+cột `bam` trên D1 production : CÓ THẬT — tự đọc, không tin lời khai
 ```
+
+**Bộ kiểm XANH SẠCH ở commit đang phán quyết — kể cả `matrix-reader`.** 29 trên 29 file, không một
+phép đỏ. Nghĩa là phép đỏ mà cả Plan lẫn Thực thi báo **không nằm trong hai bản này**, và ở đây nó
+cũng không quá hạn.
+
+*Đo thêm trên cây chung để đối chiếu:* `1 FAILED | 398 passed | 2 expected fail | 30 file`. Chênh
+lệch so với số ghim ở trên là do cây chung đang mang việc chưa commit của box khác cộng một file kiểm
+chưa theo dõi của tôi từ vòng V1.
+
+**CÂY LÀM VIỆC CHUNG ĐANG MANG CODE CHƯA AI SOI — ĐỌC CHỖ NÀY TRƯỚC KHI BẤM DEPLOY.**
+
+Trong lúc tôi soi, cây chung chuyển từ "chỉ sửa file kiểm" sang có **code sản phẩm chưa commit**:
+
+```
+ M src/lib/excel-export.ts   +143 dòng   (không phải chuyện ký tự cuối dòng — diff --ignore-all-space y hệt)
+ M src/routes/index.tsx       +11 dòng
+ M tests/matrix-reader.test.ts
+```
+
+Đọc nội dung thì rõ đây là **V4b** (phần NHÌN) đang được viết: bảng màu `MAU` chép từ `GC`,
+`xSplit: 3`, `pageSetup` A4 ngang, `printTitlesRow`, thanh màu trong ô. Nó sửa **đúng
+`exportTableXlsx`** — hàm tôi đang phán quyết cho V4a.
+
+**Phán quyết của tôi gắn vào COMMIT, không gắn vào cây:** `40eae6c` cho V2b,
+`c188f92` + `8763e2a` cho V4a. **Tôi không phán quyết gì về 154 dòng chưa commit kia** — chưa qua ②,
+chưa qua ③, chưa ai soi. `wrangler deploy` dựng từ **cây**, không dựng từ commit, nên bấm deploy lúc
+này là **đưa cả V4b chưa soi lên production**. Đúng họ hàng L12: cây git là cây dùng chung.
+
+**PHÉP ĐỎ KHÔNG PHẢI CỦA HAI BẢN NÀY, VÀ KHÔNG PHẢI QUÁ HẠN NHƯ ĐÃ MÔ TẢ.**
+
+Tôi được giao thông tin là `findMatrixSheets` đỏ vì quá hạn 5.000 ms. **Trên cây hiện tại không
+phải vậy.** Nó đỏ vì:
+
+```
+ReferenceError: wbChung is not defined
+   tests/matrix-reader.test.ts:54
+```
+
+Bản sửa chưa commit đang nằm trong cây **còn dở**: nó đổi lời gọi sang `wbChung` nhưng **chưa khai
+biến đó ở đâu cả**, và khai `HAN_DOC_LAI_FILE = 20_000` rồi **không dùng**. Ai chạy `vitest` lúc này
+sẽ thấy một phép đỏ với nguyên nhân hoàn toàn khác nguyên nhân đã báo.
+
+Còn bản **đã commit** của file đó thì **chạy qua trên máy này**, đo ba lượt liền:
+
+```
+findMatrixSheets : 1.263 ms · 1.296 ms · 1.263 ms      (mốc mặc định 5.000 ms)
+```
+
+Đối chiếu: Plan đo 5.943 ms, Thực thi đo 6.543 / 7.125 / 8.352 ms. Cùng một commit, cùng một file
+nguồn. Kết luận: phép kiểm này **phụ thuộc máy và tải**, không phải code chậm đi. Nó nằm ở 25% mốc
+trên máy này và vượt mốc trên máy khác. Cả Plan lẫn Thực thi đều báo trung thực những gì họ thấy —
+chỉ là cái họ thấy không phải một hằng số. Việc nâng mốc vẫn đáng làm, nhưng **lý do đúng là "phép
+kiểm đọc file thật nên thời gian trôi nổi theo máy"**, không phải "có gì đó vừa chậm đi".
+
+**MỘT PHÁT HIỆN KÈM THEO — `tsc` không phủ `tests/`.** `tsconfig.json` khai
+`include: ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "eslint.config.js"]`. Không có `tests`.
+Vì thế `tsc` báo **sạch** ngay trong lúc `tests/matrix-reader.test.ts` gọi một biến không tồn tại.
+Dòng `tsc: sạch` trong mục ĐÃ ĐO của cả bốn box **chưa bao giờ nói gì về file kiểm**. Đây đúng họ
+hàng L13 (cái thước hụt), nhưng khác chỗ: thước này không sai, nó chỉ hẹp hơn mọi người tưởng.
+
+---
+
+### BẢN 1 · V2b — `40eae6c` — ĐẠT KÈM ĐIỀU KIỆN
 
 **ĐỐI CHIẾU ĐẶC TẢ**
-- Làm đủ: <có / thiếu gì>
-- Làm thừa: <không / thừa gì>
 
-**PHẢI SỬA TRƯỚC KHI DEPLOY**
-<đánh số. Mỗi mục: chỗ nào, vì sao sai, hỏng ra sao nếu để nguyên.>
+- **Làm đủ: có.** Băm ngắn có, cột `bam` có, đường lùi hai cột có, `demGhiKv` giữ tham số thứ hai
+  không bắt buộc nên đường `delete` gọi kiểu cũ vẫn chạy.
+- **Làm thừa: không.** Hai file `edits.functions.ts` và `mtld-install.functions.ts` mỗi file đúng
+  **một dòng**, ngoài phạm vi khai báo nhưng **không có đường nào khác** — `demGhiKv` không thể băm
+  thứ nó không được đưa. Thực thi đã tự khai chỗ này trong thông điệp commit. Đây không phải thừa,
+  đây là phạm vi đặc tả viết hụt.
+
+**ĐÃ TỰ KIỂM, KHÔNG TIN LỜI KHAI**
+
+*Cột `bam` trên production.* Plan khai đã tự chạy `ALTER TABLE` ngày 24/09. Tôi đọc thẳng:
+
+```
+PRAGMA table_info(kv_write)  →  id INTEGER · ts TEXT · kho TEXT · bam TEXT
+```
+
+**Lời khai đứng.** Nghĩa là nhánh sẽ chạy trên production là nhánh "đã có cột" — đúng nhánh Test đã
+chốt bằng phép kiểm. Ghi thêm cho người sau: ghi chú cũ của tôi nói `wrangler --remote` bị chặn ở
+dự án này; **hôm nay nó chạy được** (served_by v3-prod, colo SIN).
+
+*Chi phí CPU của hàm băm — cả Thực thi lẫn Test đều để ở dạng "suy luận là nhỏ". Tôi đo ra số:*
+
+| Payload | Trung vị | % trần CPU (2.010.000 µs) |
+|---|---|---|
+| kho `mtld` thật, ~40 KB | **153 µs** | 0,008% |
+| đúng mốc cắt 128 KB | **359 µs** | 0,018% |
+| `sfile:` 2 MB base64 | **405 µs** | 0,020% |
+| `sfile:` 8 MB | **366 µs** | 0,018% |
+
+Hai điều rút ra. Một: chi phí **dưới một phần năm nghìn** trần CPU, không phải chỗ đáng lo. Hai —
+đáng hơn: payload **8 MB tốn bằng 128 KB** (366 so với 359 µs). Đó là bằng chứng mốc cắt `CAT_BAM`
+**thật sự chặn**, chứ không chỉ có vẻ chặn. Nếu băm trọn, 8 MB sẽ tốn gấp 64 lần. Lo ngại L9 mà
+Thực thi nêu ra là lo đúng chỗ, và cách chặn cũng đúng.
+
+*Ràng buộc "băm hỏng thì không ném".* Đọc lại đường code: `bamNgan` bọc trọn trong `try/catch` trả
+`""`; `crypto` không có hay `subtle` không có đều rơi vào `catch` đó; `demGhiKv` lại bọc thêm một
+lớp `try/catch` ngoài cùng. Ba lớp đỡ, không có đường nào cho lỗi đếm leo lên lượt ghi thật. Đúng
+bài học L3.
+
+**PHẢI SỬA TRƯỚC KHI DEPLOY** — không có.
 
 **NÊN SỬA, KHÔNG CHẶN**
-<đáng cải thiện nhưng không đủ để giữ lại bản này.>
+
+1. **Đường lùi hai cột không chốt lại, nên nó thử lại mỗi lượt ghi.** Nếu `ALTER` hỏng vì lý do
+   thật (không phải "đã có cột"), `banSan` vẫn thành `true`, rồi **mỗi** lượt ghi KV sau đó sẽ chạy
+   câu chèn ba cột (hỏng) rồi mới chèn hai cột — **hai câu D1 cho mỗi lượt ghi**, suốt đời isolate
+   đó. Không đốt hạn mức đáng kể (câu hỏng không tính là dòng ghi, mà bảng này chỉ ~500 dòng/ngày),
+   nhưng thêm một vòng đi-về D1 cho mỗi lượt ghi thì không cần thiết. Một cờ `coCotBam` nhớ lại kết
+   quả lần đầu là xong.
+2. **Bảng đếm giờ có cột `bam` nhưng không có gì dọn nó.** Bảng chỉ có `idx_kvw_ts`, không thấy
+   đường xoá dòng cũ. Cột thêm vào làm mỗi dòng nặng hơn 12 byte; ~500 dòng/ngày thì lâu dài vẫn
+   đáng có một câu dọn theo `ts`. Ngoài phạm vi V2b, ghi vào hàng đợi.
 
 **RỦI RO KHI DEPLOY**
-- Ảnh hưởng ai: <ai sẽ thấy thay đổi này>
-- Hỏng thì sao: <hậu quả xấu nhất>
-- Lùi lại được không: <có, bằng cách nào / không, vì sao>
-- Hạn mức KV: <thêm bao nhiêu lượt/ngày>
+
+- **Ảnh hưởng ai:** không ai thấy gì. Người dùng chỉ thấy badge `3.109.0 → 3.109.1` và hai dòng
+  CHANGELOG. Không đổi số, không đổi màn hình.
+- **Hỏng thì sao:** trường hợp xấu nhất là **mất cái băm, không mất dòng đếm** — đã có đường lùi.
+  Trường hợp xấu hơn (mất cả dòng đếm) cần D1 hỏng, mà lúc đó bảng đếm hỏng sẵn rồi, không phải do
+  bản này. Lượt ghi KV thật **không** nằm trong đường nào có thể hỏng vì băm.
+- **Lùi lại được không:** được, `wrangler rollback` hoặc deploy lại commit trước. Cột `bam` để lại
+  trên D1 cũng vô hại — bản cũ chèn hai cột, cột thứ ba nhận NULL.
+- **Hạn mức KV: thêm 0 lượt/ngày.** Không có đường ghi KV mới; số dòng D1 mỗi ngày không đổi, chỉ
+  mỗi dòng mang thêm một cột.
+
+---
+
+### BẢN 2 · V4a — `c188f92` + `8763e2a` — ĐẠT KÈM ĐIỀU KIỆN
+
+**ĐỐI CHIẾU ĐẶC TẢ**
+
+- **Làm đủ: có**, cả bảy tiêu chí của mục ①. Ba cột ngày ra `Date`, `%` và `Quá hạn` ra số, cột chữ
+  giữ chữ, `numFmt` giữ cho bảng nhìn như cũ.
+- **Làm thừa: không.** Chỗ duy nhất đáng bàn là ô ngày trống nay **rỗng thật** thay vì chữ `—` —
+  Plan đã tự duyệt ở phần sửa đặc tả và tôi đồng ý: để chữ `—` trong cột ngày là **phá đúng phép
+  sắp xếp mà việc này sinh ra để sửa**. Đây là làm đúng, không phải làm thừa.
+
+**ĐÃ TỰ KIỂM**
+
+*Luật 5.2 — chỗ nguy hiểm nhất của dự án này.* Soi thẳng vào chỗ dựng ô:
+
+```
+% thực tế  : it.pctActual != null ? Math.round(it.pctActual) : null     → 0 giữ là 0, chưa đo là TRỐNG  ✓
+dòng nhóm  : null, null                                                 → không phải 0  ✓
+đóng numFmt: cell.value != null && cell.value !== ""                    → 0 vẫn được đóng định dạng  ✓
+                                                                          ô trống KHÔNG bị đóng dd/mm/yy  ✓
+```
+
+Chỗ cuối quan trọng hơn vẻ ngoài của nó: đóng `dd/mm/yy` lên ô rỗng là mời Excel vẽ ra `00/01/00`,
+tức biến *chưa có* thành *một ngày có thật*. Bản này chặn đúng chỗ đó.
+
+*`XlsxTableRow` mở rộng kiểu có làm lây sang đường xuất ma trận không — Plan dặn kiểm riêng.*
+Không. `XlsxTableRow` và `XlsxCell` chỉ xuất hiện ở dòng 577–623, tức khối kiểu ngay **trước**
+`exportTableXlsx` (dòng 615). `exportMatrixXlsx` nằm ở dòng 233–570 và **không nhắc tới chúng một
+lần nào**. Lời khai của Thực thi đứng.
+
+*Bộ kiểm có thật sự kiểm gì không.* Có, và đây là bộ kiểm tốt. Nó chạy trọn `exportTableXlsx`, bắt
+lấy `Blob` thật, **đọc ngược file `.xlsx` bằng exceljs** rồi soi từng ô — không phải đọc mã nguồn.
+Phép chốt lý do tồn tại của cả việc (`SẮP XẾP THEO HẠN`) so cả hai chiều: sắp theo `Date` ra
+`15/06/25 · 01/12/25 · 02/01/26`, sắp theo chữ ra `01/12/25 · 02/01/26 · 15/06/25`. Có phép riêng
+cho `0` khác `TRỐNG`, có phép riêng cho `CT26-032` vẫn là chuỗi.
+
+**PHẢI SỬA TRƯỚC KHI DEPLOY** — không có.
+
+**NÊN SỬA, KHÔNG CHẶN**
+
+1. **Ngày trước năm 1900 ra số thứ tự ÂM, Excel không vẽ được.** Tôi đo thẳng bằng exceljs:
+
+   | ISO trong nguồn | Số thứ tự trong `sheet1.xml` |
+   |---|---|
+   | `2026-09-15` | 46280 |
+   | `1900-01-01` | 2 |
+   | `1899-12-30` | **0** |
+   | `1899-09-15` | **-106** |
+   | `0202-09-15` | **-619923** |
+
+   Số âm thì Excel hiện `########` chứ không hiện ngày. Bản cũ ghi chữ `15/09/1899` — xấu nhưng đọc
+   được. **Đã đo trên nguồn thật: không bắn.** 6 file Master Plan, **4.348 ngày**, không ngày nào
+   ngoài khoảng 1900–2100. Đây là rủi ro tiềm ẩn, tôi không phóng to hơn thế.
+
+2. **Ngày không tồn tại bị cuộn sang ngày khác, trong im lặng — đáng lo hơn mục 1.**
+   `toIso` chỉ chặn `day > 31`, nên `31/02/2026` **đi qua** thành `2026-02-31`. `oNgay` dựng
+   `Date.UTC(2026, 1, 31)` = **`2026-03-03`**. Bản cũ hiện chữ `31/02/26`, người đọc thấy ngay là
+   nhầm. Bản mới hiện `03/03/26` — **một ngày trông hoàn toàn hợp lệ, và sai**. Trái luật 5.3 (chọn
+   cách lộ ra, đừng chọn cách âm thầm), trên cột dùng để đánh giá PM. **Đã đo: cũng không bắn** —
+   0 trên 4.348 ngày bị cuộn. Cách chặn gọn: sau khi dựng `Date`, so lại `getUTCDate()` với số ngày
+   đã đọc, lệch thì trả `null`. Ba dòng, nhưng **đừng nhét vào V4a** — nó đụng `oNgay` là chỗ đang
+   được phán quyết, và nó là việc của `toIso` nhiều hơn.
+
+3. **Cột `Quá hạn` gộp "0 ngày" với "chưa có hạn".** `getDaysOverdue` trả `number | null`: `null`
+   khi **không có deadline**, `0` khi **đã đo và không trễ**. Chỗ dựng ô dùng
+   `it.overdueDays ? it.overdueDays : null` nên **cả hai** thành ô trống. Đúng thứ luật 5.2 cấm —
+   nhưng đây là **hành vi có từ trước**, và Thực thi giữ y thế **có chủ ý**, khai rõ, vì vòng này
+   đã chốt "không đổi cái nhìn thấy". Tôi đồng ý với lựa chọn đó ở vòng này. Đáng chú ý là ô ngay
+   bên cạnh (`%`) thì **có** phân biệt, nên hai ô cạnh nhau đang dùng hai luật khác nhau. Không sinh
+   ra con số sai nào (ô trống không vào tổng, mà 0 cũng cộng ra 0), nên không chặn.
+
+4. **Bộ kiểm tự khai lại danh sách cột.** Thực thi đã tự nêu ở mục ② số 2, Plan đã xếp vào hàng đợi.
+   Tôi xác nhận đúng: mảng `COLS` trong file kiểm là bản chép tay của `cols` trong `index.tsx`. Đổi
+   `numFmt` một bên mà quên bên kia thì bộ kiểm vẫn xanh. Không chặn, nhưng đây là loại lỗ **tự mở
+   rộng theo thời gian**.
+
+**RỦI RO KHI DEPLOY**
+
+- **Ảnh hưởng ai:** ai bấm "Xuất Excel". Thấy đổi đúng hai thứ: sắp xếp theo ngày **ra đúng thứ tự**
+  (trước là sai), và ô ngày trống **rỗng** thay vì dấu `—`. Màu, cột, thứ tự cột, độ rộng: không đổi.
+- **Hỏng thì sao:** xấu nhất là file xuất ra có ô ngày hiện `########` (mục 1) hoặc một ngày bị cuộn
+  (mục 2). Cả hai đều cần dữ liệu nguồn mà hôm nay **không có** — 0 trên 4.348. Không có đường nào
+  làm sập app: cả việc nằm trong một nút bấm, không chạm đường nạp dữ liệu.
+- **Lùi lại được không:** được, deploy lại commit trước. Không có dữ liệu nào bị biến đổi — chỉ là
+  file người dùng tự tải về.
+- **Hạn mức KV: thêm 0 lượt/ngày.** Không có đường ghi KV nào trong việc này; tôi đã tự soi diff cả
+  hai file, không có `put`, không có `demGhiKv`.
+
+---
+
+### BỔ SUNG 28/09 — Plan đổi chuẩn chấm, và V4b đã kịp lên commit `a914b2f`
+
+Plan gửi chuẩn nghiệm thu mới của người dùng (*"file excel phải đẹp như PDF luôn, về màu sắc, bố
+cục"*) kèm ba câu hỏi khác cho V4a, và nhờ soi **đặc tả V4b trước khi Thực thi tốn công**. Trong lúc
+tôi soi đặc tả thì V4b đã commit xong (`a914b2f`). Nên phần dưới vừa trả lời ba câu, vừa nói luôn
+**lỗ nào của đặc tả V4b đã bịt và lỗ nào chưa** — soi trên code thật thay vì đoán.
+
+**BA CÂU VỀ V4a**
+
+**(a) V4a có làm sai gì không — KHÔNG.** Đã soi ở phần trên: `%` phân biệt `0` với chưa-đo, dòng
+nhóm để `null` chứ không `0`, `numFmt` không đóng lên ô rỗng, `CT26-032` vẫn là chuỗi, ngày không
+lệch múi giờ. Hai ranh giới tôi tìm được (năm trước 1900 ra số âm; ngày không tồn tại bị cuộn im
+lặng) đo trên 6 file thật · **4.348 ngày** · **0 lần bắn**.
+
+**(b) V4a có cản đường V4b không — KHÔNG, ngược lại nó vừa vặn đúng chỗ.** Đây là chỗ đáng nói:
+
+V4b dựng data bar với thang **tuyệt đối** `cfvo: [{type:"num", value:0}, {type:"num", value:100}]`.
+Thang đó **chỉ đúng vì V4a chọn lưu `85` chứ không lưu `0.85`**. Nếu V4a đi đường `0.85` + `0%` thì
+mọi thanh màu sẽ dài khoảng 1% ô — nhìn như chưa ai làm gì. Thực thi V4a đã chọn `85` vì lý do khác
+(lọc "lớn hơn 80" gõ được số 80), nhưng lựa chọn đó **tình cờ cứu luôn V4b**. Ghi lại để sau này ai
+định đổi sang `0.85` thì biết là phải đổi cả `cfvo`.
+
+Thêm: ràng buộc 2 của V4b (ô chưa có số **không được vẽ thanh nào**) giữ đúng **nhờ V4a** — vì V4a
+để ô trống là trống thật, Excel không khớp `greaterThan 0` nên không tô. Nếu V4a ghi `0` vào đó thì
+data bar sẽ vẽ một thanh dài 0 ở ô chưa đo, tức biến *chưa đo* thành *0%* **bằng hình ảnh**.
+
+**(c) Có chỗ nào V4b phải đập đi làm lại — KHÔNG có, nhưng có một cái bẫy đã gài sẵn.**
+
+V4b chỉ thêm hàng ở **cuối** bảng (khối chú giải) nên 32 chỗ neo hàng cứng trong
+`tests/excel-o-that.test.ts` (`getRow(4)` = dòng dữ liệu đầu, `ref` bắt đầu `G4`) **không bị xê**.
+Không phải làm lại gì.
+
+Nhưng: **32 chỗ neo cứng đó là bẫy cho việc tiếp theo.** Thêm bất kỳ khối nào **phía trên** bảng —
+mà đó đúng là thứ tôi đề nghị ở dưới — sẽ đẩy mọi hàng xuống và làm đỏ hàng loạt phép kiểm, trong
+khi file xuất ra hoàn toàn đúng. Ai làm việc đó thì **neo động trước** (tìm hàng có nhãn
+`"Ngày update"` rồi cộng 1), đừng sửa 32 con số bằng tay.
+
+**BA LỖ TRONG ĐẶC TẢ V4b — V4b KHÔNG BỊT, VÀ ĐÂY MỚI LÀ CHỖ CÁCH BẢN PDF XA NHẤT**
+
+Tôi đọc `pdf-export.ts` rồi đọc chỗ app gọi nó (`index.tsx:4374`). **PDF không phải là cái bảng.**
+Nó là bốn thứ ghép lại:
+
+```
+title      : #pdf-title
+blocks     : #pdf-kpi      — dải 6 thẻ KPI (Dự án hiện hành · Trễ tiến độ · …)
+             #pdf-stages   — 7 thẻ giai đoạn, mỗi thẻ một thanh xanh/đỏ/vàng/xám, kèm hàng chú giải
+table      : #pdf-table
+nền        : #eef1f4 xám nhạt, card trắng nổi lên, KHÔNG có đường lưới
+```
+
+Excel xuất ra có: một dòng tiêu đề, một dòng "Phạm vi:", cái bảng, và (sau V4b) khối chú giải cuối.
+**Không có KPI. Không có thẻ giai đoạn. Vẫn còn đường lưới.**
+
+Chuẩn chấm của người dùng là *"người thứ ba nhìn hai cái phải thấy cùng một báo cáo, cùng bộ màu,
+cùng bố cục"*. Đặt hai file cạnh nhau thì thứ đập vào mắt trước **không phải** chiều cao hàng hay
+thanh màu — mà là **bản PDF mở ra có một trang tóm tắt, bản Excel thì vào thẳng bảng dữ liệu**.
+Bảy việc trong đặc tả V4b đều nằm **trong** cái bảng; không việc nào nói tới hai khối kia.
+
+| # | Thiếu | Công | Ghi chú |
+|---|---|---|---|
+| **1** | **Tắt đường lưới** — `ws.views[0].showGridLines = false` | **một dòng** | Đổi nhiều nhất trên mỗi đồng công. Có lưới thì mắt đọc ra "bảng tính"; tắt đi mới ra "báo cáo". PDF không có lưới. Tôi đã grep: chưa có ở đâu trong `excel-export.ts`. |
+| **2** | **Dải KPI ở đầu sheet** — 6 ô KPI, mỗi ô một nhãn + một số, tô theo tone như app | trung bình | Đây là **cả trang đầu của bản PDF**. Số đã có sẵn trong `p.projectCount`, `p.lateCount`… ở `index.tsx`; chỉ cần truyền xuống. |
+| **3** | **Khối 7 thẻ giai đoạn** — tên giai đoạn + viết tắt + số việc theo bậc màu | nặng hơn | Thanh xếp lớp của app (xanh mờ → đỏ → vàng → xám) Excel không vẽ nổi trong một ô. Làm được: mỗi giai đoạn một hàng, bốn cột số theo bậc màu. **Đừng nhận việc theo cách "vẽ lại đúng cái thanh"** — đó lại là cái bẫy "giống hệt PDF" mà chính Plan đã cảnh báo. |
+
+Việc 1 đáng làm **ngay**, gần như không có giá. Việc 2 và 3 nên để Plan quyết có mở V4c hay không —
+nhưng **phải nói với người dùng là Excel hiện chưa có hai khối đó**, đừng để họ mở file ra mới thấy.
+
+**MỘT CHỖ ĐẶC TẢ V4b VIẾT SAI, VÀ THỰC THI ĐÃ KHÔNG CHÉP THEO — GHI LẠI KẺO NGƯỜI SAU "SỬA" NGƯỢC**
+
+Đặc tả mục 5 bảo khối chú giải ghi *"đúng chữ như chú thích trên app"* rồi liệt kê
+`Trễ tiến độ · Cần cắt đầu việc · Cần tập trung · Đã hoàn thành`. **Hai câu đó chống nhau.** Chú
+giải thật trên app (`index.tsx:4802`) ghi `Hoàn thành · Cảnh báo đỏ · Cảnh báo vàng · Đang triển
+khai` — tức **theo MÀU**, kèm ghi chú tại chỗ nói thẳng *"ghi tên nhãn là sai"* vì một màu gom nhiều
+nhãn. Bốn chữ đặc tả liệt kê là `ALERT_TXT`, vốn dùng cho **chữ trong ô cột Tình trạng**, không phải
+cho chú giải. Đặc tả trộn hai bộ từ vựng khác nhau của app.
+
+**Thực thi đã bắt được chỗ này và làm đúng**, không chép theo đặc tả: khối chú giải trong `a914b2f`
+tách làm hai hàng — hàng màu ghi `Nặng / Cần chú ý / Đã hoàn thành` kèm câu *"Màu nói MỨC NGHIÊM
+TRỌNG, không dính chết vào nhãn"*, rồi hàng dưới liệt kê bốn nhãn **như từ vựng**, không gán màu.
+Đây là cách giải đúng, và tốt hơn cả phương án chép y nguyên chú giải app.
+
+Còn lại một chuyện nhỏ thật: chữ trên Excel (`Nặng / Cần chú ý`) khác chữ trên app (`Cảnh báo đỏ /
+Cảnh báo vàng`), và Excel không có mục xám `Đang triển khai`. Chấm cạnh nhau thì người thứ ba sẽ
+thấy hai chú giải khác chữ. **Nên thống nhất về đúng chữ của app**, không chặn.
+
+**Plan sửa lại mục 5 của đặc tả** để người sau không đọc đặc tả rồi "sửa" ngược lại thành sai.
+
+**TRẢ LỜI LUÔN CHỖ CÒN MƠ HỒ CỦA ĐẶC TẢ V4b** (ngưỡng Quá hạn, Plan chưa đo): chỉ có **một** ngưỡng,
+`OD_ALERT_DAYS = 14` ở `src/lib/filter.ts:34`, và app chia **hai bậc** ở `filter.ts:138`
+(`>= 14` → bậc A, `> 0` → bậc B, còn lại C). V4b tô đúng hai bậc đó và **không** tự chế thang màu
+liên tục — đúng. Không có ngưỡng thứ hai nào để phải hỏi lại.
+
+**V4b CHƯA CÓ PHÁN QUYẾT.** Phần trên là soi đặc tả và soi ba chỗ Plan hỏi, **không phải** phán quyết
+cho `a914b2f`. V4b cần một lượt Review riêng: nó thêm 143 dòng vào `exportTableXlsx`, có bảng màu
+chép tay, có định dạng điều kiện, có `pageSetup`. Tôi chưa chạy lại gì trên commit đó.
+
+---
+
+### BỐN ĐIỀU KIỆN — áp cho cả hai bản
+
+**ĐK1 · Deploy phải xuất phát từ CÂY SẠCH ở commit đã có phán quyết. Đây là điều kiện chặn thật.**
+
+*Cập nhật cuối 28/09:* lúc tôi viết điều kiện này, 154 dòng V4b đang nằm trong cây chưa commit. Thực
+thi **đã commit chúng** thành `a914b2f`, và commit đó **chỉ gồm 4 đường dẫn code/test** — không kéo
+theo mục ④ tôi đang viết. Làm đúng luật 5.6 và L12.
+
+Nên lỗ hổng "deploy dựng từ cây bẩn" đã đóng. Nhưng điều kiện **vẫn còn**, chỉ đổi lý do:
+
+- `a914b2f` (V4b) **chưa có phán quyết Review nào.** Deploy `main` lúc này là đưa V4b lên production
+  không qua cửa cuối. Phán quyết ở mục này chỉ phủ `40eae6c` và `c188f92`+`8763e2a`.
+- V2b **không nằm trong đường đó**: nó ở `40eae6c`, độc lập hoàn toàn với V4 (không chung file, không
+  chung đường gọi). Muốn deploy V2b một mình thì deploy từ một commit không chứa V4b, hoặc chờ V4b
+  có phán quyết rồi lên cả ba.
+
+Ai bấm deploy: `git status --short` phải trống ở `src/`, **và** commit đang deploy phải là commit có
+phán quyết trong mục này.
+
+**ĐK2 · Dọn phép kiểm đang đỏ trước khi bấm deploy.** Không phải vì nó liên quan hai bản này — nó
+không liên quan. Mà vì deploy trong lúc bộ kiểm đỏ là **tự bỏ lưới an toàn**: lần sau ai chạy
+`vitest` cũng thấy một phép đỏ và sẽ học cách bỏ qua nó. Box Test kia cần **hoàn thành hoặc hoàn
+tác** bản sửa `tests/matrix-reader.test.ts` đang dở (`wbChung` chưa khai). Tôi **không sửa** —
+không phải việc của Review, và đó là việc đang làm dở của người khác.
+
+**ĐK3 · V2b: chạy bảng ba nhánh NGAY SAU deploy, đừng đợi hết ngày.** Đây là chỗ không ai kiểm được
+từ máy: `crypto.subtle` trên Workers. Bảng ba nhánh ở cuối mục ① là đường đỡ đúng chỗ, và nó **đủ
+đỡ** — nó phân biệt được cả ba trường hợp (băm chạy / băm rỗng / dòng đếm mất hẳn) bằng một câu SQL.
+Thêm một điều cụ thể: câu kiểm phải bao gồm `SELECT COUNT(*) FROM kv_write WHERE bam IS NULL AND
+ts >= <ngày deploy>`. Nếu con số đó **lớn hơn 0**, nghĩa là đường lùi hai cột đang chạy — tức
+`crypto.subtle` hoặc cột `bam` có vấn đề, và cái băm đang im lặng không có. Không hỏi câu đó thì
+hỏng kiểu đó **không phát ra tiếng nào**, đúng họ hàng L3 mà Plan đã lo.
+
+**ĐK4 · V4a: mở file xuất ra bằng Excel thật, đúng một lần.** Thực thi đã tự khai đây là chỗ họ
+không làm được (mục ② số 5) và họ khai đúng. Mọi kết luận — của Thực thi, của Test, và của tôi —
+đều đọc XML trong file `.xlsx` chứ không mở Excel. Chuẩn OOXML nói ô mang `numFmtId` trỏ `dd/mm/yy`
+sẽ hiện ra thế, và tôi tin, nhưng **một lần mở thật** là rẻ hơn nhiều so với gửi cho Ban điều hành
+một file hiện `########`. Việc cần làm đúng ba thứ: bấm sắp xếp cột "Ngày kết thúc" xem có ra đúng
+thứ tự thời gian, bôi đen cột "Quá hạn" xem thanh dưới có hiện Sum, và bấm dấu `+` ở lề trái xem
+nhóm có xổ ra.
+
+**THỨ TỰ — đã cập nhật sau khi Plan chốt `baef39b`.**
+
+Plan vừa chốt *"không deploy V4a một mình, ghép với V4b rồi lên một lần"*, vì V4a sửa một thứ đang
+sai nhưng người dùng mở file ra gần như không thấy khác. Tôi soi V4a về mặt **kỹ thuật** và nó lành;
+việc nó có đủ để xuất hiện trước người dùng một mình hay không là **quyết định của Plan và người
+dùng**, không phải của Review. Phán quyết ĐẠT KÈM ĐIỀU KIỆN của tôi cho V4a **giữ nguyên** — nó nói
+code này an toàn để lên, không nói nó nên lên lúc nào.
+
+Hệ quả gộp lại:
+
+1. **V2b lên trước, một mình, được.** Nó độc lập hoàn toàn với V4: không chung file, không chung
+   đường. Deploy nó không phải chờ V4b. Cần ĐK1 (cây sạch) + ĐK2 (bộ kiểm xanh) + ĐK3.
+2. **V4a chờ V4b.** Quyết định của Plan làm ĐK1 chỉ còn **một đường**: V4b đi trọn dây chuyền, rồi
+   lên cùng V4a. Không còn phải stash gì nữa — nhưng lúc đó **V4b phải có phán quyết Review riêng**,
+   và 154 dòng đang nằm trong cây hôm nay **chưa có**.
+3. **ĐK4 (mở bằng Excel thật) dịch sang buổi deploy V4a+V4b**, và lúc đó đáng làm gộp một lần: V4b
+   sinh ra để sửa phần nhìn, nên dù sao cũng phải mở Excel thật mới nghiệm thu được nó.
 
 ---
 
 ## ⑤ BÀI HỌC MỚI
+
+**Vòng V2b + V4a (28/09) — REVIEW đã thêm `L15` vào NEN-TANG.md phần 4** — *`tsc` không phủ
+`tests/`, nên "tsc sạch" chưa bao giờ nói gì về file kiểm.* Có ngày, có con số, có chỗ nó vừa để lọt
+thật (`wbChung` không tồn tại mà `tsc` exit 0).
+
+**Và đã ghim một chỗ TRỐNG ở `L14`.** Commit `40eae6c` ghi *"xem L14"* nhưng mục đó **chưa bao giờ
+được viết**. Nội dung thì đọc được từ chính thông điệp commit — *chốt bằng số lượt `put`, không chốt
+bằng dấu vết gián tiếp* — nhưng tôi không viết hộ: người viết dòng ấy biết chuyện gì đã xảy ra, tôi
+chỉ biết nó được nhắc tới. Tôi đã đánh dấu `L14` là **chưa viết, đừng ai lấy số đó**, và mục của tôi
+lấy `L15`. Việc này đúng thứ luật 5.4 dựng ra để chặn: mã lỗi trong ghi chú mà trỏ vào chỗ trống thì
+người sau đi tìm không thấy gì, rồi "dọn dẹp" đoạn code kèm nó.
+
+Chỗ đáng nhớ nhất của lượt Review này không phải hai bản code — cả hai đều lành. Nó là chuyện
+**cùng một phép kiểm, cùng một commit, ba máy ra ba kết quả**: `findMatrixSheets` chạy 1.263 ms trên
+máy này, 5.943 ms ở Plan, 8.352 ms ở Thực thi. Cả ba báo trung thực. Không ai sai. Nhưng nếu chỉ một
+người đo rồi kết luận "có gì đó vừa chậm đi", cả đội sẽ đi tìm một nguyên nhân không tồn tại. Phép
+kiểm nào đọc file thật thì thời gian của nó **không phải một hằng số** — đừng chốt mốc sát, và đừng
+đọc một lần đo như một sự thật.
+
+---
 
 **Vòng V2b (24/09) — TEST: không thêm mục nào.** Chỗ NFC/NFD ở mục ③ là một cái bẫy thật, nhưng sổ
 lỗi phần 4 là sổ **những lần đã hỏng thật, có ngày tháng**. Cái này chưa làm hỏng gì — nó mới chỉ

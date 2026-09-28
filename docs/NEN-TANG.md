@@ -108,6 +108,11 @@ Không phải lo xa. Mỗi mục là một lần app hỏng, có ngày tháng. �
 **L13 · Cái thước tự nó sai, và không ai đo lại cái thước.** 21/09/2026: lệnh quét byte điều khiển ở phần 6 chỉ dò 5 giá trị (`0x00, 0x08, 0x0b, 0x0c, 0x1b`), trong khi mã nguồn đang mang cả `0x01` (`src/lib/compliance.ts:203`) lẫn `0x11` (`scripts/bao-cao-hang-ngay.gs:341,342`). Chạy lệnh cũ lên đúng hai file đó thì nó in **`sach`**. **3 trên 16 byte vô hình với chính công cụ của đội.** Mục "ĐÃ ĐO" của cả bốn box đều có dòng `quét byte điều khiển: sạch/có` - và dòng đó đã nói dối bao lâu thì không ai biết. Cũng chính vì cái thước hụt này mà Plan đo V1 ra 14 byte/6 file thay vì 16 byte/7 file, bỏ sót nguyên file Apps Script.
 → Phép đo nào bốn box dựa vào để nghiệm thu thì **phải tự kiểm cái thước trước**: cho nó chạy lên một mẫu đã biết chắc là bẩn, xem có bắt được không. Lệnh ở phần 6 đã sửa cho phủ hết dải.
 
+**L14 · CHƯA VIẾT — chỗ này đang trống.** Commit `40eae6c` (V2b, 24/09/2026) ghi *"Chốt bằng SỐ LƯỢT put, không chốt bằng dấu vết gián tiếp - xem L14"*, nhưng mục L14 chưa bao giờ được viết vào đây. Người đọc commit đó đi tìm sẽ không thấy gì. Box đã viết dòng ấy điền vào chỗ này; đừng ai lấy số L14 cho mục khác.
+
+**L15 · `tsc` không phủ `tests/`, nên "tsc sạch" chưa bao giờ nói gì về file kiểm.** 28/09/2026: `tests/matrix-reader.test.ts` gọi một biến **không tồn tại** (`wbChung`), mà `npx tsc --noEmit` vẫn báo sạch, exit 0. Lý do: `tsconfig.json` khai `include: ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "eslint.config.js"]` — **không có `tests`**. Chỉ `vitest` mới lộ ra, và lộ ở dạng `ReferenceError` lúc chạy chứ không phải lỗi kiểu lúc dịch. Dòng `tsc: sạch` trong mục ĐÃ ĐO của cả bốn box vì thế **hẹp hơn mọi người vẫn đọc nó**.
+→ Đọc `tsc: sạch` là "code sản phẩm sạch kiểu", không phải "cả cây sạch kiểu". Muốn phủ cả file kiểm thì thêm `tests` vào `include` — nhưng đó là quyết định có giá (bộ kiểm dùng nhiều `as unknown as` để dựng DOM giả, thêm vào là phải dọn), nên **đo trước rồi hãy đổi**. Họ hàng L13: thước không sai, thước chỉ hẹp.
+
 ---
 
 ## 5. LUẬT CỨNG - ÁP CHO CẢ BỐN BOX
