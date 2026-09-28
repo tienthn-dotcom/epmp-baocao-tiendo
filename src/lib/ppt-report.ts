@@ -859,7 +859,7 @@ export async function exportProjectDeck(input: PptReportInput): Promise<void> {
           }
           if (im.at) s.addText(`Ảnh ${pg * per + i + 1} · ${fmtDate(im.at)}`, { x, y: y + gh + 0.03, w: gw, h: 0.24, fontFace: FONT, fontSize: 9.5, color: C.mute });
         });
-        footer(s, "Ảnh hiện trường do PMO/đội dự án cập nhật — sắp theo thời gian.", String(pageNo++));
+        footer(s, "Ảnh hiện trường do OCC/đội dự án cập nhật — sắp theo thời gian.", String(pageNo++));
       }
     }
   }

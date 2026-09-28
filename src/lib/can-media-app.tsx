@@ -209,7 +209,7 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
         {missProject ? (
           <div style={{ background: "#fff", borderRadius: 14, padding: "26px 20px", textAlign: "center", color: C.sub, fontSize: 13.5, lineHeight: 1.7, boxShadow: "0 10px 30px rgba(15,23,42,.08)" }}>
             Dự án <b style={{ color: C.ink }}>{missProject}</b> chưa được gắn link ma trận nên chưa có bảng để bấm.
-            {canEdit && <div style={{ marginTop: 6, fontSize: 12.5 }}>PMO vào ePMP → dòng dự án → “Gắn/Sửa link” để gắn ma trận, hoặc chọn dự án khác ở ô trên.</div>}
+            {canEdit && <div style={{ marginTop: 6, fontSize: 12.5 }}>OCC vào ePMP → dòng dự án → “Gắn/Sửa link” để gắn ma trận, hoặc chọn dự án khác ở ô trên.</div>}
             <button type="button" onClick={() => setMissProject(null)}
               style={{ marginTop: 14, border: "none", borderRadius: 9, padding: "8px 16px", background: C.tealD, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               Xem dự án đang chọn

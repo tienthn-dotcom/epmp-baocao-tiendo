@@ -87,11 +87,11 @@ import { AA_LOGO_DATA_URI } from "@/lib/aa-logo";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ePMP · Projects Master Plan · PMO" },
+      { title: "ePMP · Projects Master Plan · OCC" },
       {
         name: "description",
         content:
-          "Dashboard PMO theo dõi tiến độ Master Plan, chỉ tập trung lệch tiến độ và quá hạn thời gian, không có yếu tố tài chính.",
+          "Dashboard OCC theo dõi tiến độ Master Plan, chỉ tập trung lệch tiến độ và quá hạn thời gian, không có yếu tố tài chính.",
       },
       { property: "og:title", content: "Báo cáo tiến độ Master Plan" },
     ],
@@ -536,6 +536,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.114.0", date: "28/09/2026", items: [
+    "ĐỔI TÊN BỘ PHẬN: PMO nay hiển thị là OCC. Badge trước tên trong ô Vướng mắc / Giải pháp, mục Phân cấp người dùng, bộ lọc cấp trong Nhật ký giám sát, các dòng tiêu đề và mọi câu thông báo quyền đều đã đổi theo.",
+    "QUYỀN KHÔNG ĐỔI MỘT CHÚT NÀO. Đây chỉ là đổi chữ hiển thị — ai đang sửa, ẩn, gắn link được thì vẫn làm được y như trước, không ai phải phân lại cấp.",
+    "Các mục CÓ GÌ MỚI cũ vẫn ghi “PMO” vì đó là ghi chép của thời điểm đó — sửa lại thành OCC là viết lại lịch sử, nên để nguyên.",
+  ] },
   { v: "3.113.0", date: "28/09/2026", items: [
     "HẾT KHỰNG KHI CHUYỂN QUA LẠI GIỮA CÁC APP. Trước đây mỗi lần rời sang MTLĐ hay Hiệu suất dự án rồi quay về Master Plan là app tải lại và phân tích lại nguyên file nguồn 2 MB — đo được khoảng 2,3 giây mỗi lần. Nay dữ liệu đã tải được giữ lại 5 phút, nên quay đi quay lại không phải chờ nữa.",
     "Vì sao 5 phút: file nguồn thường cả tuần mới có một đợt cập nhật, nên 5 phút vẫn là rất ngắn so với nhịp thật. Ai cần số mới ngay thì bấm NÚT LÀM MỚI — nút đó vẫn lấy thẳng bản mới, không qua bộ nhớ đệm.",
@@ -1748,7 +1753,7 @@ function Header({ loading, dataMode, freshAt, source, onRefresh, gapThreshold }:
             </div>
             {!narrowHd && (
               <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-teal-700 sm:text-[10px]">
-                PMO · Bộ phận Project Planning
+                OCC · Bộ phận Project Planning
               </div>
             )}
           </div>
@@ -5361,7 +5366,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
             {/* PMO/Admin: mở FILE GỐC (Google Sheet đang gắn link) trong tab mới. Người thường không thấy. */}
             {canEdit && fid && (
               <a href={`https://docs.google.com/spreadsheets/d/${fid}/edit${gid ? `#gid=${gid}` : ""}`} target="_blank" rel="noopener noreferrer"
-                className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50" title="Mở file Google Sheet gốc đang gắn link (PMO/Admin)">↗ File gốc</a>
+                className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50" title="Mở file Google Sheet gốc đang gắn link (OCC/Admin)">↗ File gốc</a>
             )}
             <button onClick={() => void hardUpdate()} disabled={updating}
               className="rounded-md px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-60"
@@ -5493,7 +5498,7 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
       <div className="flex max-h-[92vh] w-full max-w-[900px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">PMO · Gắn link hiển thị</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Gắn link hiển thị</div>
             <div className="text-sm font-semibold text-slate-900 line-clamp-1" title={projName}>{projName || "Dự án"}</div>
           </div>
           <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
@@ -5709,7 +5714,7 @@ function ProjImageSetupDialog({ projKey, projName, projHid, count, canManage, on
       <div className="flex max-h-[92vh] w-full max-w-[720px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">PMO · Ảnh dự án · {total}/{PROJIMG_MAX_CLIENT}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Ảnh dự án · {total}/{PROJIMG_MAX_CLIENT}</div>
             <div className="line-clamp-1 text-sm font-semibold text-slate-900" title={projName}>{projName || "Dự án"}</div>
           </div>
           <button aria-label={"Đóng"} onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Đóng"><X className="h-4 w-4" /></button>
@@ -5829,7 +5834,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
       <div className="space-y-1 font-bold leading-snug text-white">
         {vis.map((m) => (
           <div key={m.id} className="whitespace-pre-line">
-            {m.id === MSG_NGUON && <span title="Bộ phận PMO — ghi trong file nguồn" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">PMO</span>}
+            {m.id === MSG_NGUON && <span title="Bộ phận OCC — ghi trong file nguồn" className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">OCC</span>}
             {m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />}
           </div>
         ))}
@@ -5864,7 +5869,7 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] leading-none text-slate-900">
             <UpdateChip date={m.at} today={today ?? ""} />
             {m.author !== "(cũ)" && <><RoleBadge email={m.author} /><span className="font-semibold text-slate-900">{m.author.split("@")[0]}</span></>}
-            {m.id === MSG_NGUON && <span title="Bộ phận PMO — ghi trong file nguồn" className="inline-block shrink-0 rounded bg-[#1e3a5f] px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-white">PMO</span>}
+            {m.id === MSG_NGUON && <span title="Bộ phận OCC — ghi trong file nguồn" className="inline-block shrink-0 rounded bg-[#1e3a5f] px-1 text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-white">OCC</span>}
             {m.id !== MSG_NGUON && ((field === "note" && onReply) || canHide(m) || ((isAdmin || isPmo) && !!onOp)) && (
               <span className="ml-auto flex shrink-0 items-center gap-1.5 text-slate-500">
                 {field === "note" && onReply && (
@@ -6667,7 +6672,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
               {canSetupLink && linkKey && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); onSetupLink?.(linkKey, it.stage === "Thi công lắp đặt" ? it.projectName : `${it.projectName} · ${it.desc || it._stageLabel || ""}`, it.maCT || it.projectCode || "", linkCfg); }}
                   className="mt-0.5 inline-flex items-center gap-0.5 text-[0.72em] font-medium text-slate-400 hover:text-teal-700 print:hidden"
-                  title={linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link / tài liệu (PMO)" : "Gắn link hoặc tài liệu PDF cho hạng mục (PMO)"}>
+                  title={linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link / tài liệu (OCC)" : "Gắn link hoặc tài liệu PDF cho hạng mục (PMO)"}>
                   <Link2 className="h-3 w-3" />{linkCfg?.fileId || linkCfg?.pdfFileId ? "Sửa link" : "Gắn link"}
                 </button>
               )}
@@ -8483,7 +8488,7 @@ function HideMenu({ nhan, dangAn, laAdminPmo, chiIcon, lop, onChon }: {
           </button>
           <button type="button" disabled={!laAdminPmo}
             onClick={() => { if (!laAdminPmo) return; setViTri(null); onChon("chung"); }}
-            title={laAdminPmo ? undefined : "Chỉ admin / PMO"}
+            title={laAdminPmo ? undefined : "Chỉ admin / OCC"}
             className={`block w-full px-3 py-1.5 text-left text-[12.5px] font-semibold ${laAdminPmo ? "text-slate-800 hover:bg-slate-100" : "cursor-not-allowed text-slate-400"}`}>
             Ẩn với mọi người
           </button>
@@ -8801,7 +8806,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
           {/* Lọc theo CẤP người dùng — xem riêng hoạt động của từng nhóm. */}
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-medium text-slate-500">Cấp:</span>
-            {([["", "Tất cả"], ["PMO", "PMO"], ["BOD", "BOD"], ["PM", "PM"], ["KHAC", "Chưa phân cấp"]] as const).map(([v, l]) => (
+            {([["", "Tất cả"], ["PMO", "OCC"], ["BOD", "BOD"], ["PM", "PM"], ["KHAC", "Chưa phân cấp"]] as const).map(([v, l]) => (
               <button key={v || "all"} onClick={() => setCapF(v)}
                 className={`rounded-md border px-2 py-1 text-[11px] font-medium ${capF === v ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600 hover:border-indigo-400"}`}>
                 {l}{v && demCap[v] ? ` (${demCap[v]})` : ""}

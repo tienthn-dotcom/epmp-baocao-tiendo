@@ -50,7 +50,7 @@ type AppDef = { id: string; name: string; sub: string; icon: ReactNode; live?: b
 // `roleOnly: [...]`    = chỉ người ĐƯỢC PHÂN CẤP trong danh sách đó (+ admin) thấy. Dùng cho số
 //                        sản lượng / doanh thu / hiệu suất nhân sự: không phải ai cũng được xem.
 const APPS: AppDef[] = [
-  { id: "epmp", name: "Project Master Plan", sub: "ePMP · PMO", icon: <LayoutDashboard className="h-5 w-5" />, live: true },
+  { id: "epmp", name: "Project Master Plan", sub: "ePMP · OCC", icon: <LayoutDashboard className="h-5 w-5" />, live: true },
   { id: "mtld", name: "MTLĐ", sub: "Biểu đồ tiến độ", icon: <LineChart className="h-5 w-5" />, live: true, adminPmoOnly: true },
   { id: "detail", name: "DST", sub: "Theo dõi tiến độ chi tiết", icon: <ListTree className="h-5 w-5" />, live: true },
   { id: "pmoai", name: "Trợ lý PMO", sub: "Cảnh báo & quyết định", icon: <Brain className="h-5 w-5" /> },

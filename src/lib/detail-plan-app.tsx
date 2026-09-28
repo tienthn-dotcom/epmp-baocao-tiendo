@@ -377,7 +377,7 @@ Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. F
         // Ghim xong thì BỎ bản xem tạm, để bảng dựng lại từ DANH SÁCH NGUỒN. Nhờ vậy cái đang hiện và
         // các link "Mở file gốc" luôn là một — trước đây bảng hiện file vừa dán mà link trỏ nguồn cũ.
         setImportName(null); setReal(null); setLinkVal(""); setLinkSheet(""); }
-      catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/PMO): " + (e as Error).message); }
+      catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/OCC): " + (e as Error).message); }
     } catch (e) { setImportErr((e as Error).message); setBusy(false); }
   };
   // LÀM MỚI = tải lại DỮ LIỆU MỚI từ NGUỒN ĐANG XEM với force (nguồn = link đã ghim ở KV, hoặc file mẫu).
@@ -657,7 +657,7 @@ ${x.fileId}`}
             <div style={{ fontSize: 12.5, color: "#64748b", margin: "8px 0 0", lineHeight: 1.6 }}>
               {canManage
                 ? "Bấm “Nhập dữ liệu” ở thanh trên, dán link Google Sheet và chọn tab để ghim nguồn cho cả công ty cùng xem."
-                : "PMO chưa ghim link tiến độ chi tiết. Nhờ PMO nhập nguồn rồi mở lại trang này."}
+                : "OCC chưa ghim link tiến độ chi tiết. Nhờ OCC nhập nguồn rồi mở lại trang này."}
             </div>
           </div>
         ) : <>

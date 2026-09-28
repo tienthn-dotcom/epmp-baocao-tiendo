@@ -303,7 +303,7 @@ function buildHtml(input: PptReportInput): string {
 
     <!-- FOOTER -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:8px;border-top:1px solid ${C.line};font-size:10px;color:${C.faint}">
-      <span>Nguồn: ePMP · Projects Master Plan · PMO</span>
+      <span>Nguồn: ePMP · Projects Master Plan · OCC</span>
       <span>Xuất lúc ${stamp}</span>
     </div>
   </div>`;

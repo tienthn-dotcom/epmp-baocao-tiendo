@@ -24,7 +24,7 @@ const SHELL = (title: string, accent: string, body: string) => `<!doctype html>
 <body><div class="card"><div class="bar"></div><div class="in">
   <div class="eyebrow">ePMP · Projects Master Plan</div>
   ${body}
-  <div class="foot">PMO · Bộ phận Project Planning — AA Corporation</div>
+  <div class="foot">OCC · Bộ phận Project Planning — AA Corporation</div>
 </div></div></body></html>`;
 
 /** Email hợp lệ với Google nhưng KHÔNG nằm trong danh sách được cấp quyền. */
@@ -33,7 +33,7 @@ export const deniedPage = (email: string, reason: string) =>
   <h1>Tài khoản chưa được cấp quyền</h1>
   <p>Bạn đang đăng nhập bằng <span class="mail">${escapeHtml(email)}</span>.</p>
   <p>${escapeHtml(reason)}</p>
-  <p>Nếu bạn cần xem báo cáo này, liên hệ PMO để được thêm vào danh sách.</p>
+  <p>Nếu bạn cần xem báo cáo này, liên hệ OCC để được thêm vào danh sách.</p>
   <a class="btn" href="/auth/logout">Đăng nhập bằng tài khoản khác</a>`);
 
 /** Lỗi trong luồng OAuth (sai cấu hình, Google từ chối, state không khớp…). */
@@ -50,7 +50,7 @@ export const notConfiguredPage = () =>
   <h1>Chưa cấu hình đăng nhập</h1>
   <p>Ứng dụng chưa được nạp <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>
      hoặc <code>SESSION_SECRET</code>.</p>
-  <p>Truy cập bị chặn cho tới khi cấu hình xong. Liên hệ PMO.</p>`);
+  <p>Truy cập bị chặn cho tới khi cấu hình xong. Liên hệ OCC.</p>`);
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

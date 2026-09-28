@@ -191,7 +191,7 @@ export const xuatCsvKho = createServerFn({ method: "POST" })
 export const napCsvKho = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ csv: z.string().min(10).max(2_000_000) }).parse(input))
   .handler(async ({ data }): Promise<{ ghi: number; bo: number; loi: string[] }> => {
-    if (!(await duocQuanTri())) throw new Error("Chỉ admin/PMO mới được nạp dữ liệu vào kho.");
+    if (!(await duocQuanTri())) throw new Error("Chỉ admin/OCC mới được nạp dữ liệu vào kho.");
     const kq = docCsv(data.csv);
     if (!kq.rows.length) return { ghi: 0, bo: kq.bo, loi: kq.loi };
     return { ghi: await upsert(kq.rows), bo: kq.bo, loi: kq.loi };
@@ -201,7 +201,7 @@ export const napCsvKho = createServerFn({ method: "POST" })
 export const xoaNgayKho = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ ngay: z.string().min(8).max(10), maCT: z.string().max(120).optional() }).parse(input))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
-    if (!(await duocQuanTri())) throw new Error("Chỉ admin/PMO mới được xoá dữ liệu kho.");
+    if (!(await duocQuanTri())) throw new Error("Chỉ admin/OCC mới được xoá dữ liệu kho.");
     const ngay = chuanNgay(data.ngay);
     if (!ngay) throw new Error("Ngày không đúng dạng YYYY-MM-DD.");
     const d1 = await getD1();
@@ -219,7 +219,7 @@ export const xoaNgayKho = createServerFn({ method: "POST" })
 /** Dọn số quá cũ. Gọi tay khi cần — kho này mỗi ngày chỉ thêm vài trăm dòng nên chưa cần cron. */
 export const donKho = createServerFn({ method: "POST" })
   .handler(async (): Promise<{ ok: boolean }> => {
-    if (!(await duocQuanTri())) throw new Error("Chỉ admin/PMO mới được dọn kho.");
+    if (!(await duocQuanTri())) throw new Error("Chỉ admin/OCC mới được dọn kho.");
     const d1 = await getD1();
     if (!d1) return { ok: true };
     await ensure(d1);

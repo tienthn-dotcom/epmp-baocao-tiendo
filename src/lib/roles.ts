@@ -18,9 +18,23 @@ export const DEFAULT_ROLES: Record<string, UserRole> = {
   "thanhpv2@aacorporation.com": "PMO",
 };
 
-/** Nhãn + class badge cho từng cấp (một nguồn dùng chung cho badge lẫn dialog phân cấp). */
+/**
+ * Nhãn + class badge cho từng cấp (một nguồn dùng chung cho badge lẫn dialog phân cấp).
+ *
+ * ⚠️ KHOÁ LÀ GIÁ TRỊ ĐANG LƯU, NHÃN LÀ THỨ HIỆN RA — HAI THỨ KHÁC NHAU, ĐỪNG "DỌN CHO NHẤT QUÁN".
+ *
+ * Bộ phận đổi tên từ PMO sang OCC (28/09/2026), nên `short`/`label` hiện **OCC**. Nhưng khoá của
+ * object vẫn là `PMO`, vì đó là **chuỗi đang nằm trong kho KV `roles:v1`** — đọc kho thật ngày
+ * 28/09: 10 người mang giá trị `"PMO"`, 4 người mang `"BOD"`.
+ *
+ * Đổi khoá `PMO` thành `OCC` ở đây (hoặc trong `UserRole` / `ALL_ROLES` / `DEFAULT_ROLES` / cái
+ * `z.enum(["PMO","BOD","PM"])` ở `saveUserRole`) sẽ làm `roleOf` so `"PMO"` trong kho với `"OCC"`
+ * trong code → không khớp → trả `null` → **10 người mất sạch quyền sửa / ẩn / quản lý ngay lập
+ * tức**, trên app đang chạy thật. Muốn đổi giá trị lưu thì phải có bước chuyển dữ liệu trong KV
+ * trước, không phải sửa mỗi code.
+ */
 export const ROLE_META: Record<UserRole, { short: string; label: string; badge: string }> = {
-  PMO: { short: "PMO", label: "Bộ phận PMO", badge: "bg-[#1e3a5f] text-white" },
+  PMO: { short: "OCC", label: "Bộ phận OCC", badge: "bg-[#1e3a5f] text-white" },
   BOD: { short: "BOD", label: "Ban lãnh đạo (BOD)", badge: "bg-[#C00000] text-[#FFD700]" },
   // PM = Project Manager phụ trách dự án. Xanh mòng két: đứng cạnh navy của PMO và đỏ của BOD vẫn
   // phân biệt được ngay, kể cả trên badge nhỏ trong box chat.

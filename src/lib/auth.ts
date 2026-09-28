@@ -164,7 +164,7 @@ export function decideAccess(email: string, hd: string | undefined, allow: strin
   if (!e) return { ok: false, reason: "Không đọc được email từ Google." };
   // Chưa seed danh sách → CHẶN HẾT. Tuyệt đối không được mặc định "cho qua": quên seed
   // mà lại mở toang thì còn tệ hơn không có đăng nhập, vì ai cũng tưởng đã khoá.
-  if (!allow) return { ok: false, reason: "Danh sách người dùng chưa được cấu hình. Liên hệ PMO." };
+  if (!allow) return { ok: false, reason: "Danh sách người dùng chưa được cấu hình. Liên hệ OCC." };
 
   const dom = allowedHd?.trim().toLowerCase();
 

@@ -188,7 +188,7 @@ export const editMediaMsg = createServerFn({ method: "POST" })
       if (i < 0) throw new Error("Không thấy tin cần sửa.");
       // Sửa/xoá: tác giả tự làm được; admin và PMO làm được cho mọi tin (giống bên Vướng mắc).
       const quyen = cur[i].author === me || (await laAdminHoacPmo(data.devAs));
-      if (!quyen) throw new Error("Chỉ người viết, admin hoặc PMO mới sửa được tin này.");
+      if (!quyen) throw new Error("Chỉ người viết, admin hoặc OCC mới sửa được tin này.");
       if (data.op === "del") msgs = cur.filter((_, k) => k !== i);
       else {
         const t = capNganMsg(data.text);

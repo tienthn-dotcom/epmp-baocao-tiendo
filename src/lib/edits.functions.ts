@@ -1047,7 +1047,7 @@ export const setHiddenRow = createServerFn({ method: "POST" })
     // Ẩn CHO MỌI NGƯỜI vẫn là quyết định của admin/PMO — nó đổi bảng của cả công ty.
     // Ẩn RIÊNG thì ai cũng làm được: chỉ đổi bảng của chính họ.
     if (chung && !((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))))
-      throw new Error("Chỉ admin/PMO mới được ẩn dòng cho mọi người.");
+      throw new Error("Chỉ admin/OCC mới được ẩn dòng cho mọi người.");
     const all = await readHiddenAll();
     if (data.hide) {
       const ghi = { at: new Date().toISOString(), by: email };
@@ -1058,7 +1058,7 @@ export const setHiddenRow = createServerFn({ method: "POST" })
       delete all.nguoi[email]?.[data.key];
       if (all.chung[data.key]) {
         if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs))))
-          throw new Error("Dòng này do admin/PMO ẩn cho mọi người — nhờ họ bỏ ẩn.");
+          throw new Error("Dòng này do admin/OCC ẩn cho mọi người — nhờ họ bỏ ẩn.");
         delete all.chung[data.key];
       }
     }
@@ -1132,7 +1132,7 @@ export const saveSheetView = createServerFn({ method: "POST" })
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được gắn/tuỳ chỉnh link.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được gắn/tuỳ chỉnh link.");
     const map = await readSheetViews();
     const sheet = (data.sheet ?? "").trim();
     const range = (data.range ?? "").trim();
@@ -1238,7 +1238,7 @@ export const saveDstSource = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ ok: true }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được đổi nguồn DST.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được đổi nguồn DST.");
     const src: DstSource = { fileId: data.fileId, ...(data.gid ? { gid: data.gid } : {}), ...(data.sheet ? { sheet: data.sheet } : {}), ...(data.full ? { full: true } : {}) };
     const kv = await getKv();
     if (kv) { await kv.put(DST_SOURCE_KEY, JSON.stringify(src)); }
@@ -1301,7 +1301,7 @@ export const addDstSource = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ sources: DstSourceItem[] }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được thêm nguồn DST.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được thêm nguồn DST.");
     const list = await readDstSources();
     const same = (x: DstSourceItem) => x.fileId === data.fileId && (x.sheet ?? "") === (data.sheet ?? "") && (x.gid ?? "") === (data.gid ?? "");
     const moi: DstSourceItem = {
@@ -1323,7 +1323,7 @@ export const addDstSource = createServerFn({ method: "POST" })
 export const deleteDstSource = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ id: z.string().min(1).max(60), devAs: z.string().nullable().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ sources: DstSourceItem[] }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được xoá nguồn DST.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được xoá nguồn DST.");
     const list = (await readDstSources()).filter((x) => x.id !== data.id);
     await writeDstSources(list);
     return { sources: list };
@@ -1391,7 +1391,7 @@ export const saveSheetForm = createServerFn({ method: "POST" })
     }).parse(input),
   )
   .handler(async ({ data }): Promise<{ ok: true }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu form.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu form.");
     const map = await readSheetForms();
     const s = data.spec;
     const empty = !s || (!s.colW && !s.rowH && !s.cellColor && !s.cellFg && !s.codeColor && !s.cellText && !s.hiddenC?.length && !s.hiddenR?.length && !s.rules?.length && (!s.zoom || s.zoom === 1) && !s.boxW && !s.boxH && !s.zones);
@@ -1426,7 +1426,7 @@ export const getSheetSnap = createServerFn({ method: "POST" })
 export const saveSheetSnap = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ key: z.string().min(1).max(200), html: z.string().max(4_000_000), css: z.string().max(200_000), range: z.string().max(40).optional(), devAs: z.string().nullable().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ ok: true }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu snapshot.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu snapshot.");
     await writeSnap(data.key, { html: data.html, css: data.css, range: (data.range ?? "").trim() });
     return { ok: true };
   });
@@ -1515,10 +1515,10 @@ export const saveProjImage = createServerFn({ method: "POST" })
       else { await writeProjImgBlob(data.key, { imgs }); map[data.key] = { n: imgs.length, at: imgs[imgs.length - 1].at, by: imgs[imgs.length - 1].by }; }
       await writeProjImgIdx(map);
     };
-    if (data.clear) { if (!canManage) throw new Error("Chỉ admin/PMO mới được xoá cả bộ ảnh."); await commit([]); return { idx: map }; }
+    if (data.clear) { if (!canManage) throw new Error("Chỉ admin/OCC mới được xoá cả bộ ảnh."); await commit([]); return { idx: map }; }
     const cur = (await readProjImgBlob(data.key)).imgs;
     if (typeof data.removeIdx === "number") {
-      if (!canManage) throw new Error("Chỉ admin/PMO mới được gỡ ảnh.");
+      if (!canManage) throw new Error("Chỉ admin/OCC mới được gỡ ảnh.");
       if (data.removeIdx < cur.length) cur.splice(data.removeIdx, 1);
       await commit(cur);
       return { idx: map };
@@ -1584,7 +1584,7 @@ export const savePerfData = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ data: PerfData }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được cập nhật dữ liệu hiệu suất.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được cập nhật dữ liệu hiệu suất.");
     const d: PerfData = { projects: data.projects, block: data.block, src: (data.src ?? "").slice(0, 200), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
     await writePerfData(d);
     // MIRROR sang Drive: "Data Source" › DATABASE › Hiệu suất dự án › HieuSuatDuAn_latest.json (ghi đè, bản mới
@@ -1608,7 +1608,7 @@ export const startPerfSourceUpload = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ uploadUrl: string; path: string }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu file nguồn.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu file nguồn.");
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive.");
     const d = new Date(Date.now() + 7 * 3600_000);          // ngày VN (Worker chạy UTC)
@@ -1635,7 +1635,7 @@ export const saveComplianceReportPdf = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ id: string; link: string; updated: boolean }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được lưu báo cáo lên Drive.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu báo cáo lên Drive.");
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
     return await drive.driveSaveReportImpl(["ePMP", "Báo cáo tuân thủ"], data.fileName, data.dataUri);
@@ -1662,7 +1662,7 @@ async function writeEtl(source: string, json: string): Promise<void> {
 export const saveEtlRecords = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ source: z.enum(["epmp", "detail"]), bundle: z.string().max(20_000_000), devAs: z.string().nullable().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ ok: true }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được ghi ETL.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được ghi ETL.");
     await writeEtl(data.source, data.bundle);
     return { ok: true };
   });
@@ -1710,7 +1710,7 @@ export const saveDataset = createServerFn({ method: "POST" })
     dataset: z.string().max(20_000_000), devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ ok: true }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/PMO mới được publish dataset.");
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được publish dataset.");
     await writeDs(data.meta.id, data.dataset);
     const idx = await readDsIndex();
     const i = idx.findIndex((m) => m.id === data.meta.id);
