@@ -319,7 +319,151 @@ loạt phép kiểm **trong khi file xuất ra hoàn toàn đúng**. Phải neo 
 
 ## ③ TEST
 
-**PHÁN QUYẾT** — **ĐẠT KÈM LƯU Ý**
+### V4a + V4b — `c188f92` · `8763e2a` · `a914b2f` · `a8119f2` — **ĐẠT KÈM LƯU Ý**
+
+Không tìm được lỗi nào chặn được hai bản này. Luật 5.2 **giữ đúng ở tầng file** cho cả phần số lẫn
+phần nhìn: ô % chưa đo không có `<v>` trong XML, ô đo được 0 có `<v>0</v>`. Năm lưu ý bên dưới, và
+một việc tôi tự làm sai phải nhận.
+
+**TÔI TỰ LÀM ĐỔ CÂY CHUNG — nhận trước khi nói chuyện khác.** Bản sửa dở của tôi ở
+`tests/matrix-reader.test.ts` gọi biến `wbChung` chưa khai, để nguyên trong cây dùng chung một lúc và
+làm cả bộ kiểm đỏ. Plan phải nhắc. Đã sửa xong ở `2ba7ebd`. Hai chuyện rút ra: **đừng để file sửa dở
+qua đêm trong cây bốn box dùng chung**, và `L15` đúng một cách đau — `tsc` báo sạch exit 0 ngay trong
+lúc file kiểm gọi biến không tồn tại, vì `tsconfig.json` không phủ `tests/`.
+
+**ĐÃ VIẾT**
+
+12 phép kiểm trong `tests/excel-nhin-ranh-gioi.test.ts`, soi ở **tầng hành vi**: dựng file `.xlsx`
+thật qua `exportTableXlsx`, rồi đọc ngược — hai đường, `exceljs` cho đối tượng và `fflate` cho **XML
+thô**, vì thứ Excel đọc là file chứ không phải đối tượng trong bộ nhớ.
+
+*Đã xác nhận ĐỎ trên bản chưa sửa: **có**.* Không `git stash` (luật 5.6). Dựng bản V4a từ
+`git show c188f92:src/lib/excel-export.ts` ra file tạm rồi chạy phép kiểm lên nó: bản đó có **0** lời
+gọi `addConditionalFormatting`, phép kiểm **ĐỎ** (`expected 0 to be greater than 0`). Xoá file đo ngay.
+
+**RANH GIỚI ĐÃ SOI**
+
+| Ranh giới | Kết quả |
+|---|---|
+| **Ô % chưa đo · đo được 0 · đo được 85** | `null` → thẻ tự đóng không `<v>` · `0` → `<v>0</v>` · `85` → `<v>85</v>`. Ba trạng thái **không bị gộp** |
+| Định dạng trên ô trống | ô trống **không** đóng `0"%"`; ô 0 thì có — đóng vào ô rỗng là mời Excel vẽ ra một con số |
+| Thang data bar vs lối lưu số | `cfvo` = 0..100 **và** ô lưu `85` — chốt cả cặp trong một phép kiểm, không thể đổi lệch một đầu |
+| Vùng tô vs khối chú giải | `G4:G9` và `H4:H9` dừng đúng dòng dữ liệu cuối; khối `CHÚ GIẢI` nằm **sau** đó |
+| Ngưỡng quá hạn | bậc nặng = `String(OD_ALERT_DAYS)` lấy từ `lib/filter`, bậc nhẹ = `0`. Đúng **hai** bậc, không có `colorScale` |
+| Màu chú giải vs màu ô thật | ba màu `STATUS_FILL` dùng trong bảng đều có ô chú giải mang đúng màu đó, so ở tầng file |
+| Chiều cao dòng | dòng dữ liệu **không** bị đặt chiều cao tay (điều kiện cần để Excel tự giãn) |
+
+**(c) Ngưỡng khai một chỗ — xác nhận.** `OD_ALERT_DAYS = 14` chỉ khai ở `src/lib/filter.ts:34`.
+`excel-export.ts` nhận qua tham số `overdueAlertDays`, không đặt số mới. `IMMINENT_DEADLINE_DAYS`
+cũng bằng 14 nhưng là khái niệm khác, không phải bản chép.
+
+**CHẠY**
+
+```
+vitest : 431 passed | 2 expected fail | 32 file      (mốc nền 419 | 2 | 31 → chênh +12 đúng phần tôi thêm)
+tsc    : sạch — NHƯNG xem lỗi ④, dòng này chưa bao giờ nói gì về tests/
+quét byte điều khiển : file mới sạch
+```
+
+Mốc nền dịch từ 418 lên 419 giữa lúc tôi làm, vì Thực thi commit `a8119f2` xen vào. Đã đo lại thay
+vì trừ nhẩm.
+
+**LỖI TÌM ĐƯỢC**
+
+**① · `exceljs` KHÔNG ghi `showValue` / `minLength` / `maxLength` vào file — MỨC: NHẸ**
+
+Đo từ XML thô của file thật. Khối `<dataBar>` xuất ra chỉ có đúng thế này:
+
+```xml
+<dataBar><cfvo type="num" val="0"/><cfvo type="num" val="100"/><color rgb="FF5EE9B5"/></dataBar>
+```
+
+Ba tuỳ chọn `showValue: true, minLength: 0, maxLength: 100` mà code khai **không có một attribute nào
+tới được file** — chuỗi `showValue` không xuất hiện ở đâu trong `sheet1.xml`. Excel sẽ vẽ theo mặc
+định của nó, không theo con số code ghi.
+
+Hôm nay vô hại vì mặc định trùng ý muốn ở chỗ quan trọng nhất (vẫn hiện số trong ô). Nhưng ghi chú
+trong code đang lập luận *dựa vào* ba tuỳ chọn đó, và ai sau này đặt `showValue: false` hay sửa
+`minLength` sẽ thấy file không đổi gì mà không hiểu vì sao. Đã chốt bằng một phép kiểm dán nhãn
+**BẪY** — nó đỏ khi nào exceljs bắt đầu ghi chúng, lúc đó đọc lại ghi chú.
+
+**② · `oNgay` quy một ngày SAI thành một ngày KHÁC mà trông có thật — MỨC: LƯU Ý (đã đo, chưa xảy ra)**
+
+Việc V4a. `oNgay` cắt chuỗi rồi `new Date(Date.UTC(y, m-1, d))`. `Date.UTC` **quy tràn** thay vì từ
+chối: `"2027-02-29"` ra **01/03/2027**, `"2026-02-31"` ra **03/03/2026**.
+
+Bản cũ ghi chữ `"31/02/26"` — sai nhưng **lộ ra**, người đọc thấy ngay là dữ liệu bẩn. Bản mới ghi
+`03/03/26` — một ngày hợp lệ, **trông không có gì bất thường**. Trên bảng dùng để đánh giá PM, sai mà
+lộ còn đỡ hơn sai mà mượt.
+
+`parser.ts:283` có chặn `mo > 12 || day > 31`, nên tháng 13 không lọt. Nhưng **không** chặn ngày 31
+của tháng 30 ngày, cũng không chặn 29/02 năm không nhuận. Và `ngayLinkIso` (`parser.ts:489`) không
+soát dải nào cả.
+
+**Đã đo trên dữ liệu thật:** quét 8 file JSON trong `.data/` (bản chụp tới 25/09), **5.076** chuỗi
+dạng `yyyy-mm-dd`, **0 chuỗi ngoài dải**. Nên đây là rủi ro trong code, **không phải lỗi đang xảy
+ra** — đừng phóng to. Nhưng nó không nằm trong phạm vi V4a/V4b nên tôi không đề nghị sửa ở vòng này;
+đề nghị Plan xếp hàng đợi một việc: `oNgay` trả `null` khi ngày quy tràn.
+
+**③ · Bộ kiểm chống trôi màu canh 7 trên 67 mã màu, và bỏ đúng `STATUS_FILL` — MỨC: NHẸ**
+
+`tests/excel-mau-khop-app.test.ts` chắc hơn Plan lo: nó có phép "đọc được cả hai bảng màu" và
+`toBeTruthy` kèm thông điệp, nên đổi tên hằng `GC` là **đỏ to**, không âm thầm xanh. Lỗ nằm ở chỗ
+khác: nó chỉ so **nội dung khối `const MAU`** — 7 mã màu. Đếm trong cùng file có **60 mã màu viết
+thẳng vào code ngoài khối đó**, 59 mã không khớp giá trị nào trong `MAU`. Trong số đó có
+`STATUS_FILL` ở dòng 612–614 (`FFEF4444` · `FFF59E0B` · `FF059669`) — **đúng ba màu mà khối chú giải
+vừa được viết lại để giải thích**, và cả `FF16202E` của thanh tiêu đề (6 chỗ).
+
+Đã vá phần nguy hiểm nhất bằng phép kiểm so ở **tầng file**: màu ô chú giải phải bằng màu ô Tình
+trạng thật trong bảng. Phần còn lại (thanh tiêu đề, chữ phụ) chưa canh — nói ra chứ không lờ.
+
+**④ · `tsc` không phủ `tests/` → 16 lỗi kiểu đang ẩn, hai lỗi nằm trong bộ kiểm V4a — MỨC: NÊN SỬA**
+
+`L15` Review tìm ra là đúng, tôi đo lại cho ra số. Bắc giàn một `tsconfig` tạm phủ `tests/` rồi chạy
+`tsc`: **16 lỗi ở 9 file kiểm**. Không lỗi nào trong ba file của tôi. Hai lỗi đáng chú ý nằm trong
+`tests/excel-o-that.test.ts` — bộ kiểm của chính việc V4a:
+
+```
+tests/excel-o-that.test.ts(193,27): Property 'ySplit' does not exist on type 'Partial<WorksheetView>'
+tests/excel-o-that.test.ts(217,27): Property 'xSplit' does not exist on type 'Partial<WorksheetView>'
+```
+
+Phép kiểm vẫn chạy đúng vì vitest không soi kiểu, nhưng đó là hai chỗ đọc thuộc tính mà kiểu bảo
+không tồn tại — đúng loại chỗ sẽ vỡ im lặng khi nâng phiên bản exceljs. Đề nghị Plan xếp việc: thêm
+một `tsconfig` phủ `tests/` và một dòng lệnh trong phần 6 NEN-TANG, để dòng `tsc: sạch` của cả bốn
+box nói được điều gì đó về bộ kiểm.
+
+**⑤ · Quyết định của Test về phép kiểm `matrix-reader` đang đỏ — đã làm, commit `2ba7ebd`**
+
+Đặt **mốc riêng 20 giây** cho đúng phép kiểm đó, **không** nâng `testTimeout` toàn cục.
+
+Lý do phải ghi lại cho đúng: **nó trôi nổi theo máy, không phải mới chậm đi.** Cùng commit, cùng file
+nguồn, đo được 1.263 ms (máy Review) · 5.943 ms (máy Plan) · 6.140–8.352 ms (máy Thực thi và máy
+này). Kết luận "có gì đó vừa chậm đi" là sai — Plan đã tự đính chính, tôi xác nhận. Phép kiểm ấy nặng
+vì nó **đọc lại nguyên file 2,1 MB lần thứ hai**: `parseMatrixWorkbook` đã parse một lượt, còn
+`findMatrixSheets` cần chính đối tượng workbook nên phải có lượt riêng.
+
+Tôi đã thử dời lượt parse ấy ra tầng module cho phép kiểm chạy còn vài ms — **rồi tự bỏ**, vì nó
+không bỏ được lượt parse nào, chỉ đẩy chi phí ra ngoài vùng bấm giờ. Đó đúng là mẹo che ngưỡng mà
+chính tôi vừa phê ở lỗi ①. Mốc riêng thì trung thực hơn: ngưỡng chặt giữ nguyên cho hơn 400 phép
+còn lại, mà chạm 20 giây thì đúng là có gì chậm đi thật.
+
+**CHƯA KIỂM ĐƯỢC**
+
+- **Chuẩn nghiệm thu thật của việc này.** Anh Tiến chấm bằng **mắt** trên file mở bằng **Excel**:
+  màu sắc, bố cục, "đẹp như PDF". Tôi không có Excel trên máy này. Mọi kết luận ở trên đọc từ XML và
+  từ exceljs. **Phép kiểm xanh không thay được một lượt mở file bằng Excel.**
+- **Chiều cao tự giãn (b).** Chỉ chốt được điều kiện cần — không còn chiều cao đặt tay. Excel có giãn
+  đủ chữ hay không thì phải mở ra xem. Đúng như Plan dặn: ghi *chưa kiểm được*, không suy.
+- **Data bar vẽ ra sao trên ô 0 và ô trống.** File bảo đảm ô trống không có giá trị nào để vẽ, và ô 0
+  có số để hiện. Nhưng bề ngang thanh ở giá trị 0 là do mặc định của Excel quyết (xem lỗi ①), nên
+  hình thật ra sao tôi không khẳng định.
+- **Tắt đường lưới, đóng băng cột.** Có trong file; trông thế nào khi mở thì chưa kiểm.
+- **1440px / 375px.** Không áp dụng — việc này không đổi một pixel nào trên app.
+
+---
+
+### V2b — `40eae6c` — **ĐẠT KÈM LƯU Ý**
 
 Không tìm được lỗi nào chặn được bản này. Ràng buộc 2 (băm hỏng thì không ném) **giữ đúng** dưới mọi
 cách tôi phá. Ba lưu ý bên dưới: một chỗ làm thừa ngoài phạm vi khai báo, một lỗ hổng bộ kiểm tôi đã
