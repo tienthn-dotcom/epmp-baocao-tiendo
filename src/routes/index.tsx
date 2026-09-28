@@ -52,6 +52,7 @@ import { VersionBanner, useUnsavedGuard, chatDraftStore } from "@/lib/version-gu
 
 import { toast } from "sonner";
 import { parseCsvText, parseXlsxBuffer, noteSaysTrinhBodBitrix } from "@/lib/parser";
+import { moc, chotDongHo } from "@/lib/dong-ho";
 import type { XlsxTableRow, XlsxStatusColor } from "@/lib/excel-export";
 import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
@@ -1517,6 +1518,8 @@ function Dashboard() {
   };
 
   useEffect(() => {
+    // MỐC 1/3 — trang đã dựng xong, người dùng nhìn thấy khung. Xem lib/dong-ho.ts.
+    moc("trang");
     setThresholds(loadThresholds());
     setCached(loadLastKnown());
     // NGUỒN DỮ LIỆU: tải NGAY nguồn mặc định (file hardcode) để có dữ liệu liền. Song song đọc cấu hình
@@ -1541,10 +1544,21 @@ function Dashboard() {
       // gviz nuốt dòng, ngày bị format lại theo locale).
       try {
         const r = await fetchSheetXlsx({ data: { url: config.sheetUrl } });
+        // MỐC 2/3 — máy chủ đã trả xong file nguồn (hết vòng mạng + Drive). `moc` KHÔNG BAO GIỜ
+        // ném: nó nằm trong khối `try` có đường rơi sang CSV bên dưới, nên nếu nó ném thì hậu quả
+        // là app ÂM THẦM ĐỔI ĐƯỜNG TẢI chứ không phải chỉ mất số đo. Xem lib/dong-ho.ts.
+        moc("nguon");
         const bin = atob(r.base64);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const parsed = assertDataQuality(await parseXlsxBuffer(bytes.buffer, todayIso()));
+        // MỐC 3/3 — đọc xong file .xlsx ở máy người dùng, số đã sẵn sàng.
+        moc("doc");
+        // Chốt và ghi ĐÚNG MỘT DÒNG cho mỗi lượt mở app: `chotDongHo()` trả chuỗi đúng một lần,
+        // nên các lượt tải lại dữ liệu (V10 giữ 5 phút, bấm làm mới, chuyển màn hình) không sinh
+        // thêm dòng nào. `track` vốn đã nuốt mọi lỗi và chạy nền.
+        const goiDo = chotDongHo();
+        if (goiDo) track("do_lag", goiDo);
         // Đọc hyperlink "Thi công lắp đặt" NGAY Ở CLIENT từ chính bytes này (Worker khỏi parse).
         const installLinks = readInstallLinks(bytes.buffer);
         return { ...parsed, source: "google", sourceLabel: r.fetchedAt, fetchedAt: r.fetchedAt, installLinks };
