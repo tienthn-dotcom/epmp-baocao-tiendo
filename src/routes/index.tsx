@@ -539,6 +539,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.117.1", date: "28/09/2026", items: [
+    "Badge tên người gõ ghi chú nay cùng một kiểu với badge OCC (nền trắng, chữ xanh navy). Cái cho biết câu đó của ai là CHỮ trong badge và gạch ngăn, không phải kiểu badge.",
+  ] },
   { v: "3.117.0", date: "28/09/2026", items: [
     "Ô VƯỚNG MẮC CẤP DỰ ÁN NAY TÁCH RÕ HAI NGUỒN. Câu do bộ phận OCC ghi trong file nguồn nằm một khối riêng (badge OCC), các ghi chú gõ trong app nằm khối dưới, có gạch ngăn, và mỗi câu mang tên người gõ. Trước đây hai thứ xếp sát nhau cùng một kiểu chữ nên gõ thêm một câu là nó đọc ra thành một khối chung.",
     "Hết cảnh hiện nhãn hai lần: ô vừa có badge OCC vừa có chữ “OCC:” đứng đầu câu.",
@@ -5901,8 +5904,10 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
               const ai = m.author && m.author !== "(cũ)" ? m.author.split("@")[0] : "";
               return (
                 <div key={m.id} className="whitespace-pre-line">
+                  {/* Badge ĐÚNG MỘT KIỂU với badge OCC (nền trắng, chữ navy) — anh Tiến chốt 28/09.
+                      Cái phân biệt hai nguồn là CHỮ trong badge và gạch ngăn, không phải kiểu badge. */}
                   <span title={`Gõ trong app${m.author && m.author !== "(cũ)" ? ` · ${m.author}` : ""}${m.at ? ` · ${m.at}` : ""}`}
-                    className="mr-1 inline-block shrink-0 rounded border border-white/70 px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-white">{ai || "app"}</span>
+                    className="mr-1 inline-block shrink-0 rounded bg-white px-1 align-middle text-[8px] font-bold uppercase leading-[1.5] tracking-wide text-[#1e3a5f]">{ai || "app"}</span>
                   {veChu(m)}
                 </div>
               );
