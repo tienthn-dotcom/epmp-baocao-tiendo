@@ -261,6 +261,82 @@ ghi KV thêm mỗi lần mở app : 0. Lượt ghi duy nhất phát sinh là 1 l
 
 ---
 
+# V12 · Ô VƯỚNG MẮC CẤP DỰ ÁN — tách rõ hai nguồn
+
+Commit `d516786`. **ĐÃ DEPLOY** theo lệnh trực tiếp của anh Tiến trong phiên: bản `3.117.0`,
+version ID `d99b0eca-8227-414f-8b49-55fd4eb6ae24`.
+
+**VIỆC ĐƯỢC GIAO ĐẶT TRÊN MỘT TIỀN ĐỀ SAI, và anh Tiến sửa lại tiền đề đó**
+
+Plan chẩn rằng `visibleText` nối chữ nguồn với ghi chú người dùng thành một chuỗi. Đọc mã thì
+không phải: bảng vẽ từ chính mảng message qua `ChatCell`, mỗi tin một `<div>`. Hỏi thẳng anh Tiến,
+câu trả lời là **"tôi gõ thêm data, nó tự gộp vào chung với vướng mắc cấp dự án"** — tức không phải
+nối chuỗi, mà là **hai khối xếp sát nhau cùng cỡ chữ cùng màu, cách nhau 4px, đọc ra thành một**.
+
+**ĐÃ LÀM**
+
+1. `ChatCell` nhánh `dark`: tách `tNguon` / `tGo`, gạch ngăn đứt giữa hai khối, mỗi ghi chú gõ
+   trong app đeo **tên người gõ**. Nhìn là biết câu nào của ai và phải sửa ở đâu.
+2. **Hết lặp nhãn.** Đoạn cắt tiền tố chỉ biết `"PMO:"`, trong khi file nguồn nay ghi `"OCC:"` →
+   mọi ô hiện nhãn hai lần (chip OCC + chữ "OCC:").
+3. **PDF một dự án thôi làm rụng chữ.** Chỗ đó in `projNoteMsgs[length-1]` — **tin cuối**. Một
+   người gõ thêm một ghi chú là câu của OCC biến mất khỏi báo cáo, im lặng.
+4. **Excel** dùng `textXuat`: đánh dấu `[OCC · file nguồn]`, vì Excel không có badge.
+
+**ĐO TRƯỚC KHI SỬA — trên bảng thật, không tin con số của ai**
+
+```
+ô có chữ file nguồn        : 69/69 dự án
+ô bắt đầu bằng "OCC:"      : 68  ·  bắt đầu bằng "PMO:" : 0   → đoạn cắt cũ là ĐỒ CHẾT
+ô có CẢ HAI nguồn          : 41
+nhiều tin nhất một dự án   : 2   ·  ô dài nhất : 311 ký tự
+sau khi sửa                : lặp nhãn 0 · 41 ô có gạch ngăn
+```
+
+**MỘT HỒI QUY CHÍNH TÔI SẮP GÂY RA, bắt được lúc review**
+
+Cắt thêm nhãn `"OCC:"` làm **đổi nội dung chữ** của tin nguồn. Chữ đó được `analyze()` đem
+**so trùng** với ghi chú hạng mục để chặn một vướng mắc bị kể nhiều lần. Người dùng hay chép
+nguyên câu kèm nhãn → sau khi cắt, hai câu y hệt nhau bị tính là khác nhau. Đã sửa `normText`
+(chỉ là khoá so sánh, không đụng chữ in ra) và **kiểm là phép đo có răng**: gỡ bản sửa ra thì câu
+đó đếm được **3 lần thay vì 2**.
+
+**BÁO CÁO TUÂN THỦ — anh Tiến dặn riêng, nên kiểm riêng**
+
+`buildComplianceReport` nhận **đếm đầu việc thiếu định lượng / thiếu ngày / thiếu PIC + lịch sử
+ngày update**. `compliance.ts` **không có một chữ nào** dính `noteMsgs` / `projectNote` / `note`.
+Nên thay đổi hôm nay **không thể chạm** vào điểm tuân thủ. Đây là kết luận đọc mã, không phải đoán.
+
+**ĐÃ ĐO**
+```
+tsc      : sạch
+vitest   : 467 passed | 2 expected fail | 0 failed | 35 file (mới 12 test)
+build    : qua
+byte điều khiển toàn cây : 14 = ĐÚNG mốc nền trước khi tôi sửa
+production: đọc thẳng bundle công khai — 3.117.0, nhãn FILE NGUỒN, "[OCC · file nguồn]",
+            "còn … ghi chú nữa", cả hai regex (?:PMO|OCC) và (?:pmo|occ) đều có mặt
+```
+
+**CHỖ TÔI KHÔNG CHẮC**
+
+1. **Chưa ai nhìn bản production bằng mắt.** Tôi nghiệm thu trên dev (localhost) và xác nhận
+   production bằng cách đọc bundle. Production bắt đăng nhập Google và **tôi không đăng nhập bằng
+   tài khoản của anh**. Việc mở app xem tận mắt vẫn là của người dùng.
+2. **Còn MỘT chỗ nữa cùng lối "chỉ lấy tin cuối" mà tôi CHƯA sửa:** `latestText` trong
+   `ppt-report.ts` dựng mục *Việc cần xử lý* của cả PDF lẫn PPTX. Với ô có nhiều tin, mục đó vẫn
+   chỉ kể tin mới nhất. Tôi không sửa vì nó là **quyết định sản phẩm** (trong một chuỗi trao đổi,
+   câu nào là "vướng mắc"?) chứ không phải lỗi mã, và nó đổi cả bản slide.
+3. **Trần 5 tin / 900 ký tự của PDF là tôi chọn**, không phải số đo. Hôm nay nhiều nhất 2 tin nên
+   chưa ai chạm tới. Chạm rồi thấy chật thì đổi hai hằng số.
+4. **Dự án hide hết dòng con thì chữ cột U không hiện ở đâu cả** (anh Tiến nêu ví dụ "cải tạo Phủ
+   Chủ tịch"). Đúng luật anh đặt, và bản sửa này không đụng tới. Nhưng nói rõ hệ quả: một dự án
+   mới, dòng con còn ẩn, thì **vướng mắc của nó không hiện cho ai cả** cho tới khi có một dòng con
+   được mở.
+
+---
+
+---
+
 ## ③ TEST
 
 ### V11 · NHÁNH A — `e022600` + `5439316` — **ĐẠT KÈM LƯU Ý. KHÔNG cần lùi bản.**
