@@ -3636,9 +3636,17 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     const weeks = new Map<string, number>();
     const deadline = new Map<string, string>();   // tên → NGÀY DEADLINE hiển thị (ISO)
     for (const p of data.projects) {
-      const first = mpFlags[pkProj(p)];
-      if (!first) continue;
+      // BỎ CHỐT "chưa cắm cờ thì bỏ qua" — 28/09/2026, anh Tiến yêu cầu trực tiếp:
+      // "số lần bị cờ thì là ngày hiện hành so với ngày trong vướng mắc".
+      // Trước đây chỗ này đọc mpFlags rồi `if (!first) continue`, nên dự án ghi rõ "trước 22/09"
+      // trong Vướng mắc mà CHƯA được cắm cờ thì cột hạn để trống và KHÔNG bị trừ điểm. Anh Tiến bắt
+      // được bằng dự án "Cải tạo nâng cấp Phủ Chủ Tịch" — máy nội bộ có cờ nên hiện hạn, bản chính
+      // thức không có cờ nên để trống, hai bên lệch nhau mỗi ngày.
+      // Hạn và số tuần đều đọc từ mpInfo (tức ô Vướng mắc), KHÔNG dính ngày cắm cờ — xem `w` bên dưới.
+      // mpFlags/syncMpFlags VẪN CÒN DÙNG (mpFlagQuery, hiệu ứng đồng bộ, mpFlaggedNames đi qua
+      // mpProjectKeys). Thấy chúng còn đó mà không ai chặn theo nữa là ĐÚNG, đừng thêm chốt lại.
       const note = mpInfo.get(pkProj(p)) || "";
+      if (!note) continue;
       // Neo năm theo HÔM NAY, không theo ngày cắm cờ: ngày cắm cờ bị xoá-ghi lại mỗi khi khoá dự án
       // đổi, neo vào đó thì năm cũng trôi theo.
       const parsed = parseMpDeadlineIso(note, today.slice(0, 10));
@@ -3658,7 +3666,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (dlIso) { const curD = deadline.get(k); if (!curD || dlIso < curD) deadline.set(k, dlIso); }  // trùng tên → deadline sớm nhất
     }
     return { weeks, deadline };
-  }, [data.projects, mpFlags, mpInfo, today, pkProj]);
+    // mpFlags ĐÃ RA KHỎI danh sách phụ thuộc cùng lúc với cái chốt: không còn đọc nó ở đây nữa,
+    // để lại thì mỗi lần cờ đổi là tính lại toàn bộ mà kết quả y hệt.
+  }, [data.projects, mpInfo, today, pkProj]);
   const mpWeeksByName = mpComputed.weeks;
   const mpDeadlineByName = mpComputed.deadline;
 
