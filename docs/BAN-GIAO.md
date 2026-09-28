@@ -266,6 +266,145 @@ Chỉ đổi ghi chú, không đổi một dòng code chạy nào: diff 26/1, v�
 
 ## ③ TEST
 
+### V5 — `72ea874` + `5fe969d` — **ĐẠT KÈM LƯU Ý**
+
+Đo trên **app thật đang chạy**, không chỉ đọc code. Hành vi qua ba lần tải trang đúng cả ba, sáu số
+đầu trang đứng yên tuyệt đối, dữ liệu rác không làm trắng bảng. Lưu ý lớn nhất: **đặc tả đòi một
+phép kiểm mà V5 không có phép kiểm nào**.
+
+**CÁCH ĐO.** Cổng 8080 đã có dev server của box khác. Tôi **không** sửa `launch.json` (cấu hình dùng
+chung, và cổng đó có thể đang cần cho callback Google) — dùng luôn server đó, nó chạy đúng cây này.
+
+**PHÉP ĐO CHÍNH — ba lần tải trang, 1440px**
+
+| Trạng thái kho | Sau khi tải xong | Nút hiện chữ | Đạt |
+|---|---|---|---|
+| xoá sạch khoá (máy mới) | **BẬT** | `✓ Đang hiện việc đã xong` | ✓ |
+| tắt bằng nút rồi tải lại | **TẮT** | `Hiện tất cả đầu việc` | ✓ |
+| bật rồi tải lại | **BẬT** | `✓ Đang hiện việc đã xong` | ✓ |
+
+Lượt bấm nút thật sự ghi kho: bấm một cái, `pmo.master.showdone.v1` đổi `"1"` → `"0"` ngay.
+
+**SÁU SỐ ĐẦU TRANG — đứng yên tuyệt đối**
+
+Đo trước và sau khi bấm nút **trong cùng một lượt** (không so với số của box khác — dữ liệu sống,
+số đổi theo giờ): `69 · 80 · 58 · 87 · 7 · 36` cả khi bật lẫn khi tắt, cả khi nhóm đang thu lẫn khi
+đã mở hết. Đúng như Thực thi báo, chỉ khác con số vì đo cách nhau vài giờ.
+
+**(4) LỜI TRONG GHI CHÚ Ở `index.tsx:3406` — ĐÚNG, và đúng vì một lý do MẠNH HƠN lời nó tự nhận**
+
+Ghi chú nói việc đã xong *có* đi tới KPI, an toàn là nhờ nó không mang nhãn cảnh báo. Tôi truy tới
+chỗ tính nhãn: `alertKind` có nhánh `isDone ? "none"` đứng **trước** luật ép-trễ, và
+`isDone = pctActual != null && pctActual >= 100` — đúng bằng điều kiện `doneEnriched` dùng để lọc.
+Nên việc đã xong **không thể** mang nhãn cảnh báo. Đây là **code chặn**, không phải may mắn của dữ
+liệu. Không tìm được đường nào làm một việc đã xong mang nhãn cảnh báo.
+
+**MỘT GIẢ THUYẾT TÔI ĐÃ TRUY VÀ LOẠI TRỪ** — ghi lại để Review khỏi mò lại.
+
+`parser.ts:918` bỏ dòng ≥100% khỏi `data.items` **chỉ khi nó không suspect**:
+`if (!actNorm.suspect && pctActual != null && pctActual >= 100) continue;`. Tôi ngờ một dòng vừa
+suspect vừa ≥100% sẽ nằm trong **cả** `items` lẫn `allItems`, và khi bật nút thì
+`enriched.concat(doneEnriched)` cho ra **dòng lặp** — mà nay mặc định bật nên ai cũng thấy.
+
+**Không xảy ra.** `normPctStrict` trả `{ value: null, suspect: true }` — hễ suspect thì `pctActual`
+là `null`, mà `doneEnriched` đòi `pctActual >= 100`. Dòng suspect không bao giờ vào tập thứ hai.
+Vế `!actNorm.suspect` ở dòng 918 thực ra là thừa, nhưng thừa vô hại.
+
+**(5) `tableProjectCount` nhánh CÓ LỌC — xác nhận Plan đúng, và nói thẳng chỗ tôi không chốt được**
+
+Nhánh có lọc đếm `new Set(sortedAlerts.map(pkItem)).size`. Một dự án mà **mọi** đầu việc đều đã xong
+thì chỉ xuất hiện khi bật nút, nên số dự án **sẽ** tăng. Đây là tính chất của code, đọc ra được chứ
+không cần dữ liệu. Hôm nay không có dự án nào như vậy nên số đứng yên.
+
+**Tôi không dựng được phép kiểm cho nó**, và lý do đáng ghi: `tableProjectCount` cùng `pkItem` nằm
+**bên trong thân component** `index.tsx`, không export, không gọi từ ngoài được. Muốn chốt thì phải
+kéo phép đếm ra một hàm thuần — cùng loại việc với chỗ dựng cột mà Plan đã xếp hàng đợi ở V4a.
+
+**DỮ LIỆU RÁC (3) — bốn mẫu, đều rơi về mặc định BẬT, không trắng bảng, không ném lỗi**
+
+| Ghi vào khoá | Kết quả | Trang dựng ra |
+|---|---|---|
+| `""` chuỗi rỗng | BẬT | đủ, 20.623 ký tự · 70 dòng |
+| `"true"` | BẬT | đủ, như trên |
+| JSON dài 5.014 ký tự | BẬT | đủ, như trên |
+| xoá hẳn khoá | BẬT | đủ, như trên |
+
+Đúng như code: chỉ nhận `"0"` và `"1"`, còn lại coi như chưa có gì.
+
+**(2) LỆCH HYDRATION — có cảnh báo trong console, nhưng KHÔNG phải của V5**
+
+Đây là chỗ Plan dặn soi kỹ nhất, và nó suýt thành báo động nhầm. Mở app với kho `"0"` (khác mặc
+định) thì console **có** lỗi `A tree hydrated but some attributes...`. Nhưng tôi chạy **đối chứng**
+với kho `"1"` — tức `showDone` không hề đổi giá trị — và vẫn ra **10** lỗi y hệt.
+
+Toàn bộ lệch nằm trên thuộc tính `data-tsd-source` do công cụ dev chèn, lệch số dòng/cột giữa bản
+máy chủ và bản trình duyệt, ở `__root.tsx` lẫn `index.tsx`. Không một dòng nào nhắc `showDone`. Đây
+đúng là con lỗi dev có sẵn mà Thực thi đã khai từ vòng V2b. **Khuôn `useState` + `useEffect` chép
+đúng và không sinh lệch mới.**
+
+**CHI PHÍ VẼ THÊM — Thực thi khai chưa đo, tôi đo được**
+
+| | Dòng `<tr>` | Nút DOM |
+|---|---|---|
+| Mặc định (nhóm còn thu), tắt hay bật | **70** | 3.403 |
+| Mở hết nhóm, **tắt** | 374 | 16.362 |
+| Mở hết nhóm, **bật** | **574** | **24.518** |
+
+Hai điều rút ra. Thứ nhất: **mặc định không tốn gì cả** — nhóm còn thu thì dòng đầu việc chưa được
+dựng, bật hay tắt đều đúng 70 dòng. Nỗi lo "vẽ thêm 199 dòng cho mọi người mỗi lần mở app" **không
+xảy ra ở lượt mở app**. Thứ hai: chi phí chỉ đến khi bấm "Mở tất cả", và khi đó là **+200 dòng,
++8.156 nút DOM, khoảng +50%**. Con số +200 khớp với 199 đầu việc Thực thi đếm được.
+
+**CHẠY**
+
+```
+vitest : 433 passed | 2 expected fail | 32 file   — KHÔNG phép nào đang xanh bị đỏ
+tsc    : sạch
+375px  : scrollWidth = clientWidth = 375, không tràn ngang
+1440px : bảng bình thường, badge v3.111.0
+```
+
+**LỖI TÌM ĐƯỢC**
+
+**① · Tiêu chí 7 của đặc tả CHƯA ĐẠT: V5 không có một phép kiểm tự động nào — MỨC: NÊN SỬA**
+
+Đặc tả đòi *"thêm phép kiểm cho hàm đọc/ghi lựa chọn"*. Đo lại: `grep -ril showDone tests/` ra
+**rỗng**, và hai commit V5 **không đụng tới thư mục `tests/`**. Bộ kiểm đi từ 431 lên 433 là nhờ hai
+commit V4b trước đó, không phải nhờ V5.
+
+Nguyên nhân là cấu trúc chứ không phải lười: phép đọc/ghi nằm **inline trong thân component**, không
+export, nên không có gì để gọi từ bộ kiểm. Cùng đúng một hình dạng với lỗi ⑤ ở trên và với chỗ dựng
+cột của V4a — ba lần liên tiếp cùng một nguyên nhân.
+
+Tôi **không** viết một phép kiểm chép lại logic đó sang file kiểm: chép là tạo ra bản thứ hai rồi
+hai bản trôi xa nhau, đúng cái bẫy đã ghi nhận ở V4a. Đề nghị Plan xếp một việc gọn: kéo
+`docShowDone()` / `ghiShowDone()` ra một hàm thuần, rồi bộ kiểm gọi thẳng.
+
+Không chặn, vì hành vi đã được đo trực tiếp trên app ở bảng trên — nhưng phép đo ấy **làm tay,
+không tự lặp lại**, đúng thứ sẽ mục đi sau vài vòng.
+
+**② · Người đã tắt sẽ thấy bảng đầy đủ LOÉ LÊN rồi co lại — MỨC: LƯU Ý, là hệ quả bắt buộc**
+
+Bắt được lúc đo: ngay sau khi tải trang với kho `"0"`, nút vẫn hiện `✓ Đang hiện việc đã xong`, rồi
+mới đổi sang `Hiện tất cả đầu việc` khi `useEffect` chạy. Tức lượt vẽ đầu luôn theo **mặc định BẬT**,
+bản đã lưu chỉ tới sau.
+
+Đây **không phải lỗi** — nó là cái giá của chính ràng buộc 1, và ràng buộc 1 tồn tại để tránh lệch
+hydration, thứ tệ hơn nhiều. Bề rộng cột cũng đang nháy y như vậy. Nhưng nay mặc định đổi từ tắt
+sang bật nên cái nháy này **mới xuất hiện với nhóm người thích bảng gọn**, và họ là nhóm duy nhất
+gặp nó. Nói ra để Review và người dùng biết trước, đừng để ai báo "app bị giật" rồi cả đội đi tìm.
+
+**CHƯA KIỂM ĐƯỢC**
+
+- **Cửa sổ ẩn danh thật.** Tôi giả lập được kho trống, nhưng không giả lập được trường hợp trình
+  duyệt **chặn hẳn** `localStorage` khiến `getItem`/`setItem` **ném lỗi**. Đọc code thì cả hai chiều
+  đều bọc `try/catch` nên đường đi rõ ràng, nhưng tôi không chạy thật được. Y như Thực thi đã khai.
+- **Chi phí trên máy yếu.** Tôi đếm được +8.156 nút DOM khi mở hết nhóm, nhưng không đo được thời
+  gian vẽ trên máy người dùng thật. "Không thấy chậm trên máy tôi" vẫn không phải một phép đo.
+- **Người dùng quen bảng gọn phản ứng ra sao.** Ngoài tầm bộ kiểm.
+
+---
+
 ### V4a + V4b — `c188f92` · `8763e2a` · `a914b2f` · `a8119f2` — **ĐẠT KÈM LƯU Ý**
 
 Không tìm được lỗi nào chặn được hai bản này. Luật 5.2 **giữ đúng ở tầng file** cho cả phần số lẫn
