@@ -17,7 +17,50 @@ Plan mở 28/09/2026. Yêu cầu từ người dùng, sếp của họ chốt.
 
 *Vừa lên production 28/09:* v3.110.0 (`c4d8be55`) - Excel ô thật + phần nhìn + đồng hồ đo lượt ghi. Đã xác nhận `crypto.subtle` chạy được trên Workers (mã băm thật `cf5c0c99fb92` lúc 04:12:43), Worker 121 lượt 0 lỗi.
 
-*Hàng đợi:* **V6** lọc trong báo cáo tuân thủ (đặc tả đầy đủ ở cuối mục ①) · **V4c** dải thẻ KPI đầu file Excel (người dùng CHƯA quyết) · ba nợ gọn gàng ở `55a11bc`.
+*Hàng đợi:*
+
+**V9 · Giảm lag — đo trước, sửa sau** (người dùng yêu cầu 28/09: *"phát triển làm sao cho app bớt lag"*)
+
+**ĐÃ ĐO ĐƯỢC GÌ** (Plan 28/09/2026)
+```
+Cloudflare, ngay 28/09, 1.476 luot:
+  CPU p50    3.793 us  (3,8 ms)      <- Worker KHONG ton CPU
+  CPU p99  100.400 us  (100 ms)
+  Cho p50  206.038 us  (206 ms)      <- gap 54 lan CPU
+  Cho p99  12.813.716 us (12,8 GIAY) <- 1/100 luot cho gan 13 giay
+May chu noi bo: tra loi 37 ms, trang xong 6.370 ms -> phan con lai la TRINH DUYET
+Goi JS: tong 3,80 MB · nap ngay khi mo app ~1,58 MB (goi chinh 1,20 MB)
+Thu vien nang (xlsx, jspdf, exceljs, html2canvas, pptx): DA tach goi dung, khong lot vao goi chinh
+src/routes/index.tsx: 763 KB MA NGUON trong MOT file
+React.lazy trong index.tsx: 0 cho
+Nap SAN du chi hien khi bam nut: CanMediaDialog (89,5 KB nguon), MatrixFormEditor
+```
+
+**BA HƯỚNG, xếp theo chắc chắn**
+
+**1. Gắn đồng hồ — LÀM TRƯỚC HẾT.** App **không có một phép đo thời gian nào** (`grep performance.now` ra rỗng). Mọi số ở trên là của máy Plan, mạng Plan, hoặc là số máy chủ - **không phải máy người dùng**. Ghi ba mốc vào bảng D1 sẵn có (đang dùng 0,65% hạn mức, **không đụng trần KV**): tải trang xong, dữ liệu về xong, đọc xong file nguồn. Một ngày sau là biết lag **ở đâu, máy ai, lúc mấy giờ**.
+→ Không có bước này thì hai hướng dưới là đoán.
+
+**2. Hoãn nạp các hộp thoại.** `CanMediaDialog` và `MatrixFormEditor` nạp **ngay khi mở app** dù chỉ hiện khi bấm nút. Chuyển sang `React.lazy` + `Suspense`. Đây là thứ **chắc chắn có lợi và rủi ro thấp**: không đổi hành vi, chỉ đổi lúc tải.
+→ Đo trước và sau bằng **số byte của gói chính**, không bằng cảm giác.
+
+**3. Chỗ Worker NGỒI CHỜ.** Chờ gấp 54 lần thời gian tính, p99 gần 13 giây. Chờ **bên ngoài**: gọi Google Drive, đọc kho, ghi nhật ký. **Chưa biết chỗ nào** - cần hướng 1 hoặc một phép đo riêng trong Worker mới chỉ ra được. **Đừng đoán rồi sửa.**
+
+**RÀNG BUỘC**
+1. **Không đổi một hành vi nào.** Đây là việc làm nhanh hơn, không phải việc đổi tính năng.
+2. Đồng hồ **không được ghi lên KV**. D1 thì được.
+3. Đồng hồ **không bao giờ ném lỗi** và không chặn đường nào - hỏng thì bỏ qua, y như `demGhiKv`. Nó chạy ở mọi lượt mở app.
+4. Không ghi thứ nhận dạng cá nhân ngoài những gì nhật ký **đã** ghi.
+5. Hướng 2 làm xong phải kiểm cả ba màn có hộp thoại đó, ở **1440px và 375px**.
+
+**CÁCH BIẾT LÀ ĐÚNG**
+- Hướng 1: một ngày sau, một câu SQL ra được bảng thời gian theo người và theo giờ. **Đó mới là câu trả lời cho "app lag ở đâu"**, phần còn lại là phỏng đoán.
+- Hướng 2: gói chính **giảm bao nhiêu KB**, nêu số trước và sau. Mở app vẫn đủ chức năng, bấm vào hộp thoại vẫn mở được (có thể chậm hơn lần đầu - đó là **chủ ý**).
+- Không phép kiểm nào đang xanh bị đỏ. Lượt ghi KV **không đổi**.
+
+**CHỖ PLAN CHƯA BIẾT, nói thẳng**
+Vì sao `index.tsx` phình tới 763 KB một file, và có tách được không - **Plan chưa đo**. Đừng nhận việc tách file đó trong vòng này: nó là toàn bộ màn hình chính, tách sai là gãy cả app. Cần đo riêng rồi mới bàn.
+
 
 ---
 
@@ -804,10 +847,186 @@ mà tiêu chí 3 của Plan yêu cầu, nên Thực thi và Review đo lại s�
 
 ## ④ REVIEW
 
-Review nhận vai 28/09/2026 (trước đó session này làm Test vòng V1). Hai bản chờ, **mỗi bản một
-phán quyết riêng** ở dưới. Tôi chưa đụng vào cả hai bản này ở vòng nào, nên soi được độc lập.
+Review nhận vai 28/09/2026 (trước đó session này làm Test vòng V1). **Mỗi bản một phán quyết riêng.**
+Việc đang làm — **V5** — ở ngay dưới. V2b · V4a · V4b đã phán quyết, nằm phía sau.
 
-### PHÁN QUYẾT NGẮN
+---
+
+## V5 · mặc định HIỆN TẤT CẢ ĐẦU VIỆC — `72ea874` + `5fe969d` — **ĐẠT KÈM LƯU Ý**
+
+Không có gì đủ để chặn. Đo ở **cây riêng sạch tại `1025393`** (`65bb640` và `1025393` chỉ đụng
+`docs/`, đã kiểm):
+
+```
+tsc                  : sạch (exit 0)
+vitest               : 433 passed | 2 expected fail | 32 file | 0 FAILED
+build                : qua (exit 0)
+quét byte điều khiển : 16 byte · 7 file · 14 dòng — đúng mốc nền
+đường ghi KV mới     : 0 — grep `put(` / `putNeuKhac` / `demGhiKv` trên diff V5 ra RỖNG
+```
+
+Hạn mức: **đúng**, và lý do Thực thi nêu là lý do đúng. Đây là thiết lập từng máy; đưa nó vào KV thì
+mỗi lượt bấm của 10–17 người ăn thẳng vào trần 1.000 lượt/ngày. `localStorage` là chỗ đúng.
+
+Cấu trúc code: `useState(true)` là hằng, `localStorage` chỉ đọc trong `useEffect`, ghi chỉ trong
+callback. Cả ba cổng đều bọc `try/catch`. Không có đường nào cho kho cục bộ hỏng làm sập render.
+
+### BỐN CÂU PLAN HỎI
+
+**Câu 1 · Chấp nhận tiêu chí 7 CHƯA ĐẠT — ĐÚNG, và tôi có bằng chứng cứng cho việc đó.**
+
+Plan lo mình chấp nhận sai. Không sai. Tôi kiểm hạ tầng kiểm của repo:
+
+```
+jsdom / @testing-library / happy-dom trong package.json : KHÔNG CÓ
+vitest.config.ts · environment                          : "node"
+số phép kiểm render component trong tests/              : 0
+```
+
+Phép đọc/ghi nằm inline trong thân component, không export. Với `environment: "node"` và **không một
+mẩu hạ tầng render nào**, không có cách nào gọi tới nó. Viết được một phép kiểm thì phải **chép lại
+logic** — tạo bản thứ hai rồi hai bản trôi xa nhau, đúng cái bẫy đã ghi ở V4a. Hoặc phải dựng cả
+tầng kiểm DOM, việc lớn hơn chính V5.
+
+Test **đúng khi không viết**. Plan **đúng khi chấp nhận**. Và V7 (kéo logic ra) là bản sửa thật.
+Đây không phải chỗ đáng chặn.
+
+*Nếu muốn một lớp gác rẻ trong lúc chờ V7:* repo đã có tiền lệ đúng loại — `excel-mau-khop-app.test.ts`
+đọc `index.tsx` bằng `fs` rồi soi chữ, **kèm một phép tự gác** để regex hết khớp thì đỏ to chứ không
+âm thầm so tập rỗng. Cùng lối đó có thể chốt ba điều mà không chép logic: khoá có hậu tố phiên bản,
+chỉ nhận `"0"`/`"1"`, và mặc định là `true`. Cái đáng gác nhất là **mặc định**: nó là thứ người dùng
+vừa yêu cầu đổi, và là thứ dễ bị lật lại nhất khi ai đó dọn code.
+
+**Câu 2 · Ghi chú mới ở `index.tsx:3406` — kết luận đúng, nhưng LÝ DO đưa ra vẫn là lý do yếu hơn.**
+
+Tôi xác nhận chuyện Test truy được. Có **hai** hàng rào trong code, không phải một:
+
+```
+dòng 3291 : forcedLate = projectLate && !isPhatSinh && !delivered && !isDone
+dòng 3295 : isDone ? "none"        ← đứng TRƯỚC nhánh forcedLate
+```
+
+Việc đã xong bị loại ở cả hai chỗ, độc lập nhau. Nên "việc đã xong không mang nhãn cảnh báo" là
+**tính chất của CODE**, chắc chắn, không phụ thuộc dữ liệu.
+
+**Nhưng ghi chú mới không nói thế.** Nó ghi *"chỉ lý do đầu là chắc"* rồi chứng minh lý do đó bằng
+**một phép đo trên dữ liệu hôm nay** (69·79·59·90·7·36). Đúng loại bằng chứng mà chính ghi chú đó
+dùng để nói lý do 2 là *không* chắc. Người đọc kỹ sẽ thấy hai lý do được chống bằng cùng một loại
+bằng chứng, rồi kết luận **cả hai** đều tuỳ dữ liệu — tức yên tâm hoặc lo lắng vì lý do sai, đúng
+thứ Plan muốn tránh.
+
+Sửa một dòng là xong: dẫn `index.tsx:3295` (và `:3291`) vào lý do 1. Phép đo giữ lại làm đối chứng,
+nhưng **cái chắc là code, không phải con số**.
+
+**Câu 3 · Có, tôi cũng không nghĩ ra cách chốt nào mà không kéo hàm ra.** Xác nhận đúng như Test nói:
+`tableProjectCount` là `useMemo` (dòng 4398), `pkItem` là `useCallback` (dòng 2580), không cái nào
+export, và không có tầng render để đi vòng. Lớp gác đọc-chữ-nguồn thì chốt được *hình dáng* chứ không
+chốt được *hành vi* — với một con số dùng để đánh giá PM thì thế là gác hờ, dễ làm người ta yên tâm
+hơn mức thực có. Tôi **không đề nghị** làm nó ở đây.
+
+Nên trong lúc chờ V7, **lớp gác duy nhất của chỗ này là chính ghi chú kia.** Đó là lý do câu 2 và
+mục dưới đây quan trọng hơn vẻ ngoài của chúng.
+
+**Câu 4 · Lỗi hydration — xác nhận là lỗi dev có sẵn, và tôi đến kết luận đó bằng đường khác.**
+
+Cách Test làm là cách đúng: chạy **đối chứng** với `showDone` không đổi giá trị, ra 10 lỗi y hệt, toàn
+bộ trên thuộc tính do công cụ dev chèn. Đó là một phép đối chứng thật, không phải suy diễn.
+
+Tôi xác nhận bằng đường độc lập — **cấu trúc code**: `useState(true)` là hằng nên máy chủ và trình
+duyệt dựng ra cùng một thứ; `localStorage` chỉ đọc trong `useEffect`, mà `useEffect` không chạy khi
+dựng ở máy chủ; đường ghi nằm trong callback. **V5 không có đường nào sinh ra lệch hydration.** Hai
+đường khác nhau, cùng một kết luận. Chuyện này Thực thi làm đúng ngay từ đầu: ghi chú của họ nói rõ
+*"đọc localStorage thẳng trong useState là lệch hydration"* — họ biết trước cái bẫy chứ không vấp
+rồi mới sửa.
+
+### MỘT CHỖ TEST VÀ PLAN ĐỀU CHƯA THẤY — nhánh thứ BA
+
+Ghi chú mới viết: *"`tableProjectCount` rẽ **hai** nhánh"*. Code rẽ **ba**, và nhánh bị bỏ quên đứng
+**đầu tiên**:
+
+```ts
+if (filters.mpOnly) return mpProjectRows.length;   // ← nhánh này, ghi chú không nhắc
+return hasAnyFilter ? new Set(sortedAlerts.map(pkItem)).size : activeProjectCount;
+```
+
+Và nhánh đó mang **đúng cùng một rủi ro**. `mpProjectRows` kết thúc bằng:
+
+```ts
+.filter(r => { const hasCtx = filters.depts.length > 0 || filters.stages.length > 0 || … ;
+               return hasCtx ? r.active > 0 : true; })
+```
+
+với `active: its.length`, mà `its` gom từ `tableItems` — **`tableItems` CÓ nối `doneEnriched`**
+(`useMemo` khai đúng `tableItems` trong danh sách phụ thuộc, nên nó thật sự chạy lại). Tức: ở chế độ
+**gộp theo dự án CÓ bộ lọc ngữ cảnh**, một dự án mà mọi đầu việc khớp lọc đều đã xong sẽ có
+`active === 0` khi tắt nút → bị lọc ra; bật nút → `active > 0` → hiện lên. **Số dự án tăng.**
+
+Cùng cách hỏng, cùng mức: **hôm nay dữ liệu không có ca nào**, không con số nào sai. Nhưng ghi chú
+kia được viết lại **chính để chỉ đường cho người sau khi số nhảy**, mà nó chỉ có một trong hai chỗ
+cần chỉ. Người gặp số nhảy ở chế độ gộp sẽ đi soi nhánh 2, thấy `sortedAlerts` không tham gia, rồi
+mò lại từ đầu — đúng thứ ghi chú sinh ra để tránh.
+
+*Tin tốt kèm theo:* `alerts: its.filter(i => i._alert !== "none").length` trên cùng dòng dự án thì
+**an toàn**, và an toàn vì đúng lý do ở câu 2 — việc đã xong không mang nhãn cảnh báo, code chặn ở
+dòng 3295. Ba số cảnh báo đầu trang cũng thế.
+
+### NÊN SỬA, KHÔNG CHẶN
+
+1. **Thêm nhánh `mpOnly` vào ghi chú** (mục trên). Đây là mục đáng làm nhất — nó rẻ, và ghi chú đang
+   là lớp gác duy nhất của chỗ này cho tới V7.
+2. **Dẫn `index.tsx:3295` + `:3291` vào lý do 1** thay vì chỉ dẫn phép đo (câu 2).
+3. **Hai số dòng trong ghi chú SAI ngay lúc viết.** Kiểm tại chính commit `5fe969d`:
+
+   | Ghi chú viết | Thực tế tại `5fe969d` | Lệch |
+   |---|---|---|
+   | `tableProjectCount` (≈4343) | **4398** | 55 dòng |
+   | `tableItems` (≈3767) | **3819** | 52 dòng |
+
+   Độ lệch gần bằng nhau ở cả hai, mà `5fe969d` cộng thêm ~52 dòng phía trên — nên rất có thể số dòng
+   được đọc **trước** khi chèn ghi chú, rồi viết vào sau. Dòng 4343 lại là một `useMemo` cũng đang
+   đếm khoá dự án, nên người đọc nhảy tới đó **tưởng mình đúng chỗ** trong khi không phải. Đây là
+   kiểu sai tệ hơn một con số lệch bình thường. Cách chữa bền hơn số dòng: dẫn theo **tên hằng**.
+
+### LƯU Ý PLAN NHỜ CÂN — bảng LOÉ LÊN rồi co lại: **GHI NỢ, KHÔNG CHẶN**
+
+Người đã tắt nút sẽ thấy bảng đầy đủ loé lên rồi co lại, vì ràng buộc 1 bắt lượt vẽ đầu phải là mặc
+định. Tôi cân thế này:
+
+- **Không sai một con số nào, không sập gì.** Ưu tiên 1 và 2 của vai Review đều sạch.
+- **Đã có tiền lệ trong chính app:** bề rộng cột nhảy y như vậy, từ trước V5, và không ai coi đó là
+  lỗi chặn.
+- **Chỉ nhóm đã tự tắt gặp phải** — tức nhóm nhỏ, và là nhóm đã biết mình đổi thiết lập.
+- **Cách chữa đắt hơn bệnh.** Muốn hết loé thì phải biết lựa chọn **trước lượt vẽ đầu**: hoặc nhét
+  một script chặn vào đầu trang, hoặc chuyển sang cookie để máy chủ đọc được. Cả hai đều đụng vào
+  đúng vùng hydration/SSR — chỗ mà chính V5 vừa cẩn thận đi vòng để tránh. Đổi một cái nháy dưới một
+  giây lấy một rủi ro ở tầng đó là lỗ.
+
+Một chỗ nó **nhẹ hơn** bề rộng cột thì tôi cũng nói cho cân: cột nhảy là đổi bề ngang, còn cái này
+đổi **số dòng** (70 → 270 → 70), nên chiều cao trang nhảy và ai bấm ngay lúc đó có thể bấm nhầm
+dòng. Vẫn không đủ để chặn, nhưng nếu sau này có người phàn nàn thì đây là chỗ đã biết trước.
+
+### GHI NHẬN CHỖ PLAN TỰ ĐÍNH CHÍNH
+
+Plan từng nói với người dùng rằng bật mặc định là *"vẽ thêm 199 dòng mỗi lần mở app cho mọi người"*,
+rồi tự đính chính sau khi Test đếm nút DOM: nhóm con thu lại (mặc định) thì bật hay tắt đều **70
+dòng / 3.403 nút**; chi phí chỉ đến khi bấm "Mở tất cả", và khi đó là **+200 dòng / +8.156 nút**.
+
+Đáng ghi vì hai lẽ. Một: nó là **con số thay cho một lời phỏng đoán**, đúng cách làm việc của dây
+chuyền này. Hai: lời phỏng đoán đó đã đi tới **người dùng** rồi mới bị sửa — tức một nỗi lo không
+tồn tại đã được đặt lên bàn của người quyết định. Đính chính là đúng; điều đáng nhớ là đừng đưa số
+chưa đo cho người dùng ngay từ đầu.
+
+### CHƯA KIỂM ĐƯỢC
+
+- **Tôi không mở app.** Ba lần tải trang mà Test đo (kho trống → BẬT · `"0"` → TẮT · `"1"` → BẬT) là
+  phép đo đúng chỗ, tôi đọc lại đường code thấy khớp, nhưng **không tự chạy lại**.
+- **Trình duyệt chặn lưu trữ** (ẩn danh, chặn cookie): đọc code thì `try/catch` bọc cả hai đầu và rơi
+  về mặc định BẬT. Không tự dựng được tình huống đó.
+- **Cái nháy** ở mục trên: tôi suy ra từ ràng buộc 1 và cấu trúc code, **chưa thấy bằng mắt**.
+
+---
+
+### PHÁN QUYẾT NGẮN — BA BẢN VÒNG TRƯỚC
 
 | Bản | Commit | Phán quyết |
 |---|---|---|
