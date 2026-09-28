@@ -300,6 +300,113 @@ Chỉ đổi ghi chú, không đổi một dòng code chạy nào: diff 26/1, v�
 
 ## ③ TEST
 
+### V11 · NHÁNH B — ĐO. Không phải phán quyết.
+
+Đo trên dev server đang chạy ở cổng 8080 (của box khác, tôi dùng chung, **không sửa `launch.json`**),
+1440px, dữ liệu thật. Ba lượt tải nguội. Số lấy từ Resource Timing: `startTime`, `requestStart`,
+`responseEnd` của từng lượt, không chỉ `duration`.
+
+**ĐIỀU QUAN TRỌNG NHẤT, ĐỌC TRƯỚC MỌI CON SỐ: dev KHÔNG CÓ binding KV, nên nhánh A không đo được ở
+đây.** `getMediaCoAnh` chỉ nhanh khi đọc được bản đã lưu trong KV; `khoKv()` trả `null` trong dev nên
+nhánh "kho trống → quét ngay tại chỗ" chạy **mọi lượt**. Bằng chứng không phải ghi chú trong code mà
+là số đo: hai lượt tải liên tiếp cách nhau vài phút đều tốn 16,2 s rồi 14,4 s. Nếu KV có tác dụng thì
+lượt thứ hai đã phải ~7 ms. **Mọi kết luận "nhánh A không nhanh hơn" rút từ máy này đều SAI** — phải
+đo trên môi trường có KV.
+
+**BA LƯỢT TẢI**
+
+| | Lượt 1 (code cũ) | Lượt 2 (nhánh A) | Lượt 3 (nhánh A) |
+|---|---|---|---|
+| Hàm media | `listMediaProjects` | `getMediaCoAnh` | `getMediaCoAnh` |
+| Thời gian của nó | **14.208 ms** | **16.229 ms** | **14.393 ms** |
+| Lượt fetch | 23 | 24 | 20 |
+| Tổng thời lượng cộng dồn | 18.699 ms | — | 19.123 ms |
+| Khung từ lượt đầu tới lượt cuối | 14.346 ms | — | ~15.200 ms |
+
+Giữa lượt 1 và lượt 2, nhánh A đáp xuống cây (`src/lib/can-media.functions.ts` và `index.tsx` đang
+sửa dở, **chưa commit**) — nên tôi đo được cả trước lẫn sau, tình cờ.
+
+**CÂU 1 — sáu lượt `fetch*` 4.578 ms: KHÔNG tái hiện được, và giả thuyết xếp hàng KHÔNG đứng vững**
+
+Trên máy này sáu hàm đó chạy **15 tới 61 ms**, không phải 4.578 ms.
+
+Quan trọng hơn: ở lượt 1, **17 lượt khởi động trong vòng 1 ms của nhau** (1.209–1.210 ms), và thời
+gian chờ kết nối (`requestStart − startTime`) của chúng là **2 tới 52 ms**. Nếu trình duyệt giới hạn
+6 kết nối mỗi host thì 11 lượt phải nằm chờ hàng giây. Chúng không chờ. **Trình duyệt không hề xếp
+hàng chúng lại** — giả thuyết của Plan không khớp với số đo.
+
+Giả thuyết thay thế, khớp với dữ liệu của Plan hơn: sáu lượt ấy **cùng được thả ra một lúc** vì
+chúng cùng chờ **máy chủ**, không phải chờ trình duyệt. Dev server là một tiến trình Node đơn luồng;
+lượt quét Drive nặng chiếm vòng lặp sự kiện thì mọi lượt tới sau đều đứng đó tới khi nó nhả, rồi
+được phục vụ gần như đồng thời — đúng chữ ký "sáu lượt trùng nhau tới từng mili giây". Trên máy này
+sáu lượt ấy **thắng cuộc đua**: chúng xong ở 1.275 ms trong khi lượt quét chạy tới 15.417 ms.
+
+Cách kiểm giả thuyết này: đo lại trên máy của Plan và xem sáu lượt ấy **kết thúc** lúc nào. Nếu cùng
+kết thúc trong vài mili giây của nhau thì là chờ máy chủ; nếu kết thúc rải đều thì là chuyện khác.
+`duration` không phân biệt được hai cảnh đó, `responseEnd` thì có.
+
+**CÂU 2 — bốn lượt "index.tsx" 4–5,7 giây KHÔNG phải server-fn**
+
+Chúng là lượt kiểu **`script`**: trình duyệt xin Vite dev server trả về chính file mã nguồn đã biên
+dịch.
+
+```
+/src/routes/index.tsx?tsr-split=component   2.218.285 byte   2.807 ms  (sau khi file bị sửa)
+/src/routes/index.tsx                       1.115.262 byte      62 ms
+/src/routes/index.tsx?tsr-split=component   2.218.285 byte      30 ms  (máy đã nóng)
+```
+
+Cùng một đường dẫn, lúc 2.807 ms lúc 30 ms — khác nhau ở chỗ module đã được biên dịch sẵn hay chưa.
+Vì thế chúng không giải mã ra tên hàm: **chúng không có tên hàm**. Và **production không có chúng**:
+bản dựng ra phục vụ gói đã đóng, không biên dịch tại chỗ.
+
+→ Một phần đáng kể trong 82.442 ms của Plan là **chi phí của môi trường dev**, không phải độ trễ
+người dùng thật chịu. Tối ưu theo con số đó là tối ưu một cái bóng.
+
+**CÂU 3 — PHÉP ĐO QUYẾT ĐỊNH: lượt quét media chiếm gần trọn khung thời gian**
+
+Tôi **không chặn được** `listMediaProjects` đúng lúc tải: bẫy `fetch` của tôi gắn được sớm nhất ở
+3.710 ms, còn lượt gọi bắt đầu ở 1.209 ms. Và "Làm mới" **không** chạy lại hàm media nên không dùng
+làm phép đo thay thế được. Nói thẳng: phép chặn Plan yêu cầu, tôi không làm được bằng cách không
+đụng vào mã nguồn.
+
+Nhưng waterfall trả lời thẳng câu hỏi, vì nó cho biết **cái gì xong lúc nào**:
+
+```
+lượt fetch đầu tiên      1.167 ms
+17 lượt đọc xong hết     1.275 ms
+getLinksUpdatedAt xong   2.650 ms
+fetchSheetXlsx xong      4.047 ms   <- MỌI THỨ KHÔNG DÍNH MEDIA ĐÃ XONG Ở ĐÂY
+listMediaProjects xong  15.417 ms
+ba lượt save* xong      15.513 ms
+```
+
+**Bỏ lượt media ra thì khung 14.346 ms còn 2.880 ms — giảm khoảng 11,5 giây, tức 80%.** Trả lời
+đúng câu Plan hỏi: đây là cảnh "giảm 60 giây", không phải cảnh "giảm 14 giây". Nó **không** chặn 17
+lượt đọc kia (chúng xong từ giây đầu), nhưng nó chiếm gần trọn khung thời gian và chặn ba lượt ghi.
+
+**CÂU 4 — CÓ, đúng ba lượt chờ lẫn nhau, và cả ba là lượt GHI**
+
+`saveProjRegions` · `saveInstallList` · `saveMediaProjects` khởi động **81 ms** sau khi hàm media kết
+thúc, ở **cả ba lượt tải** (15.498 sau 15.417 · 21.916 sau 21.828 · 15.168 sau ~14.400+672). Không
+lượt nào khác chờ lượt nào.
+
+Đáng chú ý cho phần hạn mức, không thuộc câu Plan hỏi nhưng phải nói: hai trong ba lượt ấy gọi
+`putNeuKhac` vào `PMO_EDITS` (`mtld-install.functions.ts:257` và `:358`), tức **ghi KV mỗi lần mở
+app**. Trong dev không có KV nên chúng là lượt rỗng, còn trên production thì không. Với 10–17 người
+và trần 1.000 lượt ghi/ngày, đây là chỗ đáng đo riêng.
+
+**CHƯA ĐO ĐƯỢC**
+
+- **Nhánh A có nhanh hơn không.** Không đo được ở dev vì thiếu KV. Cần đo trên môi trường có KV, và
+  phép đo phải là: lượt đầu sau 6 giờ tốn bao lâu, các lượt sau tốn bao lâu.
+- **Lượt chặn media đúng lúc tải.** Không làm được nếu không đụng mã nguồn.
+- **Máy người dùng thật và production.** Mọi số trên là một máy, một dev server, một mạng.
+- **Vì sao máy Plan ra 4.578 ms còn máy này ra 15–61 ms cho cùng sáu hàm.** Mới có giả thuyết, chưa
+  có phép đo phân giải được.
+
+---
+
 ### V5 — `72ea874` + `5fe969d` — **ĐẠT KÈM LƯU Ý**
 
 Đo trên **app thật đang chạy**, không chỉ đọc code. Hành vi qua ba lần tải trang đúng cả ba, sáu số
