@@ -536,6 +536,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.116.0", date: "28/09/2026", items: [
+    "BỎ KÝ HIỆU ⌀ Ở CHIP NGÀY CẬP NHẬT. Nó đánh dấu trường hợp nguồn ghi ngày mới nhưng số liệu thật không đổi — ý nghĩa thì đúng, nhưng nhìn vào không ai đoán ra nó là gì.",
+    "Dấu hiệu vẫn còn, chỉ là nói bằng tiếng Việt thay vì bằng ký hiệu: chip đó vẫn viền vàng, và rê chuột vào vẫn thấy câu “ghi ngày mới nhưng số liệu không đổi”.",
+  ] },
   { v: "3.115.0", date: "28/09/2026", items: [
     "MỞ APP NHANH HƠN HẲN. Mỗi lần mở app, app đi quét toàn bộ thư mục Media trên Drive chỉ để biết dự án nào có ảnh — đo được mất 14 giây, và trong suốt 14 giây đó nó chiếm một đường truyền khiến các phần khác của trang phải xếp hàng chờ theo.",
     "Nay kết quả đó được ghi nhớ và dùng lại, nên các lần mở sau gần như tức thì. Dấu 🎬 vẫn đúng dự án như cũ; chậm nhất là một dự án vừa được tải ảnh lên trong vài giờ qua thì dấu hiện trễ một nhịp.",
@@ -8406,7 +8410,15 @@ function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; to
     : d <= 14 ? "bg-amber-100 text-amber-800"     // lỡ 1 chu kỳ
     : d <= 21 ? "bg-orange-200 text-orange-900"   // lỡ 2 chu kỳ
     :           "bg-red-500 text-white";          // bỏ bê ≥3 chu kỳ
-  // Nguồn khai ngày mới hơn hẳn ngày số liệu đổi → đánh dấu để rà: chiếu lên mà không ai cập nhật.
+  /* Nguồn khai ngày mới hơn hẳn ngày số liệu đổi → đánh dấu để rà: chiếu lên mà không ai cập nhật.
+   *
+   * ĐÃ BỎ KÝ TỰ "⌀" khỏi phần hiện ra (28/09/2026, người dùng yêu cầu). ĐỪNG THÊM LẠI.
+   * Phép tính `khaiSuong` vẫn đúng và vẫn đáng giữ — nó bắt đúng cảnh gõ lại ngày cho mới mà không
+   * sửa gì. Chỉ cái KÝ HIỆU bị bỏ: chính người quản lý app nhìn vào cũng không đọc được nó là gì,
+   * mà một dấu hiệu không ai hiểu thì bằng không, lại còn rối mắt.
+   * Tín hiệu KHÔNG mất: chip vẫn đeo viền `ring-amber-400`, và tooltip vẫn nói thẳng
+   * "ghi ngày mới nhưng số liệu không đổi". Thấy `khaiSuong` tính ra mà không hiện ký tự nào thì
+   * đó là CỐ Ý, không phải thiếu sót. */
   const dKhai = date ? cachNgay(date) : null;
   const khaiSuong = !!fpAt && dKhai != null && dKhai <= 7 && d - dKhai >= 7;
   const chuThich = `Số liệu thật sự đổi lần cuối: ${fmtDateVN2(hien)} (${d} ngày trước)`
@@ -8415,7 +8427,7 @@ function UpdateChip({ date, today, fpAt }: { date: string | null | undefined; to
   return (
     <span className={`inline-block whitespace-nowrap rounded px-0.5 text-[9px] font-bold tabular-nums ${khaiSuong ? "ring-1 ring-amber-400 " : ""}${tone}`}
           title={chuThich}>
-      {fmtDayMonth(hien)}{khaiSuong ? " ⌀" : ""}
+      {fmtDayMonth(hien)}
     </span>
   );
 }

@@ -155,147 +155,110 @@ Nhánh A ra bản sửa, nhánh B ra số chứng minh bản sửa đáng giá b
 
 ## ② THỰC THI
 
-> *Mục ② của V4a/V4b nằm ở các commit `c188f92` · `a914b2f` · `f9c901b`.*
+> *Mục ② của các việc trước nằm trong thông điệp commit: V4a/V4b `c188f92` · `a914b2f` · `f9c901b`,
+> V5 `72ea874` · `5fe969d` · `426e60c`, V6 `6e7c903` · `6c43124`, V8a `bce0f29`,
+> V10 `46f7da8`, đổi nhãn PMO→OCC `1c311a4`.*
 
-**CÂU PLAN NHỜ KIỂM — TRẢ LỜI BẰNG SỐ TRƯỚC, VÌ NÓ QUYẾT ĐỊNH CÓ ĐƯỢC LÀM HAY KHÔNG**
+# V11 · NHÁNH A — thôi quét Drive 14 giây ở đường mở app
 
-Plan hỏi: *KPI đầu trang có đếm theo tập đang hiện không? Nếu có thì đổi mặc định là đổi con số
-báo cáo lên Ban điều hành.*
-
-**Đo trên app thật, dữ liệu thật, 69 dự án.** Bật nút lên thì bảng hiện thêm **199 đầu việc 100%**
-(đếm chuỗi `100%` trên trang: 5 → 204). Cả sáu con số đầu trang **giữ nguyên tuyệt đối**:
-
-| | tắt | bật |
-|---|---|---|
-| Dự án hiện hành | 69 | **69** |
-| Trễ tiến độ | 79 | **79** |
-| Cần cắt đầu việc | 59 | **59** |
-| Cần tập trung | 90 | **90** |
-| Bàn giao tháng này | 7 | **7** |
-| Top 20 | 36 | **36** |
-
-Đo **hai lần**: một lần không lọc, một lần bật bộ lọc tìm kiếm — vì hai nhánh này tính khác nhau
-(xem dưới). Cả hai lần đều không đổi một con số nào.
-
-**Nhưng đường code thì KHÔNG đơn giản như con số**, và chỗ này Plan nên biết:
-
-- `tableItems` (3767) **có** nối `doneEnriched` vào khi bật, và `sortedAlerts` chảy ra từ đó. Ba số
-  Trễ / Cần cắt / Cần tập trung đếm `_alert` **trên chính `sortedAlerts`** (4268–4271). Chúng không
-  đổi vì việc đã xong không mang nhãn cảnh báo nào — **đo được, không phải suy luận**.
-- `tableProjectCount` (4343) rẽ hai nhánh: **không lọc** thì lấy `activeProjectCount` (độc lập hẳn,
-  an toàn tuyệt đối); **có lọc** thì đếm số dự án khác nhau trong `sortedAlerts`. Nhánh thứ hai
-  **về nguyên tắc có thể đổi** — nếu tồn tại một dự án mà mọi đầu việc đều đã xong thì nó chỉ hiện
-  khi bật nút, và số dự án sẽ tăng. Hôm nay **không có dự án nào như vậy** (69 → 69), nên số không
-  nhúc nhích. Ghi ra để sau này ai thấy số nhảy thì biết ngay chỗ tìm, chứ không đi mò lại từ đầu.
-- Ghi chú ở dòng 3400 nói `showDone` "KHÔNG đưa vào enriched/panelActive/KPI". Phần
-  `panelActive` **đúng** — `showDone` đi vào `ganttSource` (3913) chứ không đụng `panelActive`.
-  Phần "KPI" thì **đúng về kết quả nhưng không đúng về đường đi**: KPI có đọc `sortedAlerts`, mà
-  `sortedAlerts` có chứa việc đã xong. An toàn là nhờ việc đã xong không mang nhãn, không phải nhờ
-  nó bị chặn khỏi KPI.
-
-Kết luận: **số không nhảy, nên tôi đi tiếp** thay vì dừng. Điều kiện Plan đặt ra ("nếu đổi mặc định
-làm đổi con số trên đầu trang") không xảy ra.
+Commit `e022600` (bản sửa) và `5439316` (sửa một câu ghi chú sai). **Không deploy.**
 
 **ĐÃ LÀM**
 
-`src/routes/index.tsx`, ba chỗ:
+`src/lib/can-media.functions.ts`:
+- Thêm `getMediaCoAnh` — **đọc kho** `media:coanh:v1`, không quét Drive.
+- Tách phần quét Drive thành `quetMediaCoAnh()` dùng chung; `listMediaProjects` giữ lại làm đường
+  quét thật cho cron / lúc cần số tươi.
+- Kho quá hạn (6 giờ) → trả bản cũ **ngay**, quét lại ở nền, có ghim chặn quét chồng trong cùng isolate.
 
-1. `LS_SHOW_DONE = "pmo.master.showdone.v1"` — khoá lưu, đặt cạnh `LS_COLW` theo đúng lối của file,
-   có hậu tố phiên bản.
-2. `useState(false)` → **`useState(true)`**, kèm một `useEffect` nạp bản đã lưu **sau khi gắn vào
-   trang**. Chép đúng khuôn `flatColW`/`groupColW` (~6162): lượt vẽ đầu phải khớp bản máy chủ dựng
-   ra, đọc kho cục bộ ngay trong `useState` là lệch hydration.
-3. `onToggleDone` từ hàm ẩn danh `() => setShowDone(v => !v)` thành `doiShowDone` — cùng lúc đổi
-   trạng thái và ghi nhớ.
+`src/routes/index.tsx`: đổi truy vấn `["media-projects"] → ["media-co-anh"]`, gọi `getMediaCoAnh`.
+Thêm mục CHANGELOG `v3.115.0`.
 
-Chỉ nhận đúng hai chuỗi `"1"` và `"0"`; rác thì bỏ qua và giữ mặc định BẬT. `try/catch` bọc **cả
-đọc lẫn ghi** — trình duyệt ẩn danh hoặc máy chặn lưu trữ thì app vẫn chạy, chỉ là không nhớ.
+**TỰ ĐO LẠI TRƯỚC KHI SỬA, không tin con số của người khác**
 
-**VÌ SAO LÀM THẾ**
+`listMediaProjects()` = **14.167 ms**, trả về đúng **2 tên dự án**. Mười bốn giây quét Drive cho
+một cái dấu hiệu, chạy lại mỗi 10 phút, cho từng người. Đường đọc kho đo được **7 ms**.
 
-*Vì sao không đọc `localStorage` thẳng trong `useState`.* Gọn hơn một `useEffect`, nhưng máy chủ
-dựng HTML không có `localStorage`, nên lượt vẽ đầu của trình duyệt sẽ khác bản máy chủ và React
-báo lệch hydration. Chú thích tại khuôn bề rộng cột đã nói rõ điều này — tôi chép cả lý do chứ
-không chỉ chép hình dạng.
+**HỎNG VỀ PHÍA AN TOÀN — chỗ này tôi phải sửa lại sau khi đo**
 
-*Vì sao `localStorage` chứ không phải KV.* Đây là thiết lập của từng máy. Đẩy lên KV thì mỗi lượt
-bấm của 10–17 người ăn thẳng vào trần 1.000 lượt ghi/ngày — thứ đang phải giữ. Việc này **không
-thêm một đường ghi KV nào**.
+Bản đầu: kho rỗng → trả mảng rỗng, quét ở nền. Chạy dev mới phát hiện **không có binding KV**, nên
+kho không bao giờ được ghi và **mọi dấu 🎬 biến mất vĩnh viễn mà không ai báo**.
 
-*Vì sao chỉ nhận `"1"`/`"0"` chứ không `JSON.parse`.* Hai chữ thì không có gì để hỏng. `JSON.parse`
-trên chuỗi rác sẽ ném, mà ném ở đây là chặn cả lượt vẽ chỉ vì một thiết lập hiển thị.
+Nay: kho rỗng → **quét ngay tại chỗ** rồi mới trả. Lượt đầu sau mỗi cửa sổ 6 giờ vẫn tốn ~14 giây
+đúng như hôm nay, nhưng **không bao giờ tệ hơn hôm nay**, và mọi lượt sau chỉ còn ~7 ms.
+Đổi 14 giây của **một người mỗi 6 giờ**, lấy 14 giây của **mọi người mỗi 10 phút**.
+Quét hụt (Drive lỗi) thì **không** ghi đè danh sách cũ bằng mảng rỗng.
+
+**HAI HƯỚNG RƠI KHÔNG ĐỐI XỨNG — và mặc định nghiêng đúng phía an toàn** (điểm box Test nêu)
+
+Kho chưa sẵn sàng → không tên dự án nào trong danh sách → **không dự án nào có dấu**. Tức rơi về
+phía **mất dấu** (chỉ khó chịu), không bao giờ rơi về phía **hiện dấu sai** (mở ra thấy trống).
+Không có đường nào sinh ra tên dự án mà không phải từ một lượt quét Drive thật.
+
+**DẤU HIỆU KHÔNG THỂ SAI LỆCH VÌ KIẾN TRÚC:** `getMediaCoAnh` trả về **đúng cái mảng** mà
+`listMediaProjects` vẫn trả, cho **đúng chỗ dùng**. Khác biệt duy nhất là chỗ cất.
+Đối chiếu trên app: vẫn đúng 2 dự án (CT26-060, CT25-038); trên bảng chính đúng **CT25-038 có dấu
+🎬 và 59 dự án còn lại không có**.
+
+**CÂU PLAN HỎI — ba lượt ghi có chạy sớm hơn hoặc nhiều hơn không?**
+
+**Sớm hơn, không nhiều hơn.** Đo một lượt mở app trên bản sửa:
+```
+media             @  9.295 ms
+saveProjRegions   @ 23.796 ms
+saveInstallList   @ 23.798 ms      mỗi hàm ĐÚNG 1 lượt
+saveMediaProjects @ 23.799 ms
+```
+Ba lượt ghi nằm sau cổng `dangTaiKho > 0`, mà cổng đó chỉ mở khi mọi truy vấn xong — kể cả lượt
+media. Ở production media trả về ~7 ms nên chúng sẽ chạy **sớm hơn ~14 giây**, cùng số lượt.
+
+Phép đo độc lập củng cố: ở V10, khi chuyển app qua lại thì media được phục vụ từ bộ nhớ (đã tức
+thì sẵn), và ba hàm vẫn ra **1 lượt mỗi lần mount**. Nên kịch bản "media nhanh làm cổng mở sớm rồi
+effect chạy nhiều lần" — đúng bẫy **L5** — **không xảy ra**.
+
+**MỘT CÂU GHI CHÚ SAI CỦA CHÍNH TÔI, đã sửa ở `5439316`**
+
+Bản đầu tôi viết lượt media "chặn hàng sáu hàm `fetch*` của edits.functions". Đó là lý do tôi
+**chép lại từ Plan mà không tự kiểm** — đúng loại sai mà chính tôi đã bắt lỗi Plan hai lần trong
+ngày. Box Test đo waterfall và bác: **17 lượt đọc xong hết ở mốc 1.275 ms**, chúng không chờ gì.
+Thứ nó thật sự chặn là **ba lượt ghi**. Kết luận "nên bỏ lượt media" không đổi, nhưng lý do sai nằm
+trong ghi chú thì người sau sẽ tin nó.
+
+Mức đáng giá (số của box Test): bỏ lượt media ra thì khung mở app **14.346 ms → 2.880 ms**; mọi thứ
+không dính media đã xong từ mốc **4.047 ms**.
 
 **ĐÃ ĐO**
 ```
-tsc                   : sạch (exit 0)
-vitest                : 433 passed | 2 expected fail | 32 file | 0 FAILED — đúng mốc nền, không
-                        phép nào đang xanh bị đỏ
-build                 : qua, 16,28s
-quét byte điều khiển  : 16 byte · 7 file = mốc nền. index.tsx giữ nguyên 6 byte có sẵn (việc V1)
-kiểm trên app         : xem bảng ba trạng thái bên dưới. 1440px không tràn · 375px scrollWidth =
-                        clientWidth = 375, không tràn ngang · không lỗi console mới
-ghi KV thêm mỗi lần mở app : 0 — việc này không đụng tới một đường ghi KV nào
-cổng demo / đang tải  : KHÔNG ÁP DỤNG — không có effect ghi kho nào ở đây. Hai cổng ở
-                        index.tsx:2482-2483 thuộc effect khác, tôi không đụng.
+tsc                   : sạch
+vitest                : 455 passed | 2 expected fail | 0 failed | 34 file
+build                 : qua
+quét byte điều khiển  : 16 byte toàn cây = mốc nền (1 byte trong can-media.functions.ts là của sẵn,
+                        thuộc việc V1 — tôi không thêm byte nào)
+ghi KV thêm mỗi lần mở app : 0. Lượt ghi duy nhất phát sinh là 1 lượt mỗi 6 giờ khi làm mới kho,
+                        KHÔNG chạy theo số người dùng.
 ```
-
-**PHÉP ĐO CHÍNH — tắt nút, TẢI LẠI TRANG** (Plan nêu đây mới là phép đo thật, không phải test xanh)
-
-| Trạng thái | Nhãn nút sau khi tải lại | `pmo.master.showdone.v1` |
-|---|---|---|
-| Máy mới, chưa có gì trong kho | **✓ Đang hiện việc đã xong** (BẬT) | `null` |
-| Tắt nút rồi tải lại | **Hiện tất cả đầu việc** (vẫn TẮT) | `"0"` |
-| Bật lại rồi tải lại | **✓ Đang hiện việc đã xong** (vẫn BẬT) | `"1"` |
-
-Dòng đầu bảng cũng chính là phép kiểm "cửa sổ ẩn danh": xoá khoá đi = máy chưa từng vào, và nó về
-đúng mặc định BẬT. Chứng minh lựa chọn lưu theo **máy** chứ không theo tài khoản.
 
 **CHỖ TÔI KHÔNG CHẮC**
 
-1. **Chưa thử trên cửa sổ ẩn danh thật.** Tôi giả lập bằng cách xoá khoá, tương đương về mặt trạng
-   thái kho, nhưng ẩn danh còn có thể **chặn hẳn** `localStorage` — lúc đó lệnh ghi ném lỗi. Tôi
-   đã bọc `try/catch` cả hai chiều nên đường đó an toàn về lý thuyết, nhưng **chưa chạy thật**.
-
-2. **`tableProjectCount` ở nhánh CÓ LỌC vẫn là một cửa để số đổi** — hôm nay đóng vì không có dự án
-   nào toàn việc đã xong. Tôi không sửa (ngoài phạm vi, và nó là hành vi có sẵn từ trước), chỉ ghi
-   ra. Nếu Plan muốn khoá hẳn thì đó là việc riêng.
-
-3. **Người quen bảng gọn sẽ mở app thấy dài ra.** Plan cho là không cần báo gì trên giao diện, và
-   tôi **đồng ý** — người dùng đã dặn đừng hiện mấy dòng chữ chỉ admin mới cần. Tôi không tự thêm.
-   Nhưng đã viết dòng CHANGELOG cho người dùng đọc, nói rõ mặc định đổi và cách tắt đi. Đó là chỗ
-   đúng để nói.
-
-4. **Không đo được chi phí render khi bật mặc định.** Bật lên là bảng dựng thêm 199 dòng ngay từ
-   lượt vẽ đầu, mọi lần mở app, cho mọi người. Máy tôi không thấy chậm, nhưng "không thấy chậm trên
-   máy tôi" không phải một phép đo.
-
-**BỔ SUNG — viết lại ghi chú sai ở `index.tsx:3406` (Plan duyệt, nằm trong phạm vi V5)**
-
-Ghi chú cũ viết *"KHÔNG đưa vào enriched/panelActive/KPI → không làm sai số liệu tổng"*. Nửa đầu
-đúng, **nửa sau sai**: `tableItems` có nối `doneEnriched` vào, `sortedAlerts` chảy ra từ đó, và KPI
-đọc `sortedAlerts`. Không có hàng rào nào chặn cả.
-
-Đây đúng thứ **luật 5.4** sinh ra để chặn — ghi chú đang làm người đọc yên tâm vì **một lý do sai**.
-Người sau đọc xong tưởng có hàng rào, rồi một ngày việc đã xong mang nhãn nào đó và hàng rào ấy hoá
-ra chưa từng tồn tại.
-
-Bản mới nói đúng đường đi, và tách bạch **hai lý do khác nhau** khiến số không nhảy:
-- Ba số cảnh báo an toàn vì việc đã xong **không mang nhãn** — kèm số đo 28/09 (199 đầu việc hiện
-  thêm, sáu số đứng yên `69·79·59·90·7·36`, đo cả hai nhánh).
-- `tableProjectCount` ở nhánh **có lọc** thì **về nguyên tắc CÓ THỂ đổi** nếu tồn tại một dự án mà
-  mọi đầu việc đều đã xong. Hôm nay không có — nhưng đó là tính chất của **dữ liệu hôm nay**, không
-  phải của code. Ghi rõ để ai thấy số nhảy thì tìm ngay đúng chỗ.
-- Kèm một câu dặn: **đừng viết lại thành "đã chặn khỏi KPI"**.
-
-Chỉ đổi ghi chú, không đổi một dòng code chạy nào: diff 26/1, và `git diff --ignore-all-space` ra
-đúng 26/1 nên không có dòng nhiễu nào.
+1. **Không nghiệm thu được đường đọc nhanh end-to-end.** Dev không có binding KV nên `khoKv()` trả
+   `null`, kho luôn rỗng, và nó luôn rơi vào nhánh quét tại chỗ. Con số 7 ms là đo lượt đọc KV thật
+   lúc kho chưa có gì. **Phải chạy ở nơi có KV mới xác nhận được**, và phép đo đúng là: lượt đầu
+   sau 6 giờ tốn bao lâu, các lượt sau tốn bao lâu. Ai nhìn số localhost rồi kết luận "sửa xong vẫn
+   15 giây" là đang đo một thứ khác.
+2. **Chỗ đúng đắn hơn cho việc quét là cron của warmer** (cron ghi, người dùng chỉ đọc). Tôi không
+   làm vì warmer là worker riêng phải deploy riêng. Đã ghi rõ trong code: khi cron nhận việc này thì
+   bỏ khối làm mới ở nền đi, phần đọc giữ nguyên.
+3. **Cửa sổ 6 giờ là tôi chọn**, không phải số đo. Dữ liệu đổi khi có người tải ảnh lên — tôi không
+   đo được nhịp đó. Thấy chưa hợp thì đổi một hằng số.
 
 **CHƯA LÀM**
 
-- **Không đổi** luật lọc, cách tính KPI, `showHidden`, hay bề rộng cột — đúng phần NGOÀI.
-- **Không thêm** thông báo nào trên giao diện (xem mục 3 trên).
-- **Không đụng V6** (lọc trong báo cáo tuân thủ) — Plan dặn làm xong V5 đã.
-- **Không deploy.**
+- **Không đụng** hai lượt ghi KV mỗi lần mở app ở `mtld-install.functions.ts:257` và `:358` — Plan
+  xếp thành việc riêng. *Bổ sung một điểm cho lúc đo:* chúng đi qua `putNeuKhac` nên **gọi không
+  đồng nghĩa với ghi**; số lượt ghi thật chỉ bằng số lần nội dung đổi, phải đọc bảng `kv_write`
+  trên D1 mới biết.
+- **Không deploy.** Đúng lệnh: đang giờ mọi người làm báo cáo.
+
 ---
 
 ## ③ TEST
@@ -893,7 +856,222 @@ mà tiêu chí 3 của Plan yêu cầu, nên Thực thi và Review đo lại s�
 ## ④ REVIEW
 
 Review nhận vai 28/09/2026 (trước đó session này làm Test vòng V1). **Mỗi bản một phán quyết riêng.**
-Việc đang làm — **V5** — ở ngay dưới. V2b · V4a · V4b đã phán quyết, nằm phía sau.
+Việc đang làm — **V11 nhánh C** — ở ngay dưới. V5 · V2b · V4a · V4b đã phán quyết, nằm phía sau.
+
+---
+
+## V11 NHÁNH C · GẮN ĐỒNG HỒ VÀO APP — Review **VIẾT CODE**, đây là NGOẠI LỆ
+
+### ĐỌC CHỖ NÀY TRƯỚC: ai soi nhánh này?
+
+**Không phải tôi.** Plan giao nhánh C cho box Review và nói rõ đây là ngoại lệ. Tôi nhận việc, nhưng
+phải ghi thành chữ một điều mà cả `box-4-REVIEW.md` lẫn bảng dây chuyền ở NEN-TANG đều chốt:
+*Review không sửa code.* Luật đó có lý do, và lý do đó chính là tình huống này — **tôi vừa viết thì
+tôi không còn là cửa cuối được nữa.** Tự phán quyết code của mình là bỏ hẳn một cửa kiểm, không phải
+tiết kiệm được một vòng.
+
+**Nhánh C cần một box KHÁC soi trước khi gộp.** Đừng để nó đi thẳng ra deploy vì "Review làm rồi".
+
+**Các file tôi đã đụng** (ghi ra đây vì đây là ngoại lệ, không phải tiền lệ mới):
+
+```
+MỚI   src/lib/dong-ho.ts          — module đồng hồ, không phụ thuộc gì ngoài `performance`
+MỚI   tests/dong-ho.test.ts       — 14 phép kiểm
+SỬA   src/routes/index.tsx        — ĐÚNG 5 chỗ: 1 dòng import · moc("trang") · moc("nguon")
+                                     · moc("doc") · chốt-và-ghi. Không đụng gì khác.
+```
+
+### VIỆC ĐÃ LÀM
+
+App không có một phép đo thời gian nào (`grep performance.now src/` ra rỗng), nên mọi con số về lag
+cả đội đang bàn đều đo trên **một máy**. Nhánh này gắn ba mốc, tính bằng mili giây kể từ lúc trình
+duyệt bắt đầu mở trang:
+
+| Mốc | Đặt ở đâu | Đo được đoạn nào |
+|---|---|---|
+| `trang` | `useEffect` gắn kết của `Dashboard` | dựng trang |
+| `nguon` | ngay sau `fetchSheetXlsx` | chờ máy chủ + Drive |
+| `doc` | ngay sau `parseXlsxBuffer` | đọc file .xlsx ở máy người dùng |
+
+Hiệu hai mốc liền nhau là ba đoạn cần tách. Gói lại thành một chuỗi JSON ~50 ký tự rồi đẩy qua
+`track()` **sẵn có** — không dựng đường gửi thứ hai — vào bảng D1 `access_log`.
+
+Câu SQL đọc số ra (theo giờ và theo người) nằm ở đầu `src/lib/dong-ho.ts`. Dùng `json_extract`, nên
+không phải bóc chuỗi bằng `substr`.
+
+### BỐN RÀNG BUỘC — GIỮ Ở ĐÂU, VÀ CHỨNG MINH THẾ NÀO
+
+**1. Không bao giờ ném lỗi.** Đây là ràng buộc nặng nhất, và ở chỗ này nó **nặng hơn vẻ ngoài của
+nó**. `moc("nguon")` và `moc("doc")` nằm **trong khối `try` của `queryFn`**, mà khối đó bắt lỗi rồi
+**rơi sang đường tải CSV dự phòng**. Nên nếu đồng hồ ném, hậu quả không phải "mất số đo" — mà là
+**app âm thầm đổi đường tải dữ liệu**. Đúng họ hàng L3: hỏng mà không ai được báo.
+
+Vì thế phép kiểm **chốt bằng hành vi, không chốt bằng dấu vết**. Mỗi phép dựng lại đúng hình dạng
+khối `try/catch` đó rồi phá đồng hồ, và hỏi đúng một câu: hàm trả về **bản thật** hay **bản dự
+phòng**?
+
+```
+khong co `performance`            -> BAN THAT
+`performance.now` nem loi         -> BAN THAT
+`now` khong phai ham              -> BAN THAT
+`now` tra NaN / Infinity / so am  -> BAN THAT, va khong ghi moc rac
+`JSON.stringify` nem loi          -> BAN THAT
+doc duoc binh thuong (DOI CHUNG)  -> BAN THAT, VA co goi do
+```
+
+Phép đối chứng cuối là bắt buộc: không có nó thì năm phép trên xanh mà chẳng chứng minh gì.
+
+**2. Không ghi lên KV.** `grep '\.put(|putNeuKhac|demGhiKv' src/lib/dong-ho.ts` → **0**. Module này
+không biết KV là gì; nó chỉ dựng một chuỗi. Trần 1.000 lượt/ngày không bị đụng.
+
+**3. Không thêm thứ nhận dạng cá nhân.** Gói đo có đúng ba con số. Email do `recordActivity` tự đọc
+từ cookie phiên như nó vẫn làm cho mọi dòng nhật ký khác.
+
+**4. Không đổi hành vi người dùng thấy được.** Không dựng gì, không chặn gì. `track()` chạy nền và
+vốn đã nuốt mọi lỗi.
+
+### MỘT DÒNG MỖI LƯỢT MỞ APP — chỗ dễ đội số nhất, và có phép kiểm riêng
+
+Tiêu chí của Plan: *"số dòng D1 mỗi ngày tăng đúng bằng số lượt mở app, không hơn"*. Chỗ dễ vỡ là
+V10 — nó giữ dữ liệu 5 phút, nên `queryFn` chạy lại mỗi lần người dùng bấm làm mới hoặc chuyển qua
+lại màn hình. Nếu mỗi lượt đó ghi một dòng thì con số hết nghĩa.
+
+`chotDongHo()` trả chuỗi **đúng một lần** cho mỗi lượt tải trang. Phép kiểm gọi `đườngMởApp()` ba
+lần liên tiếp và đòi: lần 1 có gói, lần 2 và 3 **null**, cả ba lần đều ra bản thật. Bản demo cũng
+không ghi dòng nào — hai mốc `nguon`/`doc` chỉ đặt trên đường tải thật, nên nó không bao giờ đủ bộ.
+
+### ĐÃ GỠ LỚP ĐỠ RA ĐỂ KIỂM CHỨNG PHÉP KIỂM
+
+Một bộ kiểm không bao giờ đỏ là một bộ kiểm vô dụng. Tôi sao lưu file ra ngoài rồi gỡ từng lớp:
+
+| Gỡ cái gì | Kết quả |
+|---|---|
+| Bỏ `try/catch` của `moc()` | **3 phép ĐỎ** |
+| Bỏ riêng lớp lọc `isFinite` trong `bayGio()` | **1 phép ĐỎ** (phép NaN/Infinity/số âm) |
+| Phục hồi | 14/14 xanh trở lại |
+
+**Và tôi đã phải sửa một phép kiểm của chính mình vì nó xanh vì LÝ DO SAI.** Bản đầu của phép
+NaN/Infinity không đặt mốc `trang`, nên `chotDongHo()` trả `null` vì **thiếu mốc** chứ không vì lọc
+được số rác — nó xanh kể cả khi gỡ hẳn lớp lọc. Đúng con "xanh giả" mà tôi viết lời mở đầu của file
+kiểm để chống, và tôi vẫn vấp. Đã sửa: đặt `trang` bằng một đồng hồ tốt trước, rồi mới phá.
+
+### ĐÃ ĐO
+
+```
+tsc                        : sạch (exit 0)
+vitest                     : 455 passed | 2 expected fail | 34 file | 0 FAILED
+   riêng tests/dong-ho     : 14 passed
+build                      : qua (exit 0)
+quét byte điều khiển       : 16 byte · 7 file · 14 dòng — đúng mốc nền, hai file mới SẠCH
+đường ghi KV thêm          : 0
+```
+
+**Số trên đo ở cây đang mang CẢ HAI nhánh** — không tách riêng được nhánh C, lý do ở mục kế tiếp.
+Riêng `tests/dong-ho.test.ts` và `src/lib/dong-ho.ts` thì độc lập hoàn toàn, chạy một mình cũng
+14/14.
+
+### CẢNH BÁO CÂY DÙNG CHUNG — L12, LẦN NÀY TRÊN FILE NGUỒN
+
+`src/routes/index.tsx` đang mang việc chưa commit của **cả nhánh A lẫn nhánh C**:
+
+```
+nhanh A (Thuc thi) : listMediaProjects -> getMediaCoAnh, doi queryKey
+nhanh C (toi)      : 1 import + 3 loi goi moc() + 2 dong chot-va-ghi
+```
+
+Ai `git add src/routes/index.tsx` trước mà không để ý là quét luôn phần người kia. Tôi đã báo box
+Thực thi và **đề nghị họ commit trước, tôi chờ** — phần họ đụng hai file và có file riêng, phần tôi
+đụng đúng năm chỗ nhỏ nên tách sau dễ hơn. Ai phải commit chung file đó thì dùng `git add -p`, bỏ
+qua hunk có chữ `moc(` / `chotDongHo` / `dong-ho`.
+
+Đây là cái giá của việc chạy song song trên một cây. Không phải lỗi của ai, nhưng nó **sẽ** cắn nếu
+không ai nói trước.
+
+**VÀ NÓ ĐÃ CẮN, TRONG LÚC TÔI ĐANG VIẾT ĐOẠN TRÊN. Đã xử lý xong, ghi lại vì đáng nhớ.**
+
+Cảnh báo của tôi tới lúc box Thực thi đang giữa lượt, nên nó xếp hàng và commit đi trước. Commit
+`6b97d2e` gom nhánh A **cộng 8 dòng nhánh C của tôi** trong `index.tsx`, nhưng **không** gom
+`src/lib/dong-ho.ts` — file mà 8 dòng ấy `import`. Hai file của tôi lúc đó còn ở trạng thái chưa
+theo dõi nên `git add` không chạm tới.
+
+Thông điệp commit ghi *"tsc sach · vitest 455 passed · build qua"*. **Đúng với cây làm việc, sai
+với commit.** Tôi kiểm bằng cách `git worktree add --detach 6b97d2e` rồi chạy ở đó:
+
+```
+tsc   : src/routes/index.tsx(55,33): error TS2307:
+        Cannot find module '@/lib/dong-ho' or its corresponding type declarations.   exit 2
+build : Build failed in 7.95s                                                        exit 1
+```
+
+**HEAD không dựng được.** Không phải lỗi logic — chỉ là commit lấy đúng một nửa của một thay đổi.
+
+Box Thực thi tự phát hiện và sửa đúng cách: `reset` bỏ `6b97d2e`, commit lại sạch thành `e022600`.
+Tôi đã kiểm lại `e022600`: **không lẫn một dòng nào** của nhánh C (`grep` phần thêm ra 0), và chạy ở
+cây riêng thì `tsc` sạch · `build` qua · 441 passed | 2 expected fail | 33 file. **HEAD lành.**
+
+Một chỗ tôi tự vấp trong lúc dọn, ghi ra vì nó là bài học cho chính tôi: sau lượt `reset` tôi chạy
+`grep -c` trên `index.tsx` để xem ba mốc còn không, ra **0**, nên tưởng chúng bị cuốn đi và gắn lại.
+Thật ra chúng vẫn còn — `index.tsx` **có byte NUL** nên `grep` coi nó là file nhị phân và đếm sai;
+phải dùng `grep -a`. Đúng cái bẫy đã ghi sẵn ở mục ĐÃ ĐO TRƯỚC của V1 (*"grep coi file đó là Binary
+file nên grep THƯỜNG không tìm thấy gì"*) — có trong sổ mà tôi vẫn vấp. Hệ quả: tôi thêm trùng một
+dòng `import` và một lời gọi `moc("trang")`, phát hiện ngay khi đếm lại bằng `grep -a` và đã gỡ.
+Đếm lại sau khi sửa: mỗi thứ đúng **một** lần.
+
+**Đã thêm `L16` vào NEN-TANG phần 4** — *Báo cáo đo trên CÂY, nhưng commit chỉ là MỘT PHẦN của cây.*
+Khác L12: L12 là quét **thừa** phần người khác, L16 là quét **thiếu** — lấy nửa của một thay đổi.
+Cách chặn: `tsc`/`build` ở thư mục làm việc **không** chứng minh được commit dựng được, vì file chưa
+theo dõi vẫn nằm đó; muốn chắc thì `git worktree add --detach <commit>` rồi chạy ở đó.
+
+### SỐ NÀO ĐO Ở ĐÂU — VÀ SỐ NÀO KHÔNG ĐƯỢC ĐEM SO VỚI NHAU
+
+Plan nhờ ghi rõ chỗ này sau khi nhánh B làm đổ hai kết luận của chính Plan. Đây là phần **đáng đọc
+nhất của cả nhánh C**, vì nhánh C sinh ra đúng để chặn cái bẫy đó — mà bản thân nó cũng dính nếu
+người đọc không biết số đến từ đâu.
+
+**Ba môi trường, ba loại số, KHÔNG thay nhau được:**
+
+| Đo ở đâu | Cho biết gì | KHÔNG cho biết gì |
+|---|---|---|
+| **Máy dev** (`npm run dev`) | đường code chạy đúng không | **thời gian người dùng chịu** |
+| **Production, phía Worker** (D1 `kv_write`, log Cloudflare) | CPU và thời gian chờ **của máy chủ** | máy người dùng, mạng người dùng |
+| **Production, phía người dùng** (đồng hồ này) | **thời gian thật người dùng ngồi chờ** | máy chủ tốn CPU bao nhiêu |
+
+**Vì sao số dev KHÔNG đem so với production được — hai chỗ cụ thể, cả hai vừa được nhánh B chỉ ra:**
+
+1. **Bốn lượt "index.tsx" 4–5,7 giây trong bảng 82.442 ms không phải server-fn.** Đó là Vite trả về
+   mã nguồn đã biên dịch (2,2 MB), và **production không có chúng**. Tức một phần đáng kể của con số
+   82.442 ms là **chi phí của môi trường dev**, không phải độ trễ người dùng thật chịu.
+2. **Giả thuyết "sáu lượt bị trình duyệt xếp hàng" không đứng vững:** 17 lượt khởi động trong vòng
+   1 ms của nhau, chờ kết nối chỉ 2–52 ms.
+
+**Hệ quả THẲNG cho chính đồng hồ này — đọc trước khi dùng số của nó:**
+
+- **Mốc `trang` đo ở máy dev là vô nghĩa để so với production.** Nó đặt ở `useEffect` gắn kết của
+  `Dashboard`, tức **sau** khi trình duyệt tải xong mã trang. Ở dev, phần tải đó là 2,2 MB mã chưa
+  gói; ở production là gói đã chia nhỏ và có cache. Cùng một con số, hai nghĩa khác hẳn.
+- **Hai mốc `nguon` và `doc` thì so được**, vì cả hai đều đo một việc có thật ở cả hai nơi: đi lấy
+  file nguồn, và đọc file .xlsx. Nhưng `nguon` ở dev không qua Cloudflare nên vẫn không bằng.
+- **Chạy thử ở máy dev CÓ ghi dòng** — `recordActivity` ở dev ghi vào `.data/pmo-access-log.json`
+  chứ không vào D1 production. Nên dev không làm bẩn số thật, nhưng **cũng đừng lấy số dev báo cáo**.
+
+**Luật rút ra, một câu:** con số nào cũng phải đi kèm chỗ đo. Bảng `do_lag` chỉ có nghĩa khi đọc
+**từ production**, và chỉ so được **production với production** — cùng giờ, cùng nhóm người dùng.
+So một lượt dev với một lượt production là dựng ra một kết luận không có thật, đúng việc vừa xảy ra
+với con số 82.442 ms.
+
+### CHƯA LÀM / CHƯA KIỂM ĐƯỢC
+
+- **Chưa chạy trên app thật.** Tôi không mở app, nên chưa thấy một dòng `do_lag` nào ra đời. Phép đo
+  quyết định — *"sau một ngày chạy thật, câu SQL ra bảng thời gian theo người và theo giờ"* — chỉ trả
+  lời được **sau khi deploy**.
+- **Chưa biết mốc `trang` có đúng là thứ người dùng cảm nhận không.** Nó đặt ở `useEffect` gắn kết
+  của `Dashboard`, tức lúc React gắn xong, **không phải** lúc mắt người thấy đủ bảng. Muốn đúng
+  nghĩa "trang đã dùng được" thì phải đo ở một mốc khác. Nêu ra đây vì nó là chỗ dễ đọc nhầm con số
+  nhất về sau.
+- **Chưa đo chi phí của chính cái đồng hồ.** Nó thêm một lượt gọi máy chủ mỗi lần mở app. Chuyện này
+  hơi trớ trêu trong một việc về giảm lag, nhưng lượt đó chạy **sau khi mọi thứ xong** và không ai
+  chờ nó. Vẫn nên đo, và tôi chưa đo.
+- **Không soi nhánh A và nhánh B.** Không phải việc của lượt này.
 
 ---
 

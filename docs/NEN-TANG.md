@@ -113,6 +113,9 @@ Không phải lo xa. Mỗi mục là một lần app hỏng, có ngày tháng. �
 **L15 · `tsc` không phủ `tests/`, nên "tsc sạch" chưa bao giờ nói gì về file kiểm.** 28/09/2026: `tests/matrix-reader.test.ts` gọi một biến **không tồn tại** (`wbChung`), mà `npx tsc --noEmit` vẫn báo sạch, exit 0. Lý do: `tsconfig.json` khai `include: ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "eslint.config.js"]` — **không có `tests`**. Chỉ `vitest` mới lộ ra, và lộ ở dạng `ReferenceError` lúc chạy chứ không phải lỗi kiểu lúc dịch. Dòng `tsc: sạch` trong mục ĐÃ ĐO của cả bốn box vì thế **hẹp hơn mọi người vẫn đọc nó**.
 → Đọc `tsc: sạch` là "code sản phẩm sạch kiểu", không phải "cả cây sạch kiểu". Muốn phủ cả file kiểm thì thêm `tests` vào `include` — nhưng đó là quyết định có giá (bộ kiểm dùng nhiều `as unknown as` để dựng DOM giả, thêm vào là phải dọn), nên **đo trước rồi hãy đổi**. Họ hàng L13: thước không sai, thước chỉ hẹp.
 
+**L16 · Báo cáo đo trên CÂY, nhưng commit chỉ là MỘT PHẦN của cây.** 28/09/2026, lúc ba box chạy song song trên một thư mục: commit `6b97d2e` gom nhánh A **cộng 8 dòng của nhánh C** trong `index.tsx`, nhưng **không** gom `src/lib/dong-ho.ts` mà 8 dòng ấy `import`. Thông điệp commit ghi *"tsc sach · build qua"* — **đúng với cây làm việc, sai với commit**: checkout đúng commit đó rồi chạy thì `tsc` báo `Cannot find module '@/lib/dong-ho'` và `npm run build` **hỏng**. Người commit đã tự phát hiện và sửa lại bằng `reset` + commit lại sạch (`e022600`), nhưng nếu không ai soi thì HEAD đã nằm đó ở trạng thái không dựng được.
+→ Khác L12 ở chỗ: L12 là **quét thừa** phần người khác, đây là **quét thiếu** — lấy một nửa của một thay đổi. Chạy `tsc`/`build` ở thư mục làm việc **không** chứng minh được commit dựng được, vì file chưa theo dõi vẫn nằm đó. Muốn chắc thì `git worktree add --detach <commit>` rồi chạy ở đó. Và chỉ `git add` đúng đường dẫn của mình, xem L12.
+
 ---
 
 ## 5. LUẬT CỨNG - ÁP CHO CẢ BỐN BOX
