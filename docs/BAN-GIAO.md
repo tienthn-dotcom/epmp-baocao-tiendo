@@ -317,6 +317,64 @@ loạt phép kiểm **trong khi file xuất ra hoàn toàn đúng**. Phải neo 
 
 ---
 
+### Bổ sung lượt cuối — commit `29af58e` và `e1f9877`
+
+**1. Gỡ `defaultRowHeight` khỏi `properties` (`29af58e`).** Review soi XML và thấy `<sheetFormatPr>`
+mang cờ `customHeight="1"`, sinh ra từ `defaultRowHeight: 16` tôi khai. Theo chuẩn thì cờ đó nói về
+**mặc định của sheet** chứ không đánh dấu từng hàng, nên đáng lẽ không cản việc tự giãn — nhưng
+"đáng lẽ" là thứ không kiểm được nếu không mở Excel thật, mà tự giãn chiều cao lại đúng là **việc
+nặng nhất** của vòng này. Đã soi file thật trước và sau:
+```
+trước : <sheetFormatPr defaultRowHeight="16" outlineLevelRow="1" … customHeight="1"/>
+sau   : <sheetFormatPr defaultRowHeight="15" outlineLevelRow="1" outlineLevelCol="0" …/>
+hàng 4 trở đi : không `ht`, không `customHeight`  (cả trước lẫn sau)
+```
+Giờ không còn cờ nào ở bất kỳ tầng nào nói rằng chiều cao là do người đặt. **Đánh đổi:** hàng không
+có chữ dài nay cao theo cỡ chữ (~15pt) thay vì 16pt — sít hơn một chút. Bỏ một thuộc tính trang trí
+để gỡ hẳn một khả năng hỏng ở đúng chỗ quan trọng nhất thì đáng.
+
+**2. Viền mảnh cho ô chú giải "Đang triển khai (ô trống)".** Nó tô `#F8FAFC` gần như trắng, đứng
+cạnh ba ô đỏ/vàng/xanh đậm thì trông như ô rỗng lỡ tay chứ không như một mục chú giải.
+
+**3. Phép kiểm chặn một con hỏng IM LẶNG (`e1f9877`, không đổi dòng code sản phẩm nào).**
+`exceljs` ghi data bar ra **hai khối**: khối cũ `<dataBar>` chỉ mang `cfvo` + màu, còn
+`minLength` · `maxLength` · `gradient` đi vào khối `<x14:dataBar>` trong `extLst` — và **Excel 2010
+trở lên đọc khối x14**. Đã tự soi file thật:
+```
+<x14:dataBar minLength="0" maxLength="100" gradient="0">
+showValue : KHÔNG vào file — nhưng mặc định của chuẩn đã là bật, trùng ý muốn nên vô hại
+```
+Bỏ `gradient: false` là để Excel quay về mặc định **chuyển sắc**: thanh đổi từ đặc sang gradient,
+tức đổi đúng cái người dùng nhìn, mà trước đó **không phép kiểm nào bắt**. Nay có. Đã thử bỏ dòng
+đó ra để chắc phép kiểm đỏ thật.
+
+**MỘT CHỖ TÔI VẤP, ghi lại vì nó đúng loại dễ lặp.** Phép kiểm đầu tiên tôi viết cho mục 1 soi
+`WS.properties.defaultRowHeight` trên **mô hình exceljs** — và nó **đỏ trong khi file hoàn toàn
+đúng**, vì đọc lại bằng exceljs thì nó tự điền giá trị mặc định của nó. Review đã cảnh báo đúng
+điều này ở lượt ngay trước ("thứ người dùng mở là file XML, hai chỗ đó có thể lệch"), tôi đọc xong
+gật đầu rồi vẫn viết sai ở mục kế tiếp. Đã viết lại cho nó bung zip soi thẳng XML. **Thứ Excel đọc
+là FILE, không phải mô hình.**
+
+**MỘT CHỖ TÔI ĐƯỢC KHEN NHƯNG KHÔNG NHẬN.** Review khen dải định dạng điều kiện dừng đúng dòng dữ
+liệu cuối nên khối chú giải thêm ở dưới không bị tô lây. Thành thật: tôi tính `dongCuoi = 3 +
+rows.length` **trước** khi thêm chú giải, không phải vì lường trước được. May hơn là giỏi. Nay đã
+thành ràng buộc có chủ ý — ai chèn khối vào giữa thì con số đó phải tính lại.
+
+**ĐO LẠI SAU CÙNG** (Review đo ở cây riêng sạch tại `29af58e`, khớp từng số):
+```
+tsc sạch · vitest 433 passed | 2 expected fail | 32 file | 0 FAILED · build qua
+byte điều khiển 16 · 7 file · 14 dòng = đúng mốc nền
+file thật 38.410 byte  (V4a 36.959 → +1.451 byte, +3,9%)
+0 đường ghi KV trong cả vòng
+```
+
+**BA ĐIỀU KIỆN CÒN LẠI — không nằm trong code, chỉ mắt người mở file trả lời được.** Xếp theo thứ
+tự nên xem: **(a)** chiều cao có tự giãn thật không, tức ô Vướng mắc có hiện đủ chữ; **(b)** thanh
+màu ở ô giá trị `0` có khác ô trống đủ rõ không; **(c)** Ctrl+P có vừa một trang bề ngang không.
+Đã gửi file cho người dùng kèm đúng thứ tự này.
+
+---
+
 ## ③ TEST
 
 ### V4a + V4b — `c188f92` · `8763e2a` · `a914b2f` · `a8119f2` — **ĐẠT KÈM LƯU Ý**
