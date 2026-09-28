@@ -12,190 +12,81 @@ Bốn box nói chuyện với nhau qua đúng file này.
 
 # VIỆC ĐANG LÀM
 
-**V5 · Mặc định HIỆN TẤT CẢ đầu việc, và nhớ lựa chọn của từng máy**
-Plan mở 28/09/2026. Yêu cầu từ người dùng, sếp của họ chốt.
+**V10 · Thôi tải lại file nguồn khi nó chưa đổi**
+Plan mở 28/09/2026. Người dùng chỉ thẳng nguyên nhân, và chỉ đúng.
 
-*Vừa lên production 28/09:* v3.110.0 (`c4d8be55`) - Excel ô thật + phần nhìn + đồng hồ đo lượt ghi. Đã xác nhận `crypto.subtle` chạy được trên Workers (mã băm thật `cf5c0c99fb92` lúc 04:12:43), Worker 121 lượt 0 lỗi.
-
-*Hàng đợi:*
-
-**V9 · Giảm lag — đo trước, sửa sau** (người dùng yêu cầu 28/09: *"phát triển làm sao cho app bớt lag"*)
-
-**ĐÃ ĐO ĐƯỢC GÌ** (Plan 28/09/2026)
-```
-Cloudflare, ngay 28/09, 1.476 luot:
-  CPU p50    3.793 us  (3,8 ms)      <- Worker KHONG ton CPU
-  CPU p99  100.400 us  (100 ms)
-  Cho p50  206.038 us  (206 ms)      <- gap 54 lan CPU
-  Cho p99  12.813.716 us (12,8 GIAY) <- 1/100 luot cho gan 13 giay
-May chu noi bo: tra loi 37 ms, trang xong 6.370 ms -> phan con lai la TRINH DUYET
-Goi JS: tong 3,80 MB · nap ngay khi mo app ~1,58 MB (goi chinh 1,20 MB)
-Thu vien nang (xlsx, jspdf, exceljs, html2canvas, pptx): DA tach goi dung, khong lot vao goi chinh
-src/routes/index.tsx: 763 KB MA NGUON trong MOT file
-React.lazy trong index.tsx: 0 cho
-Nap SAN du chi hien khi bam nut: CanMediaDialog (89,5 KB nguon), MatrixFormEditor
-```
-
-**BA HƯỚNG, xếp theo chắc chắn**
-
-**1. Gắn đồng hồ — LÀM TRƯỚC HẾT.** App **không có một phép đo thời gian nào** (`grep performance.now` ra rỗng). Mọi số ở trên là của máy Plan, mạng Plan, hoặc là số máy chủ - **không phải máy người dùng**. Ghi ba mốc vào bảng D1 sẵn có (đang dùng 0,65% hạn mức, **không đụng trần KV**): tải trang xong, dữ liệu về xong, đọc xong file nguồn. Một ngày sau là biết lag **ở đâu, máy ai, lúc mấy giờ**.
-→ Không có bước này thì hai hướng dưới là đoán.
-
-**2. Hoãn nạp các hộp thoại.** `CanMediaDialog` và `MatrixFormEditor` nạp **ngay khi mở app** dù chỉ hiện khi bấm nút. Chuyển sang `React.lazy` + `Suspense`. Đây là thứ **chắc chắn có lợi và rủi ro thấp**: không đổi hành vi, chỉ đổi lúc tải.
-→ Đo trước và sau bằng **số byte của gói chính**, không bằng cảm giác.
-
-**3. Chỗ Worker NGỒI CHỜ.** Chờ gấp 54 lần thời gian tính, p99 gần 13 giây. Chờ **bên ngoài**: gọi Google Drive, đọc kho, ghi nhật ký. **Chưa biết chỗ nào** - cần hướng 1 hoặc một phép đo riêng trong Worker mới chỉ ra được. **Đừng đoán rồi sửa.**
-
-**RÀNG BUỘC**
-1. **Không đổi một hành vi nào.** Đây là việc làm nhanh hơn, không phải việc đổi tính năng.
-2. Đồng hồ **không được ghi lên KV**. D1 thì được.
-3. Đồng hồ **không bao giờ ném lỗi** và không chặn đường nào - hỏng thì bỏ qua, y như `demGhiKv`. Nó chạy ở mọi lượt mở app.
-4. Không ghi thứ nhận dạng cá nhân ngoài những gì nhật ký **đã** ghi.
-5. Hướng 2 làm xong phải kiểm cả ba màn có hộp thoại đó, ở **1440px và 375px**.
-
-**CÁCH BIẾT LÀ ĐÚNG**
-- Hướng 1: một ngày sau, một câu SQL ra được bảng thời gian theo người và theo giờ. **Đó mới là câu trả lời cho "app lag ở đâu"**, phần còn lại là phỏng đoán.
-- Hướng 2: gói chính **giảm bao nhiêu KB**, nêu số trước và sau. Mở app vẫn đủ chức năng, bấm vào hộp thoại vẫn mở được (có thể chậm hơn lần đầu - đó là **chủ ý**).
-- Không phép kiểm nào đang xanh bị đỏ. Lượt ghi KV **không đổi**.
-
-**CHỖ PLAN CHƯA BIẾT, nói thẳng**
-Vì sao `index.tsx` phình tới 763 KB một file, và có tách được không - **Plan chưa đo**. Đừng nhận việc tách file đó trong vòng này: nó là toàn bộ màn hình chính, tách sai là gãy cả app. Cần đo riêng rồi mới bàn.
-
+*Vừa xong, chờ deploy:* **V6** lọc trong báo cáo tuân thủ (`6c43124`) - đo trên app thật: 83 → **13 dòng**, cả 13 đều có "trước dd/mm", **0 dòng** hiện "–".
+*Đang hỏng trên production:* **V8** - nút Xuất PDF của báo cáo tuân thủ ném `jsPDF.scale`, hỏng sẵn từ trước V6.
+*Hàng đợi:* V9 (hai hướng còn lại của giảm lag) · V4c · V7 · V1 · ba nợ gọn gàng.
 
 ---
 
 ## ① PLAN
 
 **VIỆC**
-Đổi mặc định của "Hiện tất cả đầu việc" từ **tắt** sang **bật**, và nhớ lựa chọn riêng của từng máy - giống hệt cách bề rộng cột đang nhớ.
+Đừng tải lại và phân tích lại file Master Plan 2 MB khi **file chưa hề đổi**. Hỏi Drive một câu rẻ xem file sửa lần cuối lúc nào; chỉ tải khi mốc đó khác lần trước.
 
 **VÌ SAO CẦN**
-Nguyên văn người dùng: *"setup mặc định của ePMP là hiện tất cả đầu việc (tức gồm cả xong) nha. Còn ai muốn đổi thì có thể đổi, và nếu setup đổi (ẩn đã xong) thì lần sau máy đó vô lại cũng y vậy. Tức nó giống tính năng bề rộng cột."*
+Nguyên văn người dùng: *"nó liên tục lấy data từ file nguồn... dữ liệu phần này chỉ thay đổi khi chúng tôi cập nhật bên app, nên tôi thấy đặt lịch hay gì đó là được rồi, chứ load lên liên tục thì bị lag"* và *"có khi mỗi tuần mới có 1 loạt thông tin mới up lên"*.
 
-Hiện `const [showDone, setShowDone] = useState(false)` (`index.tsx:3402`) - tắt cứng, và **không nhớ gì cả**: ai bật lên, tải lại trang là mất.
+**Người dùng chỉ đúng chỗ.** Plan đo được:
+```
+gQuery (truy van tai + parse file 2 MB) dat: staleTime: 0, gcTime: 0
+  staleTime 0 -> du lieu VUA VE DA BI COI LA CU
+  gcTime 0    -> KHONG giu trong bo nho mot giay nao
+=> bat ky luc nao co thu gi do dang ky lai truy van, no tai lai TRON BO
+Do that tren app: mot lan tai lai = 2.294 ms chi rieng fetchSheetXlsx, cong 2 luot ghi KV
+App de yen 25 giay: 0 luot goi -> KHONG co vong chay nen. No tai lai vi THAO TAC.
+```
+Đặt như vậy hợp với dữ liệu đổi từng giây. File Master Plan đổi theo **tuần**. Sai cặp đôi giữa cách giữ cache và nhịp đổi thật của dữ liệu.
+
+**CÔNG CỤ ĐÃ CÓ SẴN, ĐỪNG DỰNG MỚI**
+`getLinkUpdatedAt` (`mtld-install.functions.ts:445`) trả `{ modifiedTime, nguoiSua }`, có cache riêng qua `docFMeta`/`conTuoi`. App **đang dùng nó** cho link ma trận (`index.tsx:5287`, `6185`) nhưng **KHÔNG dùng cho file Master Plan chính**. Đó là mảnh còn thiếu.
 
 **LÀM XONG THÌ NHÌN THẤY GÌ**
-Mở app lần đầu: thấy **đủ** đầu việc, kể cả việc đã xong. Ai muốn gọn thì tắt nút đi, và **lần sau vào vẫn gọn** trên đúng máy đó. Máy khác, người khác không bị ảnh hưởng.
+Mở app, chuyển qua lại giữa các màn, đóng mở hộp thoại - **không còn khựng 2 giây** vì tải lại file. Khi PMO thật sự sửa file nguồn thì app vẫn nhận bản mới. Nút "Làm mới" vẫn ép lấy bản mới ngay lập tức.
 
 **PHẠM VI**
-- Trong: `src/routes/index.tsx` - dòng khai `showDone` (~3402) và chỗ `onToggleDone` (~4596).
-- NGOÀI: **không** đổi luật lọc, **không** đổi cách tính KPI, **không** đụng `showHidden` (đó là việc khác, của admin), không đụng bề rộng cột.
+- Trong: chỗ khai `gQuery` trong `src/routes/index.tsx` (~1535) - `staleTime`, `gcTime`, và thêm một truy vấn nhẹ hỏi `modifiedTime`.
+- NGOÀI: **không** đụng `lastRefreshBoundary` hay cache phía Worker (đó là tầng khác, đang chạy đúng), không đụng warmer, không đụng đường `sfile`/`spdf2`, không đổi `parseXlsx`, không đụng nút "Làm mới".
 
 **DÙNG CHUNG - CODE NÀO BỊ ĐỤNG TỚI**
-`showDone` là đầu vào của **bốn** khối tính: `doneEnriched` (3404), bộ lọc bảng (3767), `panelActive` (3913), và bảng Gantt. Đổi giá trị mặc định là đổi thứ **bốn** chỗ đó nhận ngay từ lượt vẽ đầu tiên.
-Đáng chú ý: KPI ở đầu trang có đếm theo tập đang hiện không? Nếu có thì đổi mặc định là **đổi con số trên đầu trang** - Thực thi phải kiểm và **báo Plan** nếu thấy vậy, đừng âm thầm để số nhảy.
+`gQuery.data` là **nguồn của gần như mọi thứ trên màn hình chính**: `enriched`, `tableItems`, KPI, Gantt, bộ lọc, báo cáo. Giữ cache lâu hơn là đổi **thời điểm** mọi thứ đó thấy dữ liệu mới. Đây là việc có bán kính rộng nhất trong các việc gần đây - đo kỹ.
+Và `gcTime: 0` hiện tại **có thể đang được ai đó dựa vào** để ép lấy bản mới ở một đường nào đó. Thực thi phải tìm xem có chỗ nào cố ý huỷ cache không, thấy thì **báo Plan** trước khi đổi.
 
 **RÀNG BUỘC**
-1. **Chép đúng khuôn bề rộng cột** (`index.tsx` ~6162): `useState` giữ mặc định cho lượt vẽ ĐẦU, rồi `useEffect` nạp bản đã lưu SAU khi gắn vào trang. Chú thích tại chỗ đó nói rõ vì sao: lượt vẽ đầu phải khớp máy chủ, không thì lệch hydration.
-2. Khoá lưu đặt tên theo lối đang dùng, **thêm hậu tố phiên bản** như các khoá khác.
-3. Đọc hỏng, dữ liệu rác, hoặc trình duyệt chặn lưu trữ → **rơi về mặc định BẬT**, không được ném lỗi. Bọc `try/catch` cả đọc lẫn ghi.
-4. **Không ghi gì lên KV.** Đây là lựa chọn của từng máy, đúng chỗ của `localStorage`. Thêm một đường ghi KV ở đây là 10-17 người nhân lên mỗi lần bấm.
-5. Không đổi chữ trên nút.
+1. **Không được để người dùng nhìn số cũ mà không biết.** Có sẵn nhãn "DỮ LIỆU TÍNH ĐẾN <giờ>" trên đầu trang - phải phản ánh đúng mốc của dữ liệu **đang hiện**, không phải giờ hiện tại. Sai chỗ này là làm người ta tin một con số cũ.
+2. Nút **"Làm mới" vẫn ép lấy bản mới ngay**, không qua cache. Đó là van thoát.
+3. Hỏi `modifiedTime` phải **rẻ**: không tải nội dung file. Hỏng thì **rơi về hành vi cũ** (cứ tải), đừng chặn người dùng.
+4. **Không thêm đường ghi KV nào.** Việc này phải **giảm** lượt ghi, vì mỗi lần tải lại đang kéo theo 2 lượt ghi.
+5. Chọn nhịp hỏi `modifiedTime` thì **nói rõ đã chọn bao lâu và vì sao**. Dữ liệu đổi theo tuần, nên vài phút là quá đủ.
 
-**ĐÃ ĐO TRƯỚC** (Plan 28/09/2026)
+**ĐÃ ĐO TRƯỚC** (Plan 28/09/2026, trên app thật đang chạy)
 ```
-showDone khai tai : index.tsx:3402  useState(false)  -- tat cung, KHONG nho
-showDone dung tai : 3404 doneEnriched · 3767 bo loc bang · 3913 panelActive · 4596 truyen xuong
-Khuon de chep     : index.tsx ~6162 flatColW/groupColW — localStorage, nap SAU mount
-Khoa dang dung    : LS_COLW, LS_COLW_GROUP
+bam "Lam moi" mot lan:
+  fetchSheetXlsx      2.294 ms   <- tai + parse file 2 MB
+  saveMediaProjects     133 ms   <- ghi KV
+  saveInstallList       121 ms   <- ghi KV
+App dung yen 25 giay : 0 luot goi  -> khong co vong chay nen
+Cloudflare hom nay   : CPU p50 3.793 us · cho p50 206.038 us · cho p99 12,8 GIAY
+                       -> Worker khong ton CPU, no NGOI CHO. Khop voi viec tai file lap.
+Cong cu san co       : getLinkUpdatedAt (mtld-install.functions.ts:445)
 ```
 
 **CHỖ CÒN MƠ HỒ**
-Người đã quen bảng gọn sẽ mở app thấy dài ra và tưởng hỏng. Plan cho rằng **không cần báo gì trên giao diện** - người dùng đã dặn "đừng hiện mấy dòng chữ mà chỉ admin mới cần biết". Thực thi thấy cần thì hỏi, đừng tự thêm.
+Plan **chưa đo** file Master Plan thật sự đổi bao nhiêu lần một ngày. Người dùng nói "có khi mỗi tuần mới có 1 loạt". Thực thi đo giúp bằng `getLinkUpdatedAt` qua vài thời điểm, hoặc nói rõ là chưa đo được - **đừng chọn nhịp dựa trên cảm giác**.
 
 **CÁCH BIẾT LÀ ĐÚNG**
-1. Xoá sạch lưu trữ của trình duyệt rồi mở app → thấy **đủ** đầu việc, nút ở trạng thái bật.
-2. Tắt nút đi, **tải lại trang** → vẫn tắt. Đây là phép đo chính.
-3. Mở ở **cửa sổ ẩn danh** → về lại mặc định bật. Chứng minh là lưu theo máy chứ không theo tài khoản.
-4. Dựng hỏng dữ liệu đã lưu (ghi bừa một chuỗi) rồi mở app → **không trắng bảng**, rơi về mặc định.
-5. **Số trên đầu trang trước và sau phải KHỚP** (hoặc nêu rõ nếu đổi và vì sao).
-6. Lượt ghi KV mỗi lần mở app: **không đổi**.
-7. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ · thêm phép kiểm cho hàm đọc/ghi lựa chọn.
+1. **Phép đo chính**, làm trên app thật: mở app, thao tác qua lại 5 phút, đếm số lần gọi `fetchSheetXlsx`. Trước: nhiều lần. Sau: **1 lần**, trừ khi file thật sự đổi hoặc người dùng bấm "Làm mới". Nêu cả hai con số.
+2. Sửa thật file trên Drive → trong vòng nhịp đã chọn, app **phải** lấy bản mới. Đây là phép đo quan trọng nhất: tiết kiệm mà làm dữ liệu cũ đọng lại thì tệ hơn hẳn lag.
+3. Bấm "Làm mới" → lấy bản mới **ngay**, không chờ.
+4. Nhãn "DỮ LIỆU TÍNH ĐẾN" khớp mốc của dữ liệu đang hiện.
+5. Lượt ghi KV mỗi ngày **giảm** hoặc không đổi. Đo bằng bảng đếm D1.
+6. `tsc` sạch · không phép kiểm nào đang xanh bị đỏ.
 
 ---
 
-## HÀNG ĐỢI — V6 · Lọc trong báo cáo tuân thủ
 
-**VIỆC**
-Thêm bộ lọc theo cột cho bảng **Báo cáo tuân thủ**, và bản PDF xuất ra chứa **đúng phần đã lọc**.
-
-**TIN TỐT, ĐÃ ĐO:** việc này **nhẹ hơn nhiều** so với vẻ ngoài, vì hai thứ đã có sẵn:
-1. Bảng đã có **một** bộ lọc theo Vùng, chảy qua đúng một cửa: `baseRows` (`index.tsx:8957`). Mọi thứ khác (`byPm`, `byVung`, bảng) đều dựng TỪ `baseRows`.
-2. Hàm xuất PDF chụp `tableRef.current` - tức **chính cái bảng đang hiện trên màn hình**. Nên **lọc gì thì PDF ra nấy, tự động**, không phải làm thêm gì.
-→ Chỉ cần nối bộ lọc mới vào `baseRows`. **Không dựng đường lọc thứ hai**, không đụng hàm xuất PDF.
-
-**Các cột lọc được** (từ `ComplianceFileRow` trong `compliance-file.ts:14`):
-```
-vung        Vung            -> DA CO, giu nguyen cach lam
-pm          Nguoi phu trach -> chon nhieu, giong bo loc PM ben bang chinh
-name        Ten du an       -> o go chu, khop khong dau
-needsMp     Can lap MP moi  -> co / khong
-score       Diem            -> theo nguong, hoac nhom RAG (>=80 / 50-79 / <50)
-countX      So lan khong CN -> theo nguong
-```
-Plan **chưa hỏi người dùng** cột nào cần nhất. Thực thi làm `pm` + `name` + `needsMp` trước (ba cái rõ ràng nhất), rồi Plan hỏi người dùng về `score`/`countX` - **đừng tự chọn ngưỡng**, đó là mục 7.2 của NEN-TANG.
-
-**RÀNG BUỘC**
-1. Nhiều bộ lọc cùng bật thì **giao nhau** (và), không phải hợp.
-2. Lọc xong còn **0 dòng** thì hiện bảng rỗng cho biết, **không** âm thầm bỏ lọc để lấp đầy.
-3. Điểm trung bình của PM ở góc trên phải tính **trên phần đã lọc** - vì `byPm` vốn dựng từ `baseRows`. Đây là hệ quả đúng: lọc 3 dự án thì điểm là của 3 dự án đó. Nhưng **phải nói rõ trên bản PDF là đang lọc gì**, kẻo người nhận tưởng đó là điểm cả kỳ.
-4. Không ghi gì lên KV.
-
-**CÁCH BIẾT LÀ ĐÚNG**
-Lọc một PM → bảng chỉ còn dự án của PM đó → bấm Xuất PDF → **file PDF cũng chỉ có ngần ấy dòng**, và có ghi phạm vi lọc. Đây là phép đo chính, làm trên file thật.
-
----
-
----
-
-**PLAN GHI NHẬN SAU KHI TEST BÁO — 28/09/2026**
-
-**TIÊU CHÍ 7 CỦA ĐẶC TẢ NÀY: CHƯA ĐẠT, và Plan chấp nhận.**
-Đặc tả đòi "thêm phép kiểm cho hàm đọc/ghi lựa chọn". Test đo lại: `grep -ril showDone tests/` ra **rỗng**, và cả hai commit V5 không đụng thư mục `tests/`. Plan tự kiểm lại, đúng vậy.
-
-Nguyên nhân là **cấu trúc, không phải lười**: phép đọc/ghi nằm inline trong thân component, không export, nên **không có gì để gọi từ bộ kiểm**.
-
-Test **đúng khi không viết một phép kiểm chép lại logic** sang file kiểm — chép là tạo bản thứ hai rồi hai bản trôi xa nhau, đúng cái bẫy đã ghi nhận ở V4a (bộ kiểm tự khai lại danh sách cột). Thà thiếu một phép kiểm còn hơn có một phép kiểm nói dối.
-
-Hành vi đã được đo **trực tiếp trên app thật** qua ba lần tải trang, nên việc này không bị chặn. Nhưng phép đo ấy **làm tay, không tự lặp lại**.
-
-**ĐÂY LÀ LẦN THỨ BA CÙNG MỘT NGUYÊN NHÂN** - đủ để thành một việc riêng, không phải một dòng ghi chú nữa:
-```
-V4a  cho dung danh sach cot        nam trong callback JSX  -> bo kiem phai CHEP LAI
-V5   doc/ghi lua chon showDone     nam inline trong body    -> khong co gi de goi
-V5   tableProjectCount + pkItem    nam trong body           -> khong chot duoc bang phep kiem
-```
-
----
-
-## HÀNG ĐỢI — V7 · Kéo ba mảnh logic ra khỏi thân component
-
-**VIỆC**
-Tách ba mảnh logic thuần ra khỏi thân `index.tsx` để bộ kiểm gọi được, **không đổi một hành vi nào**.
-
-**VÌ SAO CẦN**
-Ba vòng liên tiếp đều vấp cùng một chỗ, và mỗi lần đều kết thúc bằng "đo tay rồi ghi chưa kiểm được". Cái giá không phải là thiếu phép kiểm - mà là **mỗi lần sửa lại phải đo tay lại từ đầu**, và ai quên đo thì không có gì báo.
-
-**PHẠM VI**
-- Trong: kéo ra ba hàm **thuần** (nhận vào, trả ra, không chạm React):
-  1. đọc/ghi lựa chọn `showDone` từ kho của trình duyệt
-  2. dựng danh sách cột cho xuất Excel (đang nằm trong callback JSX, `onExportExcel`)
-  3. phép đếm số dự án của `tableProjectCount` + `pkItem`
-- NGOÀI: **không** đổi hành vi, **không** đổi giao diện, **không** gộp ba cái thành một, không đụng gì khác trong `index.tsx`.
-
-**RÀNG BUỘC**
-1. Đây là phép **dời chỗ tương đương**. Diff phải đọc được là "cắt ra, dán vào, gọi lại" - ai thấy mình đang *sửa* logic là đã đi quá.
-2. Bộ kiểm sau khi kéo ra phải **gọi đúng hàm thật**, không chép lại. Đó là toàn bộ mục đích.
-3. Riêng mảnh 2: khi có hàm thật rồi thì `tests/excel-o-that.test.ts` **bỏ mảng `COLS` tự khai** đi và gọi hàm - nếu không thì việc này chưa xong một nửa.
-4. Mảnh 3 chốt được trường hợp Test chỉ ra mà chưa chốt nổi: **một dự án mà MỌI đầu việc đều đã xong** thì ở nhánh có lọc, số dự án **sẽ tăng** khi bật nút. Đọc ra được từ code, hôm nay dữ liệu không có ca nào. Kéo ra rồi thì dựng dữ liệu tự tạo mà chốt.
-
-**CÁCH BIẾT LÀ ĐÚNG**
-1. `grep -ril showDone tests/` **ra kết quả** (trước: rỗng).
-2. `tests/excel-o-that.test.ts` **không còn** mảng cột tự khai.
-3. Không phép kiểm nào đang xanh bị đỏ, và **không con số nào trên app đổi**.
-4. Ba phép kiểm mới phải **đỏ trên bản chưa kéo** - nếu không thì chúng không kiểm gì cả.
-
----
 
 
 
