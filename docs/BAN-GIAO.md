@@ -674,7 +674,7 @@ phán quyết riêng** ở dưới. Tôi chưa đụng vào cả hai bản này 
 |---|---|---|
 | **V2b** · băm vào bảng đếm D1 | `40eae6c` (v3.109.1) | **ĐẠT KÈM ĐIỀU KIỆN** |
 | **V4a** · xuất Excel ô thật | `c188f92` (v3.110.0) | **ĐẠT KÈM ĐIỀU KIỆN** |
-| **V4b** · phần nhìn ngang PDF | `a914b2f` + `a8119f2` | **ĐẠT KÈM ĐIỀU KIỆN** |
+| **V4b** · phần nhìn ngang PDF | `a914b2f` + `a8119f2` + `29af58e` | **ĐẠT KÈM ĐIỀU KIỆN** |
 
 Không tìm được lỗi nào trong ba bản đủ để chặn. Điều kiện là **bốn việc phải làm**, không phải bốn
 chỗ phải sửa code — liệt kê ở cuối. Điều kiện số 1 là điều kiện quan trọng nhất, và nó không nằm
@@ -1018,7 +1018,7 @@ chép tay, có định dạng điều kiện, có `pageSetup`. Tôi chưa chạy
 
 ---
 
-### BẢN 3 · V4b — `a914b2f` + `a8119f2` — ĐẠT KÈM ĐIỀU KIỆN
+### BẢN 3 · V4b — `a914b2f` + `a8119f2` + `29af58e` — ĐẠT KÈM ĐIỀU KIỆN
 
 Đây là phán quyết mà phần trên còn để trống. Soi trên commit, đo ở **cây riêng sạch tại `d439041`**.
 
@@ -1110,6 +1110,111 @@ hơn: nó **tự gác chính nó** — có một phép kiểm đòi `Object.keys
   KV, không chạm `exportMatrixXlsx`.
 - **Lùi lại được không:** được, deploy lại commit trước. Không dữ liệu nào bị biến đổi.
 - **Hạn mức KV: thêm 0 lượt/ngày.**
+
+**BA CHỖ PLAN NHỜ SOI THÊM — trả lời, và một lời khai phải sửa lại**
+
+**Chỗ 1 · Bẫy 32 chỗ neo hàng cứng: `a8119f2` KHÔNG thêm gì phía trên bảng, nên bẫy chưa nổ.**
+Tôi grep mọi `addRow` mới trong commit đó: không có dòng nào nằm trước vòng ghi dữ liệu — chỉ có
+khối chú giải ở **cuối**. Dò lại trong file thật: dữ liệu vẫn bắt đầu ở **hàng 4**. Nên phép kiểm
+**không nói dối**; nó chỉ **chưa bị thử** ở tình huống đó, và vẫn neo cứng. Bẫy còn nguyên cho việc
+nào thêm khối phía trên (tức đúng việc dải KPI).
+
+**Chỗ 2 · Lời khai "ba tuỳ chọn data bar là vô hiệu" — SAI VỚI HAI TRONG BA.** Đây là chỗ đáng sửa
+nhất trong ba chỗ, vì nếu tin lời khai đó rồi đi dọn code thì **đổi cái người dùng nhìn thấy**.
+
+exceljs ghi data bar ra **hai khối**, không phải một:
+
+```
+khối cũ (trong <conditionalFormatting sqref="G4:G6">):
+   <dataBar><cfvo type="num" val="0"/><cfvo type="num" val="100"/><color rgb="FF5EE9B5"/></dataBar>
+
+khối x14 (trong <extLst> cấp worksheet, uri 78C0D931-… — Excel 2010+ ĐỌC KHỐI NÀY):
+   <x14:dataBar minLength="0" maxLength="100" gradient="0">
+     <x14:cfvo type="num"><xm:f>0</xm:f></x14:cfvo>
+     <x14:cfvo type="num"><xm:f>100</xm:f></x14:cfvo>
+   </x14:dataBar>
+```
+
+| Tuỳ chọn trong code | Có vào file? | Hệ quả |
+|---|---|---|
+| `minLength: 0` | **CÓ** — `x14:dataBar/@minLength` | có tác dụng |
+| `maxLength: 100` | **CÓ** — `x14:dataBar/@maxLength` | có tác dụng |
+| `gradient: false` | **CÓ** — `gradient="0"` | có tác dụng: thanh **đặc**, không chuyển sắc |
+| `showValue: true` | **KHÔNG** | vô hại — mặc định của chuẩn đã là `1`, trùng ý muốn |
+
+Nên: **chỉ `showValue` bị bỏ**, và nó bị bỏ một cách vô hại. Ba cái kia có hiệu lực thật.
+**Đừng dọn chúng đi.** Bỏ `gradient: false` là để Excel quay về mặc định chuyển sắc — thanh màu đổi
+từ đặc sang gradient, tức đổi cái người dùng nhìn, mà không có phép kiểm nào bắt.
+
+Ghi chú trong code **không cần sửa**: nó lập luận từ `cfvo`, không lập luận từ ba tuỳ chọn kia.
+
+**Chỗ 3 · Mã màu viết thẳng: phần lớn vô hại, đúng MỘT chỗ đáng dọn.** Tôi đếm lại được **67** mã
+(Plan báo 59 — chênh vì file đã đổi từ lúc Plan đếm), rồi tách theo đường xuất:
+
+| Ở đâu | Số mã | Đánh giá |
+|---|---|---|
+| Khối `MAU` | 7 | đang được `tests/excel-mau-khop-app.test.ts` canh |
+| `exportMatrixXlsx` (dòng 233–637) | 24 | **đường xuất KHÁC**, đặc tả cấm đụng. Không canh là ĐÚNG. Cả 6 lần `FF16202E` nằm ở đây. |
+| `exportTableXlsx` (từ dòng 638) | 18 | xem dưới |
+| Ngoài hai hàm (`STATUS_FILL` v.v.) | 18 | |
+
+Trong 18 mã của `exportTableXlsx`: **17 là màu trung tính** — chữ trắng `FFFFFFFF`, chữ đậm
+`FF1B1B1B`, viền mảnh `FFE2E8F0`/`FFCBD5E0`, chữ mờ `FF5B6B7E`. Bốn mã khác nhau, không mang nghĩa
+nghiệp vụ nào, **không có gì để trôi**.
+
+**Đúng một mã mang nghĩa: dòng 745, `"FFEF4444"`** — nền đỏ ô ngày kết thúc khi dự án quá hạn. Và
+`STATUS_FILL.RED.bg` cũng là `"FFEF4444"`. **Cùng một sắc đỏ viết ở hai chỗ.** Thêm một cặp nữa cùng
+loại: `MAU.duAnXong = "FF059669"` trùng `STATUS_FILL.GREEN.bg = "FF059669"`.
+
+Hôm nay hai bên bằng nhau nên không sai gì. Nhưng cách hỏng thì cụ thể: ai chỉnh một sắc đỏ, ô ngày
+quá hạn thôi khớp badge Tình trạng, và người đọc thấy **hai mức đỏ khác nhau** — đúng lập luận mà
+chính Thực thi đã dùng để giữ màu chú giải. Sửa gọn: dòng 745 dùng `STATUS_FILL.RED.bg`, và
+`MAU.duAnXong` trỏ về `STATUS_FILL.GREEN.bg`. **Nợ gọn gàng, không chặn.**
+
+**V4b CÓ COMMIT THỨ BA: `29af58e` — HAI MỤC "NÊN SỬA" CỦA TÔI ĐÃ ĐƯỢC LÀM**
+
+Giữa lúc tôi soi, Thực thi làm đúng hai việc tôi nêu ở mục NÊN SỬA phía trên rồi commit thành
+`29af58e`:
+- **bỏ `defaultRowHeight: 16`** khỏi `properties` của `exportTableXlsx` — đúng chỗ tôi bảo thử đầu
+  tiên nếu chữ vẫn cụt, và họ làm ngay thay vì để treo chờ mở Excel;
+- **thêm viền mảnh** quanh ô chú giải xám.
+
+Tôi dò lại file thật sau thay đổi: `<sheetFormatPr defaultRowHeight="15" …>` — **`customHeight` đã
+hết**, hàng 4 trở đi vẫn không có `ht` lẫn `customHeight`. Đây là cấu hình sạch nhất cho việc tự
+giãn: không còn một cờ nào ở tầng nào nói rằng chiều cao là do người đặt. Khả năng hỏng mà tôi
+**không kiểm được** đã bị gỡ hẳn chứ không để chờ.
+
+`defaultRowHeight: 16` ở dòng 281 **vẫn còn** — nhưng đó là trong `exportMatrixXlsx`, đường xuất khác
+mà đặc tả cấm đụng. Đúng.
+
+Đo lại ở **cây riêng sạch tại `29af58e`**:
+
+```
+tsc                  : sạch (exit 0)
+vitest               : 432 passed | 2 expected fail | 32 file | 0 FAILED
+build                : qua (exit 0)
+quét byte điều khiển : 16 byte · 7 file · 14 dòng — đúng mốc nền
+```
+
+Khớp từng con số với báo cáo của Thực thi. *Hai phép `expected fail` giờ xuất hiện cả ở cây sạch:
+`55a11bc` đã **nhận file kiểm mồ côi** `tests/chu-gach-ngang-ranh-gioi.test.ts` của tôi từ vòng V1
+vào cây, nguyên vẹn. Nghĩa là hai lỗi L7 còn sống tôi tìm được ở vòng đó nay **đã có người gác** thay
+vì nằm ngoài cây — tốt.*
+
+**Phán quyết V4b ở trên phủ cả ba commit: `a914b2f` + `a8119f2` + `29af58e`.**
+
+**BA THỨ KHÔNG BOX NÀO NGHIỆM THU ĐƯỢC TỪ MÁY — chốt lại cho anh Tiến**
+
+Cả bốn box đều dừng ở cùng chỗ: **chưa ai mở file bằng Excel thật.** Mọi kết luận đọc từ XML và từ
+exceljs. Ba thứ dưới đây **chỉ mắt người mở file trả lời được**, và tôi không giả vờ đã kiểm:
+
+1. **Chiều cao hàng có tự giãn không** — ô "Vướng mắc" dài nhất có hiện đủ chữ. Điều kiện cần đã
+   đạt (không hàng dữ liệu nào bị đánh dấu chiều cao đặt tay, và `customHeight` cấp sheet đã bỏ).
+   Đây là việc **NẶNG NHẤT** của vòng này.
+2. **Thanh màu ở ô có giá trị 0** vẽ ra thế nào. Trong file là số `0` thật với `minLength="0"`, nên
+   *đáng lẽ* là một thanh dài 0 — nhưng "đáng lẽ" ở đây là suy từ chuẩn. Cần xem nó khác ô **trống**
+   (không có thanh) đủ rõ hay không, vì hai thứ đó mang hai nghĩa khác nhau (luật 5.2).
+3. **Bấm `Ctrl+P`** có vừa một trang bề ngang và có lặp hàng tiêu đề ở trang 2 trở đi.
 
 **Một câu cho gọn:** V4b làm đúng và làm sạch phần việc nó nhận. Thứ còn cách bản PDF không phải
 chất lượng của V4b — mà là **phạm vi**: Excel vẫn chưa có trang tóm tắt mà PDF có.
