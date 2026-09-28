@@ -263,6 +263,68 @@ ghi KV thêm mỗi lần mở app : 0. Lượt ghi duy nhất phát sinh là 1 l
 
 ## ③ TEST
 
+### V11 · NHÁNH A — `e022600` + `5439316` — **ĐẠT KÈM LƯU Ý. KHÔNG cần lùi bản.**
+
+Soi sau khi nó **đã chạy thật**. Tự kiểm: `GET https://baocao-tiendo-pmo.tienthn.workers.dev/version.json`
+→ `{"v":"3.115.0"}`. Đúng như Plan đính chính, nhánh A đang ở trên production.
+
+Không tìm được lỗi nào đủ để lùi bản. Ba chỗ làm đúng, đáng ghi vì chúng là chỗ dễ sai nhất:
+`chayNen` dùng `waitUntil` và có đường lui bắn-rồi-quên, **không chặn phản hồi**; quét hụt thì
+**không ghi đè danh sách cũ bằng mảng rỗng** (`if (ra.length)`); và hướng sai lệch chọn đúng phía an
+toàn — thiếu một dấu thì khó chịu, thừa một dấu thì sai, và nó chọn thiếu.
+
+**① · Đường ghi KV mới này KHÔNG ĐI QUA BỘ ĐẾM — MỨC: NÊN SỬA**
+
+`edits.functions.ts:163-167` bọc KV bằng `bocKv()`, mỗi lượt `put` gọi `demGhiKv` nên có mặt trong
+bảng D1 `kv_write`. `can-media.functions.ts:343-348` lấy `env.PMO_EDITS` **thô**, không bọc. Nên hai
+lượt ghi của nhánh A — lượt ghi sau khi quét nguội, và lượt ghi của khối làm mới ở nền — **không
+được đếm ở đâu cả**.
+
+Số lượng nhỏ (theo thiết kế là một lượt mỗi 6 giờ) nên nó không đe doạ trần 1.000 lượt/ngày. Vấn đề
+là chỗ khác: V2b sinh ra **đúng để biết lượt ghi đi đâu**, và nhánh A vừa thêm một điểm mù vào chính
+cái đồng hồ đó. Người sau truy hạn mức sẽ tin một bảng đang thiếu một đường. Bản vá gọn: cho
+`khoKv()` bọc qua `bocKv`, hoặc gọi `demGhiKv` ngay sau `put`.
+
+**② · "Một lượt mỗi 6 giờ cho CẢ HỆ THỐNG" không bảo đảm được — MỨC: LƯU Ý**
+
+Ghi chú ở dòng 334 hứa *"một lượt mỗi 6 giờ, KHÔNG chạy theo số người dùng"*. Khoá chặn là
+`dangQuetTu`, biến **tầng module** — và chính ghi chú ở dòng 340 nói thật: nó chỉ chặn *"trong CÙNG
+một isolate"*. Workers chạy nhiều isolate, mỗi cái có `dangQuetTu = 0` của riêng nó. Nên ngay sau khi
+cửa sổ 6 giờ hết hạn, N isolate đang sống có thể cùng bắn N lượt quét Drive và N lượt ghi KV.
+
+Không sập, không sai số. Nhưng lời hứa ở dòng 334 mạnh hơn thứ code bảo đảm được, và đó đúng loại
+câu mà người sau sẽ tin rồi không đi kiểm. Sửa lời cho khớp, hoặc chặn bằng chính KV (ghi mốc
+"đang quét" vào kho) nếu muốn giữ lời hứa.
+
+**③ · Lượt mở đầu tiên SAU MỖI LẦN DEPLOY vẫn trả giá đủ 14 giây — MỨC: LƯU Ý, và nó có thể là lời
+giải cho chuyện p99 chưa rơi**
+
+`media:coanh:v1` là khoá **mới**, chưa từng có ai ghi trước nhánh A. Nên ngay sau lượt deploy 09:07,
+kho trống → nhánh `if (!cu.projects.length)` chạy → **quét ngay tại chỗ**, người mở app đầu tiên chờ
+đủ ~14 giây. Và vì không có khoá chặn dùng chung (xem lỗi ②), nhiều người mở cùng lúc thì nhiều lượt
+cùng quét.
+
+Plan đo "SAU 09:10" thấy p99 chưa rơi và tự hỏi vì sao. Đây là một lời giải khả dĩ và kiểm được:
+cửa sổ đo của Plan **bắt đúng những lượt mở đầu tiên sau deploy**, tức những lượt vẫn phải quét.
+Cách phân giải: lọc bỏ 15 phút đầu sau mốc deploy rồi tính lại p99, và đếm riêng xem có bao nhiêu
+lượt vượt 10 giây sau mốc đó. Nếu p99 vẫn không rơi khi đã bỏ cửa sổ khởi động thì mới kết luận
+được là nó đến từ đường khác.
+
+**④ · Diff nhiễu, lặp lại đúng bệnh đã gặp ở V4a — MỨC: NHẸ**
+
+`git show` ra **248 dòng** đổi ở `can-media.functions.ts`, nhưng `git diff -w` chỉ ra **122 dòng**.
+Một nửa diff là khối bị xoá rồi thêm lại y hệt, chỉ khác ký tự cuối dòng. Người soi phải lội qua
+126 dòng nhiễu để tìm phần thật — đúng thứ làm một bản sửa lọt qua vòng review.
+
+**CHƯA KIỂM ĐƯỢC**
+
+- **Nhánh A có thật sự nhanh hơn không.** Vẫn chưa. Số của Plan (40 lượt) quá ít, và cửa sổ đo dính
+  lỗi ③. Phải đo lại sau khi có vài trăm lượt và đã bỏ cửa sổ khởi động.
+- **Hành vi khi Drive trả lỗi giữa chừng trên production.** Đọc code thì đường đi đúng, nhưng chưa
+  ai dựng được cảnh đó trên môi trường thật.
+
+---
+
 ### V11 · NHÁNH B — ĐO. Không phải phán quyết.
 
 Đo trên dev server đang chạy ở cổng 8080 (của box khác, tôi dùng chung, **không sửa `launch.json`**),
