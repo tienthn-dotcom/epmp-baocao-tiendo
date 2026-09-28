@@ -674,10 +674,15 @@ phán quyết riêng** ở dưới. Tôi chưa đụng vào cả hai bản này 
 |---|---|---|
 | **V2b** · băm vào bảng đếm D1 | `40eae6c` (v3.109.1) | **ĐẠT KÈM ĐIỀU KIỆN** |
 | **V4a** · xuất Excel ô thật | `c188f92` (v3.110.0) | **ĐẠT KÈM ĐIỀU KIỆN** |
+| **V4b** · phần nhìn ngang PDF | `a914b2f` + `a8119f2` | **ĐẠT KÈM ĐIỀU KIỆN** |
 
-Không tìm được lỗi nào trong hai bản đủ để chặn. Điều kiện là **bốn việc phải làm**, không phải bốn
+Không tìm được lỗi nào trong ba bản đủ để chặn. Điều kiện là **bốn việc phải làm**, không phải bốn
 chỗ phải sửa code — liệt kê ở cuối. Điều kiện số 1 là điều kiện quan trọng nhất, và nó không nằm
 trong code của bản nào.
+
+*V4b được soi ở lượt sau, phán quyết riêng ở mục **BẢN 3** phía dưới. Phần "ĐÃ TỰ CHẠY LẠI" ngay
+dưới đây là số đo của lượt đầu (ghim ở `8763e2a`, chỉ có V2b + V4a); số đo cho V4b ghim ở `d439041`
+nằm trong mục BẢN 3.*
 
 ### ĐÃ TỰ CHẠY LẠI
 
@@ -1013,7 +1018,105 @@ chép tay, có định dạng điều kiện, có `pageSetup`. Tôi chưa chạy
 
 ---
 
-### BỐN ĐIỀU KIỆN — áp cho cả hai bản
+### BẢN 3 · V4b — `a914b2f` + `a8119f2` — ĐẠT KÈM ĐIỀU KIỆN
+
+Đây là phán quyết mà phần trên còn để trống. Soi trên commit, đo ở **cây riêng sạch tại `d439041`**.
+
+```
+tsc                  : sạch (exit 0)
+vitest               : 407 passed | 0 failed | 30 file
+build                : qua (exit 0)
+quét byte điều khiển : 16 byte · 7 file · 14 dòng — đúng mốc nền, V4b không thêm byte
+```
+
+*Đối chiếu số của Thực thi:* họ báo `419 passed | 2 expected fail | 31 file`. Khớp — chênh đúng 12
+phép cộng một file, là file kiểm V1 của tôi còn chưa theo dõi trong cây (`407 + 12 = 419`). Báo cáo
+của họ trung thực.
+
+**ĐỐI CHIẾU ĐẶC TẢ**
+
+- **Làm đủ: có**, cả bảy việc. Và **làm thêm hai thứ đúng chỗ** — tắt đường lưới, ghi rõ ràng buộc
+  thang data bar — cả hai đều là chỗ tôi chỉ ra ở phần trên, không phải tự mở rộng phạm vi.
+- **Làm thừa: không.** Hai khối KPI và thẻ giai đoạn **vẫn thiếu**, nhưng đó không phải lỗi V4b:
+  chúng nằm ngoài bảy việc của đặc tả. Thực thi đã không tự làm — đúng.
+
+**ĐÃ TỰ KIỂM TRÊN FILE THẬT, KHÔNG CHỈ TIN BỘ KIỂM**
+
+Tôi dựng file `.xlsx` qua đúng `exportTableXlsx`, bung zip rồi đọc `xl/worksheets/sheet1.xml`.
+Lý do không chỉ chạy bộ kiểm: phép kiểm của họ xét **mô hình exceljs**
+(`WS.views[0].showGridLines`), còn thứ người dùng mở là **file XML**. Hai chỗ đó có thể lệch nhau, và
+đó đúng loại lỗ đã để `numFmt` của V4a không ai gác được. Kết quả — khớp:
+
+```
+sheetViews : <sheetView workbookViewId="0" showGridLines="0">   → lưới ĐÃ TẮT trong FILE
+pane       : xSplit="3" ySplit="3" state="frozen"               → đóng băng cả cột lẫn hàng
+pageSetup  : paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"
+Print_Titles (workbook.xml) : 'Báo cáo'!$3:$3                   → lặp tiêu đề mọi trang
+headerFooter : &C&9Trang &P / &N                                → số trang ở chân
+dataBar    : sqref G4:G7 · cfvo num=0 · num=100                 → thang TUYỆT ĐỐI, đúng lối lưu 85
+Quá hạn    : sqref H4:H7 · cellIs ×2                            → hai bậc, không thang liên tục
+dung lượng : 9.148 byte cho 4 dòng                              → ràng buộc 4 không thành vấn đề
+```
+
+*Một chỗ đáng khen vì nó dễ sai:* dải định dạng điều kiện dừng ở **đúng dòng dữ liệu cuối**
+(`G4:G7` với 4 dòng), nên khối chú giải thêm ở dưới **không bị tô lây**. Nếu tính dải sau khi thêm
+chú giải thì ô chú giải sẽ mọc thanh màu — không ai để ý cho tới lúc mở file.
+
+*Phép kiểm chống lệch màu `tests/excel-mau-khop-app.test.ts` là bộ kiểm tốt.* Nó đọc thẳng
+`src/routes/index.tsx` bằng `fs`, rút khối `const GC = { … }` bằng regex rồi so từng màu. Quan trọng
+hơn: nó **tự gác chính nó** — có một phép kiểm đòi `Object.keys(mauGC()).length > 5`, nên nếu ai
+đổi cách viết `GC` làm regex hết khớp thì bộ kiểm **đỏ to** chứ không âm thầm so sánh một tập rỗng.
+Đây đúng là lời đáp cho chỗ tôi phê ở V4a (bộ kiểm tự khai lại danh sách cột).
+
+**PHẢI SỬA TRƯỚC KHI DEPLOY** — không có.
+
+**NÊN SỬA, KHÔNG CHẶN**
+
+1. **Chiều cao hàng — việc "NẶNG NHẤT" của đặc tả, và là thứ duy nhất tôi KHÔNG xác minh được từ
+   máy.** Cách làm là **bỏ hẳn `row.height`** để Excel tự giãn. Soi trong file:
+
+   ```
+   sheetFormatPr : defaultRowHeight="16" outlineLevelRow="1" … customHeight="1"
+   hàng 1,2,3    : có ht + customHeight   (tiêu đề — đặt tay, đúng)
+   hàng 4 trở đi : KHÔNG có ht, KHÔNG có customHeight
+   ```
+
+   Dòng dữ liệu **không bị đánh dấu chiều cao đặt tay** — đó là **điều kiện cần** để Excel tự giãn,
+   và nó đạt. Nhưng `sheetFormatPr` mang `customHeight="1"` (do `defaultRowHeight: 16` ở
+   `properties`), nghĩa là *chiều cao mặc định của sheet là do người đặt*. Theo chuẩn thì cờ đó nói
+   về **mặc định của sheet**, không đánh dấu từng hàng, nên nó **không đáng lẽ** chặn việc tự giãn.
+
+   Tôi nói "không đáng lẽ" vì **tôi không chạy được Excel thật để biết chắc**. Điều kiện cần thì
+   đạt; điều kiện đủ thì chỉ Excel trả lời được. Đây là thứ **phải xem đầu tiên** khi mở file, và
+   nếu chữ vẫn cụt thì chỗ đáng thử đầu tiên là **bỏ `defaultRowHeight` khỏi `properties`** — không
+   phải quay lại đặt `row.height`.
+
+2. **Chú giải: mục xám ghi "Đang triển khai (ô trống)" nhưng tô bằng `MAU.nenCon` (#F8FAFC).**
+   Thực thi giải thích đúng là màu chú giải phải trùng thứ nó đang chú thích, và ô Tình trạng trống
+   thì nền là màu dòng con. Nhưng #F8FAFC gần như trắng, cạnh ba ô đỏ/vàng/xanh đậm thì nó **trông
+   như một ô rỗng lỡ tay** chứ không như một mục chú giải. Thêm viền mảnh quanh ô đó là xong. Nhỏ,
+   nhưng nó nằm trong khối mà người nhận đọc để hiểu cả bảng.
+
+3. **Hai khối còn thiếu so với PDF (KPI, thẻ giai đoạn).** Đã nói ở phần trên. Không tính vào V4b.
+
+**RỦI RO KHI DEPLOY**
+
+- **Ảnh hưởng ai:** ai bấm "Xuất Excel". Lần này họ thấy đổi **nhiều**: mất đường lưới, dòng con có
+  nền xám nhạt, hàng quá hạn nền ấm + mép trái, cột % có thanh màu, cột Quá hạn tô hai bậc, cuối
+  bảng có khối chú giải, bấm in ra A4 ngang vừa một trang bề ngang.
+- **Hỏng thì sao:** xấu nhất là **file nhìn không như ý** — không có đường nào làm sai một con số,
+  vì V4b chỉ thêm `fill`, `numFmt`, `conditionalFormatting` và `pageSetup`; không chỗ nào đụng
+  `cells`. Tôi đã soi diff cả hai commit để chắc điều đó. Không chạm đường nạp dữ liệu, không chạm
+  KV, không chạm `exportMatrixXlsx`.
+- **Lùi lại được không:** được, deploy lại commit trước. Không dữ liệu nào bị biến đổi.
+- **Hạn mức KV: thêm 0 lượt/ngày.**
+
+**Một câu cho gọn:** V4b làm đúng và làm sạch phần việc nó nhận. Thứ còn cách bản PDF không phải
+chất lượng của V4b — mà là **phạm vi**: Excel vẫn chưa có trang tóm tắt mà PDF có.
+
+---
+
+### BỐN ĐIỀU KIỆN — áp cho cả ba bản
 
 **ĐK1 · Deploy phải xuất phát từ CÂY SẠCH ở commit đã có phán quyết. Đây là điều kiện chặn thật.**
 
