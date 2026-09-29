@@ -63,6 +63,7 @@ import { ridKeys } from "@/lib/rid";
 import { timNoteLac } from "@/lib/note-lac";
 import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
+import { chiaTinMoiCu } from "@/lib/tin-moi-cu";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -540,6 +541,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.119.0", date: "29/09/2026", items: [
+    "Ô VƯỚNG MẮC CẤP DỰ ÁN NAY CHỈ CHIẾU MỘT TIN: tin mới nhất. Các tin cũ hơn gấp lại sau nút “+n tin cũ” ngay trong ô, bấm là hiện đủ, bấm lại là gấp. Trước đây mọi tin xếp chồng trong một ô nên gõ thêm câu mới là ô dài ra, khó đọc câu nào đang có hiệu lực.",
+    "Tin cũ KHÔNG bị xoá và app cũng KHÔNG tự đóng cờ ẩn lên ghi chú của ai: mở ô ra vẫn thấy đủ, vẫn sửa / ẩn / xoá được như cũ. Tin mới nhất tính theo mốc thời gian, tin của file nguồn và tin gõ trong app so chung một thước. Ô nào có tin thiếu mốc thời gian thì chiếu hết, không đoán.",
+    "File Excel xuất ra chiếu đúng thứ bảng đang chiếu: ô vướng mắc cấp dự án là một tin mới nhất.",
     "KHOÁ CHẶT CÂU “CẦN PM TRÌNH BOD PHÊ DUYỆT (BITRIX)”. Trước đây app dò chữ “trước dd/mm” trên cả ô vướng mắc, nên khi câu trình BOD không ghi hạn mà một tin khác trong cùng ô có ngày thì app lấy nhầm ngày đó làm hạn. Ponte Apartment (CT26-032) là ca thật: hạn hiện 12/09 trong khi 12/09 là hạn hoàn thành TKSX ở tin khác, dự án bị trừ 30 điểm cho một ngày không ai hẹn. Nay ngày phải nằm TRONG CHÍNH CÂU nói trình BOD, và ngày của cụm “dời từ … đến …” không bao giờ được coi là hạn.",
     "ĐỌC ĐƯỢC THÊM CÁC LỐI GHI HẠN KHÁC, không chỉ mỗi chữ “trước”: hạn, hạn chót, chậm nhất, deadline, mốc, trong ngày, hoặc ngày ghi ngay sau chữ bitrix.",
     "NHẬN ĐÚNG CÂU DÙ CHỮ ĐẢO THỨ TỰ: “cần PM trình bitrix BOD duyệt ngày bàn giao mới” nay được tính. Ngược lại, câu nói việc đã xong (“BOD đã phê duyệt bitrix”) hay “không cần trình BOD” thì không bị tính là việc phải làm.",
@@ -2244,6 +2248,9 @@ const visibleText = (msgs?: ChatMsg[]): string => (msgs ?? []).filter((m) => !m.
  *  trong file nguồn, và các ghi chú gõ trong app. Trên bảng chúng có badge OCC + gạch ngăn để phân
  *  biệt, nhưng Excel là văn bản phẳng — nối trơn vào một ô thì người đọc file không biết câu nào
  *  phải sửa trong file nguồn, câu nào sửa trong app. Nên đánh dấu đúng câu của file nguồn. */
+/** Ô VƯỚNG MẮC CẤP DỰ ÁN trong file Excel phải khớp cái bảng đang chiếu: một tin mới nhất.
+ *  Tin cũ vẫn còn trong app (bấm "+n tin cũ" là thấy), chỉ không đổ vào ô Excel cho rối. */
+const tinDangChieu = (msgs?: ChatMsg[]): ChatMsg[] => chiaTinMoiCu((msgs ?? []).filter((m) => !m.hidden)).moi;
 const textXuat = (msgs?: ChatMsg[]): string =>
   (msgs ?? []).filter((m) => !m.hidden).map((m) => (m.id === MSG_NGUON ? `[OCC · file nguồn] ${m.text}` : m.text)).join("\n");
 const fmtMsgTime = (iso: string): string => {
@@ -4837,7 +4844,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
                 oNgay(g.start), oNgay(g.deadline), null, null,
                 // textXuat (không phải visibleText) vì ô này CÓ câu của file nguồn trộn cùng ghi chú
                 // gõ trong app; hàng hạng mục bên dưới chỉ có tin gõ trong app nên giữ visibleText.
-                g.delivered ? "Đã bàn giao" : "", textXuat(g.noteMsgs), visibleText(g.actionMsgs),
+                g.delivered ? "Đã bàn giao" : "", textXuat(tinDangChieu(g.noteMsgs)), visibleText(g.actionMsgs),
               ],
             });
             for (const it of g.items) {
@@ -5898,14 +5905,19 @@ function DoanText({ doan }: { doan: { chu: string; gach?: boolean }[] }) {
   );
 }
 
-function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, today }: {
+function ChatCell({ msgs, dark, motTin, field, myEmail, isAdmin, onOp, onOpen, onReply, today }: {
   msgs: ChatMsg[]; dark?: boolean; field?: "note" | "action";
+  /** V12 — chỉ chiếu tin MỚI NHẤT, tin cũ gấp lại sau một nút nhỏ. Bật cho ô Vướng mắc CẤP DỰ ÁN.
+   *  Ô Giải pháp và các dòng hạng mục KHÔNG bật: ở đó nhiều tin là chuyện bình thường. */
+  motTin?: boolean;
   myEmail?: string | null; isAdmin?: boolean; onOp?: MsgOp; onOpen?: () => void;
   /** Chỉ ô VƯỚNG MẮC: bấm ↩ để trả lời (mở box Giải pháp cùng dòng, đính trích dẫn). Ai cũng dùng được. */
   onReply?: (m: ChatMsg) => void; today?: string;
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /** V12 — người dùng bấm xem tin cũ. Chỉ nằm trong phiên nhìn, không ghi đâu cả. */
+  const [xemCu, setXemCu] = useState(false);
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   const vis = msgs.filter((m) => !m.hidden);
   // F16 — mở box NGAY khi click (bỏ delay 230ms cho admin). Tô/bỏ màu đỏ giờ là 1 NÚT (không nhấp đúp).
@@ -5917,8 +5929,11 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
     // ghi chú gõ trong app. Trước đây cả hai cùng cỡ chữ, cùng màu, chỉ cách nhau 4px → gõ thêm một
     // câu là nó đọc ra thành MỘT khối với vướng mắc cấp dự án. Nay tách làm hai khối có gạch ngăn, và
     // mỗi ghi chú gõ trong app đeo tên người gõ, để nhìn là biết câu nào của ai và phải sửa ở đâu.
-    const tNguon = vis.filter((m) => m.id === MSG_NGUON);
-    const tGo = vis.filter((m) => m.id !== MSG_NGUON);
+    // V12 — mặc định chỉ chiếu tin mới nhất; bấm nút dưới ô thì mở ra xem đủ.
+    const { moi, cu } = motTin ? chiaTinMoiCu(vis) : { moi: vis, cu: [] as ChatMsg[] };
+    const hien = xemCu ? vis : moi;
+    const tNguon = hien.filter((m) => m.id === MSG_NGUON);
+    const tGo = hien.filter((m) => m.id !== MSG_NGUON);
     const veChu = (m: ChatMsg) => (m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />);
     return (
       <div className="font-bold leading-snug text-white">
@@ -5947,6 +5962,14 @@ function ChatCell({ msgs, dark, field, myEmail, isAdmin, onOp, onOpen, onReply, 
               );
             })}
           </div>
+        )}
+        {cu.length > 0 && (
+          // Bấm nút KHÔNG được mở hộp thoại sửa của <td> bao ngoài — chặn nổi bọt.
+          <button type="button" onClick={(e) => { e.stopPropagation(); setXemCu(!xemCu); }}
+            title={xemCu ? "Gấp lại, chỉ chiếu tin mới nhất" : "Xem các tin cũ hơn của ô này"}
+            className="mt-1 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/90 hover:bg-white/30 print:hidden">
+            {xemCu ? "Gấp lại" : `+${cu.length} tin cũ`}
+          </button>
         )}
       </div>
     );
@@ -7413,7 +7436,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
                     <td className="cursor-pointer px-2 py-1 align-middle text-white hover:bg-white/5"
                         title="Bấm để xem / thêm vướng mắc dự án"
                         onClick={(e) => { e.stopPropagation(); openGroupEdit(g, "note"); }}>
-                      <ChatCell msgs={g.noteMsgs} dark />
+                      <ChatCell msgs={g.noteMsgs} dark motTin />
                     </td>
                     {/* Giải pháp CẤP DỰ ÁN — box chat, khoá = projectKey. */}
                     <td className="cursor-pointer px-2 py-1 align-middle text-white hover:bg-white/5"
