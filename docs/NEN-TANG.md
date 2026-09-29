@@ -170,6 +170,29 @@ Bốn box mở cùng một thư mục. Thứ bạn thấy trong `git status` có
 - Thấy file lạ chưa theo dõi thì **để yên**, đừng xoá, đừng commit hộ. Hỏi qua sổ bàn giao.
 - Không `git stash` khi box khác đang làm: stash cuốn luôn thay đổi của họ. Test cần stash để xác nhận phép kiểm đỏ thì **hẹn với Thực thi trước**.
 
+
+### 5.7 Bản nào ĐỔI GIAO DIỆN thì phải soi trên APP THẬT, có số, trước khi deploy
+
+`tsc` sạch và bộ kiểm xanh **không nói gì** về bố cục và về con số hiện trên nút. Hai lỗi lọt lên
+bản chính thức ngày 29/09/2026 (thanh lọc tràn hàng, số trên nút lọc đếm cả kho) đều đi qua đủ
+cổng kiểm mà không cổng nào kêu. Người dùng là người bắt được, trên bản đang chạy thật.
+
+Nên: bản nào đụng tới thứ người ta NHÌN THẤY thì trước khi deploy phải có **một lượt soi trên app
+thật**, và lượt đó **ghi số cụ thể vào thông điệp commit** — không ghi "đã xem ổn".
+
+- **Bố cục**: dựng ở ít nhất `1440` và `375` (người dùng chốt: *"đừng vì chỉnh cho điện thoại làm
+  cho bản máy tính bị sai đi"*). Đổi thanh lọc thì thêm `1920 / 1280 / 1100 / 1024`. Đếm số hàng
+  bằng cách gom `offsetTop` của các phần tử — **nhớ gom cả con của lớp bọc `md:contents`**, vì
+  `container.children` không trả về chúng (đếm hụt kiểu này đã xảy ra với cả hai box).
+- **Tràn ngang**: đo trên **chính khối đang sửa**, đừng đo ở cấp trang: bảng dữ liệu vốn rộng hơn
+  màn từ trước, đo ở cấp trang là báo đỏ oan.
+- **Con số hiện ra**: bấm thử một bộ lọc khác rồi xem con số có đi theo không. Con số đếm trên cả
+  kho thì luôn to hơn thứ người ta mở ra xem được, và không lần chạy nào của bộ kiểm thấy điều đó.
+
+Phép kiểm vẫn viết, nhưng phải biết **nó không phủ cái gì**: `jsdom` **không tính bố cục** (không
+dựng CSS grid, `offsetTop` luôn bằng 0), nên phép kiểm đếm hàng viết trên `jsdom` **luôn xanh** —
+đồ trang trí, tệ hơn là không có. Thứ kiểm được bằng phép kiểm là **giao kèo tĩnh**: số ô khai
+trong lưới phải đủ cho số phần tử xếp vào đó (`tests/thanh-loc-khong-tran-hang.test.ts`).
 ---
 
 ## 6. LỆNH
