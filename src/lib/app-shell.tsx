@@ -240,14 +240,48 @@ const pdfArgsOf = (p: InstallProj): { gid?: string; range?: string } => {
   return { range: s && r ? `${s}!${r}` : (s || r || undefined) };
 };
 
+/** TỐI ĐA 2 LƯỢT TẢI PDF CÙNG LÚC.
+ *  Màn này bày 21 thẻ. Thả cả 21 lượt ra một lúc thì Worker phải giữ 21 file PDF trong bộ nhớ
+ *  cùng lúc (byte + chuỗi nhị phân + chuỗi base64 + JSON) và chạm trần -> Cloudflare trả lỗi
+ *  1102, thẻ nào đang dở thì không nhận được gì. Đo trên bản chính thức 29/09/2026: lỗi 1102 nổ
+ *  đúng hai lần, cả hai đều ngay sau một lượt mở màn MTLĐ.
+ *  Hai lượt một lúc vẫn đủ nhanh vì thẻ đã xếp hàng theo thứ tự người ta cuộn tới. */
+const MAX_TAI = 2;
+let dangTai = 0;
+const doiTai: (() => void)[] = [];
+async function xepHangTai<T>(viec: () => Promise<T>): Promise<T> {
+  if (dangTai >= MAX_TAI) await new Promise<void>((ok) => doiTai.push(ok));
+  dangTai++;
+  try { return await viec(); }
+  finally { dangTai--; doiTai.shift()?.(); }
+}
+
 /** 1 ô = 1 dự án. Render Y HỆT popup "Thi công lắp đặt": ma trận LIVE + FORM (kể cả ZOOM) đã lưu —
  *  hiện ĐÚNG cỡ zoom admin đã lưu (không tự thu nhỏ); ô cuộn nếu lớn hơn. */
-function PopupCell({ proj, bump, h, onOpen }: { proj: InstallProj; bump: number; h: number; onOpen: () => void }) {
+/** Số thẻ đầu LUÔN tải, không chờ tín hiệu cuộn. Xem ghi chú ở `daNhinThay`. */
+const THE_DAU_LUON_TAI = 4;
+function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: number; h: number; idx: number; onOpen: () => void }) {
   // HYBRID: popup cấu hình "có chart" → hiện bản PDF Google render (đủ chart + màu); còn lại → ma trận + form.
+  /** CHỈ TẢI THẺ ĐANG NHÌN THẤY. Thẻ chưa cuộn tới thì chưa gọi Google, đỡ cho Worker và đỡ cho
+ *  cả Google (nhiều thẻ dùng CHUNG một file). Đã nhìn thấy một lần thì giữ luôn, không tắt lại,
+ *  kẻo cuộn qua cuộn lại là gọi lại từ đầu. */
+  const oRef = useRef<HTMLDivElement>(null);
+  /* Bốn thẻ đầu bật sẵn: nếu trình duyệt không bao giờ báo 'đã cuộn tới' (khung cuộn lạ, tab đang
+     ẩn, trang không được vẽ) thì màn hình sẽ trống trơn mãi. Thà tải thừa vài thẻ còn hơn trắng. */
+  const [daNhinThay, setDaNhinThay] = useState(idx < THE_DAU_LUON_TAI);
+  useEffect(() => {
+    if (!proj.chart || daNhinThay) return;
+    const el = oRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") { setDaNhinThay(true); return; }   // trình duyệt cũ: tải như cũ
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { setDaNhinThay(true); io.disconnect(); } }, { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [proj.chart, daNhinThay]);
   const pdfQ = useQuery({
     queryKey: ["mtld-pdf", proj.fileId, proj.gid ?? "", proj.sheet ?? "", proj.range ?? "", bump],
-    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...pdfArgsOf(proj), force: bump > 0 || undefined } }),
-    enabled: !!proj.chart, staleTime: 5 * 60 * 1000, retry: 1,
+    queryFn: () => xepHangTai(() => getSheetPdf({ data: { fileId: proj.fileId, ...pdfArgsOf(proj), force: bump > 0 || undefined } })),
+    enabled: !!proj.chart && daNhinThay, staleTime: 5 * 60 * 1000, retry: 1,
   });
   // FIT-BỀ-NGANG bằng transform (đo scrollWidth → chính xác). Ma trận trong ô để zoom nội bộ=1 (prop
   // `natural`) nên CHỈ transform scale — KHÔNG chồng CSS zoom + transform (thủ phạm dải trắng che bảng).
@@ -272,7 +306,7 @@ function PopupCell({ proj, bump, h, onOpen }: { proj: InstallProj; bump: number;
     return () => { ro.disconnect(); clearInterval(iv); };
   }, [proj.formKey, proj.chart, h, bump]);
   return (
-    <div onClick={onOpen} title="Bấm để xem chi tiết"
+    <div ref={oRef} onClick={onOpen} title="Bấm để xem chi tiết"
       style={{ height: h, background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #232c3d", boxShadow: "0 8px 22px rgba(0,0,0,.34)", display: "flex", flexDirection: "column", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#131a26", color: "#e7ebf3", padding: "7px 11px", fontSize: 12, fontWeight: 700, flexShrink: 0, borderBottom: "1px solid #232c3d" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4aa6ee", flexShrink: 0 }} />
@@ -282,8 +316,17 @@ function PopupCell({ proj, bump, h, onOpen }: { proj: InstallProj; bump: number;
       </div>
       {proj.chart ? (
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
-          {pdfQ.isPending ? <div style={{ color: "#94a3b8", fontSize: 12, padding: 8 }}>Đang tải chart…</div>
-            : pdfQ.isError ? <div style={{ color: "#b91c1c", fontSize: 11.5, padding: 8, lineHeight: 1.5 }}>{(pdfQ.error as Error).message}</div>
+          {!daNhinThay ? <div style={{ color: "#cbd5e1", fontSize: 12, padding: 8 }}>Cuộn tới để xem chart</div>
+            : pdfQ.isPending ? <div style={{ color: "#94a3b8", fontSize: 12, padding: 8 }}>Đang tải chart…</div>
+            : pdfQ.isError ? (
+              // KHÔNG in nguyên câu lỗi của thư viện ra màn hình nữa: người dùng không cần biết
+              // "data is undefined" nghĩa là gì, họ cần biết bấm vào đâu để thử lại.
+              <div style={{ color: "#b91c1c", fontSize: 11.5, padding: 8, lineHeight: 1.6 }}>
+                Chưa tải được chart.
+                <button type="button" onClick={(e) => { e.stopPropagation(); void pdfQ.refetch(); }}
+                  style={{ marginLeft: 6, borderRadius: 6, border: "1px solid #b91c1c", padding: "1px 7px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Thử lại</button>
+              </div>
+            )
             : pdfQ.data ? <iframe title={proj.name} src={`data:application/pdf;base64,${pdfQ.data.b64}#toolbar=0&navpanes=0&view=FitH`} style={{ width: "100%", height: "100%", border: "none", pointerEvents: "none" }} /> : null}
         </div>
       ) : (
@@ -471,7 +514,7 @@ function MtldApp() {
           // GOM HẾT: mọi ô vào MỘT lưới liền (không tách vùng) — xem tổng thể như bức tường TV.
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "12px 16px 20px" }}>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start" }}>
-              {shown.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
+              {shown.map((p, i) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} idx={i} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
             </div>
           </div>
         ) : (
@@ -484,7 +527,7 @@ function MtldApp() {
                   <span style={{ fontSize: 11, color: MTLD_T.faint, marginLeft: "auto" }}>{items.length} dự án</span>
                 </div>
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
-                  {items.map((p) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
+                  {items.map((p, i) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} idx={i} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
                 </div>
               </section>
             ))}

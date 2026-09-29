@@ -541,6 +541,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.120.2", date: "29/09/2026", items: [
+    "SỬA LỖI LÀM APP BÁO “Worker exceeded resource limits” (mã 1102). Màn MTLĐ bày 21 thẻ và gọi tải chart cả 21 cùng một lúc; máy chủ phải giữ ngần ấy file trong bộ nhớ nên chạm trần, app trả lỗi cho người đang dùng. Nay chỉ tải thẻ đang nhìn thấy, và tối đa hai thẻ một lúc.",
+    "Thẻ chart nào lỗi thì hiện “Chưa tải được chart” kèm nút Thử lại, thay vì in nguyên câu lỗi kỹ thuật của thư viện ra màn hình.",
+  ] },
   { v: "3.120.1", date: "29/09/2026", items: [
     "SỬA THANH LỌC BỊ TRÀN XUỐNG HÀNG DƯỚI trên màn rộng. Thêm ô lọc “Bình luận” thành 9 thứ phải xếp trong khi lưới chỉ khai 8 chỗ, nên ô cuối rơi xuống hàng. Nay số chỗ khai theo bề rộng màn: màn rộng một hàng, màn vừa hai hàng đều nhau.",
     "SỬA SỐ TRÊN Ô LỌC “BÌNH LUẬN”: số nay đếm đúng phần bảng đang bày và đi theo các bộ lọc khác. Trước đây đếm cả kho, gồm ghi chú của dòng đã ẩn, dòng bị lọc ra và dòng không còn trong file nguồn — con số to hơn mọi thứ mở ra xem được (119 bị hiện thành 377), lọc PM hay Vùng thì số vẫn đứng yên.",
