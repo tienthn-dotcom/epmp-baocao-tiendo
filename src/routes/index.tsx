@@ -65,6 +65,7 @@ import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { chiaTinMoiCu } from "@/lib/tin-moi-cu";
 import { NHOM_CMT, NHAN_NHOM, MAU_CHAM, demTheoNhom, lotLoc, type NhomCmt } from "@/lib/nhom-cmt";
+import { sapXepGantt, bamCot, type ThuTuGantt, type KhoaGantt } from "@/lib/sap-xep-gantt";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -541,6 +542,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.121.0", date: "29/09/2026", items: [
+    "BẢNG “TỔNG THỂ TIẾN ĐỘ” NAY SẮP XẾP ĐƯỢC THEO CỘT. Bấm tiêu đề bất kỳ trong 8 cột bên trái (Ngày update · Mã · Tên dự án · Ngày bàn giao · Bắt đầu · Ngày kết thúc · % Thực tế · Quá hạn): lần đầu giảm dần, bấm nữa tăng dần, bấm lần ba trả về mặc định. Trước đây bảng sắp cứng theo Ngày kết thúc, không ai đổi được.",
+    "Chọn nhiều cột được: cột vừa bấm thành khoá chính, cột cũ tụt xuống làm khoá phụ, tối đa 3 cột. Số nhỏ cạnh mũi tên cho biết thứ tự khoá.",
+    "Lựa chọn sắp xếp NHỚ THEO TỪNG MÁY, cùng chỗ nhớ với bề rộng cột — máy người này sắp theo Quá hạn không làm đổi bảng của người khác. Và nó RIÊNG với bảng “Việc cần xử lý”: sắp xếp bên này không kéo bảng bên kia đi theo.",
+    "Ô trống luôn nằm cuối bảng ở cả hai chiều, để dự án chưa có ngày không nhảy lên đầu khi sắp giảm dần.",
+  ] },
   { v: "3.120.4", date: "29/09/2026", items: [
     "BỘ LỌC “CẦN CẬP NHẬT MP” NAY NHẬN CẢ CÂU KHÔNG VIẾT CHỮ “BOD”. Vướng mắc ghi “cần PM trình duyệt bitrix … trước ngày 30/9” trước đây bị bỏ qua vì thiếu đúng ba chữ cái BOD, nên dự án rớt khỏi bộ lọc và mất luôn hạn. Trên bitrix, trình duyệt tức là trình BOD. Đo trên file nguồn: 19 → 20 dự án, đúng một dự án được thêm.",
     "Riêng “trình duyệt mẫu trên bitrix” vẫn KHÔNG tính — đó là việc của khâu Duyệt mẫu, không phải master plan.",
@@ -4149,6 +4156,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     });
     return [...panelActive, ...doneF];
   }, [showDone, panelActive, doneEnriched, filters, mpProjectKeys, dueMonthProjectKeys, topProjectKeys]);
+  /** Sắp xếp của bảng "Tổng thể tiến độ" — RIÊNG, không dùng chung với bảng "Việc cần xử lý".
+   *  Hai bảng nhìn cùng tập dự án nhưng dùng để làm hai việc khác nhau; bấm sắp xếp ở bảng này
+   *  mà bảng kia nhảy theo là bất ngờ không cần thiết. Rỗng = thứ tự mặc định (Ngày kết thúc). */
+  const [sortGantt, setSortGantt] = useState<ThuTuGantt[]>([]);
   const ganttRows = useMemo<GanttRow[]>(() => {
     // CHẾ ĐỘ LỌC HẠNG MỤC (giống bảng "Việc cần xử lý"): bảng PHẲNG — mỗi hạng mục 1 dòng, mô tả
     // = TÊN DỰ ÁN, Mã = viết tắt hạng mục, bar = timeline hạng mục (+ đổ done theo % thực tế).
@@ -4178,8 +4189,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           hideKey: it._key, hidden: !!it._hidden,
         };
       });
-      flat.sort((a, b) => (a.end ?? "9999").localeCompare(b.end ?? "9999") || (a.maCT ?? "").localeCompare(b.maCT ?? "", "vi", { numeric: true, sensitivity: "base" }));
-      return flat;
+      return sapXepGantt(flat, sortGantt);
     }
     // TÁC VỤ CON: gom panelActive (đúng tập đầu việc đang hiện ở bảng Danh sách — shown,
     // chưa 100%, đã qua bộ lọc) theo dự án. "Trực quan hoá" các dòng con này thành thanh
@@ -4244,9 +4254,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         children: childrenByProject.get(pk) ?? [],
       });
     }
-    rows.sort((a, b) => (a.end ?? "9999").localeCompare(b.end ?? "9999") || (a.maCT ?? "").localeCompare(b.maCT ?? "", "vi", { numeric: true, sensitivity: "base" }));
-    return rows;
-  }, [data.projects, ganttSource, edits, today, ganttFlatStages, filters.stages, completedDates]);
+    return sapXepGantt(rows, sortGantt);
+  }, [data.projects, ganttSource, edits, today, ganttFlatStages, filters.stages, completedDates, sortGantt]);
 
   // ── TỰ KIỂM CHỨNG ──
   const audit = useMemo(
@@ -4278,17 +4287,18 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     try {
       const raw = localStorage.getItem("pmo.master.view.v1");
       if (raw) {
-        const v = JSON.parse(raw) as { filters?: Partial<Filters>; sortChain?: SortSpec[] };
+        const v = JSON.parse(raw) as { filters?: Partial<Filters>; sortChain?: SortSpec[]; sortGantt?: ThuTuGantt[] };
         if (v.filters) setFilters((f) => ({ ...EMPTY_FILTERS, ...f, ...v.filters }));
         if (Array.isArray(v.sortChain) && v.sortChain.length) setSortChain(v.sortChain);
+        if (Array.isArray(v.sortGantt)) setSortGantt(v.sortGantt);
       }
     } catch { /* localStorage chặn / JSON hỏng → dùng mặc định */ }
     setViewRestored(true);
   }, []);
   useEffect(() => {
     if (!viewRestored) return; // chưa khôi phục xong thì đừng ghi đè bằng mặc định
-    try { localStorage.setItem("pmo.master.view.v1", JSON.stringify({ filters, sortChain })); } catch { /* */ }
-  }, [filters, sortChain, viewRestored]);
+    try { localStorage.setItem("pmo.master.view.v1", JSON.stringify({ filters, sortChain, sortGantt })); } catch { /* */ }
+  }, [filters, sortChain, sortGantt, viewRestored]);
   const toggleSort = (k: SortKey) => {
     setSortChain(prev => {
       const idx = prev.findIndex(s => s.key === k);
@@ -4880,6 +4890,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         onToggleDone={doiShowDone}
         showHidden={showHidden}
         onToggleShowHidden={() => setShowHidden(v => !v)}
+        sortGantt={sortGantt}
+        onSortGantt={(k) => setSortGantt((c) => bamCot(c, k))}
         locCmt={locCmt}
         onLocCmt={bapLocCmt}
         onLocCmtXoa={() => setLocCmt(new Set())}
@@ -6359,7 +6371,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, sortGantt, onSortGantt, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -6408,6 +6420,9 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** DÒNG ẨN THỦ CÔNG (admin + PMO): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang
    *  ẩn; onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin/PMO thấy nút; server vẫn chốt quyền. */
   showHidden: boolean;
+  /** Sắp xếp RIÊNG của bảng "Tổng thể tiến độ". Rỗng = thứ tự mặc định. */
+  sortGantt: ThuTuGantt[];
+  onSortGantt: (k: KhoaGantt) => void;
   /** BỘ LỌC BÌNH LUẬN theo nhóm đối tượng. Rỗng = xem tất cả. */
   locCmt: ReadonlySet<NhomCmt>;
   onLocCmt: (n: NhomCmt) => void;
@@ -7313,7 +7328,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           )}
         </div>
       ) : viewMode === "gantt" ? (
-        <GanttView rows={ganttRows} today={today} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} canHide={canHideRow} showHidden={showHidden} onHideRow={onHideRow} />
+        <GanttView rows={ganttRows} today={today} sortGantt={sortGantt} onSortGantt={onSortGantt} fullscreen={isFs} showChildTasks={showGanttChildTasks} flatStages={filters.stages.length > 0} expanded={ganttExpanded} setExpanded={setGanttExpanded} canHide={canHideRow} showHidden={showHidden} onHideRow={onHideRow} />
       ) : (
       <div className="relative min-h-0 flex-1 rounded-md border border-slate-200"
            style={{ containerType: "inline-size", overflowX: narrowScreen ? "auto" : undefined,
@@ -7797,7 +7812,7 @@ function AlertBadge({ kind, color }: { kind: AlertKind; color: AlertColor }) {
  *    • Viền trái đỏ = tuần chứa hôm nay. Nền hổ phách = quá hạn.
  * ====================================================================== */
 const GANTT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, canHide = false, onHideRow }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; canHide?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void }) {
+function GanttView({ rows, today, fullscreen = false, showChildTasks = false, flatStages = false, expanded, setExpanded, canHide = false, onHideRow, sortGantt = [], onSortGantt }: { rows: GanttRow[]; today: string; fullscreen?: boolean; showChildTasks?: boolean; flatStages?: boolean; expanded: Set<string>; setExpanded: (s: Set<string>) => void; canHide?: boolean; showHidden?: boolean; onHideRow?: (key: string, label: string, hide: boolean) => void; sortGantt?: ThuTuGantt[]; onSortGantt?: (k: KhoaGantt) => void }) {
   const DAY = 86400000;
   // Dropdown Block (Thi công lắp đặt) trong Gantt: tác vụ TC nào đang xổ các Block con.
   const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
@@ -7869,16 +7884,16 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
   const pct = (x: number) => `${(x * 100).toFixed(4)}%`;
   // Cột trái (đóng băng 2 cột đầu Mã/Mô tả để giữ định danh khi cuộn ngang).
   const LC = [
-    { w: 56, label: "Ngày update", al: "center" as const, sticky: true },
-    { w: 88, label: "Mã", al: "left" as const, sticky: true },
-    { w: 264, label: "Tên dự án / Hạng mục", al: "left" as const, sticky: true },
+    { w: 56, label: "Ngày update", al: "center" as const, sticky: true, khoa: "updateDate" as KhoaGantt },
+    { w: 88, label: "Mã", al: "left" as const, sticky: true, khoa: "maCT" as KhoaGantt },
+    { w: 264, label: "Tên dự án / Hạng mục", al: "left" as const, sticky: true, khoa: "name" as KhoaGantt },
     // NGÀY BÀN GIAO (mốc kết thúc CẤP DỰ ÁN) thay chỗ "Người phụ trách": ở chế độ lọc hạng mục, cột
     // "Ngày kết thúc" chỉ nói hạn của hạng mục nên nhìn cả bảng vẫn không biết dự án bàn giao khi nào.
-    { w: 92, label: "Ngày bàn giao", al: "center" as const, sticky: false },
-    { w: 68, label: "Bắt đầu", al: "center" as const, sticky: false },
-    { w: 68, label: "Ngày kết thúc", al: "center" as const, sticky: false },
-    { w: 62, label: "% Thực tế", al: "right" as const, sticky: false },
-    { w: 50, label: "Quá hạn", al: "right" as const, sticky: false },
+    { w: 92, label: "Ngày bàn giao", al: "center" as const, sticky: false, khoa: "projectDeadline" as KhoaGantt },
+    { w: 68, label: "Bắt đầu", al: "center" as const, sticky: false, khoa: "start" as KhoaGantt },
+    { w: 68, label: "Ngày kết thúc", al: "center" as const, sticky: false, khoa: "finish" as KhoaGantt },
+    { w: 62, label: "% Thực tế", al: "right" as const, sticky: false, khoa: "actualPct" as KhoaGantt },
+    { w: 50, label: "Quá hạn", al: "right" as const, sticky: false, khoa: "overdue" as KhoaGantt },
   ];
   let acc = 0; const off = LC.map(c => { const o = acc; acc += c.w; return o; });
   // Bề rộng TỐI THIỂU của bảng = cột trái + số-cột-tuần × WEEK_PX. width:100% +
@@ -7995,12 +8010,25 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
         </colgroup>
         <thead>
           <tr>
-            {LC.map((c, i) => (
+            {LC.map((c, i) => {
+              // BẤM TIÊU ĐỀ = SẮP XẾP. Mũi tên chỉ chiều; số nhỏ = thứ tự khoá khi chọn nhiều cột.
+              const vt = sortGantt.findIndex((x) => x.key === c.khoa);
+              const spec = vt >= 0 ? sortGantt[vt] : null;
+              return (
               <th key={i} className={`${hCls} ${alCls(c.al)}`}
                   style={{ position: "sticky", top: 0, left: c.sticky ? off[i] : undefined, height: 56, zIndex: c.sticky ? 32 : 22, background: navy }}>
-                {c.label}
+                {onSortGantt ? (
+                  <button type="button" onClick={() => onSortGantt(c.khoa)}
+                    title={`Sắp xếp theo ${c.label}${spec ? " — bấm nữa để đổi chiều / bỏ" : ""}`}
+                    className={`inline-flex w-full items-center gap-0.5 ${c.al === "right" ? "justify-end" : c.al === "center" ? "justify-center" : "justify-start"} ${spec ? "text-white" : "text-white/85 hover:text-white"}`}>
+                    <span>{c.label}</span>
+                    <span className={`shrink-0 text-[9px] leading-none ${spec ? "opacity-100" : "opacity-45"}`}>{spec ? (spec.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                    {sortGantt.length > 1 && vt >= 0 && <span className="shrink-0 text-[8px] leading-none opacity-80">{vt + 1}</span>}
+                  </button>
+                ) : c.label}
               </th>
-            ))}
+              );
+            })}
             {/* Header timeline 3 TẦNG như PMP: NĂM · TÊN THÁNG · SỐ NGÀY (Thứ 2 trong tháng).
                 Mỗi ô rộng ĐÚNG theo số ngày (flex ∝ days). Nhãn ngày nằm TRONG ô tháng nên
                 không tràn sang tháng kế. Quý hiện tại: nền sáng hơn. */}
