@@ -66,6 +66,8 @@ import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { chiaTinMoiCu } from "@/lib/tin-moi-cu";
 import { NHOM_CMT, NHAN_NHOM, MAU_CHAM, demTheoNhom, lotLoc, type NhomCmt } from "@/lib/nhom-cmt";
 import { sapXepGantt, bamCot, type ThuTuGantt, type KhoaGantt } from "@/lib/sap-xep-gantt";
+import { TroLy } from "@/lib/tro-ly/tro-ly";
+import type { DuAnTom, Lenh, ManHinh, NguonHoi } from "@/lib/tro-ly/kieu";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -542,6 +544,14 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.122.0", date: "29/09/2026", items: [
+    "THÊM TRỢ LÝ ePMP — nút “Trợ lý” góc dưới bên phải, hoặc bấm Ctrl+K. Hỏi được về số liệu dự án (tổng quan, dự án nào trễ, bàn giao tháng nào, tra một dự án theo mã CT hay tên), về master plan (ai cần trình BOD, hạn bao giờ, quá hạn mấy tuần), và về cách dùng app (cú pháp ghi vướng mắc, bộ lọc, sắp xếp, xuất file, phân cấp).",
+    "Trợ lý BIẾT anh/chị đang đứng ở đâu: đang ở màn nào, đang lọc gì, đang mở dự án nào. Đang mở một dự án mà hỏi trống không “sao chậm vậy” thì nó hiểu là hỏi dự án đó. Đang lọc thì nó tính trên phần đang lọc và nói rõ, đổi sang “tất cả” được ngay ở đầu khung.",
+    "Trả lời xong là ĐI TỚI ĐƯỢC: có nút lọc bảng theo đúng nhóm vừa nói, bấm tên dự án là mở đúng dòng đó. Mỗi câu trả lời có số đều ghi số lấy từ đâu để đối chiếu lại.",
+    "Trợ lý KHÔNG đoán bừa: hỏi ngoài tầm thì nói thẳng là chưa trả lời được. Và nó đọc đúng con số app đang bày chứ không tự tính lại theo luật riêng.",
+    "Chỉ tài khoản admin, OCC và BOD thấy trợ lý.",
+    "Hộp thoại vướng mắc: câu lấy từ file nguồn nay ghi rõ “từ file PMP” thay vì dấu “?”, và thôi bày ba nút Sửa / Ẩn / Xoá cho câu đó — bấm vào cũng không đổi được gì vì nó nằm trong file nguồn.",
+  ] },
   { v: "3.121.0", date: "29/09/2026", items: [
     "BẢNG “TỔNG THỂ TIẾN ĐỘ” NAY SẮP XẾP ĐƯỢC THEO CỘT. Bấm tiêu đề bất kỳ trong 8 cột bên trái (Ngày update · Mã · Tên dự án · Ngày bàn giao · Bắt đầu · Ngày kết thúc · % Thực tế · Quá hạn): lần đầu giảm dần, bấm nữa tăng dần, bấm lần ba trả về mặc định. Trước đây bảng sắp cứng theo Ngày kết thúc, không ai đổi được.",
     "Chọn nhiều cột được: cột vừa bấm thành khoá chính, cột cũ tụt xuống làm khoá phụ, tối đa 3 cột. Số nhỏ cạnh mũi tên cho biết thứ tự khoá.",
@@ -4160,6 +4170,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
    *  Hai bảng nhìn cùng tập dự án nhưng dùng để làm hai việc khác nhau; bấm sắp xếp ở bảng này
    *  mà bảng kia nhảy theo là bất ngờ không cần thiết. Rỗng = thứ tự mặc định (Ngày kết thúc). */
   const [sortGantt, setSortGantt] = useState<ThuTuGantt[]>([]);
+  /** Bảng báo lên: đang ở màn nào, đang mở hộp thoại của dự án nào. Trợ lý cần biết để trả lời
+   *  đúng chỗ người dùng đang đứng, khỏi bắt họ giải thích lại. */
+  const [ncBang, setNcBang] = useState<{ man: ManHinh; duAnDangMo: { maCT: string; ten: string } | null }>({ man: "danh-sach", duAnDangMo: null });
   const ganttRows = useMemo<GanttRow[]>(() => {
     // CHẾ ĐỘ LỌC HẠNG MỤC (giống bảng "Việc cần xử lý"): bảng PHẲNG — mỗi hạng mục 1 dòng, mô tả
     // = TÊN DỰ ÁN, Mã = viết tắt hạng mục, bar = timeline hạng mục (+ đổ done theo % thực tế).
@@ -4770,6 +4783,104 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     return demTheoNhom(ds, roleMap);
   }, [sortedAlerts, edits, roleMap, data.projects, pkItem, pkProj]);
 
+  /* ── TRỢ LÝ ePMP ──
+     Gói BẢN TÓM dữ liệu app ĐANG BÀY rồi đưa xuống. Trợ lý không tự đọc file nguồn hay kho KV,
+     nên sửa luật lọc / luật cảnh báo ở đây là trợ lý đi theo, không có chuyện hai nơi hai số. */
+  const nhomCanhBao = useMemo(() => {
+    const m = new Map<string, { tre: number; cat: number; tap: number; tong: number; vung: string }>();
+    for (const it of enriched) {
+      const k = pkItem(it);
+      let o = m.get(k);
+      if (!o) { o = { tre: 0, cat: 0, tap: 0, tong: 0, vung: "" }; m.set(k, o); }
+      o.tong++;
+      if (!o.vung && it.region) o.vung = it.region;
+      if (it._alert === "late") o.tre++;
+      else if (it._alert === "trim") o.cat++;
+      else if (it._alert === "focus") o.tap++;
+    }
+    return m;
+  }, [enriched, pkItem]);
+  const khoaDangHien = useMemo(() => new Set(tableItems.map((i) => pkItem(i))), [tableItems, pkItem]);
+  const layNguonTroLy = useCallback((): NguonHoi => {
+    /* VŨ TRỤ ĐÚNG BẰNG VŨ TRỤ CỦA THẺ SỐ ĐẦU TRANG: dự án có ít nhất một hạng mục đang Show.
+       Lấy cả data.projects thì trợ lý báo 87 trong khi đầu trang ghi 69 — hai con số cho cùng một
+       câu hỏi là mất tin ngay. Cùng luật với activeProjectCount. */
+    const duAn: DuAnTom[] = data.projects
+      .filter((p) => (p.allItems ?? p.items).some((i) => i.shown !== false))
+      .map((p) => {
+      const k = pkProj(p);
+      const cb = nhomCanhBao.get(k) ?? { tre: 0, cat: 0, tap: 0, tong: 0, vung: "" };
+      const tenChuan = normProjName(p.name);
+      const note = mpInfo.get(k) || "";
+      const ped = edits[k];
+      return {
+        khoa: k,
+        maCT: p.maCT || p.code || "",
+        ten: p.name,
+        pm: p.pm || "",
+        vung: cb.vung,
+        cdt: p.cdt || "",
+        batDau: p.start ?? null,
+        banGiao: p.deadline ?? null,
+        ngayUpdate: p.updateDate ?? null,
+        pct: null,   // ProjectRow khong giu % cap du an — tha de trong con hon tu tinh mot con so khong ai doi chieu duoc
+        soHangMuc: cb.tong,
+        tre: cb.tre, canCat: cb.cat, canTapTrung: cb.tap,
+        vuongMac: visibleText([...tinNguon(k, p.updateDate ?? null), ...(ped?.noteMsgs ?? [])]),
+        giaiPhap: visibleText(ped?.actionMsgs),
+        canTrinhMp: !!note,
+        hanMp: mpDeadlineByName.get(tenChuan) ?? null,
+        soTuanTreMp: mpWeeksByName.get(tenChuan) ?? 0,
+        daBanGiao: !!p.delivered,
+        coBaoCao: !!sheetViews[stableProjKey(p.maCT || p.code || "", p.name)]?.fileId,
+        dangHien: khoaDangHien.has(k),
+      };
+    });
+    const boLoc: string[] = [];
+    if (filters.query.trim()) boLoc.push(`tìm: ${filters.query.trim()}`);
+    if (filters.pms.length) boLoc.push(`PM: ${filters.pms.join(", ")}`);
+    if (filters.regions.length) boLoc.push(`Vùng: ${filters.regions.join(", ")}`);
+    if (filters.cdts.length) boLoc.push(`Chủ đầu tư: ${filters.cdts.join(", ")}`);
+    if (filters.stages.length) boLoc.push(`Hạng mục: ${filters.stages.length}`);
+    if (filters.alerts.length) boLoc.push(`Nhóm cảnh báo: ${filters.alerts.length}`);
+    if (filters.deadlineMonths.length) boLoc.push(`Mốc bàn giao: ${filters.deadlineMonths.length}`);
+    if (filters.mpOnly) boLoc.push("Cần cập nhật MP");
+    return {
+      homNay: today.slice(0, 10),
+      duAn,
+      kpi: { hienHanh: activeProjectCount, tre: alerts.filter((i) => i._alert === "late").length,
+        canCat: alerts.filter((i) => i._alert === "trim").length, canTapTrung: alerts.filter((i) => i._alert === "focus").length,
+        banGiaoThangNay: dueMonthProjectKeys.size, top20: topProjectKeys.size },
+      phienBan: APP_VERSION,
+      banMoi: CHANGELOG.slice(0, 3).map((b) => ({ v: b.v, date: b.date, items: [...b.items] })),
+      vaiTro: me.isAdmin ? "admin" : roleOf(roleMap, me.email ?? "") === "BOD" ? "BOD" : roleOf(roleMap, me.email ?? "") === "PMO" ? "OCC" : null,
+      nguCanh: { man: ncBang.man, boLoc, dongDangHien: khoaDangHien.size, duAnDangMo: ncBang.duAnDangMo, pham: "dang-loc" },
+    };
+  }, [data.projects, activeProjectCount, nhomCanhBao, khoaDangHien, mpInfo, edits, tinNguon, mpDeadlineByName, mpWeeksByName, sheetViews, filters, today, alerts, dueMonthProjectKeys, topProjectKeys, me, roleMap, ncBang, pkProj]);
+
+  /** Thi hành nút trong câu trả lời. CHỈ đưa người dùng tới đúng chỗ — không có lệnh nào sửa dữ liệu. */
+  const chayLenhTroLy = useCallback((l: Lenh) => {
+    switch (l.kieu) {
+      case "loc-tre": setFilters((f) => ({ ...f, alerts: ["late"] })); break;
+      case "loc-mp": setFilters((f) => ({ ...f, mpOnly: true })); break;
+      case "loc-thang": setFilters((f) => ({ ...f, deadlineMonths: [l.thang] })); break;
+      case "loc-pm": setFilters((f) => ({ ...f, pms: [pmFirstOf(l.pm)] })); break;
+      case "bo-loc": setFilters(EMPTY_FILTERS); break;
+      case "mo-du-an": {
+        const d = data.projects.find((p) => pkProj(p) === l.khoa);
+        if (d) setFilters((f) => ({ ...EMPTY_FILTERS, query: d.maCT || d.code || d.name }));
+        break;
+      }
+      case "mo-man": break;   // chua noi: hop thoai phien ban nam trong Header, khong voi toi tu day
+      case "hoi": break;
+    }
+    track("troly_lenh", l.kieu);
+  }, [data.projects, pkProj]);
+
+  /** CHỈ admin / OCC / BOD thấy trợ lý. Đang xem như người thường thì cũng giấu. */
+  const vaiHienTai = roleOf(roleMap, me.email ?? "");
+  const duocDungTroLy = !xemNhuUser && (me.isAdmin || vaiHienTai === "PMO" || vaiHienTai === "BOD");
+
   return (
     <RolesCtx.Provider value={roleMap}>
     <LocCmtCtx.Provider value={locCmt.size ? locCmt : null}>
@@ -4890,6 +5001,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         onToggleDone={doiShowDone}
         showHidden={showHidden}
         onToggleShowHidden={() => setShowHidden(v => !v)}
+        onNguCanh={setNcBang}
         sortGantt={sortGantt}
         onSortGantt={(k) => setSortGantt((c) => bamCot(c, k))}
         locCmt={locCmt}
@@ -4990,6 +5102,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
       {/* Xuất PDF = chụp đúng giao diện (pdf-export.ts) — không dùng hộp thoại in. */}
     </div>
+    {duocDungTroLy && <TroLy layNguon={layNguonTroLy} chayLenh={chayLenhTroLy} />}
     </LocCmtCtx.Provider>
     </RolesCtx.Provider>
   );
@@ -6149,9 +6262,12 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
   const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
   // TÁC GIẢ / ADMIN / PMO đều SỬA + ẨN + XOÁ được comment người khác (PMO ngang admin ở 3 thao tác này).
-  const canEdit = (m: ChatMsg) => isAdmin || isPmo || (!!myEmail && m.author === myEmail);
+  /* Tin lấy từ FILE NGUỒN KHÔNG nằm trong kho của app, nên sửa / ẩn / xoá nó đều vô nghĩa —
+     bấm cũng không có gì đổi. Ô trên bảng đã chặn từ trước; hộp thoại này thì chưa, nên nó vẫn
+     bày ba nút chết. Chặn luôn cho khỏi mời người ta bấm vào chỗ không chạy. */
+  const canEdit = (m: ChatMsg) => m.id !== MSG_NGUON && (isAdmin || isPmo || (!!myEmail && m.author === myEmail));
   const canHide = canEdit;
-  const canDelete = isAdmin || isPmo;
+  const canDelete = (m: ChatMsg) => m.id !== MSG_NGUON && (isAdmin || isPmo);
   // Gửi tin (F1/F3): await server; CHỈ xoá nháp khi gửi THÀNH CÔNG (lỗi → giữ nguyên đoạn đã gõ + báo).
   const send = async () => {
     const t = draft.trim();
@@ -6169,14 +6285,18 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
           : msgs.map((m) => (
             <div key={m.id} className={`rounded-lg border px-3 py-2 ${m.hidden ? "border-dashed border-slate-300 bg-slate-50" : "border-amber-200 bg-amber-50"}`}>
               <div className="mb-1 flex items-center gap-2 text-[10px] text-slate-500">
-                {m.author !== "(cũ)" && <RoleBadge email={m.author} />}
-                <span className="font-semibold text-slate-800">{m.author === "(cũ)" ? "(cũ)" : (m.author || "?").split("@")[0]}</span>
+                {m.author !== "(cũ)" && m.id !== MSG_NGUON && <RoleBadge email={m.author} />}
+                {/* Tin của FILE NGUỒN không có người gõ (author rỗng) nên chỗ này từng hiện dấu "?",
+                    đọc ra như không ai biết ai viết. Nói thẳng nó tới từ đâu. */}
+                <span className="font-semibold text-slate-800">
+                  {m.id === MSG_NGUON ? "từ file PMP" : m.author === "(cũ)" ? "(cũ)" : (m.author || "?").split("@")[0]}
+                </span>
                 <span className="tabular-nums">{fmtMsgTime(m.at)}</span>
                 {m.hidden && <span className="rounded bg-slate-200 px-1 text-[9px] font-bold text-slate-600">ĐÃ ẨN</span>}
                 <span className="ml-auto flex items-center gap-2">
                   {canEdit(m) && editId !== m.id && <button type="button" onClick={() => { setEditId(m.id); setEditDraft(m.text); }} className="font-medium text-teal-700 hover:underline">Sửa</button>}
                   {canHide(m) && <button type="button" onClick={() => void onOp(m.hidden ? "unhide" : "hide", { msgId: m.id })} className="font-medium text-teal-700 hover:underline">{m.hidden ? "Mở ẩn" : "Ẩn"}</button>}
-                  {canDelete && <button type="button" onClick={() => void onOp("delete", { msgId: m.id })} className="font-medium text-red-600 hover:underline">Xoá</button>}
+                  {canDelete(m) && <button type="button" onClick={() => void onOp("delete", { msgId: m.id })} className="font-medium text-red-600 hover:underline">Xoá</button>}
                 </span>
               </div>
               {editId === m.id ? (
@@ -6371,7 +6491,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, sortGantt, onSortGantt, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, onNguCanh, sortGantt, onSortGantt, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -6420,6 +6540,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** DÒNG ẨN THỦ CÔNG (admin + PMO): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang
    *  ẩn; onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin/PMO thấy nút; server vẫn chốt quyền. */
   showHidden: boolean;
+  /** Báo lên cho trợ lý biết bảng đang ở màn nào và đang mở dự án nào. */
+  onNguCanh?: (nc: { man: ManHinh; duAnDangMo: { maCT: string; ten: string } | null }) => void;
   /** Sắp xếp RIÊNG của bảng "Tổng thể tiến độ". Rỗng = thứ tự mặc định. */
   sortGantt: ThuTuGantt[];
   onSortGantt: (k: KhoaGantt) => void;
@@ -6603,6 +6725,19 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** `field` = đang sửa cột nào: "note" (Vướng mắc) hay "action" (Hành động / Cần xử lý).
    *  Hai cột dùng CHUNG dialog này, chỉ khác trường lưu xuống KV. */
   const [editView, setEditView] = useState<{ title: string; key: string; field: "note" | "action"; reply?: { toId: string; text: string } } | null>(null);
+  /* BÁO NGỮ CẢNH LÊN CHO TRỢ LÝ: đang ở màn nào, đang mở hộp thoại của dự án nào.
+     CHỈ báo khi GIÁ TRỊ đổi. Báo mỗi lượt vẽ thì Dashboard đặt state mới → vẽ lại → báo tiếp,
+     thành vòng lặp không dừng. So bằng chuỗi là đủ vì đây là một object bé. */
+  const ncCu = useRef("");
+  useEffect(() => {
+    const g = editView ? groups.find((x) => x.key === editView.key) : null;
+    const nc = { man: (viewMode === "gantt" ? "tong-the" : "danh-sach") as ManHinh,
+      duAnDangMo: g ? { maCT: g.maCT, ten: g.name } : null };
+    const chuoi = JSON.stringify(nc);
+    if (chuoi === ncCu.current) return;
+    ncCu.current = chuoi;
+    onNguCanh?.(nc);
+  }, [viewMode, editView, groups, onNguCanh]);
   // Chỉ mục message theo KHOÁ (đầu việc + Block con + cấp dự án) — box chat đọc LIVE ở đây nên tự
   // cập nhật sau mỗi thao tác (thêm/ẩn/xoá) mà không cần đóng-mở lại dialog.
   const msgIndex = useMemo(() => {
