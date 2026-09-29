@@ -541,6 +541,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.120.1", date: "29/09/2026", items: [
+    "SỬA THANH LỌC BỊ TRÀN XUỐNG HÀNG DƯỚI trên màn rộng. Thêm ô lọc “Bình luận” thành 9 thứ phải xếp trong khi lưới chỉ khai 8 chỗ, nên ô cuối rơi xuống hàng. Nay số chỗ khai theo bề rộng màn: màn rộng một hàng, màn vừa hai hàng đều nhau.",
+    "SỬA SỐ TRÊN Ô LỌC “BÌNH LUẬN”: số nay đếm đúng phần bảng đang bày và đi theo các bộ lọc khác. Trước đây đếm cả kho, gồm ghi chú của dòng đã ẩn, dòng bị lọc ra và dòng không còn trong file nguồn — con số to hơn mọi thứ mở ra xem được (119 bị hiện thành 377), lọc PM hay Vùng thì số vẫn đứng yên.",
+  ] },
   { v: "3.120.0", date: "29/09/2026", items: [
     "BỘ LỌC BÌNH LUẬN THEO NHÓM ĐỐI TƯỢNG — BOD / OCC / PM / Khác. Ô lọc nằm cạnh các ô lọc sẵn có, mỗi nhóm kèm số bình luận đang có và chấm màu đúng màu badge của nhóm đó. Nhóm chưa có bình luận nào thì để mờ, bấm không được, khỏi bấm vào rồi bảng trắng trơn.",
     "Chọn nhóm nào thì BẢNG CHỈ CÒN những dự án / hạng mục có bình luận của nhóm đó, và trong ô chỉ hiện bình luận của nhóm đó. Bỏ chọn là về lại đầy đủ.",
@@ -4716,17 +4720,34 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     }
     return ra;
   }, [locCmt, dueMonthGroups, khoaCoCmt]);
-  /** SỐ BÌNH LUẬN theo nhóm, để nút lọc hiện số. Đếm cả câu của file nguồn (tính là OCC) vì đó
-   *  đúng là chữ bộ phận OCC viết, và bộ lọc cũng đang xét nó như vậy. */
+  /** SỐ BÌNH LUẬN theo nhóm, hiện trên nút lọc.
+   *
+   *  ĐẾM TRÊN ĐÚNG TẬP BẢNG ĐANG BÀY, không đếm cả kho. Kho `edits` còn giữ ghi chú của dòng đã
+   *  ẩn, dòng bị lọc ra, và dòng không còn trong file nguồn nữa — đếm cả kho thì con số to hơn
+   *  mọi thứ người dùng chạm tới được, họ đi tìm không ra. (Cùng nguyên tắc với điểm trung bình
+   *  PM ở báo cáo tuân thủ: tính TRÊN PHẦN ĐÃ LỌC.)
+   *
+   *  NHƯNG KHÔNG ĐẾM TRÊN TẬP ĐÃ LỌC BỞI CHÍNH NÓ. `sortedAlerts` đã qua mọi bộ lọc KHÁC nhưng
+   *  CHƯA qua bộ lọc bình luận (chỗ đó là `alertsLoc`, tính sau). Đổi sang `alertsLoc` là chọn
+   *  BOD xong ba nhóm kia tụt về 0, không ai bấm lại được — bộ lọc tự khoá mình.
+   *
+   *  Câu của file nguồn trên dòng dự án tính là một bình luận của OCC, đúng như badge trên bảng. */
   const demCmt = useMemo(() => {
     const ds: { id: string; author?: string | null }[] = [];
-    for (const p of data.projects) if ((p.projectNote ?? "").trim()) ds.push({ id: MSG_NGUON, author: "" });
-    for (const e of Object.values(edits)) {
+    const duAn = new Set<string>();
+    const gom = (k: string) => {
+      const e = edits[k];
       for (const m of e?.noteMsgs ?? []) if (!m.hidden) ds.push(m);
       for (const m of e?.actionMsgs ?? []) if (!m.hidden) ds.push(m);
+    };
+    for (const i of sortedAlerts) {
+      gom(i._key);
+      const pk = pkItem(i);
+      if (!duAn.has(pk)) { duAn.add(pk); gom(pk); }
     }
+    for (const p of data.projects) if ((p.projectNote ?? "").trim() && duAn.has(pkProj(p))) ds.push({ id: MSG_NGUON, author: "" });
     return demTheoNhom(ds, roleMap);
-  }, [data.projects, edits, roleMap]);
+  }, [sortedAlerts, edits, roleMap, data.projects, pkItem, pkProj]);
 
   return (
     <RolesCtx.Provider value={roleMap}>
@@ -7127,7 +7148,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
         </div>
       </div>
 
-      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[minmax(200px,1fr)_auto_auto_auto_auto_auto_auto_auto]">
+      <div className="mb-1.5 grid grid-cols-1 gap-1.5 print:hidden md:grid-cols-[minmax(160px,1fr)_auto_auto_auto_auto] xl:grid-cols-[minmax(200px,1fr)_auto_auto_auto_auto_auto_auto_auto_auto]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input value={filters.query} onChange={e => setFilters(f => ({ ...f, query: e.target.value }))}
