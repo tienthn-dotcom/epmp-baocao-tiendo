@@ -1,3 +1,4 @@
+import { noteCanTrinhBodBitrix } from "./mp-deadline";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import type { BlockArea, BlockChild, BlockHandover, CodeCount, DataQuality, DataQualityCheck, DoanGhiChu, ItemRow, ProjectRow, ReportData, StageKey } from "./types";
@@ -371,27 +372,18 @@ export function noteMentionsMpUpdate(note: string): boolean {
   return false;
 }
 
-/** Nhận diện RIÊNG cụm "trình BOD phê duyệt (Bitrix)" — DẤU HIỆU DUY NHẤT để đưa dự án vào
+/** Nhận diện cụm "trình BOD phê duyệt (Bitrix)" — DẤU HIỆU DUY NHẤT để đưa dự án vào
  *  bộ lọc "Cần cập nhật MP" (PMO chốt 31/07/2026: quét vướng mắc CẤP DỰ ÁN có cụm này).
  *
- *  CỐ TÌNH RẤT ĐẶC HIỆU (khác noteMentionsMpUpdate vốn rộng, bắt mọi "cập nhật MP"):
- *  BẮT BUỘC có cụm liền "trình BOD (phê) duyệt" VÀ từ "bitrix". Vì sao chặt vậy: nếu chỉ
- *  đòi bod+duyệt+bitrix rời rạc, hoặc dùng luật "cập nhật MP" chung, sẽ dính các dự án chỉ
- *  điền CỘT "Cần cập nhật MP" hay ghi chú khác (vd 43 ĐTM) → lọc phình ra sai. Cho phép
- *  biến thể: thiếu "phê" ("trình BOD duyệt (Bitrix)"), "(Bitrix)"/"trên Bitrix"/"qua Bitrix".
+ *  LUẬT NẰM Ở lib/mp-deadline.ts, KHÔNG nằm ở đây. Lý do: cùng một luật đó còn phải đọc ra
+ *  NGÀY HẠN. Để hai nơi hai luật thì có dự án vào được bộ lọc mà cột hạn hiện "–" (đã xảy ra
+ *  thật, xem V14). Sửa luật thì sửa một chỗ: lib/mp-deadline.ts.
  *
- *  HAI MẪU CÂU CHUẨN PMO ĐANG DÙNG (chốt 10/09/2026) — cả hai đều lọt luật này:
- *    PMO: Dự án mới cần PM lập master plan & trình BOD phê duyệt bitrix trước ......
- *    PMO: Tiến độ dời từ ... đến ....., cần PM trình BOD phê duyệt bitrix trước .......
- *  Ngày trong câu do lib/mp-deadline.ts đọc, KHÔNG đọc ở đây. */
+ *  Luật đó đòi bốn mảnh "trình" + "BOD" + "duyệt" + "bitrix" nằm TRONG CÙNG MỘT CÂU, và chặn
+ *  câu nói việc đã xong ("BOD đã phê duyệt bitrix"). Không đòi bốn chữ đứng liền theo thứ tự,
+ *  vì người thật viết "cần PM trình bitrix BOD duyệt ngày bàn giao mới GẤP". */
 export function noteSaysTrinhBodBitrix(note: string): boolean {
-  if (!note) return false;
-  const n = stripDiacritics(note).replace(/\s+/g, " ").trim().toLowerCase();
-  // DẤU HIỆU DUY NHẤT để gom vào "Cần cập nhật MP" = cú pháp "cần PM trình BOD (phê) duyệt (Bitrix)".
-  // BẮT BUỘC có cụm LIỀN "BOD (phê) duyệt" (không phải 4 chữ rời rạc — tránh bắt nhầm note "BOD đã duyệt",
-  // "duyệt rồi trình BOD sau"…) + từ "trình" + từ "bitrix". Vẫn nhận biến thể "trình DUYỆT BOD phê duyệt
-  // bitrix" (vì trong đó có cụm liền "BOD phê duyệt"). Note chỉ "dời tiến độ" (không bitrix) → không gom.
-  return /bod (phe )?duyet/.test(n) && /\btrinh\b/.test(n) && /bitrix/.test(n);
+  return noteCanTrinhBodBitrix(note);
 }
 
 /** Nhận diện dự án ĐÃ BÀN GIAO XONG từ ô "Vướng mắc / Cần xử lý" trên DÒNG DỰ ÁN CHA.

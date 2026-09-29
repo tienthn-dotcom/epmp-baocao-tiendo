@@ -539,6 +539,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.119.0", date: "29/09/2026", items: [
+    "KHOÁ CHẶT CÂU “CẦN PM TRÌNH BOD PHÊ DUYỆT (BITRIX)”. Trước đây app dò chữ “trước dd/mm” trên cả ô vướng mắc, nên khi câu trình BOD không ghi hạn mà một tin khác trong cùng ô có ngày thì app lấy nhầm ngày đó làm hạn. Ponte Apartment (CT26-032) là ca thật: hạn hiện 12/09 trong khi 12/09 là hạn hoàn thành TKSX ở tin khác, dự án bị trừ 30 điểm cho một ngày không ai hẹn. Nay ngày phải nằm TRONG CHÍNH CÂU nói trình BOD, và ngày của cụm “dời từ … đến …” không bao giờ được coi là hạn.",
+    "ĐỌC ĐƯỢC THÊM CÁC LỐI GHI HẠN KHÁC, không chỉ mỗi chữ “trước”: hạn, hạn chót, chậm nhất, deadline, mốc, trong ngày, hoặc ngày ghi ngay sau chữ bitrix.",
+    "NHẬN ĐÚNG CÂU DÙ CHỮ ĐẢO THỨ TỰ: “cần PM trình bitrix BOD duyệt ngày bàn giao mới” nay được tính. Ngược lại, câu nói việc đã xong (“BOD đã phê duyệt bitrix”) hay “không cần trình BOD” thì không bị tính là việc phải làm.",
+    "Việc “dự án có cần trình BOD không” và “hạn là ngày nào” nay dùng CHUNG một luật, nên không còn cảnh dự án vào được bộ lọc mà cột hạn để trống.",
+  ] },
   { v: "3.118.0", date: "28/09/2026", items: [
     "CỘT “CẦN PM TRÌNH MASTER PLAN BOD PHÊ DUYỆT” NAY CHẠY THẲNG TỪ Ô VƯỚNG MẮC. Trước đây dự án phải được cắm cờ thì mới hiện hạn; dự án ghi rõ “trước 22/09” mà chưa cắm cờ thì để trống và không bị trừ điểm. Nay có ghi hạn là hiện hạn, số tuần tính từ ngày đó tới hôm nay.",
     "SỬA MỘT CHỖ LÀM MẤT HẠN: khi câu “trình BOD … bitrix trước dd/mm” nằm ở FILE NGUỒN mà dự án lại có ghi chú gõ trong app, app đè mất câu của file nguồn nên cột hạn hiện “–”. Nay đọc đúng câu có nhắc trình BOD, dù nó ở file nguồn hay trong app. Kết quả: 13 → 23 dự án hiện hạn, 4 dự án bị trừ điểm.",
