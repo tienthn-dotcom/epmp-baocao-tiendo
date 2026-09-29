@@ -28,6 +28,7 @@ import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf, type UserRole } from "@/lib/roles";
+import { taoHangDoi } from "@/lib/hang-doi";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { track } from "@/lib/track";
@@ -242,20 +243,11 @@ const pdfArgsOf = (p: InstallProj): { gid?: string; range?: string } => {
 
 /** TỐI ĐA 2 LƯỢT TẢI PDF CÙNG LÚC.
  *  Màn này bày 21 thẻ. Thả cả 21 lượt ra một lúc thì Worker phải giữ 21 file PDF trong bộ nhớ
- *  cùng lúc (byte + chuỗi nhị phân + chuỗi base64 + JSON) và chạm trần -> Cloudflare trả lỗi
- *  1102, thẻ nào đang dở thì không nhận được gì. Đo trên bản chính thức 29/09/2026: lỗi 1102 nổ
- *  đúng hai lần, cả hai đều ngay sau một lượt mở màn MTLĐ.
- *  Hai lượt một lúc vẫn đủ nhanh vì thẻ đã xếp hàng theo thứ tự người ta cuộn tới. */
-const MAX_TAI = 2;
-let dangTai = 0;
-const doiTai: (() => void)[] = [];
-async function xepHangTai<T>(viec: () => Promise<T>): Promise<T> {
-  if (dangTai >= MAX_TAI) await new Promise<void>((ok) => doiTai.push(ok));
-  dangTai++;
-  try { return await viec(); }
-  finally { dangTai--; doiTai.shift()?.(); }
-}
-
+ *  cùng lúc (byte + chuỗi nhị phân + chuỗi base64 + JSON) và chạm trần → Cloudflare trả lỗi 1102,
+ *  thẻ nào đang dở thì không nhận được gì. Đo trên bản chính thức 29/09/2026: lỗi 1102 nổ đúng
+ *  hai lần, cả hai đều ngay sau một lượt mở màn MTLĐ.
+ *  Luật cổng nằm ở lib/hang-doi.ts (có phép kiểm gác, kể cả ca xen đúng khe). */
+const xepHangTai = taoHangDoi(2);
 /** 1 ô = 1 dự án. Render Y HỆT popup "Thi công lắp đặt": ma trận LIVE + FORM (kể cả ZOOM) đã lưu —
  *  hiện ĐÚNG cỡ zoom admin đã lưu (không tự thu nhỏ); ô cuộn nếu lớn hơn. */
 /** Số thẻ đầu LUÔN tải, không chờ tín hiệu cuộn. Xem ghi chú ở `daNhinThay`. */
@@ -519,7 +511,9 @@ function MtldApp() {
           </div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 16px 20px" }}>
-            {sections.map(([rg, items]) => (
+            {/* CHỈ SỐ CHẠY XUYÊN CÁC NHÓM. Đếm lại từ 0 ở mỗi nhóm thì mỗi nhóm tự tải 4 thẻ đầu,
+                N nhóm là 4×N thẻ bắn ngay khi mở — gần như cả màn, tức đúng cảnh vừa sửa. */}
+            {sections.map(([rg, items], si) => (
               <section key={rg}>
                 {/* STICKY, nền ĐẶC trải hết ngang (margin âm bù padding 16px) → dính mà KHÔNG lòi/hở nội dung. */}
                 <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 10, margin: "0 -16px", padding: "12px 16px 8px", background: MTLD_T.bg }}>
@@ -527,7 +521,7 @@ function MtldApp() {
                   <span style={{ fontSize: 11, color: MTLD_T.faint, marginLeft: "auto" }}>{items.length} dự án</span>
                 </div>
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${narrow ? Math.min(tile, 260) : tile}px, 1fr))`, alignContent: "start", alignItems: "start", paddingBottom: 6 }}>
-                  {items.map((p, i) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} idx={i} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
+                  {items.map((p, i) => <PopupCell key={projId(p)} proj={p} bump={bump} h={cellH} idx={sections.slice(0, si).reduce((a, [, x]) => a + x.length, 0) + i} onOpen={() => { setDetail(p); track("mtld_open", p.name); }} />)}
                 </div>
               </section>
             ))}

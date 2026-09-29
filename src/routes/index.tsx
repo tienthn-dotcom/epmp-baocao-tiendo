@@ -541,6 +541,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.120.3", date: "29/09/2026", items: [
+    "Siết tiếp chỗ vá lỗi 1102 hôm nay: ở chế độ xem MTLĐ theo vùng, mỗi vùng đang tự tải sẵn vài thẻ nên gộp lại là gần cả màn cùng tải — nay đếm chung cả màn. Và cổng “tối đa hai thẻ một lúc” nay chặn chắc, kèm hạn giờ để một thẻ treo không làm cả màn kẹt.",
+  ] },
   { v: "3.120.2", date: "29/09/2026", items: [
     "SỬA LỖI LÀM APP BÁO “Worker exceeded resource limits” (mã 1102). Màn MTLĐ bày 21 thẻ và gọi tải chart cả 21 cùng một lúc; máy chủ phải giữ ngần ấy file trong bộ nhớ nên chạm trần, app trả lỗi cho người đang dùng. Nay chỉ tải thẻ đang nhìn thấy, và tối đa hai thẻ một lúc.",
     "Thẻ chart nào lỗi thì hiện “Chưa tải được chart” kèm nút Thử lại, thay vì in nguyên câu lỗi kỹ thuật của thư viện ra màn hình.",
