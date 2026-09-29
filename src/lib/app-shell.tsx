@@ -250,7 +250,8 @@ const pdfArgsOf = (p: InstallProj): { gid?: string; range?: string } => {
 const xepHangTai = taoHangDoi(2);
 /** 1 ô = 1 dự án. Render Y HỆT popup "Thi công lắp đặt": ma trận LIVE + FORM (kể cả ZOOM) đã lưu —
  *  hiện ĐÚNG cỡ zoom admin đã lưu (không tự thu nhỏ); ô cuộn nếu lớn hơn. */
-/** Số thẻ đầu LUÔN tải, không chờ tín hiệu cuộn. Xem ghi chú ở `daNhinThay`. */
+/** Số thẻ đầu TẢI TRƯỚC, không chờ tín hiệu cuộn. Đây là tiện, không phải chống hỏng — xem
+ *  ghi chú ở `daNhinThay` để khỏi tưởng nó đang gác một cảnh hỏng nào đó. */
 const THE_DAU_LUON_TAI = 4;
 function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: number; h: number; idx: number; onOpen: () => void }) {
   // HYBRID: popup cấu hình "có chart" → hiện bản PDF Google render (đủ chart + màu); còn lại → ma trận + form.
@@ -258,8 +259,14 @@ function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: nu
  *  cả Google (nhiều thẻ dùng CHUNG một file). Đã nhìn thấy một lần thì giữ luôn, không tắt lại,
  *  kẻo cuộn qua cuộn lại là gọi lại từ đầu. */
   const oRef = useRef<HTMLDivElement>(null);
-  /* Bốn thẻ đầu bật sẵn: nếu trình duyệt không bao giờ báo 'đã cuộn tới' (khung cuộn lạ, tab đang
-     ẩn, trang không được vẽ) thì màn hình sẽ trống trơn mãi. Thà tải thừa vài thẻ còn hơn trắng. */
+  /* Bốn thẻ đầu bật sẵn — đây là TẢI TRƯỚC, KHÔNG phải hàng rào chống màn trắng.
+     Ghi rõ vì bản đầu của dòng này ghi sai: nó bảo "trình duyệt không báo 'đã cuộn tới' thì màn
+     hình trống trơn MÃI". Không đúng. Tab nằm nền thì trang không được vẽ nên chưa tải được thật,
+     nhưng người ta quay lại tab là trình duyệt vẽ lại, phép dò "đã cuộn tới" tỉnh theo và các thẻ
+     đang nhìn thấy tải bình thường. Cảnh "trống trơn mãi" chỉ xảy ra ở chỗ người đo (cửa sổ bị ẩn
+     suốt), không phải ở chỗ người dùng.
+     Cái bốn thẻ này mua được: quay lại tab là có sẵn bốn thẻ, khỏi chờ thêm một nhịp. Giá rẻ vì
+     cổng vẫn chặn ở 2 lượt một lúc. */
   const [daNhinThay, setDaNhinThay] = useState(idx < THE_DAU_LUON_TAI);
   useEffect(() => {
     if (!proj.chart || daNhinThay) return;

@@ -189,6 +189,15 @@ thật**, và lượt đó **ghi số cụ thể vào thông điệp commit** �
 - **Con số hiện ra**: bấm thử một bộ lọc khác rồi xem con số có đi theo không. Con số đếm trên cả
   kho thì luôn to hơn thứ người ta mở ra xem được, và không lần chạy nào của bộ kiểm thấy điều đó.
 
+**TRƯỚC KHI TIN MỘT SỐ ĐO GIAO DIỆN, KIỂM XEM TRANG CÓ ĐANG ĐƯỢC VẼ KHÔNG.** Cửa sổ bị thu nhỏ
+hay bị che thì trình duyệt **ngừng vẽ**: `document.visibilityState` thành `"hidden"`,
+`requestAnimationFrame` không chạy, `IntersectionObserver` không báo gì, ảnh chụp hết giờ. Các
+phép đo dựa trên ba thứ đó **im lặng trả số sai** — không báo lỗi, chỉ ra số đẹp mà vô nghĩa.
+Ngày 29/09/2026 chuyện này làm một box kết luận nhầm rằng "19/21 thẻ không bao giờ tải" là lỗi
+code, rồi viết một hàng rào chống một cảnh hỏng **không tồn tại**; ghi chú sai đó phải sửa lại
+sau khi đo ra sự thật. Đọc DOM thuần (đếm nút, đếm dòng, đọc chữ) và số đo bố cục thì không dính
+bẫy này. Ghi `visibilityState` kèm số đo, để người sau biết số đó đo trong điều kiện nào.
+
 Phép kiểm vẫn viết, nhưng phải biết **nó không phủ cái gì**: `jsdom` **không tính bố cục** (không
 dựng CSS grid, `offsetTop` luôn bằng 0), nên phép kiểm đếm hàng viết trên `jsdom` **luôn xanh** —
 đồ trang trí, tệ hơn là không có. Thứ kiểm được bằng phép kiểm là **giao kèo tĩnh**: số ô khai

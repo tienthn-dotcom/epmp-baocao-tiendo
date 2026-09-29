@@ -19,6 +19,11 @@
  * Đổi lại có lúc dôi ra quá trần trong chốc lát — thà vậy còn hơn khoá chết cả màn.
  *
  * Lượt nào NÉM LỖI vẫn phải nhả chỗ, nếu không hàng cạn dần rồi tắc hẳn.
+ *
+ * MỘT CHỖ BIẾT TRƯỚC, chưa sửa vì chưa cần: người đợi tỉnh dậy mà vẫn hết chỗ thì tự đẩy mình
+ * xuống CUỐI hàng, nên về lý thuyết có thể bị vượt mặt mãi. Với trần 2 và số việc hữu hạn (21 thẻ)
+ * thì hàng vẫn cạn, nên để nguyên. Ai nâng trần hoặc đem hàng này sang chỗ có việc chảy vào liên
+ * tục thì phải đổi sang xếp theo thứ tự đến trước.
  */
 
 export type HangDoi = {
