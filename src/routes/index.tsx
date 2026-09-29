@@ -64,6 +64,7 @@ import { timNoteLac } from "@/lib/note-lac";
 import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
 import { chiaTinMoiCu } from "@/lib/tin-moi-cu";
+import { NHOM_CMT, NHAN_NHOM, MAU_CHAM, demTheoNhom, lotLoc, type NhomCmt } from "@/lib/nhom-cmt";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
 import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
@@ -540,6 +541,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.120.0", date: "29/09/2026", items: [
+    "BỘ LỌC BÌNH LUẬN THEO NHÓM ĐỐI TƯỢNG — BOD / OCC / PM / Khác. Ô lọc nằm cạnh các ô lọc sẵn có, mỗi nhóm kèm số bình luận đang có và chấm màu đúng màu badge của nhóm đó. Nhóm chưa có bình luận nào thì để mờ, bấm không được, khỏi bấm vào rồi bảng trắng trơn.",
+    "Chọn nhóm nào thì BẢNG CHỈ CÒN những dự án / hạng mục có bình luận của nhóm đó, và trong ô chỉ hiện bình luận của nhóm đó. Bỏ chọn là về lại đầy đủ.",
+    "Câu vướng mắc lấy từ file nguồn tính là của nhóm OCC — đúng như badge đang ghi trên bảng.",
+    "Ô vướng mắc cấp dự án bỏ nút “+n tin cũ”: chỉ chiếu đúng một tin mới nhất. Muốn xem các tin trước thì bấm vào ô, hộp thoại vẫn có đủ.",
+  ] },
   { v: "3.119.0", date: "29/09/2026", items: [
     "Ô VƯỚNG MẮC CẤP DỰ ÁN NAY CHỈ CHIẾU MỘT TIN: tin mới nhất. Các tin cũ hơn gấp lại sau nút “+n tin cũ” ngay trong ô, bấm là hiện đủ, bấm lại là gấp. Trước đây mọi tin xếp chồng trong một ô nên gõ thêm câu mới là ô dài ra, khó đọc câu nào đang có hiệu lực.",
     "Tin cũ KHÔNG bị xoá và app cũng KHÔNG tự đóng cờ ẩn lên ghi chú của ai: mở ô ra vẫn thấy đủ, vẫn sửa / ẩn / xoá được như cũ. Tin mới nhất tính theo mốc thời gian, tin của file nguồn và tin gõ trong app so chung một thước. Ô nào có tin thiếu mốc thời gian thì chiếu hết, không đoán.",
@@ -3129,6 +3136,13 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   const hiddenMap: HiddenRows = useMemo(() => hiddenQuery.data ?? {}, [hiddenQuery.data]);
   const hiddenKeys = useMemo(() => new Set(Object.keys(hiddenMap)), [hiddenMap]);
   const [showHidden, setShowHidden] = useState(false);
+  /** Nhóm bình luận đang lọc. Rỗng = xem tất cả. Chỉ sống trong phiên nhìn, không ghi đâu cả. */
+  const [locCmt, setLocCmt] = useState<ReadonlySet<NhomCmt>>(new Set());
+  const bapLocCmt = useCallback((n: NhomCmt) => setLocCmt((cu) => {
+    const t = new Set(cu);
+    if (t.has(n)) t.delete(n); else t.add(n);
+    return t;
+  }), []);
 
   /* ── KHOÁ NOTE THEO RID (chống mất note khi STT bị đánh lại) ──
      itemKeyOf() ƯU TIÊN rid:<RID> (cột RID PMO tự điền, bền nhất). NHƯNG note CŨ đã lưu ở khoá cũ
@@ -4673,9 +4687,50 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // cho PMO xem (chỉ hiện khi có cảnh báo + là admin/PMO). Đếm số mục ≠ ok để gắn badge.
   const dataQualityBad = useMemo(() => (data.quality?.checks ?? []).filter((c) => c.level !== "ok"), [data.quality]);
   const canSeeSystem = !xemNhuUser && (me.isAdmin || roleOf(roleMap, me.email ?? "") === "PMO");
+  /** KHOÁ CÁC DÒNG có bình luận của nhóm đang lọc — gồm cả khoá dòng hạng mục lẫn khoá dòng
+   *  dự án. Dòng dự án tính cả câu của file nguồn (câu đó là chữ của OCC). */
+  const khoaCoCmt = useMemo(() => {
+    const ds = new Set<string>();
+    if (!locCmt.size) return ds;
+    for (const [k, e] of Object.entries(edits)) {
+      const ms = [...(e?.noteMsgs ?? []), ...(e?.actionMsgs ?? [])];
+      if (ms.some((m) => !m.hidden && lotLoc(m, roleMap, locCmt))) ds.add(k);
+    }
+    if (locCmt.has("OCC")) for (const p of data.projects) if ((p.projectNote ?? "").trim()) ds.add(pkProj(p));
+    return ds;
+  }, [locCmt, edits, roleMap, data.projects, pkProj]);
+  /** Bảng phẳng: giữ dòng nào CHÍNH NÓ có bình luận khớp, hoặc DỰ ÁN của nó có. */
+  const alertsLoc = useMemo(
+    () => (locCmt.size ? sortedAlerts.filter((i) => khoaCoCmt.has(i._key) || khoaCoCmt.has(pkItem(i))) : sortedAlerts),
+    [locCmt, sortedAlerts, khoaCoCmt, pkItem],
+  );
+  /** Bảng gộp: dự án nào chính nó có bình luận khớp thì giữ NGUYÊN các hạng mục (cái khớp nằm ở
+   *  dòng cha); còn lại chỉ giữ những hạng mục có bình luận khớp, hết hạng mục thì bỏ luôn dự án. */
+  const groupsLoc = useMemo(() => {
+    if (!locCmt.size) return dueMonthGroups;
+    const ra: typeof dueMonthGroups = [];
+    for (const g of dueMonthGroups) {
+      if (khoaCoCmt.has(g.key)) { ra.push(g); continue; }
+      const its = g.items.filter((i) => khoaCoCmt.has(i._key));
+      if (its.length) ra.push({ ...g, items: its });
+    }
+    return ra;
+  }, [locCmt, dueMonthGroups, khoaCoCmt]);
+  /** SỐ BÌNH LUẬN theo nhóm, để nút lọc hiện số. Đếm cả câu của file nguồn (tính là OCC) vì đó
+   *  đúng là chữ bộ phận OCC viết, và bộ lọc cũng đang xét nó như vậy. */
+  const demCmt = useMemo(() => {
+    const ds: { id: string; author?: string | null }[] = [];
+    for (const p of data.projects) if ((p.projectNote ?? "").trim()) ds.push({ id: MSG_NGUON, author: "" });
+    for (const e of Object.values(edits)) {
+      for (const m of e?.noteMsgs ?? []) if (!m.hidden) ds.push(m);
+      for (const m of e?.actionMsgs ?? []) if (!m.hidden) ds.push(m);
+    }
+    return demTheoNhom(ds, roleMap);
+  }, [data.projects, edits, roleMap]);
 
   return (
     <RolesCtx.Provider value={roleMap}>
+    <LocCmtCtx.Provider value={locCmt.size ? locCmt : null}>
     <div className="flex flex-col gap-2 print:min-h-0" style={{ minHeight: "calc(100vh - 130px)" }}>
 
       {/* (Đã BỎ banner "note bị trôi" khỏi màn hình chính — gây hoang mang. Việc rà/sửa note trôi vẫn nằm
@@ -4752,11 +4807,11 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         onPick={(sid) => setFilters(f => ({ ...f, stages: toggleIn(f.stages, sid as StageOrOther) }))}
       />
       <FlatTablePanel
-        items={sortedAlerts}
+        items={alertsLoc}
         mpMode={filters.mpOnly}
         mpProjectRows={mpProjectRows}
         groupMode={filters.stages.length === 0}
-        groups={dueMonthGroups}
+        groups={groupsLoc}
         totalAlertsCount={alerts.length}
         deadlineMonthOptions={deadlineMonthOptions}
         regionOptions={regionOptions}
@@ -4793,6 +4848,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         onToggleDone={doiShowDone}
         showHidden={showHidden}
         onToggleShowHidden={() => setShowHidden(v => !v)}
+        locCmt={locCmt}
+        onLocCmt={bapLocCmt}
+        onLocCmtXoa={() => setLocCmt(new Set())}
+        demCmt={demCmt}
         hiddenCount={hiddenKeys.size}
         onHideRow={onHideRow}
         completedDates={completedDates}
@@ -4887,6 +4946,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
       {/* Xuất PDF = chụp đúng giao diện (pdf-export.ts) — không dùng hộp thoại in. */}
     </div>
+    </LocCmtCtx.Provider>
     </RolesCtx.Provider>
   );
 }
@@ -5873,6 +5933,10 @@ const CHAT_MSG_MAX = 1000;
 /** Bảng phân cấp email→cấp (KV, seed DEFAULT_ROLES) cấp qua context → RoleBadge (nằm sâu trong
  *  ChatCell/ChatBox) đọc ĐỘNG, không phải truyền prop qua nhiều lớp; admin đổi là badge tự cập nhật. */
 const RolesCtx = createContext<Record<string, UserRole>>(DEFAULT_ROLES);
+/** BỘ LỌC BÌNH LUẬN THEO NHÓM ĐỐI TƯỢNG (BOD / OCC / PM / Khác).
+ *  null = không lọc, chiếu hết. Đi bằng context thay vì truyền prop, vì ô chat nằm sâu trong
+ *  nhiều lớp bảng — cùng lối mà RolesCtx đang đi. */
+const LocCmtCtx = createContext<ReadonlySet<NhomCmt> | null>(null);
 
 /** BADGE cấp bậc đứng TRƯỚC tên người trong box chat — nhìn ra ai PMO, ai BOD (đọc bảng phân cấp
  *  động từ RolesCtx). Email chưa được phân cấp → không hiện badge. */
@@ -5916,22 +5980,26 @@ function ChatCell({ msgs, dark, motTin, field, myEmail, isAdmin, onOp, onOpen, o
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  /** V12 — người dùng bấm xem tin cũ. Chỉ nằm trong phiên nhìn, không ghi đâu cả. */
-  const [xemCu, setXemCu] = useState(false);
-  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
-  const vis = msgs.filter((m) => !m.hidden);
+  const vaiTro = useContext(RolesCtx);
+  const isPmo = roleOf(vaiTro, myEmail) === "PMO";
+  // Bộ lọc bình luận theo nhóm đối tượng. Tin đã ẩn thủ công vẫn ẩn như cũ.
+  const locCmt = useContext(LocCmtCtx);
+  const vis = msgs.filter((m) => !m.hidden && lotLoc(m, vaiTro, locCmt));
+  /** Ô này CÓ bình luận, nhưng bộ lọc đang giấu hết. Khác hẳn ô chưa ai viết gì —
+   *  để nguyên chữ "＋ nhập…" thì người đọc tưởng dự án không có ai nói gì. */
+  const biLocSach = vis.length === 0 && msgs.some((m) => !m.hidden);
   // F16 — mở box NGAY khi click (bỏ delay 230ms cho admin). Tô/bỏ màu đỏ giờ là 1 NÚT (không nhấp đúp).
   const openDelayed = () => onOpen?.();
   // DARK (hàng dự án): giữ nguyên kiểu cũ — chữ trắng đậm, không bong bóng (mở/sửa qua dialog do <td> lo).
   if (dark) {
-    if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">＋ nhập…</span>;
+    if (!vis.length) return <span className="text-[10px] text-white/80 print:hidden">{biLocSach ? "— đã lọc" : "＋ nhập…"}</span>;
     // Ô này GỘP HAI NGUỒN vào một mảng: tin của file nguồn (bộ phận OCC ghi) đứng trước, rồi tới các
     // ghi chú gõ trong app. Trước đây cả hai cùng cỡ chữ, cùng màu, chỉ cách nhau 4px → gõ thêm một
     // câu là nó đọc ra thành MỘT khối với vướng mắc cấp dự án. Nay tách làm hai khối có gạch ngăn, và
     // mỗi ghi chú gõ trong app đeo tên người gõ, để nhìn là biết câu nào của ai và phải sửa ở đâu.
-    // V12 — mặc định chỉ chiếu tin mới nhất; bấm nút dưới ô thì mở ra xem đủ.
-    const { moi, cu } = motTin ? chiaTinMoiCu(vis) : { moi: vis, cu: [] as ChatMsg[] };
-    const hien = xemCu ? vis : moi;
+    // V12 — ô cấp dự án chiếu ĐÚNG MỘT tin, tin mới nhất. Không bày nút xem tin cũ: người dùng
+    // chốt 29/09 là "thừa". Tin cũ vẫn còn nguyên, bấm vào ô là hộp thoại hiện đủ.
+    const hien = motTin ? chiaTinMoiCu(vis).moi : vis;
     const tNguon = hien.filter((m) => m.id === MSG_NGUON);
     const tGo = hien.filter((m) => m.id !== MSG_NGUON);
     const veChu = (m: ChatMsg) => (m.doan ? <DoanText doan={m.doan} /> : <HiText text={m.text} ranges={m.hi ?? []} field={field} boldOnly />);
@@ -5963,18 +6031,10 @@ function ChatCell({ msgs, dark, motTin, field, myEmail, isAdmin, onOp, onOpen, o
             })}
           </div>
         )}
-        {cu.length > 0 && (
-          // Bấm nút KHÔNG được mở hộp thoại sửa của <td> bao ngoài — chặn nổi bọt.
-          <button type="button" onClick={(e) => { e.stopPropagation(); setXemCu(!xemCu); }}
-            title={xemCu ? "Gấp lại, chỉ chiếu tin mới nhất" : "Xem các tin cũ hơn của ô này"}
-            className="mt-1 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/90 hover:bg-white/30 print:hidden">
-            {xemCu ? "Gấp lại" : `+${cu.length} tin cũ`}
-          </button>
-        )}
       </div>
     );
   }
-  if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">＋ nhập…</span>;
+  if (!vis.length) return <span onClick={onOpen} className="cursor-pointer text-slate-400 print:hidden">{biLocSach ? "— đã lọc" : "＋ nhập…"}</span>;
   // TÁC GIẢ, ADMIN, hoặc PMO đều SỬA/ẨN/XOÁ được comment người khác (chốt 31/07). PMO ngang admin ở 3 thao tác này.
   // Tin lấy từ FILE NGUỒN không nằm trong kho của app → mọi thao tác sửa/ẩn/xoá/tô đều vô nghĩa
   // (bấm cũng không có gì đổi). Chặn ngay ở đây cho khỏi bày nút chết.
@@ -6267,7 +6327,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -6316,6 +6376,11 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   /** DÒNG ẨN THỦ CÔNG (admin + PMO): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang
    *  ẩn; onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin/PMO thấy nút; server vẫn chốt quyền. */
   showHidden: boolean;
+  /** BỘ LỌC BÌNH LUẬN theo nhóm đối tượng. Rỗng = xem tất cả. */
+  locCmt: ReadonlySet<NhomCmt>;
+  onLocCmt: (n: NhomCmt) => void;
+  onLocCmtXoa: () => void;
+  demCmt: Record<NhomCmt, number>;
   onToggleShowHidden: () => void;
   hiddenCount: number;
   onHideRow: (key: string, label: string, hide: boolean, pham?: "chung" | "toi") => void;
@@ -7131,6 +7196,16 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           options={regionOptions}
           onToggle={v => setFilters(f => ({ ...f, regions: toggleIn(f.regions, v) }))}
           onClear={() => setFilters(f => ({ ...f, regions: [] }))}
+        />
+        {/* LỌC BÌNH LUẬN THEO NHÓM ĐỐI TƯỢNG (sếp đặt 28/09). Khác các ô lọc bên cạnh ở chỗ nó
+            KHÔNG bỏ bớt dòng nào — nó lọc CHỮ trong ô Vướng mắc / Giải pháp, để soi nhanh nhóm
+            nào đang nói gì. Số sau tên nhóm là số bình luận nhóm đó đang có. */}
+        <MultiSelect
+          label="Bình luận"
+          selected={[...locCmt]}
+          options={NHOM_CMT.map((n) => ({ v: n, l: `${NHAN_NHOM[n]} · ${demCmt[n]}`, dot: MAU_CHAM[n], tat: demCmt[n] === 0 }))}
+          onToggle={onLocCmt}
+          onClear={onLocCmtXoa}
         />
         <button type="button"
           onClick={() => setFilters(f => ({ ...f, mpOnly: !f.mpOnly }))}
@@ -8108,7 +8183,10 @@ function GanttView({ rows, today, fullscreen = false, showChildTasks = false, fl
 function MultiSelect<T extends string>({ label, selected, options, onToggle, onClear }: {
   label: string;
   selected: T[];
-  options: { v: T; l: string }[];
+  /** `dot` = chấm màu đứng trước nhãn (bộ lọc bình luận dùng đúng màu badge của nhóm).
+   *  `tat` = mục không có gì để lọc → làm mờ và KHÔNG bấm được, thay vì để người ta bấm
+   *  vào rồi bảng trắng trơn mà không hiểu vì sao. */
+  options: { v: T; l: string; dot?: string; tat?: boolean }[];
   onToggle: (v: T) => void;
   onClear: () => void;
 }) {
@@ -8152,8 +8230,10 @@ function MultiSelect<T extends string>({ label, selected, options, onToggle, onC
             {options.map(o => {
               const on = selected.includes(o.v);
               return (
-                <label key={o.v} className={`flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-slate-50 ${on ? "bg-teal-50/50" : ""}`}>
-                  <input type="checkbox" checked={on} onChange={() => onToggle(o.v)} className="h-3.5 w-3.5 accent-teal-700" />
+                <label key={o.v} title={o.tat ? "Nhóm này chưa có bình luận nào" : undefined}
+                  className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${o.tat ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:bg-slate-50"} ${on ? "bg-teal-50/50" : ""}`}>
+                  <input type="checkbox" checked={on} disabled={o.tat} onChange={() => onToggle(o.v)} className="h-3.5 w-3.5 accent-teal-700" />
+                  {o.dot && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: o.dot }} />}
                   <span className="text-slate-800">{o.l}</span>
                 </label>
               );
