@@ -100,6 +100,35 @@ describe("thứ tự chữ trong câu không cố định — câu người th�
   });
 });
 
+describe("chữ BOD không bắt buộc — ca thật bị bỏ sót trên bản chính thức", () => {
+  // CT26-036 Văn phòng công ty Cao Trần, vướng mắc cấp dự án trong file nguồn ngày 29/09/2026.
+  // Đủ nghĩa "trình BOD duyệt trên bitrix", chỉ thiếu đúng ba chữ cái BOD, nên luật cũ bỏ qua
+  // cả dự án lẫn hạn 30/9.
+  const CAO_TRAN = "Tiến độ bàn giao trượt qua 15/10. Cần PM trình duyệt bitrix ngày bàn giao mới trước ngày 30/9";
+
+  it("vào được bộ lọc", () => expect(noteCanTrinhBodBitrix(CAO_TRAN)).toBe(true));
+
+  it("đọc đúng hạn 30/9, KHÔNG lấy 15/10 của cụm trượt tiến độ", () =>
+    expect(parseMpDeadlineIso(CAO_TRAN, NAY)).toBe("2026-09-30"));
+
+  it("lối viết ngắn khác cũng nhận", () => {
+    expect(noteCanTrinhBodBitrix("cần PM trình duyệt bitrix GẤP")).toBe(true);
+  });
+
+  it("nhưng DUYỆT MẪU thì không — đó là việc của khâu Duyệt mẫu", () => {
+    expect(noteCanTrinhBodBitrix("cần PM trình duyệt mẫu trên bitrix")).toBe(false);
+    expect(noteCanTrinhBodBitrix("chưa trình mẫu lên bitrix để duyệt")).toBe(false);
+  });
+
+  it("duyệt mẫu mà CÓ nhắc BOD thì vẫn vào", () => {
+    expect(noteCanTrinhBodBitrix("cần PM trình duyệt mẫu và trình BOD duyệt master plan trên bitrix")).toBe(true);
+  });
+
+  it("vẫn không nhận câu không nói chuyện duyệt", () => {
+    expect(noteCanTrinhBodBitrix("Đề xuất PM đệ trình Action Plan trình Bitrix đến anh Thành review")).toBe(false);
+  });
+});
+
 describe("việc đã xong hoặc không phải làm thì KHÔNG vào bộ lọc", () => {
   it("BOD đã phê duyệt rồi", () => {
     expect(noteCanTrinhBodBitrix("MP đã trình, BOD đã phê duyệt trên bitrix")).toBe(false);

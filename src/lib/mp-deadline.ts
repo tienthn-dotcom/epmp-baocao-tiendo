@@ -52,11 +52,24 @@ const TU_HAN = /(?:truoc|han|han chot|han cuoi|cham nhat(?: la)?|deadline|moc|tr
 /** CHỮ DẪN KHOẢNG: ngày của cụm dời tiến độ. Loại thẳng, không bàn. */
 const TU_KHOANG = /(?:tu|den|toi|sang|thanh|qua|luc|trong thang|thang)$/;
 
-/** Bốn mảnh phải có mặt trong CÙNG MỘT CÂU. */
+/** BA mảnh bắt buộc trong CÙNG MỘT CÂU: trình + duyệt + bitrix.
+ *
+ *  CHỮ "BOD" KHÔNG BẮT BUỘC. Trước đây có, và nó bỏ sót ca thật trên bản chính thức:
+ *    CT26-036 Văn phòng công ty Cao Trần — "Cần PM trình duyệt bitrix ngày bàn giao mới
+ *    trước ngày 30/9". Đủ nghĩa là trình BOD duyệt trên bitrix, chỉ thiếu đúng ba chữ cái,
+ *    nên dự án rớt khỏi bộ lọc và mất luôn hạn 30/9.
+ *  Trên bitrix, trình duyệt tức là trình BOD — chữ BOD chỉ là cách viết cho rõ.
+ *  Đo trước khi nới: file nguồn 19 → 20 (đúng một ca trên, không kéo theo ai);
+ *  kho ghi chú gõ trong app: không đổi.
+ */
 const CO_TRINH = /\btrinh\b/;
 const CO_BOD = /\bbod\b/;
 const CO_DUYET = /\bduyet\b/;
 const CO_BITRIX = /bitrix/;
+/** DUYỆT MẪU KHÔNG PHẢI TRÌNH BOD. Bỏ chữ BOD ra khỏi điều kiện thì câu kiểu
+ *  "trình duyệt mẫu trên bitrix" lọt vào — đó là việc của khâu Duyệt mẫu, không phải
+ *  master plan. Câu chỉ nói duyệt mẫu mà không nhắc BOD thì loại. */
+const DUYET_MAU = /\bduyet mau\b|\btrinh mau\b/;
 
 /** Câu nói việc ĐÃ XONG — có mấy chữ này thì không phải yêu cầu đang treo. */
 const DA_XONG = /\bbod da\b|\bda (?:\w+ ){0,2}duyet\b|\bduoc bod\b|\bduyet xong\b|\bdaduyet\b/;
@@ -74,7 +87,8 @@ function catCau(s: string): string[] {
 
 /** Câu này có phải YÊU CẦU trình BOD phê duyệt trên Bitrix (đang treo) không? */
 function cauNoiTrinhBod(cau: string): boolean {
-  if (!CO_TRINH.test(cau) || !CO_BOD.test(cau) || !CO_DUYET.test(cau) || !CO_BITRIX.test(cau)) return false;
+  if (!CO_TRINH.test(cau) || !CO_DUYET.test(cau) || !CO_BITRIX.test(cau)) return false;
+  if (DUYET_MAU.test(cau) && !CO_BOD.test(cau)) return false;
   if (MIEN.test(cau)) return false;
   if (DA_XONG.test(cau) && !CON_DOI.test(cau)) return false;
   return true;

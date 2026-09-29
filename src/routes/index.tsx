@@ -541,6 +541,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.120.4", date: "29/09/2026", items: [
+    "BỘ LỌC “CẦN CẬP NHẬT MP” NAY NHẬN CẢ CÂU KHÔNG VIẾT CHỮ “BOD”. Vướng mắc ghi “cần PM trình duyệt bitrix … trước ngày 30/9” trước đây bị bỏ qua vì thiếu đúng ba chữ cái BOD, nên dự án rớt khỏi bộ lọc và mất luôn hạn. Trên bitrix, trình duyệt tức là trình BOD. Đo trên file nguồn: 19 → 20 dự án, đúng một dự án được thêm.",
+    "Riêng “trình duyệt mẫu trên bitrix” vẫn KHÔNG tính — đó là việc của khâu Duyệt mẫu, không phải master plan.",
+  ] },
   { v: "3.120.3", date: "29/09/2026", items: [
     "Siết tiếp chỗ vá lỗi 1102 hôm nay: ở chế độ xem MTLĐ theo vùng, mỗi vùng đang tự tải sẵn vài thẻ nên gộp lại là gần cả màn cùng tải — nay đếm chung cả màn. Và cổng “tối đa hai thẻ một lúc” nay chặn chắc, kèm hạn giờ để một thẻ treo không làm cả màn kẹt.",
   ] },
