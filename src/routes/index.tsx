@@ -4801,6 +4801,20 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     return m;
   }, [enriched, pkItem]);
   const khoaDangHien = useMemo(() => new Set(tableItems.map((i) => pkItem(i))), [tableItems, pkItem]);
+  /** Ngữ cảnh RẺ — chỉ mô tả chỗ đang đứng, không đụng tới dữ liệu dự án. Tách khỏi bản tóm để
+   *  khung chat vẽ lại (gõ phím, cuộn) không kéo theo việc dựng lại cả 87 dự án. */
+  const ncTroLy = useMemo(() => {
+    const boLoc: string[] = [];
+    if (filters.query.trim()) boLoc.push(`tìm: ${filters.query.trim()}`);
+    if (filters.pms.length) boLoc.push(`PM: ${filters.pms.join(", ")}`);
+    if (filters.regions.length) boLoc.push(`Vùng: ${filters.regions.join(", ")}`);
+    if (filters.cdts.length) boLoc.push(`Chủ đầu tư: ${filters.cdts.join(", ")}`);
+    if (filters.stages.length) boLoc.push(`Hạng mục: ${filters.stages.length}`);
+    if (filters.alerts.length) boLoc.push(`Nhóm cảnh báo: ${filters.alerts.length}`);
+    if (filters.deadlineMonths.length) boLoc.push(`Mốc bàn giao: ${filters.deadlineMonths.length}`);
+    if (filters.mpOnly) boLoc.push("Cần cập nhật MP");
+    return { man: ncBang.man, boLoc, dongDangHien: khoaDangHien.size, duAnDangMo: ncBang.duAnDangMo, pham: "dang-loc" as const };
+  }, [filters, ncBang, khoaDangHien]);
   const layNguonTroLy = useCallback((): NguonHoi => {
     /* VŨ TRỤ ĐÚNG BẰNG VŨ TRỤ CỦA THẺ SỐ ĐẦU TRANG: dự án có ít nhất một hạng mục đang Show.
        Lấy cả data.projects thì trợ lý báo 87 trong khi đầu trang ghi 69 — hai con số cho cùng một
@@ -4836,15 +4850,6 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         dangHien: khoaDangHien.has(k),
       };
     });
-    const boLoc: string[] = [];
-    if (filters.query.trim()) boLoc.push(`tìm: ${filters.query.trim()}`);
-    if (filters.pms.length) boLoc.push(`PM: ${filters.pms.join(", ")}`);
-    if (filters.regions.length) boLoc.push(`Vùng: ${filters.regions.join(", ")}`);
-    if (filters.cdts.length) boLoc.push(`Chủ đầu tư: ${filters.cdts.join(", ")}`);
-    if (filters.stages.length) boLoc.push(`Hạng mục: ${filters.stages.length}`);
-    if (filters.alerts.length) boLoc.push(`Nhóm cảnh báo: ${filters.alerts.length}`);
-    if (filters.deadlineMonths.length) boLoc.push(`Mốc bàn giao: ${filters.deadlineMonths.length}`);
-    if (filters.mpOnly) boLoc.push("Cần cập nhật MP");
     return {
       homNay: today.slice(0, 10),
       duAn,
@@ -4854,9 +4859,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       phienBan: APP_VERSION,
       banMoi: CHANGELOG.slice(0, 3).map((b) => ({ v: b.v, date: b.date, items: [...b.items] })),
       vaiTro: me.isAdmin ? "admin" : roleOf(roleMap, me.email ?? "") === "BOD" ? "BOD" : roleOf(roleMap, me.email ?? "") === "PMO" ? "OCC" : null,
-      nguCanh: { man: ncBang.man, boLoc, dongDangHien: khoaDangHien.size, duAnDangMo: ncBang.duAnDangMo, pham: "dang-loc" },
+      nguCanh: ncTroLy,   // MỘT nguồn cho cả đầu khung lẫn câu trả lời, khỏi hai nơi hai chữ
     };
-  }, [data.projects, activeProjectCount, nhomCanhBao, khoaDangHien, mpInfo, edits, tinNguon, mpDeadlineByName, mpWeeksByName, sheetViews, filters, today, alerts, dueMonthProjectKeys, topProjectKeys, me, roleMap, ncBang, pkProj]);
+  }, [data.projects, activeProjectCount, nhomCanhBao, khoaDangHien, mpInfo, edits, tinNguon, mpDeadlineByName, mpWeeksByName, sheetViews, today, alerts, dueMonthProjectKeys, topProjectKeys, me, roleMap, ncTroLy, pkProj]);
+
 
   /** Thi hành nút trong câu trả lời. CHỈ đưa người dùng tới đúng chỗ — không có lệnh nào sửa dữ liệu. */
   const chayLenhTroLy = useCallback((l: Lenh) => {
@@ -5102,7 +5108,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
       {/* Xuất PDF = chụp đúng giao diện (pdf-export.ts) — không dùng hộp thoại in. */}
     </div>
-    {duocDungTroLy && <TroLy layNguon={layNguonTroLy} chayLenh={chayLenhTroLy} />}
+    {duocDungTroLy && <TroLy layNguon={layNguonTroLy} nguCanh={ncTroLy} chayLenh={chayLenhTroLy} />}
     </LocCmtCtx.Provider>
     </RolesCtx.Provider>
   );

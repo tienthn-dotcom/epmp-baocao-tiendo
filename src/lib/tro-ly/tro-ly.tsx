@@ -19,7 +19,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, X, Maximize2, Minimize2, ArrowUp, RotateCcw, ChevronRight } from "lucide-react";
-import type { CauTraLoi, Khoi, Lenh, Mau, NguonHoi } from "./kieu";
+import type { CauTraLoi, Khoi, Lenh, Mau, NguCanh, NguonHoi } from "./kieu";
 import { traLoi } from "./hoi-dap";
 
 const NAVY = "#1e3a5f";
@@ -124,7 +124,7 @@ function VeKhoi({ k, chayLenh }: { k: Khoi; chayLenh: (l: Lenh) => void }) {
 
 /* ── khung chính ────────────────────────────────────────────────────────────── */
 
-export function TroLy({ layNguon, chayLenh }: { layNguon: () => NguonHoi; chayLenh: (l: Lenh) => void }) {
+export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHoi; nguCanh: NguCanh; chayLenh: (l: Lenh) => void }) {
   const [mo, setMo] = useState(false);
   const [rong, setRong] = useState(false);
   const [tin, setTin] = useState<Tin[]>([]);
@@ -171,7 +171,11 @@ export function TroLy({ layNguon, chayLenh }: { layNguon: () => NguonHoi; chayLe
     setTin((t) => [...t, { ai: "troly", tra }]);
   }, [dangNghi, layNguon, pham]);
 
-  const nc = mo ? layNguon().nguCanh : null;
+  /* NGỮ CẢNH LÀ PROP RIÊNG, KHÔNG gọi layNguon() ở đây.
+     layNguon() dựng lại bản tóm của 87 dự án (đọc ghi chú, ghép chữ). Gọi nó trong thân hàm vẽ
+     nghĩa là MỖI PHÍM GÕ trong ô nhập lại dựng lại toàn bộ — đúng kiểu làm app nặng thêm mà
+     không ai thấy. Chỉ gọi lúc người dùng bấm hỏi. */
+  const nc = nguCanh;
   const TEN_MAN: Record<string, string> = { "danh-sach": "Việc cần xử lý", "tong-the": "Tổng thể tiến độ", mtld: "MTLĐ", khac: "ePMP" };
 
   /* Câu gợi ý ĐỔI THEO chỗ đang đứng. */
