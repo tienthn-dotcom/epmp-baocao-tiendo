@@ -546,6 +546,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.123.0", date: "01/10/2026", items: [
+    "CỘT TUẦN CHƯA CHẤM NAY NÓI RÕ VÌ SAO, ngay trong bản PDF: “Cột 30/09 chưa chấm — khung tuần chốt vào thứ 6 (02/10). Điểm tính trên 4 tuần đã chấm.” Trước đây cột đó trống trơn, người nhận báo cáo đọc ra thành mất dữ liệu.",
     "BÁO CÁO TUÂN THỦ NAY CHỌN ĐƯỢC THÁNG. Ô “Tháng” nằm trên thanh công cụ của hộp thoại; chọn tháng nào thì bảng và bản PDF xuất ra đều theo tháng đó. Tên file cũng mang đúng tháng (BaoCaoTuanThu_MP_2026-09.pdf).",
     "Vì sao cần: file tuân thủ trên Drive CHỈ giữ tháng đang chạy. Sáng 01/10 nó nhảy sang tháng 10 với bốn cột tuần trống và mọi dự án 100 điểm, nên không còn gì để xuất lại cho tháng 9.",
     "Tháng cũ app CHẤM LẠI từ lịch sử ngày cập nhật, bằng đúng bộ luật đang chấm tháng hiện tại. Bản PDF có ghi rõ câu này ngay dưới tiêu đề để người nhận biết số từ đâu ra. Tháng đang chạy vẫn đọc thẳng file như cũ, không đổi gì.",
@@ -9517,6 +9518,26 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   // trôi qua) → tháng có 4 tuần thì count 1 chỉ chiếm 1/4 ô (theo yêu cầu hiển thị của PMO).
   const maxRequired = useMemo(() => (data ? data.weeks.length : 0), [data]);
   // NGÀY CẬP NHẬT = ngày cột tuần HIỆN HÀNH (ô header xanh lá, curWeekIdx) — vd "26/08" → "26/08/2026".
+  /** CỘT TUẦN CHƯA CHẤM — cả cột không một dự án nào có dấu.
+   *  Luật chấm chỉ kết luận khi khung T3→T6 ĐÃ ĐÓNG. Tuần cuối tháng thường có thứ 6 rơi sang
+   *  tháng sau, nên xuất báo cáo ngay đầu tháng là cột cuối trống — đúng luật, nhưng người nhận
+   *  đọc ra thành mất dữ liệu. Nói thẳng ra trong bản in. */
+  const tuanChuaCham = useMemo(() => {
+    if (!data || !data.weeks.length || !data.rows.length) return [] as { nhan: string; chot: string }[];
+    const ra: { nhan: string; chot: string }[] = [];
+    for (let j = 0; j < data.weeks.length; j++) {
+      if (!data.rows.every((r) => r.marks[j] == null)) continue;
+      const m = data.weeks[j].match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (!m) continue;
+      // Nhãn cột là THỨ TƯ; khung tuần chốt vào THỨ SÁU = +2 ngày.
+      const t = Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]) + 2 * 86400000;
+      if (t < tToday) continue;   // đã qua thứ 6 mà vẫn trống thì là chuyện khác, đừng giải thích bừa
+      const d = new Date(t);
+      ra.push({ nhan: data.weeks[j], chot: `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}` });
+    }
+    return ra;
+  }, [data, repYear, repMon, tToday]);
+
   const updateDateLabel = useMemo(() => {
     const w = data && curWeekIdx >= 0 ? data.weeks[curWeekIdx] : undefined;
     const m = w?.match(/^(\d{1,2})\/(\d{1,2})$/);
@@ -9819,6 +9840,11 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   từ lịch sử ngày cập nhật, chứ không phải bản chụp của file hồi đó — hồi đó có ai
                   sửa tay trong file thì con số lệch. Giấu chuyện này là để người ta gửi đi một bản
                   mà chính họ cũng không biết nó từ đâu ra. */}
+              {tuanChuaCham.length > 0 && (
+                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                  Cột {tuanChuaCham.map((t) => t.nhan).join(" · ")} chưa chấm — khung tuần chốt vào thứ 6 ({tuanChuaCham.map((t) => t.chot).join(" · ")}). Điểm tính trên {(data?.weeks.length ?? 0) - tuanChuaCham.length} tuần đã chấm.
+                </div>
+              )}
               {laChamLai && (
                 <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
                   Số liệu tháng {nhanThang(thang)} do app chấm lại từ lịch sử ngày cập nhật (file tuân thủ chỉ giữ tháng đang chạy).
