@@ -1,107 +1,82 @@
-/**
- * Xem và xuất lại báo cáo tuân thủ của THÁNG CŨ.
+/* XEM LẠI THÁNG CŨ TRÊN BÁO CÁO TUÂN THỦ.
  *
- * Ca có thật: sáng 01/10/2026 file tuân thủ nhảy sang tháng 10 (mọi ô trống, mọi dự án 100 điểm),
- * số liệu tháng 9 biến mất khỏi file. App phải chấm lại được tháng 9 từ lịch sử ngày cập nhật.
+ * Bản cũ của file test này kiểm đường app CHẤM LẠI tháng cũ từ lịch sử `updates:v1`. Đường đó đã
+ * bị bỏ ngày 01/10/2026 vì tiền đề của nó sai — file tuân thủ KHÔNG chỉ giữ tháng đang chạy, nó
+ * giữ đủ 24 cột tuần từ 06/05 tới 28/10. Chấm lại cho ra tháng 9 với 67/84 dự án, điểm âm, một
+ * rừng dấu ✕, trong khi file ghi cột 30/09 là 63 ✓ / 21 ✕.
+ *
+ * Nay xem tháng cũ = ĐỌC ĐÚNG NHÓM CỘT TUẦN của tháng đó trong chính file. Test này gác cửa đó:
+ * không đường nào trong app được tự sinh ra dấu ✓/✕.
  */
-import { describe, it, expect } from "vitest";
-import { nhanThang, thangTuNhan, thangCoTheCham, doiSangDangFile } from "@/lib/tuan-thu-thang";
-import { buildComplianceReport, cyclesOfMonth } from "@/lib/compliance";
+import { describe, expect, it } from "vitest";
+import { nhanThang } from "@/lib/tuan-thu-thang";
+import { parseComplianceFile } from "@/lib/compliance-file";
 
-const vung = () => "PQ";
+/* File thật có 24 cột tuần; ở đây dựng bản rút gọn ĐÚNG hình dạng: dòng "THÁNG 10/2026" phía
+ * trên, dòng header có Location/STT/Tên dự án, rồi các cột dd/mm của NHIỀU tháng cạnh nhau. */
+const CSV = [
+  ",,,BÁO CÁO TUÂN THỦ THÁNG 10/2026",
+  ",,,Ngày cập nhật:,,01/10/2026",
+  "",
+  "Location,STT,Tên dự án,Người phụ trách,Lũy kế,Điểm tuân thủ,16/09,23/09,30/09,07/10,14/10",
+  "HN,1,Du an A,PM Mot,0,100,✓,x,✓,,",
+  "HN,2,Du an B,PM Hai,0,100,x,x,o,,",
+  "SG,3,Du an C,PM Ba,0,100,✓,✓,✓,,",
+].join("\n");
 
 describe("nhãn tháng", () => {
-  it("đổi qua lại đúng kiểu file đang dùng", () => {
+  it("đổi đúng kiểu file đang dùng", () => {
     expect(nhanThang("2026-09")).toBe("09/2026");
-    expect(thangTuNhan("09/2026")).toBe("2026-09");
-    expect(thangTuNhan("")).toBeNull();
-    expect(thangTuNhan("tháng chín")).toBeNull();
+    expect(nhanThang("2026-12")).toBe("12/2026");
   });
 });
 
-describe("tháng nào chấm lại được", () => {
-  const ls = { "id:1": ["2026-07-15", "2026-08-05"], "id:2": ["2026-09-23"] };
-
-  it("gom đủ các tháng có trong lịch sử, mới nhất đứng đầu", () => {
-    expect(thangCoTheCham(ls, "2026-10-01")).toEqual(["2026-10", "2026-09", "2026-08", "2026-07"]);
+describe("đọc file tuân thủ — tháng mặc định là tháng file đang chạy", () => {
+  const ra = parseComplianceFile(CSV);
+  it("lấy tháng file tự khai", () => expect(ra.monthLabel).toBe("10/2026"));
+  it("chỉ lấy cột tuần của tháng đó", () => expect(ra.weeks).toEqual(["07/10", "14/10"]));
+  it("tháng 10 chưa ai gõ gì → không có dấu nào", () => {
+    expect(ra.rows.every(r => r.marks.every(m => m === null))).toBe(true);
   });
-
-  it("luôn có tháng hiện tại dù lịch sử rỗng", () => {
-    expect(thangCoTheCham({}, "2026-10-01")).toEqual(["2026-10"]);
-  });
-
-  it("KHÔNG bày tháng ở tương lai — chấm tháng chưa tới thì ra bảng trống", () => {
-    expect(thangCoTheCham({ "id:1": ["2027-01-05"] }, "2026-10-01")).toEqual(["2026-10"]);
-  });
-
-  it("ngày rác trong lịch sử không làm vỡ", () => {
-    expect(thangCoTheCham({ "id:1": ["", "khong-phai-ngay"] }, "2026-10-01")).toEqual(["2026-10"]);
+  it("kể đủ các tháng CÓ TRONG FILE để màn hình bày ra", () => {
+    expect(ra.thangCo).toEqual(["2026-09", "2026-10"]);
   });
 });
 
-describe("chấm lại tháng 9 từ lịch sử — ca thật", () => {
-  const duAn = [
-    { key: "id:1", maCT: "CT26-036", name: "Văn phòng Cao Trần", pm: "Nguyễn Tấn Kiệt", updateDate: null },
-    { key: "id:2", maCT: "CT22-018", name: "Park Hyatt PQ", pm: "Lê Tuấn", updateDate: null },
-  ];
-  // Tháng 9/2026: các THỨ TƯ là 02 · 09 · 16 · 23 · 30.
-  const lichSu = {
-    "id:1": ["2026-09-02", "2026-09-09", "2026-09-16", "2026-09-23"],   // đúng hạn 4 tuần
-    "id:2": ["2026-09-03", "2026-09-10"],                                // thứ 5 → trễ 2 tuần
-  };
-  const rep = buildComplianceReport(duAn, lichSu, "2026-09", "2026-10-01");
+describe("XEM LẠI THÁNG 9 — dấu phải là dấu trong file, không phải app chấm", () => {
+  const ra = parseComplianceFile(CSV, "2026-09");
 
-  it("chấm được tháng đã qua, không còn ô null vì khung tuần đã đóng", () => {
-    expect(rep.monthKey).toBe("2026-09");
-    const d1 = rep.projects.find((p) => p.key === "id:1")!;
-    expect(d1.marks.slice(0, 4)).toEqual(["P", "P", "P", "P"]);
-  });
-
-  it("cập nhật vào thứ 5 bị chấm trễ", () => {
-    const d2 = rep.projects.find((p) => p.key === "id:2")!;
-    expect(d2.marks[0]).toBe("o");
-    expect(d2.marks[1]).toBe("o");
-  });
-
-  it("điểm KHÁC 100 — đúng cái file tháng mới không nói được", () => {
-    const d2 = rep.projects.find((p) => p.key === "id:2")!;
-    expect(d2.updateScore).not.toBe(100);
-    expect(d2.updateScore).toBeLessThan(100);
-  });
-});
-
-describe("đổi sang dạng dòng của file để bảng và nút xuất PDF dùng lại nguyên", () => {
-  const duAn = [{ key: "id:1", maCT: "CT26-036", name: "Văn phòng Cao Trần", pm: "Nguyễn Tấn Kiệt", updateDate: null }];
-  const rep = buildComplianceReport(duAn, { "id:1": ["2026-09-02", "2026-09-10"] }, "2026-09", "2026-10-01");
-  const ra = doiSangDangFile(rep, vung);
-
-  it("nhãn tháng và nhãn cột tuần khớp kiểu file (dd/mm của thứ Tư)", () => {
+  it("đổi nhãn tháng và nhóm cột tuần sang tháng đang xem", () => {
     expect(ra.monthLabel).toBe("09/2026");
-    expect(ra.weeks).toEqual(cyclesOfMonth("2026-09").map((c) => `${c.wed.slice(8, 10)}/${c.wed.slice(5, 7)}`));
-    expect(ra.weeks[0]).toBe("02/09");
+    expect(ra.weeks).toEqual(["16/09", "23/09", "30/09"]);
   });
 
-  it("giữ nguyên số dòng, có STT, có Vùng", () => {
-    expect(ra.rows).toHaveLength(1);
-    expect(ra.rows[0].stt).toBe(1);
-    expect(ra.rows[0].vung).toBe("PQ");
-    expect(ra.rows[0].name).toBe("Văn phòng Cao Trần");
+  it("bê NGUYÊN dấu ✓ / ✕ / o của từng dự án", () => {
+    expect(ra.rows.map(r => r.marks)).toEqual([
+      ["P", "x", "P"],
+      ["x", "x", "o"],
+      ["P", "P", "P"],
+    ]);
   });
 
-  it("ngày cập nhật ghi dd/mm như file", () => expect(ra.rows[0].lastUpdate).toBe("10/09"));
-
-  it("đếm đúng số lần trễ / không cập nhật", () => {
-    expect(ra.rows[0].countO).toBe(1);   // 10/09 là thứ 5 của chu kỳ 09/09
-    expect(ra.rows[0].countX + ra.rows[0].countO).toBe(ra.rows[0].marks.filter((m) => m === "x" || m === "o").length);
+  it("đếm đúng số lần không cập nhật và trễ", () => {
+    expect(ra.rows.map(r => [r.countX, r.countO])).toEqual([[1, 0], [2, 1], [0, 0]]);
   });
 
-  it("cột điểm là ĐIỂM NỀN, chưa trừ tuần cờ BOD — tránh trừ hai lần", () => {
-    expect(ra.rows[0].score).toBe(rep.projects[0].updateScore);
+  /* Cột "Điểm tuân thủ" trong file là điểm THÁNG ĐANG CHẠY (Apps Script ghi đè mỗi tháng), nên
+   * xem tháng cũ mà lấy cột đó thì mọi dự án mang điểm 100 của tháng 10. Phải tính lại từ chính
+   * dấu của tháng đang xem, bằng đúng công thức file ghi: 100 − 25·x − 10·o. */
+  it("KHÔNG mượn cột điểm của tháng đang chạy", () => {
+    expect(ra.rows.map(r => r.score)).toEqual([75, 40, 100]);
   });
 
-  it("không có dự án nào thì ra bảng rỗng chứ không vỡ", () => {
-    const r0 = doiSangDangFile(buildComplianceReport([], {}, "2026-09", "2026-10-01"), vung);
-    expect(r0.rows).toEqual([]);
-    expect(r0.weeks.length).toBeGreaterThan(0);
+  it("bỏ nhãn 'Ngày cập nhật' của tháng đang chạy — nó không nói gì về tháng cũ", () => {
+    expect(ra.updatedLabel).toBeNull();
+  });
+
+  /* GÁC: phép đo có răng. Tháng đang chạy VẪN đọc cột điểm của file (100), nên nếu một hôm ai đó
+   * bắt mọi tháng tự tính thì con số dưới đây đổi và test đỏ. */
+  it("tháng đang chạy thì vẫn lấy cột điểm của file", () => {
+    expect(parseComplianceFile(CSV).rows.map(r => r.score)).toEqual([100, 100, 100]);
   });
 });

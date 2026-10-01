@@ -3,7 +3,11 @@
  *  • App CHỈ RENDER: mọi data ✔/o/x, vùng, PM, lũy kế, VÀ ĐIỂM lấy THẲNG từ file (ý PMO).
  *  • ĐIỂM DỰ ÁN: đọc cột "Điểm" (J) do Apps Script chấm (nguồn DUY NHẤT — chứa cả rule
  *    "không trình BOD" khi bật). Thiếu cột/ô rỗng → FALLBACK tự tính 100−25x−10o.
- *  • Chấm theo THÁNG: "số lần không cập nhật" & fallback CHỈ tính trên cột tuần THÁNG hiện tại.
+ *  • Chấm theo THÁNG: "số lần không cập nhật" & fallback CHỈ tính trên cột tuần THÁNG ĐANG XEM.
+ *  • XEM THÁNG CŨ: file GIỮ ĐỦ cột tuần cả năm (06/05 … 28/10), dấu ✔/o/x tháng cũ còn nguyên.
+ *    Nên tháng cũ cũng ĐỌC TỪ FILE — truyền `thangXem` ("2026-09") là lọc sang cột tháng đó.
+ *    ĐỪNG chấm lại từ lịch sử của app: đo 01/10/2026 lệch rất xa bản thật của file
+ *    (cột 30/09 file ghi ✔63 o0 ✕21, app chấm lại ra ✔32 o0 ✕36).
  *  • Điểm PM = TRUNG BÌNH điểm dự án (gộp bỏ DPM) — app tự tính từ score đọc được.
  * Chạy Ở CLIENT (parse text CSV do fetchSheetCsv trả về) — Worker KHÔNG parse.
  */
@@ -28,6 +32,10 @@ export type ComplianceFileData = {
   weeks: string[];            // nhãn cột tuần của tháng chấm (vd 01/07…29/07)
   rows: ComplianceFileRow[];
   updatedLabel: string | null; // "Ngày cập nhật" ghi trong file (nếu có)
+  /** CÁC THÁNG CÓ TRONG FILE ("yyyy-mm", cũ → mới). File giữ CẢ LỊCH SỬ cột tuần, không chỉ
+   *  tháng đang chạy — đo 01/10/2026: 24 cột từ 06/05 tới 28/10. Nhờ vậy xem lại tháng cũ chỉ
+   *  là ĐỌC ĐÚNG NHỮNG CỘT ĐÓ, không phải chấm lại. */
+  thangCo: string[];
 };
 
 /** CSV parser tự chứa (RFC4180): xử lý ô có dấu ", xuống dòng, và "" thoát dấu nháy. */
@@ -72,7 +80,13 @@ const toScore = (v: string): number | null => {
 };
 
 /** Parse text CSV của file tuân thủ → dữ liệu bảng. Ném lỗi rõ nếu không nhận diện được header. */
-export function parseComplianceFile(csvText: string): ComplianceFileData {
+/**
+ * @param thangXem  "yyyy-mm" — XEM LẠI THÁNG CŨ. Bỏ trống thì lấy tháng file tự khai.
+ *   File giữ nguyên cột tuần của mọi tháng, nên xem tháng cũ = lọc đúng nhóm cột của tháng đó.
+ *   KHÔNG chấm lại gì: dấu ✓/✕/o vẫn là dấu người ta gõ trong file. (Anh Tiến 01/10/2026:
+ *   "việc của app là lấy dấu tick, dấu X từ file này lên, chỉ có thế thôi".)
+ */
+export function parseComplianceFile(csvText: string, thangXem?: string): ComplianceFileData {
   const grid = parseCsv(csvText);
 
   // 1) DÒNG HEADER = dòng vừa có "Location" vừa có "Tên dự án".
@@ -110,10 +124,35 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
 
   // 3) CỘT TUẦN = ô header dạng dd/mm; GIỮ các tuần thuộc THÁNG CHẤM (mm). Không đọc được
   //    tháng → giữ tất cả (an toàn, thà hiện thừa còn hơn giấu data).
+  // NĂM của một cột dd/mm: file khai "THÁNG mm/yyyy" cho tháng ĐANG CHẠY, nên cột nào có tháng
+  // LỚN HƠN tháng đó là thuộc năm trước (06/05 … 28/10 đều 2026, nhưng 12/12 sẽ là 2025).
+  const namFile = +(monthLabel.slice(3) || "0");
+  const namCua = (moi: string) => (mm && +moi > +mm && namFile ? namFile - 1 : namFile);
+  const motCot = (h: string) => {
+    const wm = h.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (!wm) return null;
+    const moi = wm[2].padStart(2, "0");
+    return { moi, khoa: `${namCua(moi)}-${moi}` };
+  };
+  // CÁC THÁNG CÓ TRONG FILE — để màn hình bày đúng những tháng THẬT SỰ xem lại được.
+  const thangCo: string[] = [];
+  header.forEach((h) => { const t = motCot(h); if (t && namFile && !thangCo.includes(t.khoa)) thangCo.push(t.khoa); });
+  thangCo.sort();
+
+  /* XEM LẠI THÁNG CŨ = lọc đúng nhóm cột tuần của tháng đó. Không chấm lại, không suy ra từ
+     lịch sử của app — dấu vẫn là dấu trong file. */
+  /* So theo CẢ NĂM ("yyyy-mm"), không chỉ phần tháng. Hiện chưa vỡ vì ô chọn tháng chỉ bày tháng
+     có trong file, nhưng sang 01/2027 mà file vẫn giữ cột 12/12 thì hai tháng cùng số 12 sẽ trộn
+     vào nhau. (Điểm box Plan nêu 01/10/2026.) */
+  const khoaFile = mm && namFile ? `${namFile}-${mm}` : "";
+  const khoaXem = thangXem || khoaFile;
+  const mmXem = khoaXem.slice(5, 7);
+  const xemThangKhac = !!thangXem && !!khoaFile && khoaXem !== khoaFile;
+
   const weekCols: { idx: number; label: string }[] = [];
   header.forEach((h, c) => {
-    const wm = h.match(/^(\d{1,2})\/(\d{1,2})$/);
-    if (wm && (!mm || wm[2].padStart(2, "0") === mm)) weekCols.push({ idx: c, label: h });
+    const t = motCot(h);
+    if (t && (!khoaXem || t.khoa === khoaXem)) weekCols.push({ idx: c, label: h });
   });
 
   // 4) Nhãn "Ngày cập nhật:" (nếu có) — hiện lên cho biết file chốt lúc nào.
@@ -136,7 +175,10 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
     const hasAny = marks.some((m) => m !== null);
     // ĐIỂM: ưu tiên ĐỌC cột "Điểm" (J) Apps Script đã chấm (nguồn duy nhất — có cả rule BOD sau này);
     // thiếu cột / ô rỗng thì FALLBACK tự tính 100−25x−10o. Dự án chưa có mark nào → null (chưa chấm).
-    const sheetScore = cScore >= 0 ? toScore(r[cScore] || "") : null;
+    // Cột "Điểm tuân thủ" trong file là điểm của THÁNG ĐANG CHẠY (Apps Script ghi đè mỗi tháng).
+    // Xem lại tháng cũ mà lấy cột đó thì mọi dự án mang điểm tháng này — nên tính lại từ CHÍNH
+    // các dấu của tháng đang xem, bằng đúng công thức file ghi ở phần "Tiêu chí chấm điểm".
+    const sheetScore = !xemThangKhac && cScore >= 0 ? toScore(r[cScore] || "") : null;
     rows.push({
       stt,
       vung: (r[cVung] || "").trim(),
@@ -148,7 +190,16 @@ export function parseComplianceFile(csvText: string): ComplianceFileData {
     });
   }
 
-  return { monthLabel, weeks: weekCols.map((w) => w.label), rows, updatedLabel };
+  return {
+    // Nhãn tháng phải theo tháng ĐANG XEM, vì tiêu đề và cột tuần trên màn hình đọc từ đây.
+    monthLabel: xemThangKhac ? `${mmXem}/${khoaXem.slice(0, 4)}` : monthLabel,
+    weeks: weekCols.map((w) => w.label),
+    rows,
+    // "Ngày cập nhật" trong file là mốc của tháng đang chạy — xem tháng cũ thì nó không nói gì
+    // về tháng đó, bày ra chỉ gây hiểu nhầm.
+    updatedLabel: xemThangKhac ? null : updatedLabel,
+    thangCo,
+  };
 }
 
 /** Điểm PM = TRUNG BÌNH CỘNG điểm các dự án PM quản (bỏ dự án score null). */
