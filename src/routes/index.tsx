@@ -168,7 +168,20 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
- *   v3.124.0 (01/10/2026): BỎ đường app CHẤM LẠI tháng cũ. parseComplianceFile(csv, thangXem) lọc
+ *   v3.125.0 (01/10/2026): NÚT "Cập nhật bản gửi mail" TỰ BẤM thứ Tư 20:00 VN. Nút đó dựng PDF
+ *     bằng html2canvas nên BẮT BUỘC có trình duyệt thật — đó là lý do bản tự động cũ (warmer)
+ *     phải đi Google export Sheet→PDF và ra file ~135KB khác hẳn bản app ~1.5MB. Nay warmer mở app
+ *     bằng Browser Rendering (binding MYBROWSER) với cờ ?tudong=1 → app tự gọi ĐÚNG doExportPdf
+ *     ("portrait","drive"), một renderer duy nhất. Kết quả app ghi vào #tudong-ketqua ("xong …" /
+ *     "hut …") vì worker không thấy toast; hụt thì LÙI về Google export để 21h mail vẫn có file.
+ *     ĐƯỜNG VÀO: auth-gate nhận secret RENDER_TOKEN (header x-epmp-render) CHỈ ở GET / có ?tudong=1,
+ *     rồi đổi ngay sang phiên thường 10 PHÚT cho ROBOT_EMAIL. Nhánh đặt SAU bước kiểm phiên —
+ *     đặt trước là vòng chuyển hướng vô tận vì header còn nguyên ở request sau. Robot KHÔNG có vai
+ *     trong roles:v1, chỉ được gọi saveComplianceReportPdf (chốt quyền trong chính hàm đó).
+ *     Cron warmer đổi "30 13 * * 3" → "0 13 * * *" (20:00 VN) + tự kiểm thứ trong code: Cloudflare
+ *     đếm thứ theo 1=CHỦ NHẬT nên "* * 3" là THỨ BA — đo Drive 4/4 file máy dựng rơi thứ Ba.
+ *     TÊN FILE trả lại khuôn cũ BaoCaoTuanThu_MP_<ngày>.pdf (3.123.0 đổi thành _<tháng>_<ngày>,
+ *     lệch khỏi dãy có từ 28/08 mà chỗ gửi mail lấy "bản mới nhất" theo đó); tháng CŨ mang tên tháng. *   v3.124.0 (01/10/2026): BỎ đường app CHẤM LẠI tháng cũ. parseComplianceFile(csv, thangXem) lọc
  *     đúng nhóm cột tuần của tháng đó trong CHÍNH file nguồn — file giữ đủ 24 cột 06/05→28/10, tiền
  *     đề 'file chỉ giữ tháng đang chạy' là SAI. Năm của cột dd/mm suy từ ô 'THÁNG mm/yyyy' (tháng >
  *     tháng file = năm trước), so khoá 'yyyy-mm' chứ không so phần tháng. Cột Điểm của file là điểm
@@ -554,6 +567,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.125.0", date: "01/10/2026", items: [
+    "BẢN PDF GỬI MAIL NAY TỰ LÊN DRIVE mỗi thứ Tư 20:00, và là ĐÚNG bản app xuất ra - không còn là bản chụp từ file nguồn. Không phải bấm tay nữa.",
+    "Trước đây lịch tự động chạy sai ngày: nó dựng vào thứ Ba nên bản thứ Tư mà mail cần thì chưa bao giờ có.",
+    "Tên file PDF trả lại khuôn cũ BaoCaoTuanThu_MP_<ngày>.pdf. Xem tháng cũ thì file mang tên tháng, để trong hộp thư hai bản không lẫn nhau.",
+  ] },
   { v: "3.124.0", date: "01/10/2026", items: [
     "BÁO CÁO TUÂN THỦ THÁNG CŨ NAY LẤY ĐÚNG SỐ TRONG FILE NGUỒN. File nguồn giữ đủ cột tuần từ tháng 5 tới nay, nên chọn tháng nào là đọc thẳng dấu của tháng đó. Bản 3.123.0 cho app tự chấm lại nên số lệch: cột 30/09 ra 32 dấu đúng hạn trong khi file nguồn ghi 63.",
     "Bảng tháng cũ nay đủ 85 dự án như file nguồn (bản trước chỉ 68).",
@@ -4561,6 +4579,16 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   /* ── BÁO CÁO TUÂN THỦ CẬP NHẬT — theo THÁNG hiện tại. Không ăn theo bộ lọc: đây là
         báo cáo đánh giá PM trên TOÀN BỘ dự án đang chạy. ── */
   const [showCompliance, setShowCompliance] = useState(false);
+  /* ?tudong=1 → mở hộp thoại tuân thủ rồi TỰ bấm "Cập nhật bản gửi mail".
+     Đường này dành cho warmer: thứ Tư 20:00 VN nó mở app bằng trình duyệt trên mây, vì nút đó
+     dựng PDF bằng cách chụp giao diện nên phải có trình duyệt thật.
+     Đọc trong useEffect (không đọc lúc dựng) để bản trên máy chủ và bản trên máy khách khớp nhau. */
+  const [tuDongTuanThu, setTuDongTuanThu] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tudong") !== "1") return;
+    setTuDongTuanThu(true);
+    setShowCompliance(true);
+  }, []);
   /** THÁNG đang xem của báo cáo tuân thủ. Mặc định tháng hiện tại — mở ra là y như cũ. */
   const [thangTuanThu, setThangTuanThu] = useState(() => today.slice(0, 7));
   /* File nguồn tuân thủ RIÊNG (✔/o/x đã điền sẵn) — tải LAZY khi mở dialog. App chỉ chấm điểm,
@@ -4967,6 +4995,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         thangCo={thangCoXem}
         onDoiThang={setThangTuanThu}
         laThangCu={laThangCuTuanThu}
+        tudong={tuDongTuanThu}
         onRetry={() => complianceFileQuery.refetch()}
         onClose={() => setShowCompliance(false)} />}
       {showActivity && <ActivityLogDialog onClose={() => setShowActivity(false)} />}
@@ -9465,7 +9494,7 @@ function cmpVietGivenName(a: string, b: string): number {
   return given(a).localeCompare(given(b), "vi") || a.localeCompare(b, "vi");
 }
 
-function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, fetchedAt, canManage, canEdit, thang, thangCo, onDoiThang, laThangCu, onRetry, onClose }: {
+function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, fetchedAt, canManage, canEdit, thang, thangCo, onDoiThang, laThangCu, tudong, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
   regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; mpDeadlineByName: Map<string, string>; today: string;
   /** Luc file tuan thu duoc TAI VE (dataUpdatedAt). Moc THAT cua so lieu dang hien, khong phai gio hien tai. */
@@ -9475,8 +9504,11 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   /** Các tháng chấm lại được, mới nhất đứng đầu. */
   thangCo: string[];
   onDoiThang: (t: string) => void;
-  /** True = số đang bày là app CHẤM LẠI từ lịch sử, không phải bản chụp của file hồi đó. */
+  /** True = đang xem tháng CŨ (không phải tháng file đang chạy).
+   *  Dùng để đặt tên file PDF và KHOÁ nút đẩy bản gửi mail lên Drive. */
   laThangCu?: boolean;
+  /** True = URL có ?tudong=1 → TỰ bấm "Cập nhật bản gửi mail" một lần rồi thôi. */
+  tudong?: boolean;
   onRetry: () => void; onClose: () => void;
 }) {
   const narrowCpl = useIsMobile();   // điện thoại: bảng giữ khổ đọc được rồi cuộn ngang
@@ -9667,11 +9699,12 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   const rulesRef = useRef<HTMLDivElement>(null);    // khối "Cách tính điểm" + chú thích — đính vào bản in
   const [exporting, setExporting] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<{ url: string; name: string } | null>(null);
-  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait", mode: "download" | "preview" | "drive" = "download") => {
-    if (exporting) return;
+  /** Trả KẾT QUẢ để đường tự động (?tudong=1) biết xong hay hụt — nó không thấy toast. */
+  const doExportPdf = async (orientation: "landscape" | "portrait" = "portrait", mode: "download" | "preview" | "drive" = "download"): Promise<{ ok: boolean; fileName?: string; loi?: string }> => {
+    if (exporting) return { ok: false, loi: "đang xuất bản khác" };
     const isPreview = mode === "preview";
     const isDrive = mode === "drive";
-    if (!headerRef.current) return;
+    if (!headerRef.current) return { ok: false, loi: "bảng chưa dựng xong" };
     setExporting(true);
     const tid = toast.loading(isDrive ? "Đang cập nhật bản gửi mail lên Drive…" : isPreview ? "Đang dựng PDF để xem trước…" : "Đang tạo PDF để tải…", { position: "bottom-left" });
     // header/table NẰM TRONG modal "print:hidden"; onclone của pdf-export XOÁ phần tử print:hidden khỏi clone
@@ -9687,10 +9720,11 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     hKids.forEach((k, i) => { k.style.lineHeight = "1.5"; k.style.marginTop = i === 0 ? "0" : "3px"; });
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
-      // Tên theo NGÀY BÁO CÁO (tuần) → mỗi tuần 1 file lưu trữ; mail đính kèm đúng bản mới nhất của tuần đó.
-      // TÊN FILE MANG ĐÚNG THÁNG ĐANG XEM. Xuất lại tháng 9 mà file tên theo hôm nay thì
-    // trong hộp thư hai bản nằm cạnh nhau không phân biệt nổi.
-    const fileName = `BaoCaoTuanThu_MP_${thang}${laThangCu ? "" : `_${today}`}.pdf`;
+      /* TÊN FILE GIỮ ĐÚNG DÃY ĐÃ CÓ TRÊN DRIVE.
+         Tháng ĐANG CHẠY → "BaoCaoTuanThu_MP_<ngày>.pdf": dãy này có từ 28/08 và chỗ gửi mail lấy
+         "bản mới nhất" theo đó, nên đừng đổi khuôn. Tháng CŨ → mang tên THÁNG, vì đó là bản tra
+         lại chứ không phải bản của tuần này, để trong hộp thư hai bản không lẫn vào nhau. */
+      const fileName = laThangCu ? `BaoCaoTuanThu_MP_${thang}.pdf` : `BaoCaoTuanThu_MP_${today}.pdf`;
       // CHỈ 1 báo cáo: header + khối "Cách tính điểm" + bảng, ép gọn.
       const blocks: HTMLElement[] = [headerRef.current];
       if (rulesRef.current) blocks.push(rulesRef.current);
@@ -9702,18 +9736,20 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
         preview: isPreview, toDataUri: isDrive, fileName,
       });
       track("export_pdf", `${isDrive ? "→DRIVE · " : isPreview ? "XEM TRƯỚC · " : ""}Báo cáo tuân thủ MP${data?.monthLabel ? ` tháng ${data.monthLabel}` : ""}`.slice(0, 300));
-      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); return; }
+      if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); return { ok: true, fileName }; }
       if (isDrive) {
         // CHỈ ADMIN chủ động: cập nhật bản PDF gửi mail lên Drive (ghi đè bản tuần này). KHÔNG dính vào nút Tải.
         if (!dataUri) throw new Error("Không dựng được dữ liệu PDF.");
         const r = await saveComplianceReportPdf({ data: { fileName, dataUri, devAs: devAs() } });
         track("compliance_pdf", fileName);
         toast.success(`Đã ${r.updated ? "cập nhật (ghi đè)" : "lưu"} bản PDF gửi mail lên Drive — mail tự động sẽ đính kèm bản này.`);
-        return;
+        return { ok: true, fileName };
       }
       toast.success(`Đã tải PDF báo cáo tuân thủ (${pages} trang).`);
+      return { ok: true, fileName };
     } catch (e) {
       toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
+      return { ok: false, loi: (e as Error).message };
     } finally {
       hKids.forEach((k, i) => { k.style.cssText = hSaved[i]; });                 // trả lại cụm tiêu đề như cũ (app không đổi)
       stripped.forEach((el) => el.classList.add("print:hidden"));
@@ -9721,6 +9757,27 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
       setExporting(false);
     }
   };
+
+  /* TỰ BẤM "CẬP NHẬT BẢN GỬI MAIL" — chỉ khi URL có ?tudong=1.
+   *
+   * Chạy ĐÚNG MỘT LẦN (daTuDong), và CHỈ khi bảng đã có dữ liệu thật: xuất lúc bảng còn rỗng thì
+   * ra một bản trắng rồi GHI ĐÈ bản tốt đang nằm trên Drive — tệ hơn là không có gì.
+   *
+   * Kết quả ghi vào #tudong-ketqua: bên gọi là một trình duyệt trên mây, nó không thấy toast nên
+   * phải đọc được xong hay hụt từ DOM. */
+  const daTuDong = useRef(false);
+  const [ketQuaTuDong, setKetQuaTuDong] = useState("");
+  useEffect(() => {
+    if (!tudong || daTuDong.current) return;
+    if (loading || error || !data || !byPm.length || !tableRef.current || !headerRef.current) return;
+    daTuDong.current = true;
+    void (async () => {
+      const r = await doExportPdf("portrait", "drive");
+      setKetQuaTuDong(r.ok ? `xong ${r.fileName}` : `hut ${r.loi ?? "?"}`);
+    })();
+    // doExportPdf là closure dựng lại mỗi lần vẽ — đưa vào deps thì hiệu ứng chạy lại liên tục.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tudong, loading, error, data, byPm.length]);
 
   // ── FORM BÁO CÁO (chốt với sếp): admin/PMO tự KÉO RỘNG CỘT + chỉnh CỠ CHỮ + IN ĐẬM rồi LƯU (áp mọi người + bản in). ──
   const nWeekCols = Math.max(5, data?.weeks.length ?? 5);
@@ -9818,6 +9875,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 print:hidden">
+      {/* Ô BÁO KẾT QUẢ cho đường tự động — đặt ngoài màn hình, chỉ có khi ?tudong=1 nên người
+          dùng thường không bao giờ thấy. */}
+      {tudong && <div id="tudong-ketqua" data-ketqua={ketQuaTuDong} className="pointer-events-none fixed left-[-9999px] top-0">{ketQuaTuDong}</div>}
       <div onClick={(e) => e.stopPropagation()} className="flex max-h-[92vh] w-full max-w-[1360px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="relative z-40 flex items-start justify-between gap-3 px-5 pb-1 pt-2">
           <div className="min-w-0 flex-1">

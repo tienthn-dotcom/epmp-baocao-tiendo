@@ -11,6 +11,7 @@ import {
   SESSION_COOKIE, STATE_COOKIE, SESSION_TTL_SEC,
   type AuthEnv, buildAuthUrl, cookieHeader, decideAccess, exchangeCode,
   readAllowlist, readCookie, signSession, verifySession,
+  ROBOT_EMAIL, bangNhauAnToan,
 } from "./auth";
 import { authErrorPage, deniedPage, notConfiguredPage } from "./auth-pages";
 
@@ -122,6 +123,35 @@ export async function authGate(request: Request, envIn: unknown): Promise<Respon
   /* ── Mọi đường khác: bắt buộc có phiên hợp lệ ── */
   const session = await verifySession(readCookie(request, SESSION_COOKIE), secret);
   if (session) return null;
+
+  /* ĐẶT SAU BƯỚC KIỂM PHIÊN, KHÔNG ĐẶT TRƯỚC. Đặt trước là VÒNG CHUYỂN HƯỚNG VÔ TẬN: trình
+     duyệt trên mây gắn chuỗi bí mật vào HEADER nên nó còn nguyên ở cú request sau, nhánh này
+     khớp lại và lại chuyển hướng. Có phiên rồi thì ở trên đã `return null`, không xuống tới đây. */
+  /* ── CHÌA RIÊNG CHO MÁY ──────────────────────────────────────────────────────────────────
+   * Nút "Cập nhật bản gửi mail" dựng PDF bằng cách CHỤP GIAO DIỆN, nên bắt buộc có trình duyệt
+   * thật — Worker không chụp được. Nên thứ Tư 20:00 VN, warmer mở app bằng trình duyệt trên mây
+   * và cần một đường vào, trong khi app chặn đăng nhập Google.
+   *
+   * KHOÁ CHẶT BA LỚP, vì đây là đường vào app đang có 10-17 người dùng:
+   *   1. Chỉ đúng GET trang gốc có cờ ?tudong=1. Mọi đường khác không xét chìa này.
+   *   2. Chuỗi bí mật RENDER_TOKEN so theo kiểu không lộ thời gian. Không đặt secret = không có
+   *      đường này (nhánh tự tắt).
+   *   3. Đổi ngay sang PHIÊN THƯỜNG, hạn 10 PHÚT, danh tính ROBOT_EMAIL. Sau cú chuyển hướng này
+   *      chuỗi bí mật KHÔNG còn trên URL nữa, và mọi thứ tiếp theo đi đúng đường phiên như cũ.
+   *
+   * Robot KHÔNG có vai trong roles:v1. Nó chỉ được gọi đúng saveComplianceReportPdf (chốt quyền
+   * nằm trong hàm đó). Chuỗi lọt ra ngoài thì kẻ nhặt được có 10 phút xem app — nên nếu nghi lộ:
+   * đặt lại secret là chuỗi cũ chết ngay.
+   */
+  if (env.RENDER_TOKEN && request.method === "GET" && url.pathname === "/" && url.searchParams.get("tudong") === "1") {
+    const dua = request.headers.get("x-epmp-render") || url.searchParams.get("rt") || "";
+    if (dua && bangNhauAnToan(dua, env.RENDER_TOKEN)) {
+      const phien = { email: ROBOT_EMAIL, name: "ePMP tự động", exp: Math.floor(Date.now() / 1000) + 600 };
+      const token = await signSession(phien, secret);
+      return redirect("/?tudong=1", [cookieHeader(SESSION_COOKIE, token, 600, isHttps(url))]);
+    }
+  }
+
 
   // Server function (POST/fetch) mà hết phiên → trả 401 thay vì redirect, để phía client
   // biết đường báo "hết phiên" chứ không nhận về nguyên trang HTML của Google rồi vỡ parse.

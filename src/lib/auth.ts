@@ -45,7 +45,26 @@ export type AuthEnv = {
   /** Giới hạn thêm theo domain Workspace. Rỗng = không xét domain, chỉ xét danh sách. */
   ALLOWED_HD?: string;
   PMO_EDITS?: KVLike;
+  /** CHÌA RIÊNG CHO MÁY — chuỗi bí mật để warmer tự mở app thứ Tư 20:00 mà bấm nút
+   *  "Cập nhật bản gửi mail". Xem ROBOT_EMAIL và nhánh robot trong auth-gate.ts.
+   *  KHÔNG đặt = không có đường nào vào app bằng chìa này. */
+  RENDER_TOKEN?: string;
 };
+
+/** DANH TÍNH CỦA MÁY khi nó tự bấm "Cập nhật bản gửi mail".
+ *
+ *  Để một email RIÊNG, không mượn email người thật: nhật ký giám sát ghi đúng là máy làm, và
+ *  muốn rà lại việc gì do máy làm thì lọc đúng một chuỗi này. Email này KHÔNG có vai trong
+ *  roles:v1 — nó chỉ được phép gọi đúng saveComplianceReportPdf, xem chốt quyền ở đó. */
+export const ROBOT_EMAIL = "robot-tuanthu@aacorporation.com";
+
+/** So hai chuỗi bí mật mà KHÔNG để lộ qua thời gian so sánh (tránh dò từng ký tự). */
+export function bangNhauAnToan(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
 
 /* ───────────────────────── base64url ───────────────────────── */
 

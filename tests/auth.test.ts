@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideAccess, signSession, verifySession, readCookie, cookieHeader } from "../src/lib/auth";
+import { decideAccess, signSession, verifySession, readCookie, cookieHeader, bangNhauAnToan, ROBOT_EMAIL } from "../src/lib/auth";
 
 const DS = ["tienthn@aacorporation.com", "sep@aacorporation.com"];
 
@@ -140,5 +140,49 @@ describe("thuộc tính cookie", () => {
     const h = cookieHeader("x", "1", 60, true);
     expect(h).toContain("HttpOnly");   // JS không đọc được ⇒ XSS không cuỗm được phiên
     expect(h).toContain("SameSite=Lax"); // Strict thì callback từ Google không gửi cookie
+  });
+});
+
+/* CHÌA RIÊNG CHO MÁY — chuỗi bí mật để warmer tự bấm nút "Cập nhật bản gửi mail" thứ Tư 20:00.
+ * Đây là một ĐƯỜNG VÀO app đang có 10-17 người dùng, nên phép so chuỗi phải kín. */
+describe("so chuỗi bí mật", () => {
+  it("trùng thì nhận", () => expect(bangNhauAnToan("abc123", "abc123")).toBe(true));
+  it("lệch một ký tự thì chặn", () => expect(bangNhauAnToan("abc123", "abc124")).toBe(false));
+  it("khác độ dài thì chặn", () => expect(bangNhauAnToan("abc", "abc1")).toBe(false));
+  it("rỗng không khớp chuỗi thật", () => expect(bangNhauAnToan("", "abc")).toBe(false));
+  /* GÁC: chuỗi rỗng khớp chuỗi rỗng là ĐÚNG về mặt so sánh, nên nhánh gọi phải tự chặn chuỗi
+     rỗng (`dua && bangNhauAnToan(...)` trong auth-gate.ts). Ghi lại đây để ai đọc test biết
+     chỗ chặn nằm ở đâu, đừng tưởng hàm này lo. */
+  it("rỗng khớp rỗng — nên nhánh gọi PHẢI tự chặn chuỗi rỗng", () => {
+    expect(bangNhauAnToan("", "")).toBe(true);
+  });
+  it("so bao nhiêu lần cũng cùng kết quả, không phụ thuộc vị trí lệch", () => {
+    const that = "x".repeat(64);
+    expect(bangNhauAnToan("y" + that.slice(1), that)).toBe(false);
+    expect(bangNhauAnToan(that.slice(0, 63) + "y", that)).toBe(false);
+  });
+});
+
+describe("danh tính của máy", () => {
+  /* Phải là một email RIÊNG, KHÔNG phải email người thật: nhật ký giám sát ghi đúng là máy làm.
+     Đổi chuỗi này thì chốt quyền trong saveComplianceReportPdf không khớp nữa và máy mất quyền
+     ghi báo cáo — nên gác lại. */
+  it("là email riêng của máy, không phải người", () => {
+    expect(ROBOT_EMAIL).toBe("robot-tuanthu@aacorporation.com");
+  });
+  it("phiên của máy ký và đọc lại được như phiên thường", async () => {
+    const bm = "bi-mat-de-test";
+    const t = await signSession({ email: ROBOT_EMAIL, name: "ePMP tự động", exp: Math.floor(Date.now() / 1000) + 600 }, bm);
+    const p = await verifySession(t, bm);
+    expect(p?.email).toBe(ROBOT_EMAIL);
+  });
+  it("phiên của máy HẾT HẠN thì không đọc được nữa", async () => {
+    const bm = "bi-mat-de-test";
+    const t = await signSession({ email: ROBOT_EMAIL, name: "ePMP tự động", exp: Math.floor(Date.now() / 1000) - 1 }, bm);
+    expect(await verifySession(t, bm)).toBeNull();
+  });
+  it("ký bằng bí mật khác thì không đọc được", async () => {
+    const t = await signSession({ email: ROBOT_EMAIL, name: "x", exp: Math.floor(Date.now() / 1000) + 600 }, "bi-mat-A");
+    expect(await verifySession(t, "bi-mat-B")).toBeNull();
   });
 });

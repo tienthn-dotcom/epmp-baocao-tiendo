@@ -7,6 +7,7 @@
 // DEPLOY (chạy 1 lần, cd vào thư mục warmer):  npx wrangler deploy
 // Cron của Cloudflare tự chạy sau đó. Test tay: mở URL worker này (GET) → warm ngay.
 import { unzipSync, zipSync, strFromU8 } from "fflate";
+import puppeteer from "@cloudflare/puppeteer";
 
 const CACHE_TTL_S = 3 * 86_400;
 
@@ -633,6 +634,48 @@ Content-Type: application/pdf
   return { name, kb: Math.round(bytes.length / 1024), updated: !!existing };
 }
 
+/* ── TỰ BẤM NÚT "CẬP NHẬT BẢN GỬI MAIL" TRÊN APP ───────────────────────────────
+ *
+ * Anh Tiến 01/10/2026: "cái file tôi muốn nằm trong đó, là file export từ app, chứ không phải
+ * là file chụp từ file nguồn" / "nút cập nhật bản gửi mail, tôi muốn nó tự hoạt động vào mỗi
+ * 20 giờ ngày thứ 4, đơn giản vậy thôi".
+ *
+ * Nút đó dựng PDF bằng cách CHỤP GIAO DIỆN (html2canvas → jsPDF) nên bắt buộc có trình duyệt
+ * thật. Đó đúng là lý do backupCompliancePdf bên trên phải đi đường Google export Sheet→PDF, và
+ * ra file ~135KB khác hẳn bản app ~1.5MB — tức KHÔNG phải thứ anh Tiến cần đính mail.
+ *
+ * NÊN: mở app bằng trình duyệt trên mây, đưa cờ ?tudong=1, rồi để CHÍNH APP chạy đúng hàm của
+ * nút. Không dựng lại form ở đây — một form, một renderer, không có chỗ để lệch nhau.
+ * App ghi kết quả vào #tudong-ketqua ("xong <tên file>" / "hut <lý do>") vì ở đây không thấy toast.
+ */
+const APP_URL = "https://baocao-tiendo-pmo.tienthn.workers.dev";
+
+async function tuBamNutGuiMail(env) {
+  if (!env.RENDER_TOKEN) return { ok: false, skip: "thiếu secret RENDER_TOKEN" };
+  if (!env.MYBROWSER) return { ok: false, skip: "chưa gắn binding MYBROWSER (Browser Rendering)" };
+  const browser = await puppeteer.launch(env.MYBROWSER);
+  try {
+    const page = await browser.newPage();
+    // Chuỗi bí mật đi bằng HEADER, không bằng URL — URL thì nằm lại trong nhật ký truy cập.
+    await page.setExtraHTTPHeaders({ "x-epmp-render": env.RENDER_TOKEN });
+    // KHÔNG chờ "networkidle": app có mấy truy vấn chạy nền nên mạng gần như không bao giờ lặng.
+    await page.goto(`${APP_URL}/?tudong=1`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.getElementById("tudong-ketqua");
+        return !!el && !!el.textContent && el.textContent.trim().length > 0;
+      },
+      { timeout: 170_000, polling: 1000 },
+    );
+    const ket = await page.$eval("#tudong-ketqua", (el) => el.textContent.trim());
+    return ket.startsWith("xong") ? { ok: true, ket } : { ok: false, ket };
+  } catch (e) {
+    return { ok: false, loi: String((e && e.message) || e) };
+  } finally {
+    try { await browser.close(); } catch { /* đóng hụt cũng không che được kết quả trên */ }
+  }
+}
+
 /* ── NGÀY SỬA CUỐI CỦA TỪNG LINK — làm sẵn MỖI NGÀY MỘT LƯỢT ────────────────────────────────
  *
  * Cột "ngày update" của bảng chính hiện ngày sửa cuối của file trong link. Trước đây app tự đi hỏi
@@ -694,8 +737,8 @@ async function lamMoiNgaySuaLink(env) {
 export default {
   // HAI lịch (xem wrangler.toml):
   //  · "30 10 * * *" (17:30 VN) — warm Summary + sao lưu nhật ký giám sát.
-  //  · "30 13 * * *" (20:30 VN) — PDF báo cáo tuân thủ, NHƯNG CHỈ LÀM VÀO THỨ TƯ (kiểm thứ trong
-  //    hàm, không neo vào cron — xem khối chú thích ở nhánh đó).
+  //  · "0 13 * * *" (20:00 VN) — TỰ BẤM nút "Cập nhật bản gửi mail" trên app, CHỈ VÀO THỨ TƯ
+  //    (kiểm thứ trong hàm, không neo vào cron — xem khối chú thích ở nhánh đó).
   async scheduled(event, env, ctx) {
     const cron = (event && event.cron) || "";
     /* 20:30 VN — PDF BÁO CÁO TUÂN THỦ, chỉ làm vào THỨ TƯ (trước mốc gửi mail 21h).
@@ -709,11 +752,18 @@ export default {
      * Kiểm bằng Date theo giờ VN thì đúng sai không phụ thuộc quy ước đếm thứ của Cloudflare,
      * và đọc code là thấy ngay ý định. Khớp theo tiền tố "30 13 " để lịch có bị chuẩn hoá lại
      * cũng không rơi xuống nhánh warm ở dưới. */
-    if (/^30 13 /.test(cron)) {
+    if (/^(0|30) 13 /.test(cron)) {
       const vn = new Date(Date.now() + 7 * 3600_000);   // worker chạy UTC
       if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ
-      ctx.waitUntil(backupCompliancePdf(env).then((r) => console.log("compliancePdf:", JSON.stringify(r)))
-        .catch((e) => console.error("backupCompliancePdf lỗi:", e)));
+      /* TỰ BẤM NÚT TRÊN APP — ra ĐÚNG bản app xuất (~1.5MB), đúng thứ cần đính mail.
+         Hụt thì LÙI về bản Google export Sheet→PDF: thà có bản khác khuôn còn hơn thư mục
+         trống trơn lúc 21h trigger gửi mail quét. */
+      ctx.waitUntil(tuBamNutGuiMail(env).then(async (r) => {
+        console.log("tuBamNut:", JSON.stringify(r));
+        if (r && r.ok) return;
+        const lui = await backupCompliancePdf(env);
+        console.log("lui ve Google export:", JSON.stringify(lui));
+      }).catch((e) => console.error("tuBamNutGuiMail lỗi:", e)));
       return;
     }
     if (cron === "30 16 * * *") {             // 23:30 VN — chốt ngày: nhật ký giám sát + TOÀN BỘ dữ liệu KV
@@ -778,6 +828,12 @@ export default {
        nên cần một đường bấm tay cho lần hụt hoặc bản gấp ngoài lịch. CHỈ làm đúng việc này —
        URL trần làm liền bốn việc và đó chính là thứ đã gây Error 1102. Tên file mang NGÀY HÔM
        NAY theo giờ VN, trùng khuôn bản tự động. */
+    /* TỰ BẤM NÚT NGAY: mở "…/?tubam=1". Dùng để nghiệm thu, hoặc khi thứ Tư hụt mà cần bản
+       đúng khuôn app. Ra cùng một file như người bấm nút trên app. */
+    if (tham.get("tubam")) {
+      const r = await tuBamNutGuiMail(env);
+      return new Response(JSON.stringify(r, null, 2), { status: r && r.ok ? 200 : 500, headers: { "content-type": "application/json" } });
+    }
     if (tham.get("pdf")) {
       try {
         const r = await backupCompliancePdf(env);

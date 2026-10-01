@@ -7,7 +7,7 @@ compatibility_date = "2024-09-23"
 # HAI lịch (Cloudflare cron chạy theo UTC):
 #  · "30 10 * * *" = 17:30 VN — warm Summary + sao lưu nhật ký giám sát.
 #    PHẢI KHỚP mốc REFRESH_HOUR_VN/REFRESH_MIN_VN trong src/lib/mtld-install.functions.ts.
-#  · "30 13 * * *" = 20:30 VN MỖI NGÀY — dựng PDF báo cáo tuân thủ vào Drive, nhưng src/index.mjs
+#  · "0 13 * * *" = 20:00 VN MỖI NGÀY — dựng PDF báo cáo tuân thủ vào Drive, nhưng src/index.mjs
 #    CHỈ LÀM VÀO THỨ TƯ (tự kiểm thứ theo giờ VN). Trước đây lịch này ghi "30 13 * * 3" với ý
 #    thứ Tư, mà Cloudflare đếm thứ theo 1=CHỦ NHẬT nên 3 = THỨ BA. Đo trên Drive: 4/4 file máy
 #    dựng (08, 15, 22, 29/09) đều rơi THỨ BA 20:30, còn file thứ Tư mà trigger gửi mail cần thì
@@ -26,9 +26,17 @@ crons = [
   "0 2 * * *",      # 09:00 VN — ngày sửa cuối của link + camera công trường + warm (lô 1)
   "30 7 * * *",     # 14:30 VN — warm Summary (lô 2)
   "30 10 * * *",    # 17:30 VN — warm Summary (lô 3). PHẢI khớp REFRESH_HOUR_VN/MIN_VN của app.
-  "30 13 * * *",    # 20:30 VN mỗi ngày — chỉ THỨ TƯ mới dựng PDF (kiểm thứ trong index.mjs)
+  "0 13 * * *",     # 20:00 VN mỗi ngày — chỉ THỨ TƯ mới chạy (kiểm thứ trong index.mjs)
   "30 16 * * *",    # 23:30 VN — sao lưu nhật ký giám sát + TOÀN BỘ dữ liệu KV + vân tay nguồn
 ]
+
+# TRÌNH DUYỆT TRÊN MÂY (Browser Rendering). Cần vì nút "Cập nhật bản gửi mail" của app dựng PDF
+# bằng cách CHỤP GIAO DIỆN — Worker không chụp được. Warmer mở app bằng trình duyệt này rồi để
+# chính app chạy đúng hàm của nút đó, nên không có renderer thứ hai để lệch nhau.
+[browser]
+binding = "MYBROWSER"
+
+# CẦN THÊM 1 SECRET: npx wrangler secret put RENDER_TOKEN  (phải TRÙNG chuỗi đặt trên app chính)
 
 # KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
 [[kv_namespaces]]

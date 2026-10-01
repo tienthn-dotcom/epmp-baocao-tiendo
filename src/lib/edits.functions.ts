@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { ROBOT_EMAIL } from "@/lib/auth";
 import { z } from "zod";
 import { demGhiKv } from "@/lib/kv-dem";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
@@ -1635,7 +1636,11 @@ export const saveComplianceReportPdf = createServerFn({ method: "POST" })
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ id: string; link: string; updated: boolean }> => {
-    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu báo cáo lên Drive.");
+    /* CHỐT QUYỀN: admin, OCC, HOẶC máy tự chạy (?tudong=1 thứ Tư 20:00 — xem nhánh robot trong
+       lib/auth-gate.ts). Robot được phép ĐÚNG MỘT VIỆC này và không có vai trong roles:v1, nên
+       mọi hàm chốt quyền khác vẫn chặn nó. */
+    const laRobot = (await callerEmail(data.devAs)) === ROBOT_EMAIL;
+    if (!(laRobot || (await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được lưu báo cáo lên Drive.");
     const drive = await import("@/lib/drive.functions");
     if (!(await drive.driveIsConfigured())) throw new Error("Chưa cấu hình Google Drive (thiếu GDRIVE_OAUTH_*).");
     return await drive.driveSaveReportImpl(["ePMP", "Báo cáo tuân thủ"], data.fileName, data.dataUri);
