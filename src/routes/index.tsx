@@ -79,6 +79,7 @@ import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
+import { doiSangDangFile, nhanThang, thangCoTheCham, thangTuNhan } from "@/lib/tuan-thu-thang";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
 import {
@@ -544,6 +545,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.123.0", date: "01/10/2026", items: [
+    "BÁO CÁO TUÂN THỦ NAY CHỌN ĐƯỢC THÁNG. Ô “Tháng” nằm trên thanh công cụ của hộp thoại; chọn tháng nào thì bảng và bản PDF xuất ra đều theo tháng đó. Tên file cũng mang đúng tháng (BaoCaoTuanThu_MP_2026-09.pdf).",
+    "Vì sao cần: file tuân thủ trên Drive CHỈ giữ tháng đang chạy. Sáng 01/10 nó nhảy sang tháng 10 với bốn cột tuần trống và mọi dự án 100 điểm, nên không còn gì để xuất lại cho tháng 9.",
+    "Tháng cũ app CHẤM LẠI từ lịch sử ngày cập nhật, bằng đúng bộ luật đang chấm tháng hiện tại. Bản PDF có ghi rõ câu này ngay dưới tiêu đề để người nhận biết số từ đâu ra. Tháng đang chạy vẫn đọc thẳng file như cũ, không đổi gì.",
+    "Xem tháng cũ thì nút “Cập nhật bản gửi mail” tạm khoá, tránh ghi đè bản tuần này trên Drive bằng bản tháng trước.",
+  ] },
   { v: "3.122.0", date: "29/09/2026", items: [
     "THÊM TRỢ LÝ ePMP — nút “Trợ lý” góc dưới bên phải, hoặc bấm Ctrl+K. Hỏi được về số liệu dự án (tổng quan, dự án nào trễ, bàn giao tháng nào, tra một dự án theo mã CT hay tên), về master plan (ai cần trình BOD, hạn bao giờ, quá hạn mấy tuần), và về cách dùng app (cú pháp ghi vướng mắc, bộ lọc, sắp xếp, xuất file, phân cấp).",
     "Trợ lý BIẾT anh/chị đang đứng ở đâu: đang ở màn nào, đang lọc gì, đang mở dự án nào. Đang mở một dự án mà hỏi trống không “sao chậm vậy” thì nó hiểu là hỏi dự án đó. Đang lọc thì nó tính trên phần đang lọc và nói rõ, đổi sang “tất cả” được ngay ở đầu khung.",
@@ -4536,6 +4543,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   /* ── BÁO CÁO TUÂN THỦ CẬP NHẬT — theo THÁNG hiện tại. Không ăn theo bộ lọc: đây là
         báo cáo đánh giá PM trên TOÀN BỘ dự án đang chạy. ── */
   const [showCompliance, setShowCompliance] = useState(false);
+  /** THÁNG đang xem của báo cáo tuân thủ. Mặc định tháng hiện tại — mở ra là y như cũ. */
+  const [thangTuanThu, setThangTuanThu] = useState(() => today.slice(0, 7));
   /* File nguồn tuân thủ RIÊNG (✔/o/x đã điền sẵn) — tải LAZY khi mở dialog. App chỉ chấm điểm,
      mọi data ✔/o/x + vùng + PM + lũy kế lấy thẳng từ file này. Xem lib/compliance-file.ts. */
   const complianceFileQuery = useQuery({
@@ -4569,8 +4578,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           quality: { active: active.length, missingQuant, missingDates, missingPic },
         };
       });
-    return buildComplianceReport(inputs, updateHistory, today.slice(0, 7), today);
-  }, [data.projects, updateHistory, today]);
+    return buildComplianceReport(inputs, updateHistory, thangTuanThu, today);
+  }, [data.projects, updateHistory, today, thangTuanThu]);
 
   // Thẻ KPI chạy theo BỘ LỌC: số dự án = đếm Mã CT không trùng trong bảng
   // hiện tại; trễ/cắt/quá hạn = đếm trực tiếp từ các dòng đang hiển thị.
@@ -4801,6 +4810,22 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     return m;
   }, [enriched, pkItem]);
   const khoaDangHien = useMemo(() => new Set(tableItems.map((i) => pkItem(i))), [tableItems, pkItem]);
+  /* ── BÁO CÁO TUÂN THỦ: XEM THÁNG NÀO ──
+     File tuân thủ trên Drive CHỈ giữ tháng đang chạy. Sáng 01/10/2026 nó nhảy sang tháng 10
+     (bốn cột tuần trống, mọi dự án 100 điểm) và số liệu tháng 9 biến mất — đúng lúc cần xuất
+     lại tháng 9 để gửi. Nên: tháng CỦA FILE thì vẫn đọc file như cũ, tháng CŨ thì app chấm lại
+     từ lịch sử ngày cập nhật rồi đổ vào ĐÚNG hình dạng dòng của file, để cái bảng và nút xuất
+     PDF không phải sửa gì. */
+  const thangCuaFile = thangTuNhan(complianceFileQuery.data?.monthLabel);
+  const laChamLaiTuanThu = !!thangCuaFile && thangTuanThu !== thangCuaFile;
+  const thangCoXem = useMemo(() => thangCoTheCham(updateHistory, today), [updateHistory, today]);
+  const duLieuTuanThu = useMemo(
+    () => (laChamLaiTuanThu
+      ? doiSangDangFile(complianceReport, (ten) => regionByName.get(normProjName(ten)) ?? "")
+      : complianceFileQuery.data),
+    [laChamLaiTuanThu, complianceReport, regionByName, complianceFileQuery.data],
+  );
+
   /** Ngữ cảnh RẺ — chỉ mô tả chỗ đang đứng, không đụng tới dữ liệu dự án. Tách khỏi bản tóm để
    *  khung chat vẽ lại (gõ phím, cuộn) không kéo theo việc dựng lại cả 87 dự án. */
   const ncTroLy = useMemo(() => {
@@ -4898,7 +4923,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       {showRoles && <RoleManagerDialog roleMap={roleMap} onClose={() => setShowRoles(false)}
         onSaved={(m) => queryClient.setQueryData(["userRoles"], m)} />}
       {showCompliance && <ComplianceDialog
-        data={complianceFileQuery.data}
+        data={duLieuTuanThu}
         loading={complianceFileQuery.isLoading}
         error={complianceFileQuery.error as Error | null}
         regionByName={regionByName}
@@ -4909,6 +4934,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         fetchedAt={complianceFileQuery.dataUpdatedAt}
         canManage={canSeeSystem}
         canEdit={me.isAdmin}
+        thang={thangTuanThu}
+        thangCo={thangCoXem}
+        onDoiThang={setThangTuanThu}
+        laChamLai={laChamLaiTuanThu}
         onRetry={() => complianceFileQuery.refetch()}
         onClose={() => setShowCompliance(false)} />}
       {showActivity && <ActivityLogDialog onClose={() => setShowActivity(false)} />}
@@ -9407,11 +9436,19 @@ function cmpVietGivenName(a: string, b: string): number {
   return given(a).localeCompare(given(b), "vi") || a.localeCompare(b, "vi");
 }
 
-function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, fetchedAt, canManage, canEdit, onRetry, onClose }: {
+function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, mpFlaggedNames, mpDeadlineByName, today, fetchedAt, canManage, canEdit, thang, thangCo, onDoiThang, laChamLai, onRetry, onClose }: {
   data: ComplianceFileData | undefined; loading: boolean; error: Error | null;
   regionByName: Map<string, string>; mpWeeksByName: Map<string, number>; mpFlaggedNames: Set<string>; mpDeadlineByName: Map<string, string>; today: string;
   /** Luc file tuan thu duoc TAI VE (dataUpdatedAt). Moc THAT cua so lieu dang hien, khong phai gio hien tai. */
-  fetchedAt?: number; canManage?: boolean; canEdit?: boolean; onRetry: () => void; onClose: () => void;
+  fetchedAt?: number; canManage?: boolean; canEdit?: boolean;
+  /** THÁNG đang xem, "yyyy-mm". Tháng của file thì đọc file; tháng cũ thì app chấm lại. */
+  thang: string;
+  /** Các tháng chấm lại được, mới nhất đứng đầu. */
+  thangCo: string[];
+  onDoiThang: (t: string) => void;
+  /** True = số đang bày là app CHẤM LẠI từ lịch sử, không phải bản chụp của file hồi đó. */
+  laChamLai?: boolean;
+  onRetry: () => void; onClose: () => void;
 }) {
   const narrowCpl = useIsMobile();   // điện thoại: bảng giữ khổ đọc được rồi cuộn ngang
   void canManage;
@@ -9622,7 +9659,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
       // Tên theo NGÀY BÁO CÁO (tuần) → mỗi tuần 1 file lưu trữ; mail đính kèm đúng bản mới nhất của tuần đó.
-      const fileName = `BaoCaoTuanThu_MP_${today}.pdf`;
+      // TÊN FILE MANG ĐÚNG THÁNG ĐANG XEM. Xuất lại tháng 9 mà file tên theo hôm nay thì
+    // trong hộp thư hai bản nằm cạnh nhau không phân biệt nổi.
+    const fileName = `BaoCaoTuanThu_MP_${thang}${laChamLai ? "" : `_${today}`}.pdf`;
       // CHỈ 1 báo cáo: header + khối "Cách tính điểm" + bảng, ép gọn.
       const blocks: HTMLElement[] = [headerRef.current];
       if (rulesRef.current) blocks.push(rulesRef.current);
@@ -9759,7 +9798,9 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
             {/* HEADER = chỉ TIÊU ĐỀ (căn trái). Bảng Điểm TB PM + cách tính điểm nằm ở HÀNG NGANG trên bảng. */}
             {/* THỨ TỰ (chốt với sếp): 1) Tên báo cáo — 2) Bộ phận — 3) Kỳ/ngày ("quan trọng để lên trước"). */}
             <div ref={headerRef} className="text-left">
-              <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ cập nhật Master Plan - Tháng {today.slice(5, 7)}/{today.slice(0, 4)}</div>
+              {/* THEO THÁNG ĐANG XEM, không theo hôm nay. Xem lại tháng 9 mà tiêu đề ghi
+                  "Tháng 10" thì bản gửi đi sai ngay ở dòng đầu. */}
+              <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ cập nhật Master Plan - Tháng {nhanThang(thang)}</div>
               <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Phòng Điều hành Trung tâm</div>
               {/* Đang lọc thì hiện SỐ ĐANG XEM / tổng, chứ không hiện mỗi tổng: bảng còn 12 dòng mà
                   đầu trang ghi "Tổng số 69" là tự mâu thuẫn ngay trên cùng một bản in. */}
@@ -9774,11 +9815,32 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               {/* NẰM TRONG headerRef nên đi vào bản PDF. Không có dòng này thì người nhận file thấy
                   điểm trung bình PM của 3 dự án mà tưởng là điểm cả kỳ. */}
               {phamViLoc && <div className="mt-0.5 text-[11px] font-semibold text-amber-700">Đang lọc: {phamViLoc}</div>}
+              {/* ĐI VÀO BẢN PDF (nằm trong headerRef). Người nhận phải biết số này app chấm lại
+                  từ lịch sử ngày cập nhật, chứ không phải bản chụp của file hồi đó — hồi đó có ai
+                  sửa tay trong file thì con số lệch. Giấu chuyện này là để người ta gửi đi một bản
+                  mà chính họ cũng không biết nó từ đâu ra. */}
+              {laChamLai && (
+                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                  Số liệu tháng {nhanThang(thang)} do app chấm lại từ lịch sử ngày cập nhật (file tuân thủ chỉ giữ tháng đang chạy).
+                </div>
+              )}
             </div>
           </div>
           <div className="absolute right-4 top-3 z-10 flex shrink-0 items-center gap-2 print:hidden">
+            {/* CHỌN THÁNG — file tuân thủ chỉ giữ tháng đang chạy, nên tháng cũ app chấm lại từ
+                lịch sử ngày cập nhật. Bản PDF xuất ra đi theo đúng tháng đang chọn. */}
+            <label className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+              Tháng
+              <select value={thang} onChange={(e) => onDoiThang(e.target.value)}
+                title="Chọn tháng để xem và xuất PDF"
+                className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-[11.5px] font-semibold text-slate-800 outline-none hover:border-slate-500 focus:border-slate-600">
+                {thangCo.map((t) => <option key={t} value={t}>{nhanThang(t)}</option>)}
+              </select>
+            </label>
             {canEdit && (
-              <button onClick={() => void doExportPdf("portrait", "drive")} disabled={loading || !!error || !data || !byPm.length || exporting}
+              // Tháng cũ là bản app chấm lại — KHÔNG cho ghi đè bản gửi mail trên Drive, kẻo
+              // bản tuần này bị thay bằng bản tháng trước mà không ai nhận ra.
+              <button onClick={() => void doExportPdf("portrait", "drive")} disabled={loading || !!error || !data || !byPm.length || exporting || laChamLai}
                 title="CHỈ ADMIN — dựng đúng bản form này rồi cập nhật lên Drive để mail tự đính kèm (ghi đè bản tuần này). Nút Xuất PDF thường KHÔNG đụng Drive."
                 className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-sky-700 disabled:opacity-40">☁ Cập nhật bản gửi mail</button>
             )}
