@@ -80,6 +80,7 @@ import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { doiSangDangFile, nhanThang, thangCoTheCham, thangTuNhan } from "@/lib/tuan-thu-thang";
+import { chuanTen as chuanTenAuto, docAutoData, urlTab } from "@/lib/auto-data";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
 import {
@@ -546,7 +547,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.123.0", date: "01/10/2026", items: [
-    "CỘT TUẦN CHƯA CHẤM NAY NÓI RÕ VÌ SAO, ngay trong bản PDF: “Cột 30/09 chưa chấm — khung tuần chốt vào thứ 6 (02/10). Điểm tính trên 4 tuần đã chấm.” Trước đây cột đó trống trơn, người nhận báo cáo đọc ra thành mất dữ liệu.",
+    "NGÀY UPDATE LẤY THẲNG TỪ FILE NGUỒN (tab AutoData của chính file tuân thủ) thay vì kho của app. App ghi chậm hơn file nguồn một tuần: sáng 01/10 kho của app mới nhất là 24/09 trong khi file nguồn đã ghi 50 dự án cập nhật 30/09 và 14 dự án 29/09 — đều đúng hạn. Nhờ vậy cột tuần cuối tháng chấm được ngay, không phải chờ hết tuần.",
     "BÁO CÁO TUÂN THỦ NAY CHỌN ĐƯỢC THÁNG. Ô “Tháng” nằm trên thanh công cụ của hộp thoại; chọn tháng nào thì bảng và bản PDF xuất ra đều theo tháng đó. Tên file cũng mang đúng tháng (BaoCaoTuanThu_MP_2026-09.pdf).",
     "Vì sao cần: file tuân thủ trên Drive CHỈ giữ tháng đang chạy. Sáng 01/10 nó nhảy sang tháng 10 với bốn cột tuần trống và mọi dự án 100 điểm, nên không còn gì để xuất lại cho tháng 9.",
     "Tháng cũ app CHẤM LẠI từ lịch sử ngày cập nhật, bằng đúng bộ luật đang chấm tháng hiện tại. Bản PDF có ghi rõ câu này ngay dưới tiêu đề để người nhận biết số từ đâu ra. Tháng đang chạy vẫn đọc thẳng file như cũ, không đổi gì.",
@@ -1249,7 +1250,8 @@ const APP_VERSION = CHANGELOG[0].v;
 
 /** FILE NGUỒN cho bảng ĐÁNH GIÁ TUÂN THỦ — Google Sheet RIÊNG cho function này (tách khỏi PMP).
  *  App đọc CSV tab này (gid), parse Ở CLIENT (xem lib/compliance-file.ts). Đổi link ở ĐÂY. */
-const COMPLIANCE_FILE_URL = "https://docs.google.com/spreadsheets/d/15pcqb0ExFQ5uF9CuKSx6O6y9GN4kfiNf6IARN98pJbA/edit?gid=490936703";
+const COMPLIANCE_FILE_ID = "15pcqb0ExFQ5uF9CuKSx6O6y9GN4kfiNf6IARN98pJbA";
+const COMPLIANCE_FILE_URL = `https://docs.google.com/spreadsheets/d/${COMPLIANCE_FILE_ID}/edit?gid=490936703`;
 
 type Mode = "google" | "upload";
 type Config = { mode: Mode; sheetUrl?: string };
@@ -4558,6 +4560,22 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  /* NGÀY UPDATE LẤY TỪ FILE NGUỒN (tab AutoData của chính file tuân thủ), KHÔNG lấy từ kho
+     `updates:v1` của app.
+     Đo sáng 01/10/2026: kho của app mới nhất là 24/09, trong khi AutoData ghi 50 dự án 30/09
+     và 14 dự án 29/09 — cả hai đều ĐÚNG HẠN. Chấm theo kho của app thì cả cột tuần 30/09 trống
+     trơn trong khi thực tế 64 dự án đã cập nhật đúng hạn. Anh Tiến chốt: lấy thẳng từ file nguồn. */
+  const autoDataQuery = useQuery({
+    queryKey: ["complianceAutoData"],
+    queryFn: async () => {
+      const r = await fetchSheetCsv({ data: { url: urlTab(COMPLIANCE_FILE_ID, "AutoData") } });
+      return docAutoData(r.text);
+    },
+    enabled: showCompliance,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const ngayTuFileNguon = autoDataQuery.data ?? new Map<string, string>();
   const complianceReport = useMemo(() => {
     const inputs = data.projects
       .filter(p => (p.allItems ?? p.items).some(i => i.shown !== false))
@@ -4575,12 +4593,13 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           name: p.name,
           pm: p.pm || "—",
           dpm: p.dpm ?? "",
-          updateDate: p.updateDate ?? null,
+          // Ưu tiên ngày của FILE NGUỒN; không có thì mới dùng ngày app đọc được.
+          updateDate: ngayTuFileNguon.get(chuanTenAuto(p.name)) ?? p.updateDate ?? null,
           quality: { active: active.length, missingQuant, missingDates, missingPic },
         };
       });
     return buildComplianceReport(inputs, updateHistory, thangTuanThu, today);
-  }, [data.projects, updateHistory, today, thangTuanThu]);
+  }, [data.projects, updateHistory, today, thangTuanThu, ngayTuFileNguon]);
 
   // Thẻ KPI chạy theo BỘ LỌC: số dự án = đếm Mã CT không trùng trong bảng
   // hiện tại; trễ/cắt/quá hạn = đếm trực tiếp từ các dòng đang hiển thị.
@@ -9518,26 +9537,6 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   // trôi qua) → tháng có 4 tuần thì count 1 chỉ chiếm 1/4 ô (theo yêu cầu hiển thị của PMO).
   const maxRequired = useMemo(() => (data ? data.weeks.length : 0), [data]);
   // NGÀY CẬP NHẬT = ngày cột tuần HIỆN HÀNH (ô header xanh lá, curWeekIdx) — vd "26/08" → "26/08/2026".
-  /** CỘT TUẦN CHƯA CHẤM — cả cột không một dự án nào có dấu.
-   *  Luật chấm chỉ kết luận khi khung T3→T6 ĐÃ ĐÓNG. Tuần cuối tháng thường có thứ 6 rơi sang
-   *  tháng sau, nên xuất báo cáo ngay đầu tháng là cột cuối trống — đúng luật, nhưng người nhận
-   *  đọc ra thành mất dữ liệu. Nói thẳng ra trong bản in. */
-  const tuanChuaCham = useMemo(() => {
-    if (!data || !data.weeks.length || !data.rows.length) return [] as { nhan: string; chot: string }[];
-    const ra: { nhan: string; chot: string }[] = [];
-    for (let j = 0; j < data.weeks.length; j++) {
-      if (!data.rows.every((r) => r.marks[j] == null)) continue;
-      const m = data.weeks[j].match(/^(\d{1,2})\/(\d{1,2})$/);
-      if (!m) continue;
-      // Nhãn cột là THỨ TƯ; khung tuần chốt vào THỨ SÁU = +2 ngày.
-      const t = Date.UTC(+m[2] > repMon ? repYear - 1 : repYear, +m[2] - 1, +m[1]) + 2 * 86400000;
-      if (t < tToday) continue;   // đã qua thứ 6 mà vẫn trống thì là chuyện khác, đừng giải thích bừa
-      const d = new Date(t);
-      ra.push({ nhan: data.weeks[j], chot: `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}` });
-    }
-    return ra;
-  }, [data, repYear, repMon, tToday]);
-
   const updateDateLabel = useMemo(() => {
     const w = data && curWeekIdx >= 0 ? data.weeks[curWeekIdx] : undefined;
     const m = w?.match(/^(\d{1,2})\/(\d{1,2})$/);
@@ -9836,20 +9835,6 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
               {/* NẰM TRONG headerRef nên đi vào bản PDF. Không có dòng này thì người nhận file thấy
                   điểm trung bình PM của 3 dự án mà tưởng là điểm cả kỳ. */}
               {phamViLoc && <div className="mt-0.5 text-[11px] font-semibold text-amber-700">Đang lọc: {phamViLoc}</div>}
-              {/* ĐI VÀO BẢN PDF (nằm trong headerRef). Người nhận phải biết số này app chấm lại
-                  từ lịch sử ngày cập nhật, chứ không phải bản chụp của file hồi đó — hồi đó có ai
-                  sửa tay trong file thì con số lệch. Giấu chuyện này là để người ta gửi đi một bản
-                  mà chính họ cũng không biết nó từ đâu ra. */}
-              {tuanChuaCham.length > 0 && (
-                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                  Cột {tuanChuaCham.map((t) => t.nhan).join(" · ")} chưa chấm — khung tuần chốt vào thứ 6 ({tuanChuaCham.map((t) => t.chot).join(" · ")}). Điểm tính trên {(data?.weeks.length ?? 0) - tuanChuaCham.length} tuần đã chấm.
-                </div>
-              )}
-              {laChamLai && (
-                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                  Số liệu tháng {nhanThang(thang)} do app chấm lại từ lịch sử ngày cập nhật (file tuân thủ chỉ giữ tháng đang chạy).
-                </div>
-              )}
             </div>
           </div>
           <div className="absolute right-4 top-3 z-10 flex shrink-0 items-center gap-2 print:hidden">
