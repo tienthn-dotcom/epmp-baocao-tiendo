@@ -12,12 +12,11 @@
  * thủ trả ra. Nhờ vậy cái bảng, bộ lọc Vùng, và hàm xuất PDF giữ nguyên không phải sửa một dòng —
  * tháng cũ in ra y hệt tháng đang chạy.
  *
- * MỘT ĐIỀU PHẢI NÓI RÕ VỚI NGƯỜI ĐỌC, và giao diện có ghi: số của tháng cũ là app CHẤM LẠI từ
- * lịch sử ngày cập nhật, không phải bản chụp của file hồi đó. Nếu hồi đó có ai sửa tay trong file
- * thì con số có thể lệch. Không được bày nó ra như thể là bản gốc.
+ * NGÀY UPDATE LẤY TỪ FILE NGUỒN (tab AutoData), không lấy từ kho của app — xem lib/auto-data.ts.
  */
 import type { CMark, ComplianceFileData, ComplianceFileRow } from "./compliance-file";
 import type { ComplianceReport } from "./compliance";
+import { cyclesOfMonth } from "./compliance";
 
 /** "2026-09" → "09/2026", đúng kiểu nhãn file tuân thủ đang dùng. */
 export function nhanThang(monthKey: string): string {
@@ -81,4 +80,25 @@ export function doiSangDangFile(
     rows,
     updatedLabel: null,
   };
+}
+
+/**
+ * NGÀY DÙNG ĐỂ CHẤM một tháng.
+ *
+ * `markCycle` trong lib/compliance.ts có một nhánh để TRỐNG khi khung tuần T3→T6 chưa qua. Đó là
+ * thứ nằm sẵn trong code, KHÔNG phải luật anh Tiến đặt — anh ấy nói thẳng 01/10/2026:
+ * *"làm gì có luật nào là chờ hết tuần"* và *"cần gì phải chờ 2/10"*.
+ *
+ * Hệ quả của nhánh đó: xem lại tháng 9 vào ngày 01/10 thì cột 30/09 để trống, vì thứ 6 của tuần
+ * ấy rơi sang 02/10. Tháng đã hết mà báo cáo vẫn treo một cột trống.
+ *
+ * Nên: THÁNG ĐÃ QUA chấm dứt điểm, lấy mốc sau chu kỳ cuối một ngày. Tháng ĐANG CHẠY không đụng
+ * tới — tuần của tuần này vẫn để trống như cũ, tránh chấm 'không cập nhật' cho một tuần chưa hết.
+ */
+export function ngayChamThang(monthKey: string, homNay: string): string {
+  if (monthKey >= homNay.slice(0, 7)) return homNay;   // tháng đang chạy (hoặc tương lai) → như cũ
+  const ck = cyclesOfMonth(monthKey);
+  if (!ck.length) return homNay;
+  const sau = Date.parse(ck[ck.length - 1].fri + "T00:00:00Z") + 86400000;
+  return new Date(sau).toISOString().slice(0, 10);
 }

@@ -79,7 +79,7 @@ import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
-import { doiSangDangFile, nhanThang, thangCoTheCham, thangTuNhan } from "@/lib/tuan-thu-thang";
+import { doiSangDangFile, nhanThang, ngayChamThang, thangCoTheCham, thangTuNhan } from "@/lib/tuan-thu-thang";
 import { chuanTen as chuanTenAuto, docAutoData, urlTab } from "@/lib/auto-data";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
@@ -547,6 +547,7 @@ function HeaderSlot({ children }: { children: ReactNode }) {
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.123.0", date: "01/10/2026", items: [
+    "THÁNG ĐÃ QUA NAY CHẤM DỨT ĐIỂM, không treo cột trống. Tuần cuối tháng 9 có thứ 6 rơi sang 02/10 nên trước đó cả cột 30/09 để trống; nay tháng đã hết thì chấm hết. Tháng đang chạy giữ nguyên, tuần của tuần này vẫn chưa chấm.",
     "NGÀY UPDATE LẤY THẲNG TỪ FILE NGUỒN (tab AutoData của chính file tuân thủ) thay vì kho của app. App ghi chậm hơn file nguồn một tuần: sáng 01/10 kho của app mới nhất là 24/09 trong khi file nguồn đã ghi 50 dự án cập nhật 30/09 và 14 dự án 29/09 — đều đúng hạn. Nhờ vậy cột tuần cuối tháng chấm được ngay, không phải chờ hết tuần.",
     "BÁO CÁO TUÂN THỦ NAY CHỌN ĐƯỢC THÁNG. Ô “Tháng” nằm trên thanh công cụ của hộp thoại; chọn tháng nào thì bảng và bản PDF xuất ra đều theo tháng đó. Tên file cũng mang đúng tháng (BaoCaoTuanThu_MP_2026-09.pdf).",
     "Vì sao cần: file tuân thủ trên Drive CHỈ giữ tháng đang chạy. Sáng 01/10 nó nhảy sang tháng 10 với bốn cột tuần trống và mọi dự án 100 điểm, nên không còn gì để xuất lại cho tháng 9.",
@@ -4598,7 +4599,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           quality: { active: active.length, missingQuant, missingDates, missingPic },
         };
       });
-    return buildComplianceReport(inputs, updateHistory, thangTuanThu, today);
+    // THÁNG ĐÃ QUA thì chấm như đã hết hạn — không chờ thứ 6 của tuần cuối (anh Tiến 01/10:
+    // "cần gì phải chờ 2/10"). Tháng đang chạy giữ nguyên luật cũ.
+    return buildComplianceReport(inputs, updateHistory, thangTuanThu, ngayChamThang(thangTuanThu, today));
   }, [data.projects, updateHistory, today, thangTuanThu, ngayTuFileNguon]);
 
   // Thẻ KPI chạy theo BỘ LỌC: số dự án = đếm Mã CT không trùng trong bảng
