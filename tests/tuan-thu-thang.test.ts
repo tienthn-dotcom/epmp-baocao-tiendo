@@ -80,3 +80,47 @@ describe("XEM LẠI THÁNG 9 — dấu phải là dấu trong file, không phả
     expect(parseComplianceFile(CSV).rows.map(r => r.score)).toEqual([100, 100, 100]);
   });
 });
+
+/* CỘT TUẦN TRONG FILE GHI "dd/mm", KHÔNG CÓ NĂM — chỗ tinh nhất của cả module.
+ *
+ * Tháng 10/2026 chưa lộ ra vì 24 cột của file (06/05 … 28/10) đều cùng một năm. Sang tháng 1/2027,
+ * nếu file vẫn giữ các cột tháng 12 thì "12" và "01" nằm cạnh nhau mà chỉ nhìn phần tháng là
+ * không phân biệt nổi năm. Suy năm sai thì hai tháng trộn vào nhau và báo cáo gửi đi mang số của
+ * tháng khác — nên gác bằng test, đừng chờ tháng 1 tới mới biết. */
+describe("suy NĂM cho cột dd/mm", () => {
+  const CSV27 = [
+    ",,,BÁO CÁO TUÂN THỦ THÁNG 01/2027",
+    "",
+    "Location,STT,Tên dự án,Người phụ trách,Lũy kế,Điểm tuân thủ,02/12,30/12,06/01,13/01",
+    "HN,1,Du an A,PM Mot,0,100,✓,x,,",
+  ].join("\n");
+
+  it("cột tháng LỚN HƠN tháng file là của năm trước", () => {
+    expect(parseComplianceFile(CSV27).thangCo).toEqual(["2026-12", "2027-01"]);
+  });
+
+  it("xem 12/2026 ra đúng hai cột tháng 12, kèm dấu trong file", () => {
+    const ra = parseComplianceFile(CSV27, "2026-12");
+    expect(ra.monthLabel).toBe("12/2026");
+    expect(ra.weeks).toEqual(["02/12", "30/12"]);
+    expect(ra.rows[0].marks).toEqual(["P", "x"]);
+    expect(ra.rows[0].score).toBe(75);          // 100 − 25·1x, KHÔNG phải 100 của tháng 1
+  });
+
+  it("tháng 12 KHÔNG kéo được cột của tháng 1 vào", () => {
+    expect(parseComplianceFile(CSV27, "2026-12").weeks).not.toContain("06/01");
+  });
+
+  it("tháng file đang chạy vẫn là tháng 1, không lẫn cột tháng 12", () => {
+    const ra = parseComplianceFile(CSV27);
+    expect(ra.monthLabel).toBe("01/2027");
+    expect(ra.weeks).toEqual(["06/01", "13/01"]);
+  });
+
+  /* Tháng không có cột nào trong file thì BẢNG TRỐNG, không mượn cột cùng số tháng của năm khác.
+   * Ô chọn tháng chỉ bày `thangCo` nên người dùng không vào được đây; test giữ cho nó đừng âm thầm
+   * đổi thành "mượn tạm" nếu sau này ai nối thêm đường khác vào hàm này. */
+  it("tháng không có trong file thì trống, không mượn cột năm khác", () => {
+    expect(parseComplianceFile(CSV27, "2027-12").weeks).toEqual([]);
+  });
+});

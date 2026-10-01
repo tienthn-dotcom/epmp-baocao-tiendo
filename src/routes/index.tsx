@@ -80,7 +80,6 @@ import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { nhanThang } from "@/lib/tuan-thu-thang";
-import { chuanTen as chuanTenAuto, docAutoData, urlTab } from "@/lib/auto-data";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
 import {
@@ -169,7 +168,16 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
- *   v3.48.0 (07/08/2026): publicSummaryToHtml đổi THỨ TỰ cột render (head+body) theo mẫu mới: prev ·
+ *   v3.124.0 (01/10/2026): BỎ đường app CHẤM LẠI tháng cũ. parseComplianceFile(csv, thangXem) lọc
+ *     đúng nhóm cột tuần của tháng đó trong CHÍNH file nguồn — file giữ đủ 24 cột 06/05→28/10, tiền
+ *     đề 'file chỉ giữ tháng đang chạy' là SAI. Năm của cột dd/mm suy từ ô 'THÁNG mm/yyyy' (tháng >
+ *     tháng file = năm trước), so khoá 'yyyy-mm' chứ không so phần tháng. Cột Điểm của file là điểm
+ *     THÁNG ĐANG CHẠY nên tháng cũ tính lại 100−25x−10o theo tiêu chí ghi trong file. complianceFileQuery
+ *     giữ CSV THÔ, đổi tháng = parse lại, không gọi mạng. XOÁ lib/auto-data.ts + tests/auto-data.test.ts
+ *     (tab AutoData chỉ vá cho đường chấm lại, phủ 43/68). lib/tuan-thu-thang.ts còn đúng nhanThang.
+ *     complianceReport nay CỐ ĐỊNH tháng hiện tại — nó chỉ nuôi thẻ đếm ở header, không dựng bảng.
+ *     Nghiệm thu localhost: 6 tháng × 24 cột khớp từng ô với file; 09/2026 = 02/09 ✓57 ✕16 · 09/09
+ *     ✓32 o28 ✕15 · 16/09 ✓61 o13 ✕7 · 23/09 ✓61 o4 ✕16 · 30/09 ✓63 ✕21 (bản chấm lại ra ✓32 ✕36). *   v3.48.0 (07/08/2026): publicSummaryToHtml đổi THỨ TỰ cột render (head+body) theo mẫu mới: prev ·
  *     actual · today · warn · diff (trước: actual · diff · warn · prev · today). Cột vẫn dò theo TÊN
  *     (find regex) nên đảo cột nguồn không lệch data; chỉ đổi thứ tự XUẤT. Verify data 3 dòng đầu khớp.
  *   v3.47.0 (07/08/2026): Heatmap ĐỌC MÀU THẬT từ conditional-formatting. NEW cf-colors.ts readCodeColors
@@ -546,6 +554,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.124.0", date: "01/10/2026", items: [
+    "BÁO CÁO TUÂN THỦ THÁNG CŨ NAY LẤY ĐÚNG SỐ TRONG FILE NGUỒN. File nguồn giữ đủ cột tuần từ tháng 5 tới nay, nên chọn tháng nào là đọc thẳng dấu của tháng đó. Bản 3.123.0 cho app tự chấm lại nên số lệch: cột 30/09 ra 32 dấu đúng hạn trong khi file nguồn ghi 63.",
+    "Bảng tháng cũ nay đủ 85 dự án như file nguồn (bản trước chỉ 68).",
+    "Ô “Tháng” chỉ bày những tháng thật sự có số trong file, từ 05/2026 tới nay.",
+    "Điểm tháng cũ tính theo đúng tiêu chí ghi trong file: 100 điểm, cập nhật trễ trừ 10, không cập nhật trừ 25. Dấu thì lấy nguyên từ file, app không tự chấm dấu nào.",
+  ] },
   { v: "3.123.0", date: "01/10/2026", items: [
     "THÁNG ĐÃ QUA NAY CHẤM DỨT ĐIỂM, không treo cột trống. Tuần cuối tháng 9 có thứ 6 rơi sang 02/10 nên trước đó cả cột 30/09 để trống; nay tháng đã hết thì chấm hết. Tháng đang chạy giữ nguyên, tuần của tuần này vẫn chưa chấm.",
     "NGÀY UPDATE LẤY THẲNG TỪ FILE NGUỒN (tab AutoData của chính file tuân thủ) thay vì kho của app. App ghi chậm hơn file nguồn một tuần: sáng 01/10 kho của app mới nhất là 24/09 trong khi file nguồn đã ghi 50 dự án cập nhật 30/09 và 14 dự án 29/09 — đều đúng hạn. Nhờ vậy cột tuần cuối tháng chấm được ngay, không phải chờ hết tuần.",
@@ -4563,22 +4577,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     staleTime: 5 * 60_000,
     retry: 1,
   });
-  /* NGÀY UPDATE LẤY TỪ FILE NGUỒN (tab AutoData của chính file tuân thủ), KHÔNG lấy từ kho
-     `updates:v1` của app.
-     Đo sáng 01/10/2026: kho của app mới nhất là 24/09, trong khi AutoData ghi 50 dự án 30/09
-     và 14 dự án 29/09 — cả hai đều ĐÚNG HẠN. Chấm theo kho của app thì cả cột tuần 30/09 trống
-     trơn trong khi thực tế 64 dự án đã cập nhật đúng hạn. Anh Tiến chốt: lấy thẳng từ file nguồn. */
-  const autoDataQuery = useQuery({
-    queryKey: ["complianceAutoData"],
-    queryFn: async () => {
-      const r = await fetchSheetCsv({ data: { url: urlTab(COMPLIANCE_FILE_ID, "AutoData") } });
-      return docAutoData(r.text);
-    },
-    enabled: showCompliance,
-    staleTime: 5 * 60_000,
-    retry: 1,
-  });
-  const ngayTuFileNguon = autoDataQuery.data ?? new Map<string, string>();
+  /* BẢN CHẤM CỦA RIÊNG APP — chỉ còn nuôi THẺ ĐẾM ngoài màn hình chính. Bảng báo cáo tuân thủ
+     KHÔNG dùng cái này nữa: nó đọc thẳng dấu ✓/o/✕ từ file nguồn (parseComplianceFile). */
   const complianceReport = useMemo(() => {
     const inputs = data.projects
       .filter(p => (p.allItems ?? p.items).some(i => i.shown !== false))
@@ -4596,16 +4596,13 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           name: p.name,
           pm: p.pm || "—",
           dpm: p.dpm ?? "",
-          // Ưu tiên ngày của FILE NGUỒN; không có thì mới dùng ngày app đọc được.
-          updateDate: ngayTuFileNguon.get(chuanTenAuto(p.name)) ?? p.updateDate ?? null,
+          updateDate: p.updateDate ?? null,
           quality: { active: active.length, missingQuant, missingDates, missingPic },
         };
       });
-    // THÁNG ĐÃ QUA thì chấm như đã hết hạn — không chờ thứ 6 của tuần cuối (anh Tiến 01/10:
-    // "cần gì phải chờ 2/10"). Tháng đang chạy giữ nguyên luật cũ.
     // Thẻ đếm ở header nói về THÁNG ĐANG CHẠY, không chạy theo tháng đang mở trong hộp thoại.
     return buildComplianceReport(inputs, updateHistory, today.slice(0, 7), today);
-  }, [data.projects, updateHistory, today, thangTuanThu, ngayTuFileNguon]);
+  }, [data.projects, updateHistory, today]);
 
   // Thẻ KPI chạy theo BỘ LỌC: số dự án = đếm Mã CT không trùng trong bảng
   // hiện tại; trễ/cắt/quá hạn = đếm trực tiếp từ các dòng đang hiển thị.
