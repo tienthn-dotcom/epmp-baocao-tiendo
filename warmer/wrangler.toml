@@ -7,9 +7,12 @@ compatibility_date = "2024-09-23"
 # HAI lịch (Cloudflare cron chạy theo UTC):
 #  · "30 10 * * *" = 17:30 VN — warm Summary + sao lưu nhật ký giám sát.
 #    PHẢI KHỚP mốc REFRESH_HOUR_VN/REFRESH_MIN_VN trong src/lib/mtld-install.functions.ts.
-#  · "30 13 * * 3" = 20:30 VN THỨ TƯ — dựng PDF báo cáo tuân thủ vào Drive. Chạy đúng một lần mỗi
-#    tuần, sớm hơn mốc gửi mail 21h nửa tiếng: đủ dư để Google xuất file xong, mà không dựng thừa
-#    167 lần/tuần như lịch mỗi giờ. (Cloudflare cron theo UTC: thứ Tư 13:30 UTC = 20:30 VN.)
+#  · "30 13 * * *" = 20:30 VN MỖI NGÀY — dựng PDF báo cáo tuân thủ vào Drive, nhưng src/index.mjs
+#    CHỈ LÀM VÀO THỨ TƯ (tự kiểm thứ theo giờ VN). Trước đây lịch này ghi "30 13 * * 3" với ý
+#    thứ Tư, mà Cloudflare đếm thứ theo 1=CHỦ NHẬT nên 3 = THỨ BA. Đo trên Drive: 4/4 file máy
+#    dựng (08, 15, 22, 29/09) đều rơi THỨ BA 20:30, còn file thứ Tư mà trigger gửi mail cần thì
+#    anh Tiến phải tự xuất tay. ĐỪNG neo thứ vào biểu thức cron nữa — kiểm trong code thì đúng
+#    sai không phụ thuộc quy ước đếm thứ của Cloudflare.
 [triggers]
 #  · "30 16 * * *" = 23:30 VN — sao lưu NHẬT KÝ GIÁM SÁT ra Drive (cuối ngày làm việc, gom trọn
 #    một ngày; app đọc mốc "Tất cả" từ file này cho nhẹ, xem fetchActivityFromDrive).
@@ -23,7 +26,7 @@ crons = [
   "0 2 * * *",      # 09:00 VN — ngày sửa cuối của link + camera công trường + warm (lô 1)
   "30 7 * * *",     # 14:30 VN — warm Summary (lô 2)
   "30 10 * * *",    # 17:30 VN — warm Summary (lô 3). PHẢI khớp REFRESH_HOUR_VN/MIN_VN của app.
-  "30 13 * * 3",    # 20:30 VN thứ Tư — dựng PDF báo cáo tuân thủ
+  "30 13 * * *",    # 20:30 VN mỗi ngày — chỉ THỨ TƯ mới dựng PDF (kiểm thứ trong index.mjs)
   "30 16 * * *",    # 23:30 VN — sao lưu nhật ký giám sát + TOÀN BỘ dữ liệu KV + vân tay nguồn
 ]
 

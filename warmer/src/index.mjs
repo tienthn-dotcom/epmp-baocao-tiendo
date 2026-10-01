@@ -694,11 +694,24 @@ async function lamMoiNgaySuaLink(env) {
 export default {
   // HAI lịch (xem wrangler.toml):
   //  · "30 10 * * *" (17:30 VN) — warm Summary + sao lưu nhật ký giám sát.
-  //  · "0 * * * *"   (mỗi giờ)  — dựng lại PDF báo cáo tuân thủ, để thư mục Drive lúc nào cũng có
-  //    bản không quá một giờ tuổi; trigger gửi mail chạy giờ nào cũng vớ được bản mới.
+  //  · "30 13 * * *" (20:30 VN) — PDF báo cáo tuân thủ, NHƯNG CHỈ LÀM VÀO THỨ TƯ (kiểm thứ trong
+  //    hàm, không neo vào cron — xem khối chú thích ở nhánh đó).
   async scheduled(event, env, ctx) {
     const cron = (event && event.cron) || "";
-    if (cron === "30 13 * * 3") {             // 20:30 VN thứ Tư — dựng PDF tuân thủ, trước mốc gửi mail 21h
+    /* 20:30 VN — PDF BÁO CÁO TUÂN THỦ, chỉ làm vào THỨ TƯ (trước mốc gửi mail 21h).
+     *
+     * THỨ KIỂM Ở ĐÂY, KHÔNG NEO VÀO BIỂU THỨC CRON. Lịch cũ ghi "30 13 * * 3" với ý thứ Tư, mà
+     * Cloudflare đếm thứ theo 1=CHỦ NHẬT nên 3 = THỨ BA. Đo thư mục Drive 01/10/2026: 4/4 file
+     * máy dựng (08 · 15 · 22 · 29/09, đều ~135KB) rơi THỨ BA 20:30, trong khi bốn file thứ Tư
+     * (09 · 16 · 23 · 30/09, ~1.5MB) là anh Tiến tự xuất tay từ app. Trigger gửi mail cần bản
+     * THỨ TƯ nên nó chưa từng có bản do máy dựng.
+     *
+     * Kiểm bằng Date theo giờ VN thì đúng sai không phụ thuộc quy ước đếm thứ của Cloudflare,
+     * và đọc code là thấy ngay ý định. Khớp theo tiền tố "30 13 " để lịch có bị chuẩn hoá lại
+     * cũng không rơi xuống nhánh warm ở dưới. */
+    if (/^30 13 /.test(cron)) {
+      const vn = new Date(Date.now() + 7 * 3600_000);   // worker chạy UTC
+      if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ
       ctx.waitUntil(backupCompliancePdf(env).then((r) => console.log("compliancePdf:", JSON.stringify(r)))
         .catch((e) => console.error("backupCompliancePdf lỗi:", e)));
       return;
@@ -756,6 +769,18 @@ export default {
     if (tham.get("ngaylink")) {
       try {
         const r = await lamMoiNgaySuaLink(env);
+        return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
+      }
+    }
+    /* DỰNG LẠI PDF BÁO CÁO TUÂN THỦ NGAY: mở "…/?pdf=1". Lịch tự động chỉ chạy thứ Tư 20:30,
+       nên cần một đường bấm tay cho lần hụt hoặc bản gấp ngoài lịch. CHỈ làm đúng việc này —
+       URL trần làm liền bốn việc và đó chính là thứ đã gây Error 1102. Tên file mang NGÀY HÔM
+       NAY theo giờ VN, trùng khuôn bản tự động. */
+    if (tham.get("pdf")) {
+      try {
+        const r = await backupCompliancePdf(env);
         return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
       } catch (e) {
         return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
