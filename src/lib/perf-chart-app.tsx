@@ -74,8 +74,10 @@ const PERF_EXCLUDE = /^(others?|oem|looses*export|congs*nos*cu|khac|thiets*ke|to
 const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
 const SHOW_KEYS = PERF_SHOW.map(keyName);
-/** Tên đưa lên thẻ / bảng xếp hạng. Khớp vẫn theo tên file, chỉ chữ hiển thị đổi. */
-const tenHien = (n: string) => PERF_TEN_HIEN[keyName(n)] ?? n;
+/** Tên đưa lên thẻ / bảng xếp hạng. Khớp vẫn theo tên file, chỉ chữ hiển thị đổi.
+ *  IN HOA HẾT: tên trong file tuần vốn đã viết hoa toàn bộ, nên tên khai tay cũng phải viết hoa,
+ *  kẻo trên cùng một lưới có thẻ hoa thẻ thường. Dùng locale "vi" cho chắc phần dấu. */
+const tenHien = (n: string) => (PERF_TEN_HIEN[keyName(n)] ?? n).toLocaleUpperCase("vi");
 
 // Thang CHUNG cho mini (để so cao thấp giữa các dự án). ĐÁY = 0: từ khi có nguyên tắc loại trừ
 // tháng âm (absorbNegBack) thì không còn cột âm nào, chừa dải −1→0 chỉ tổ phí 1/5 chiều cao.
