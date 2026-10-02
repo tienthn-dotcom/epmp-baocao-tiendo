@@ -127,6 +127,25 @@ function detectStage(code: string): StageKey | "Khác" {
  *   Mẫu → Trình duyệt mẫu · VT.* (CT/NM/Fit/BL…) → Đặt vật tư (gộp) · TKSX → Triển khai
  *   sản xuất · Kho → Sản xuất nhập kho. SD (shop drawing) / GCN không gắn vào giai đoạn
  *   chính → trả null (bỏ qua). */
+/** TÊN NHÃN SỐ MÃ hợp lệ, SAU KHI đã cắt dấu cuối: Mẫu · VT · VT.CT · VT.NM · VT.Fit · SD ·
+ *  TKSX · Kho · GCN. */
+const TEN_SO_MA = /^(mẫu|sd|tksx|kho|gcn|vt(\.[\p{L}\d]+)?)$/iu;
+
+/**
+ * Nhãn ô này có phải nhãn SỐ MÃ không — bỏ qua dấu cuối.
+ *
+ * VÌ SAO KHÔNG BẮT DẤU HAI CHẤM: người nhập gõ tay, và họ gõ lệch. Đo file 2.3_Shared ngày
+ * 02/10/2026: 329 dòng số mã, 326 dòng gõ ":" còn 3 dòng gõ "TKSX;", "TKSX", "VT.CT". Ba dòng
+ * đó biến mất khỏi app mà không có cảnh báo nào, người xem tưởng file nguồn thiếu số
+ * (CT26-040 hiện 1% kèm dòng "nhập tay, không có chi tiết số mã", trong khi file ghi 5/334).
+ *
+ * Luật này CHẶT HƠN luật cũ: cũ nhận mọi chuỗi BẮT ĐẦU bằng "vt" nên "VT về công trường 30/07"
+ * cũng lọt; nay phải khớp ĐÚNG tên.
+ */
+export function laNhanSoMa(bl: string): boolean {
+  return TEN_SO_MA.test(bl.replace(/[:;.\s]+$/, "").trim());
+}
+
 function bdStageOf(label: string): StageKey | null {
   const l = label.trim();
   if (/^mẫu\b/i.test(l)) return "Trình duyệt mẫu";
@@ -737,14 +756,14 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     if (currentHidden) continue; // parent was hidden → drop all its rows
 
     // Thu breakdown "số mã/tổng mã" của dòng này (nếu có) — độc lập với dòng giai đoạn,
-    // nên đọc TRƯỚC các `continue` lọc mã lạ bên dưới. Chỉ nhận nhãn breakdown đã biết
-    // (Mẫu/VT/SD/TKSX/Kho/GCN) và có tổng mã > 0 — bỏ qua khối "Kế hoạch giao hàng" (ngày).
+    // nên đọc TRƯỚC các `continue` lọc mã lạ bên dưới. Nhãn khớp ĐÚNG TÊN (xem laNhanSoMa:
+    // không bắt dấu cuối, vì người nhập gõ lệch) và tổng mã > 0 — bỏ khối "Kế hoạch giao hàng".
     if (current) {
       const bl = str(r[COL.bdLabel]);
-      if (bl.endsWith(":") && /^(mẫu|vt|sd|tksx|kho|gcn)/i.test(bl)) {
+      if (laNhanSoMa(bl)) {
         const total = num(r[COL.bdTotal]);
         if (total != null && total > 0) {
-          bdByProj.get(current)!.push({ label: bl.replace(/:\s*$/, "").trim(), done: num(r[COL.bdDone]), total });
+          bdByProj.get(current)!.push({ label: bl.replace(/[:;.\s]+$/, "").trim(), done: num(r[COL.bdDone]), total });
         }
       }
     }
