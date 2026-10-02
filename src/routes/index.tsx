@@ -170,7 +170,17 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
- *   v3.125.0 (01/10/2026): NÚT "Cập nhật bản gửi mail" TỰ BẤM thứ Tư 20:00 VN. Nút đó dựng PDF
+ *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
+ *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
+ *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
+ *     (CT26-040 5/334, CT26-041 40/421, CT26-055 10/10) — mất IM LẶNG, popup chỉ ghi "nhập tay,
+ *     không có chi tiết số mã". Luật mới CHẶT HƠN luật cũ (cũ nhận mọi chuỗi bắt đầu bằng "vt").
+ *     perf-chart-app: thêm PERF_TEN_HIEN (tên hiển thị TÁCH khỏi tên khớp — PERF_SHOW là danh
+ *     sách dò theo tên file tuần, sửa thẳng là hỏng khớp) + in hoa bằng locale "vi"; thêm nhóm
+ *     COSMO ĐÀ NẴNG (= KDL ven sông Hàn) kèm PERF_REGION "Trung". MTLĐ: SheetViewCfg.trang[] cho
+ *     popup nhiều trang + listTabGids (Google CHỈ chọn tab theo gid; range=Tab! và sheet=Tab đều
+ *     trả cả file) — CHƯA nghiệm thu xong phần đổi trang, link chưa khai trang thì chạy y như cũ.
+ *     Trợ lý: nút kéo thả được, thêm mục kiến thức cho người mới, ghi kho câu hỏi troly:hoi:v1. *   v3.125.0 (01/10/2026): NÚT "Cập nhật bản gửi mail" TỰ BẤM thứ Tư 20:00 VN. Nút đó dựng PDF
  *     bằng html2canvas nên BẮT BUỘC có trình duyệt thật — đó là lý do bản tự động cũ (warmer)
  *     phải đi Google export Sheet→PDF và ra file ~135KB khác hẳn bản app ~1.5MB. Nay warmer mở app
  *     bằng Browser Rendering (binding MYBROWSER) với cờ ?tudong=1 → app tự gọi ĐÚNG doExportPdf
@@ -569,6 +579,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.126.0", date: "02/10/2026", items: [
+    "SỬA LỖI MẤT SỐ MÃ: ba dự án đang hiện “nhập tay, không có chi tiết số mã” dù file nguồn có đủ số — APEC_S2_Public (5/334 mã), APEC_S3_Public (40/421), Nam Phương Hoàng Hậu Phòng (10/10). Nguyên nhân: ô nhãn gõ “TKSX;” hoặc “TKSX” thay vì “TKSX:”, app cũ bỏ qua mà không báo. Nay gõ thiếu dấu vẫn đọc được.",
+    "Lưới Hiệu suất theo tháng: thêm thẻ KDL ven sông Hàn; thẻ Cát Bà đổi tên thành Cát Bà HH3; bốn thẻ đổi tên theo cách gọi của OCC (Tropical, Nam Phương Hoàng Hậu, Mini Hotel, Hyatt Phú Quốc). Tên thẻ in hoa hết cho đều.",
+    "Trợ lý: nút kéo thả được, dời đi đâu thì nhớ chỗ đó. Trả lời được câu của người mới (“app này là gì”, “dùng như nào”, “màu đỏ với vàng khác nhau sao”). Hướng dẫn gắn link chuyển vào Trợ lý, hộp thoại gọn lại.",
+    "Popup ma trận xem được nhiều trang: gắn link xong bấm “+ Thêm trang” chọn tab cho từng trang, hoặc dán nhiều dòng một lượt. Link chưa khai trang thì chạy y như cũ.",
+  ] },
   { v: "3.125.0", date: "01/10/2026", items: [
     "BẢN PDF GỬI MAIL NAY TỰ LÊN DRIVE mỗi thứ Tư 20:00, và là ĐÚNG bản app xuất ra - không còn là bản chụp từ file nguồn. Không phải bấm tay nữa.",
     "Trước đây lịch tự động chạy sai ngày: nó dựng vào thứ Ba nên bản thứ Tư mà mail cần thì chưa bao giờ có.",
