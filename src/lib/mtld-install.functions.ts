@@ -113,17 +113,26 @@ function extractSheetXlsx(buf: ArrayBuffer, sheetName: string): Uint8Array {
 //   • Nút "Làm mới" (force) vẫn lấy LIVE tức thì.
 const DAY_MS = 86_400_000;
 const VN_OFFSET_MS = 7 * 3_600_000;      // giờ VN = UTC+7
-const REFRESH_HOUR_VN = 17;              // mốc "quét" mỗi ngày = 17:30 giờ VN (đổi tại đây).
-const REFRESH_MIN_VN = 30;               // PHẢI KHỚP cron warmer (warmer/wrangler.toml: "30 10 * * *").
+/** MỐC LÀM MỚI TRONG NGÀY (giờ VN, xếp tăng dần) — thay cho REFRESH_HOUR_VN/REFRESH_MIN_VN cũ
+ *  (một mốc 17:30). Anh Tiến chốt 02/10/2026: chỉ auto sync HAI lần mỗi ngày, 18:00 và 20:00 —
+ *  đủ để số mới đều mà không hao lượt ghi KV. PHẢI KHỚP cron warmer (warmer/wrangler.toml:
+ *  "0 11 * * *" = 18:00 VN và "0 13 * * *" = 20:00 VN): warm chạy TRƯỚC mốc thì bản vừa warm
+ *  lại bị coi là cũ ngay khi tới mốc, thành ra tải hai lần cho một mốc. */
+const MOC_LAM_MOI_VN: readonly (readonly [number, number])[] = [[18, 0], [20, 0]];
 const CACHE_TTL_S = 3 * 86_400;          // giữ cache 3 ngày (đủ sống qua cuối tuần) → daily refresh lo phần tươi
 const SFILE_INDEX_KEY = "sfile:index";   // registry fileId đã từng mở → worker cron warm sẵn buổi sáng
 
-/** Mốc quét gần nhất (UTC ms) = REFRESH_HOUR_VN:00 giờ VN của hôm nay; nếu chưa tới thì lùi 1 ngày. */
-function lastRefreshBoundary(now: number): number {
+/** MỐC LÀM MỚI GẦN NHẤT ĐÃ QUA (UTC ms). Cache cũ hơn mốc này thì lần mở sau làm mới ở nền.
+ *  Chưa qua mốc nào trong ngày (vd 7 giờ sáng) → lấy mốc CUỐI của hôm qua, để bản tối qua vẫn
+ *  được coi là tươi suốt buổi sáng. */
+export function lastRefreshBoundary(now: number): number {
   const vnMidnight = Math.floor((now + VN_OFFSET_MS) / DAY_MS) * DAY_MS - VN_OFFSET_MS; // 00:00 VN hôm nay (UTC ms)
-  let b = vnMidnight + REFRESH_HOUR_VN * 3_600_000 + REFRESH_MIN_VN * 60_000;
-  if (b > now) b -= DAY_MS;
-  return b;
+  const moc = (ngay: number, i: number) => ngay + MOC_LAM_MOI_VN[i][0] * 3_600_000 + MOC_LAM_MOI_VN[i][1] * 60_000;
+  for (let i = MOC_LAM_MOI_VN.length - 1; i >= 0; i--) {
+    const t = moc(vnMidnight, i);
+    if (t <= now) return t;
+  }
+  return moc(vnMidnight - DAY_MS, MOC_LAM_MOI_VN.length - 1);   // mốc cuối của hôm qua
 }
 
 /** Lấy waitUntil (nếu có) để chạy refresh ở NỀN không chặn phản hồi. */

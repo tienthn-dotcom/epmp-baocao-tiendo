@@ -737,8 +737,9 @@ async function lamMoiNgaySuaLink(env) {
 export default {
   // HAI lịch (xem wrangler.toml):
   //  · "30 10 * * *" (17:30 VN) — warm Summary + sao lưu nhật ký giám sát.
-  //  · "0 13 * * *" (20:00 VN) — TỰ BẤM nút "Cập nhật bản gửi mail" trên app, CHỈ VÀO THỨ TƯ
-  //    (kiểm thứ trong hàm, không neo vào cron — xem khối chú thích ở nhánh đó).
+  //  · "0 11 * * *" (18:00 VN) và "0 13 * * *" (20:00 VN) — warm Summary, khớp MOC_LAM_MOI_VN
+  //    của app (chỉ auto sync 2 lần/ngày). Mốc 20:00 còn TỰ BẤM nút "Cập nhật bản gửi mail",
+  //    CHỈ VÀO THỨ TƯ (kiểm thứ trong hàm, không neo vào cron).
   async scheduled(event, env, ctx) {
     const cron = (event && event.cron) || "";
     /* 20:30 VN — PDF BÁO CÁO TUÂN THỦ, chỉ làm vào THỨ TƯ (trước mốc gửi mail 21h).
@@ -753,8 +754,12 @@ export default {
      * và đọc code là thấy ngay ý định. Khớp theo tiền tố "30 13 " để lịch có bị chuẩn hoá lại
      * cũng không rơi xuống nhánh warm ở dưới. */
     if (/^(0|30) 13 /.test(cron)) {
+      /* 20:00 VN — MỐC LÀM MỚI THỨ HAI của app (xem MOC_LAM_MOI_VN trong
+         src/lib/mtld-install.functions.ts). Warm MỖI NGÀY để tới mốc là đã có bản tươi sẵn. */
+      ctx.waitUntil(warmAll(env).then((r) => console.log("warm 20h:", JSON.stringify(r)))
+        .catch((e) => console.error("warmAll 20h lỗi:", e)));
       const vn = new Date(Date.now() + 7 * 3600_000);   // worker chạy UTC
-      if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ
+      if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ — PDF chỉ dựng thứ Tư
       /* TỰ BẤM NÚT TRÊN APP — ra ĐÚNG bản app xuất (~1.5MB), đúng thứ cần đính mail.
          Hụt thì LÙI về bản Google export Sheet→PDF: thà có bản khác khuôn còn hơn thư mục
          trống trơn lúc 21h trigger gửi mail quét. */
@@ -781,10 +786,8 @@ export default {
         .catch((e) => console.error("lamMoiNgaySuaLink lỗi:", e)));
       ctx.waitUntil(chupCameraHangNgay(env).then((r) => console.log("camera:", JSON.stringify(r)))
         .catch((e) => console.error("chupCameraHangNgay lỗi:", e)));
-      // Warm LÔ 1 ghép vào đây: gói Free chỉ cho 5 cron/tài khoản nên không xin được mốc riêng.
-      // Hai việc trên tốn chưa tới 10ms CPU (đo thật), còn cả trần cho 3 file warm.
-      ctx.waitUntil(warmAll(env).then((r) => console.log("warm:", JSON.stringify(r)))
-        .catch((e) => console.error("warmAll lỗi:", e)));
+      /* KHÔNG WARM Ở ĐÂY NỮA. App chỉ auto sync vào 18:00 và 20:00 (anh Tiến chốt 02/10/2026),
+         nên warm buổi sáng chỉ tốn lượt ghi KV mà tới chiều vẫn phải warm lại. */
       return;
     }
     // Các mốc WARM (10:30 · 14:30 · 17:30 VN) — CHỈ warm Summary.

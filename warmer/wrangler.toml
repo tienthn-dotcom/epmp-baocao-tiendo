@@ -23,10 +23,9 @@ compatibility_date = "2024-09-23"
 # src/index.mjs) = 9 file/ngày → phủ hết danh sách trong 3 ngày, đúng bằng CACHE_TTL_S.
 # Trước đây MỘT lượt x 6 file: chết CPU mỗi ngày từ 07/09 tới 13/09, đụng trần 2.010.000µs.
 crons = [
-  "0 2 * * *",      # 09:00 VN — ngày sửa cuối của link + camera công trường + warm (lô 1)
-  "30 7 * * *",     # 14:30 VN — warm Summary (lô 2)
-  "30 10 * * *",    # 17:30 VN — warm Summary (lô 3). PHẢI khớp REFRESH_HOUR_VN/MIN_VN của app.
-  "0 13 * * *",     # 20:00 VN mỗi ngày — chỉ THỨ TƯ mới chạy (kiểm thứ trong index.mjs)
+  "0 2 * * *",      # 09:00 VN — ngày sửa cuối của link + camera công trường (KHÔNG warm nữa)
+  "0 11 * * *",     # 18:00 VN — warm Summary (lô 1). Mốc làm mới thứ nhất của app.
+  "0 13 * * *",     # 20:00 VN — warm Summary (lô 2) + THỨ TƯ dựng PDF tuân thủ. Mốc thứ hai.
   "30 16 * * *",    # 23:30 VN — sao lưu nhật ký giám sát + TOÀN BỘ dữ liệu KV + vân tay nguồn
 ]
 
