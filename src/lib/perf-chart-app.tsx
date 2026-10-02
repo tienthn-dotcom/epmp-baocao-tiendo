@@ -38,7 +38,7 @@ import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } f
 const PERF_SHOW = [
   "TROPICAL PQ", "CHATEAU", "NAM PHƯƠNG PQ", "TÂY HỒ VIEW",
   "20 ĐÔNG DU", "MINI HOTEL PQ", "HOLIDAY INN BÀ NÀ", "HYATT PQ",
-  "HYATT HỒ TRÀM", "OLALANI", "CÁT BÀ", "TIẾN BỘ PLAZA",
+  "HYATT HỒ TRÀM", "OLALANI", "COSMO ĐÀ NẴNG", "CÁT BÀ", "TIẾN BỘ PLAZA",
   "HYATT HẠ LONG", "43 ĐTM", "APEC S2", "APEC S3",
   "APEC S4", "TRỤC ĐÔNG TÂY", "TULIP 3", "TULIP 123",
 ];
@@ -46,8 +46,25 @@ const PERF_SHOW = [
  *  Khai ở đây thì dự án mới không bị luật "rời ePMP thì mang ra" quét mất. ePMP luôn thắng: chỗ này chỉ
  *  bù vào chỗ trống. Dự án nào xong thì XOÁ dòng của nó khỏi đây lẫn khỏi PERF_SHOW. */
 const PERF_REGION: Record<string, string> = {
-  // (trống) — chủ nhà chốt KHÔNG tự chọn dự án thay thế. Ô nào không có dự án thì để trống.
+  // Nhóm "COSMO ĐÀ NẴNG" của file = Khu dịch vụ du lịch ven sông Hàn (CT25-077, CT24-076,
+  // CT24-087). Tên nhóm này KHÔNG trùng tên dự án bên ePMP nên tra vùng không ra — khai tay
+  // để nó vào đúng cụm miền Trung thay vì rơi xuống nhóm vùng lạ.
+  "cosmo da nang": "Trung",
 };
+/** TÊN HIỂN THỊ TRÊN THẺ — chỉ đổi CHỮ, không đụng tới việc khớp.
+ *
+ *  Thẻ xưa nay lấy thẳng tên nhóm trong file tuần, mà tên đó là tên nội bộ của bên kế toán
+ *  ("COSMO ĐÀ NẴNG" cho Khu du lịch ven sông Hàn, "HYATT PQ" cho Hyatt Phú Quốc). Sửa thẳng
+ *  PERF_SHOW thì hỏng khớp, vì PERF_SHOW chính là danh sách dò theo tên file.
+ *  Khoá = tên file đã chuẩn hoá (keyName). Thiếu khoá thì giữ nguyên tên file. */
+const PERF_TEN_HIEN: Record<string, string> = {
+  "tropical pq": "Tropical",
+  "nam phuong pq": "Nam Phương Hoàng Hậu",
+  "mini hotel pq": "Mini Hotel",
+  "hyatt pq": "Hyatt Phú Quốc",
+  "cosmo da nang": "Khu du lịch ven sông Hàn",
+};
+
 /** DÒNG GOM, KHÔNG PHẢI DỰ ÁN — cấm lên lưới dù có ai lỡ khai vào PERF_SHOW hay file tuần có đánh STT.
  *  Chủ nhà chốt: KHÔNG dùng nhóm "OTHERS". Mấy dòng còn lại cùng loại (OEM, Loose Export, công nợ cũ,
  *  thiết kế, "khác") là các khoản bị TRỪ RA hoặc gom việc lẻ — đưa lên lưới "các dự án" là sai bản chất
@@ -57,6 +74,8 @@ const PERF_EXCLUDE = /^(others?|oem|looses*export|congs*nos*cu|khac|thiets*ke|to
 const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
 const SHOW_KEYS = PERF_SHOW.map(keyName);
+/** Tên đưa lên thẻ / bảng xếp hạng. Khớp vẫn theo tên file, chỉ chữ hiển thị đổi. */
+const tenHien = (n: string) => PERF_TEN_HIEN[keyName(n)] ?? n;
 
 // Thang CHUNG cho mini (để so cao thấp giữa các dự án). ĐÁY = 0: từ khi có nguyên tắc loại trừ
 // tháng âm (absorbNegBack) thì không còn cột âm nào, chừa dải −1→0 chỉ tổ phí 1/5 chiều cao.
@@ -305,7 +324,7 @@ function MiniChart({ p, nm, w, h }: { p: Proj; nm: number; w: number; h: number 
         <text key={m} x={mL + bw * m + bw / 2} y={h - 7} textAnchor="middle" fontSize={13} fontWeight={700} fill="#64748b">T{m + 1}</text>
       ))}
       <text x={mL - 6} y={20} textAnchor="start" fontSize={18} fontWeight={800} fill="#111827">
-        {p.name.length > 26 ? p.name.slice(0, 25) + "…" : p.name}
+        {(() => { const t = tenHien(p.name); return t.length > 26 ? t.slice(0, 25) + "…" : t; })()}
       </text>
     </svg>
   );
@@ -675,7 +694,7 @@ export function PerfChartApp() {
   const liveKeys = useMemo(() => new Set(ordered.map((p) => keyName(p.name))), [ordered]);
   const rankRows = useMemo(() => projs
     .filter((p) => liveKeys.has(keyName(p.name)))           // đúng danh sách dự án đang hiện
-    .map((p) => ({ name: p.name, v: perfOf(p, rm), rev: p.rev[rm] ?? 0, ns: p.ns[rm] ?? 0, prev: rm > 0 ? perfOf(p, rm - 1) : null }))
+    .map((p) => ({ name: tenHien(p.name), v: perfOf(p, rm), rev: p.rev[rm] ?? 0, ns: p.ns[rm] ?? 0, prev: rm > 0 ? perfOf(p, rm - 1) : null }))
     .filter((r) => r.v != null)
     .sort((a, b) => (b.v as number) - (a.v as number) || a.name.localeCompare(b.name, "vi", { numeric: true })) as RankRow[],
     [projs, rm, liveKeys]);
