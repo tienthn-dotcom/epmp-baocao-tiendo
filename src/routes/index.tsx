@@ -82,6 +82,8 @@ import { buildComplianceReport, SCORING } from "@/lib/compliance";
 import { nhanThang } from "@/lib/tuan-thu-thang";
 import { parseComplianceFile, type ComplianceFileData, type ComplianceFileRow, type CMark } from "@/lib/compliance-file";
 import { getDaysOverdue } from "@/lib/overdue";
+import { docNhieuTrang, nhanTrang, type TrangNhap } from "@/lib/trang-pdf";
+import { listTabGids } from "@/lib/mtld-install.functions";
 import {
   saveLastKnown,
   loadLastKnown,
@@ -2680,7 +2682,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     if (dataMode === "demo") return;
     if (dangTaiKho > 0) return;   // xem cổng "tải xong mới được ghi" phía trên
     try {
-      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean; noMx?: boolean }[] = [];
+      const named: { fileId: string; gid?: string; name: string; maCT: string; region: string; groupDA: string; hid?: string; sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean; noMx?: boolean; trang?: { ten?: string; sheet?: string; gid?: string; range?: string }[] }[] = [];
       const seenKey = new Set<string>();   // đã xử lý linkKey này chưa (khỏi lặp)
       const seenSig = new Set<string>();   // NỘI DUNG popup đã có chưa (nhiều dự án gắn CÙNG 1 ma trận → 1 thẻ)
       for (const it of data.items) {
@@ -2698,7 +2700,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         const sig = `${cfg.fileId}|${cfg.gid || ""}|${formKey}|${it.projHid || linkKey}`;
         if (seenSig.has(sig)) continue;
         seenSig.add(sig);
-        named.push({ fileId: cfg.fileId, gid: cfg.gid, sheet: cfg.sheet, range: cfg.range, tl: cfg.tl, br: cfg.br, formKey, chart: cfg.chart, noMx: cfg.noMx,
+        named.push({ fileId: cfg.fileId, gid: cfg.gid, sheet: cfg.sheet, range: cfg.range, tl: cfg.tl, br: cfg.br, formKey, chart: cfg.chart, noMx: cfg.noMx, trang: cfg.trang,
           hid: it.projHid, name: it.projectName, maCT: it.maCT || it.projectCode || "", region: it.region || "", groupDA: it.groupDA || "" });
       }
       if (named.length) {
@@ -5830,6 +5832,25 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
   const [pdfId, setPdfId] = useState(initCfg?.pdfFileId ?? "");
   const [pdfName, setPdfName] = useState(initCfg?.pdfName ?? "");
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+  /* CÁC TRANG THÊM (1A, 1B, 2A…). Trang ĐẦU là ô Sheet + Vùng ở trên, nên danh sách này chỉ giữ
+     các trang SAU. Link cũ không có trang thêm thì danh sách rỗng và popup chạy y như trước. */
+  const [trang, setTrang] = useState<TrangNhap[]>(initCfg?.trang ?? []);
+  const [danTrang, setDanTrang] = useState("");   // ô dán nhiều dòng, mỗi dòng một trang
+  /* TAB KÈM GID — Google CHỈ chọn được tab bằng gid ở đường xuất PDF (đo 02/10/2026:
+     range=Tab!A1:L40 và sheet=Tab đều trả về CẢ FILE). Người gắn link nghĩ theo TÊN tab, nên
+     app tra sẵn gid rồi lưu kèm. File .xlsx không có htmlview → danh sách rỗng, dòng trang lùi
+     về ô gõ tay và có cảnh báo là trang đó không đổi được tab. */
+  const [tabGid, setTabGid] = useState<{ ten: string; gid: string }[]>([]);
+  const [moDan, setMoDan] = useState(false);   // mở ô dán nhiều dòng
+  useEffect(() => {
+    const p = parseSheetUrl(url); if (!p) { setTabGid([]); return; }
+    let off = false;
+    listTabGids({ data: { fileId: p.fileId } })
+      .then((r) => { if (!off) setTabGid(r.tabs || []); })
+      .catch(() => { if (!off) setTabGid([]); });
+    return () => { off = true; };
+  }, [url]);
+  const gidCuaTen = (ten: string) => tabGid.find((t) => t.ten.trim().toLowerCase() === (ten || "").trim().toLowerCase())?.gid || "";
   const [render, setRender] = useState<{ html: string; css: string; range: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -5881,9 +5902,9 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
     try {
       // Chưa có ma trận thì KHÔNG dựng snapshot: không có vùng ma trận để render, chạy chỉ tổ lỗi.
       if (parsed && !noMx) await etlSheetRegion(projKey, parsed.fileId, { sheetName: sheet, range, tl, br });   // E→T→L: render + lưu snapshot HTML
-      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed && !noMx, chart, noMx, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), ma: (projMa || initCfg?.ma || "").slice(0, 120), ten: projName.slice(0, 300), devAs: devAs() } });
+      await saveSheetView({ data: { key: projKey, pdf: true, fileId: parsed?.fileId, gid: parsed?.gid, sheet, range, tl: tl.trim(), br: br.trim(), snap: !!parsed && !noMx, chart, noMx, trang, pdfFileId: pdfId, pdfName: pdfName.slice(0, 200), ma: (projMa || initCfg?.ma || "").slice(0, 120), ten: projName.slice(0, 300), devAs: devAs() } });
       track(parsed ? "link_matrix" : "link_pdf",
-        parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
+        parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${trang.length ? ` · +${trang.length} trang` : ""}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
       onSaved(); onClose();
     } catch (e) { setErr((e as Error).message); setSaving(false); }
   };
@@ -5959,7 +5980,75 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
             {(initCfg?.fileId || initCfg?.pdfFileId) && <button onClick={() => void remove()} disabled={saving} className="rounded px-2 py-1 font-medium text-slate-500 hover:text-red-600" title="Gỡ link khỏi dự án">Xoá link</button>}
             {render && <span className="text-[11px] font-medium text-teal-700">✓ Vùng: {render.range || "cả sheet"}</span>}
           </div>
-          <div className="text-[10.5px] leading-tight text-slate-500">Chọn <b>Sheet</b> rồi đặt <b>2 marker</b>: gõ 2 ký hiệu lạ (vd <code>@TL@</code>, <code>@BR@</code>) vào <b>ô góc trên-trái</b> và <b>ô góc dưới-phải</b> của vùng trong sheet → app tự dò ra vùng (người ta chèn/dời dòng cột vẫn đúng, không dính dòng ghi chú thừa). Bỏ trống marker = hiện cả sheet. App <b>render lại ô màu</b> nên chạy cho cả <b>Google Sheet</b> lẫn <b>.xlsx</b>. Sheet phải chia sẻ “Anyone with the link”.</div>
+          <div className="text-[10.5px] leading-tight text-slate-500">Dán link → chọn Sheet → gõ Vùng → <b>Xem thử</b> → <b>Lưu link</b>. Sheet phải chia sẻ “Anyone with the link”. Marker, trang thêm: hỏi <b>Trợ lý</b> (Ctrl+K) “gắn link ma trận”.</div>
+          {/* ── TRANG THÊM ─────────────────────────────────────────────────────────────────
+               Dựng THEO ĐÚNG khuôn phần trên: cùng nhãn cột (Sheet · Vùng), cùng kiểu dropdown
+               chọn tab, hai nút thêm nằm cùng một hàng. Trang đầu là ô Sheet + Vùng ở trên, nên
+               danh sách này đánh số từ Trang 2. */}
+          <div className="grid gap-1.5 rounded-md border border-slate-200 bg-slate-50 p-2.5">
+            <span className="text-[12px] font-semibold text-slate-800">Trang thêm</span>
+
+            {trang.length > 0 && (
+              <div className="grid gap-1">
+                {/* Hàng tiêu đề cột — chữ y như nhãn phía trên để hai khối đọc như một. */}
+                <div className="flex items-center gap-1.5 pl-[58px] text-[10.5px] font-semibold text-slate-500">
+                  <span className="w-44">Sheet <span className="font-normal text-slate-400">(chọn tab)</span></span>
+                  <span className="w-32">Vùng <span className="font-normal text-slate-400">(vd B2:M45)</span></span>
+                  <span className="w-40">Nhãn <span className="font-normal text-slate-400">(tuỳ chọn)</span></span>
+                </div>
+                {trang.map((t, i) => {
+                  const gid = (t.gid || "").trim() || gidCuaTen(t.sheet || "");
+                  return (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <span className="w-[54px] shrink-0 text-[10.5px] font-semibold text-slate-500">Trang {i + 2}</span>
+                      {tabGid.length ? (
+                        <select value={t.sheet ?? ""} onChange={(e) => { const ten = e.target.value; setTrang((v) => v.map((x, j) => (j === i ? { ...x, sheet: ten, gid: gidCuaTen(ten) } : x))); }}
+                          className="w-44 rounded border border-slate-300 bg-white px-2 py-1 text-[11.5px] text-slate-900 focus:border-teal-600 focus:outline-none">
+                          <option value="">— cùng tab trang đầu —</option>
+                          {tabGid.map((x) => <option key={x.gid} value={x.ten}>{x.ten}</option>)}
+                          {t.sheet && !gidCuaTen(t.sheet) && <option value={t.sheet}>{t.sheet} (không có trong file)</option>}
+                        </select>
+                      ) : (
+                        <input value={t.sheet ?? ""} onChange={(e) => setTrang((v) => v.map((x, j) => (j === i ? { ...x, sheet: e.target.value.slice(0, 80) } : x)))}
+                          placeholder="tên tab" className="w-44 rounded border border-slate-300 px-2 py-1 text-[11.5px] text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" />
+                      )}
+                      <input value={t.range ?? ""} onChange={(e) => setTrang((v) => v.map((x, j) => (j === i ? { ...x, range: e.target.value.slice(0, 40) } : x)))}
+                        placeholder="cả tab" className="w-32 rounded border border-slate-300 px-2 py-1 text-[11.5px] text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" />
+                      <input value={t.ten ?? ""} onChange={(e) => setTrang((v) => v.map((x, j) => (j === i ? { ...x, ten: e.target.value.slice(0, 80) } : x)))}
+                        placeholder={nhanTrang({ ...t, ten: "" }, i + 2)} className="w-40 rounded border border-slate-200 px-2 py-1 text-[11.5px] text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" />
+                      {/* KHÔNG CÓ GID = KHÔNG ĐỔI ĐƯỢC TAB. Phải nói, vì im lặng thì popup vẫn mở
+                          bình thường mà chiếu lại trang đầu. */}
+                      {t.sheet && !gid && <span className="text-[10.5px] font-semibold text-amber-700" title="Không tra được tab này trong file nên popup sẽ chiếu trang đầu">⚠ không đổi được tab</span>}
+                      <button type="button" onClick={() => setTrang((v) => v.filter((_, j) => j !== i))} title="Xoá trang này"
+                        className="ml-auto rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:border-red-400 hover:text-red-600">✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* HAI NÚT THÊM — cùng một hàng, cùng một kiểu. Trước đây một nút nằm góc phải còn
+                nút kia nằm trong khối dán, nhìn như hai tính năng rời. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={() => setTrang((v) => [...v, { sheet: "", range: "" }])} disabled={trang.length >= 20}
+                className="rounded bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">+ Thêm trang</button>
+              <button type="button" onClick={() => setMoDan((v) => !v)}
+                className="rounded border border-teal-700 px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-50">{moDan ? "Đóng ô dán" : "Dán nhiều dòng"}</button>
+              {trang.length > 0 && <span className="text-[10.5px] text-slate-500">{trang.length + 1} trang</span>}
+            </div>
+
+            {moDan && (
+              <div className="grid gap-1 rounded border border-slate-200 bg-white p-2">
+                <textarea value={danTrang} onChange={(e) => setDanTrang(e.target.value.slice(0, 4000))} rows={4}
+                  placeholder={"Mỗi dòng một trang:\n1A | B2:M45\n1B | B2:M45\n2A B2:M60\n2B"}
+                  className="w-full rounded border border-slate-300 px-2 py-1 font-mono text-[11px] text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none" />
+                <button type="button"
+                  onClick={() => { const ds = docNhieuTrang(danTrang).map((t) => ({ ...t, gid: gidCuaTen(t.sheet || "") })); if (!ds.length) return; setTrang((v) => [...v, ...ds].slice(0, 20)); setDanTrang(""); setMoDan(false); }}
+                  className="justify-self-start rounded bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800">Thêm {docNhieuTrang(danTrang).length || ""} trang</button>
+              </div>
+            )}
+          </div>
+
           {err && <div className="text-[11px] font-medium text-red-600">Lỗi: {err}</div>}
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-white p-3">

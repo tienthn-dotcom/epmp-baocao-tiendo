@@ -1078,7 +1078,12 @@ const DEV_SHEETVIEW_FILE = ".data/pmo-sheetview.json";
 /** pdf=true → ÉP chụp PDF (bỏ tự-nhận-dạng heatmap); sheet/range = tinh chỉnh tab + vùng (tuỳ chọn).
  *  fileId/gid: khi PMO GẮN LINK THẲNG trong app (không qua hyperlink file import) — key = khoá bền dự án
  *  (Mã CT + Tên). Có fileId → dự án đó hiện 📊 cho mọi người, popup chụp PDF từ link này. */
-export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string; ma?: string; ten?: string; noMx?: boolean };
+/** MỘT TRANG THÊM của popup ma trận: đúng một cặp TAB + VÙNG, như người dùng nhập.
+ *  `ten` là nhãn hiện trên đầu trang; bỏ trống thì lấy tên tab. */
+export type SheetViewTrang = { ten?: string; sheet?: string; gid?: string; range?: string };
+export type SheetViewCfg = { pdf?: boolean; fileId?: string; gid?: string; sheet?: string; range?: string; tl?: string; br?: string; snap?: boolean; chart?: boolean; pdfFileId?: string; pdfName?: string; ma?: string; ten?: string; noMx?: boolean; trang?: SheetViewTrang[] };
+// trang = CÁC TRANG SAU trang đầu. Trang ĐẦU vẫn là sheet + range cũ, nên link đã gắn không phải
+// sửa gì và thiếu `trang` thì popup chạy y như trước. Thêm trang = thêm một phần tử vào đây.
 // noMx=true → dự án CHƯA CÓ MA TRẬN: link chỉ để mở ra xem, app Hình ảnh mỗi ngày KHÔNG dắt về từng
 // căn mà mở thẳng kho ảnh chung của dự án. Có cờ này thì dự án vẫn vào được danh sách media.
 // pdfFileId/pdfName = TÀI LIỆU PDF gắn thẳng cho hạng mục (id file trên Drive). Nhiều công đoạn chỉ có
@@ -1111,6 +1116,55 @@ export const getSheetViews = createServerFn({ method: "GET" }).handler(async () 
 });
 
 /** Lưu/gỡ cấu hình cho 1 link — CHỈ ADMIN. pdf=false → gỡ (về mặc định tự-nhận-dạng). */
+/* ── KHO CÂU HỎI TRỢ LÝ ────────────────────────────────────────────────────────────────────
+ * Anh Tiến 02/10/2026: *"tạo 1 folder chứa data người dùng hỏi để tự phát triển"*.
+ *
+ * Ghi lại câu người dùng hỏi, KÈM việc trợ lý có trả lời được hay không. Giá trị nằm ở nhóm
+ * CHƯA trả lời được: đó chính là danh sách việc cần bổ sung, không phải đoán.
+ *
+ * KHÔNG ghi câu trả lời, không ghi số liệu dự án — chỉ câu hỏi, email người hỏi và màn đang
+ * đứng. Giữ 500 câu gần nhất; khoá này nằm trong bản sao lưu KV hằng đêm ra Drive nên không
+ * cần dựng thêm đường xuất.
+ */
+const HOI_KEY = "troly:hoi:v1";
+const HOI_TOI_DA = 500;
+export type CauHoiLog = { hoi: string; traLoiDuoc: boolean; man?: string; email?: string | null; luc: string };
+
+export const ghiCauHoiTroLy = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    hoi: z.string().min(1).max(300),
+    traLoiDuoc: z.boolean(),
+    man: z.string().max(40).optional(),
+    devAs: z.string().nullable().optional(),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const kv = await getKv();
+    if (!kv) return { ok: false };
+    try {
+      const raw = await kv.get(HOI_KEY);
+      const ds = raw ? (JSON.parse(raw) as CauHoiLog[]) : [];
+      ds.unshift({
+        hoi: data.hoi.trim().slice(0, 300),
+        traLoiDuoc: data.traLoiDuoc,
+        ...(data.man ? { man: data.man } : {}),
+        email: await callerEmail(data.devAs),
+        luc: new Date().toISOString(),
+      });
+      await kv.put(HOI_KEY, JSON.stringify(ds.slice(0, HOI_TOI_DA)));
+      return { ok: true };
+    } catch { return { ok: false }; }
+  });
+
+/** ĐỌC kho câu hỏi — chỉ admin/OCC, để rà xem người dùng đang bí chỗ nào. */
+export const docCauHoiTroLy = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ devAs: z.string().nullable().optional() }).parse(input))
+  .handler(async ({ data }): Promise<{ ds: CauHoiLog[] }> => {
+    if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới xem được kho câu hỏi.");
+    const kv = await getKv();
+    if (!kv) return { ds: [] };
+    try { const raw = await kv.get(HOI_KEY); return { ds: raw ? (JSON.parse(raw) as CauHoiLog[]) : [] }; }
+    catch { return { ds: [] }; }
+  });
 export const saveSheetView = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
@@ -1129,6 +1183,14 @@ export const saveSheetView = createServerFn({ method: "POST" })
       pdfName: z.string().max(200).regex(/^[^\n\r]*$/).optional(),   // tên file PDF để hiện cho người dùng
       ma: z.string().max(120).regex(/^[^\n\r]*$/).optional(),      // mã CT — để đọc được file sao lưu trên Drive
       ten: z.string().max(300).regex(/^[^\n\r]*$/).optional(),     // tên CT (kèm hạng mục nếu là link cấp hạng mục)
+      /* CÁC TRANG SAU trang đầu. Chặn 20 trang: mỗi trang là MỘT lượt gọi Google export PDF, 20 đã là
+         nhiều hơn mọi ma trận đang có, mà để mở thì một link gắn hớ kéo cả Worker đi theo. */
+      trang: z.array(z.object({
+        ten: z.string().max(80).regex(/^[^\n\r]*$/).optional(),
+        sheet: z.string().max(80).regex(/^[^\n\r]*$/).optional(),
+        gid: z.string().max(30).regex(/^\d*$/).optional(),
+        range: z.string().max(40).regex(/^[^\n\r]*$/).optional(),
+      })).max(20).optional(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )
@@ -1145,8 +1207,15 @@ export const saveSheetView = createServerFn({ method: "POST" })
     const pdfName = (data.pdfName ?? "").trim();
     const ma = (data.ma ?? "").trim();
     const ten = (data.ten ?? "").trim();
+    /* Dọn danh sách trang: bỏ trang KHÔNG có cả tab lẫn vùng (dòng người dùng để trống rồi bấm lưu).
+       Giữ trang chỉ có tab (xem cả tab) hoặc chỉ có vùng (cùng tab với trang đầu) — cả hai đều hợp lệ
+       với Google export, nên đừng bắt phải đủ hai. */
+    const trang = (data.trang ?? [])
+      .map((t) => ({ ten: (t.ten ?? "").trim(), sheet: (t.sheet ?? "").trim(), gid: (t.gid ?? "").trim(), range: (t.range ?? "").trim() }))
+      .filter((t) => t.sheet || t.gid || t.range)
+      .map((t) => ({ ...(t.ten ? { ten: t.ten } : {}), ...(t.sheet ? { sheet: t.sheet } : {}), ...(t.gid ? { gid: t.gid } : {}), ...(t.range ? { range: t.range } : {}) }));
     if (!data.pdf) delete map[data.key];   // tắt ép PDF / gỡ link → về mặc định (không hiện 📊 nếu là khoá dự án)
-    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}), ...(ma ? { ma } : {}), ...(ten ? { ten } : {}), ...(data.noMx ? { noMx: true } : {}) };
+    else map[data.key] = { pdf: true, ...(fileId ? { fileId } : {}), ...(gid ? { gid } : {}), ...(sheet ? { sheet } : {}), ...(range ? { range } : {}), ...(tl ? { tl } : {}), ...(br ? { br } : {}), ...(data.snap ? { snap: true } : {}), ...(data.chart ? { chart: true } : {}), ...(pdfFileId ? { pdfFileId } : {}), ...(pdfName ? { pdfName } : {}), ...(ma ? { ma } : {}), ...(ten ? { ten } : {}), ...(data.noMx ? { noMx: true } : {}), ...(trang.length ? { trang } : {}) };
     await writeSheetViews(map);
     await backupSheetViewsToDrive(map);   // gắn/sửa/gỡ link xong là sao lưu ngay, khỏi chờ cron
     return { views: map };

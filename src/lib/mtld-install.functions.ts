@@ -242,6 +242,9 @@ type InstallListItem = {
   /** Dự án CHƯA CÓ MA TRẬN — link chỉ để mở ra xem; app Hình ảnh mỗi ngày gom ảnh chung cả dự án,
    *  không dắt về từng căn. Xem cờ noMx trong SheetViewCfg. */
   noMx?: boolean;
+  /** CÁC TRANG THÊM của popup (1A, 1B, 2A…): mỗi phần tử một cặp tab + vùng. Trang ĐẦU vẫn là
+   *  sheet/range ở trên. Xem lib/trang-pdf.ts và SheetViewCfg.trang. */
+  trang?: { ten?: string; sheet?: string; gid?: string; range?: string }[];
 };
 export const saveInstallList = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ list: z.array(z.object({
@@ -251,6 +254,14 @@ export const saveInstallList = createServerFn({ method: "POST" })
     sheet: z.string().max(200).optional(), range: z.string().max(60).optional(), tl: z.string().max(30).optional(),
     br: z.string().max(30).optional(), formKey: z.string().max(400).optional(), chart: z.boolean().optional(),
     noMx: z.boolean().optional(),
+    /* CÁC TRANG THÊM của popup (1A, 1B, 2A…). Chặn 20 trang: mỗi trang là MỘT lượt gọi Google
+       export PDF, 20 đã nhiều hơn mọi ma trận đang có. */
+    trang: z.array(z.object({
+      ten: z.string().max(80).optional(),
+      sheet: z.string().max(200).optional(),
+      gid: z.string().max(30).optional(),
+      range: z.string().max(60).optional(),
+    })).max(20).optional(),
   })).max(1000) }).parse(input))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
     const kv = await getKv();
@@ -316,6 +327,44 @@ async function fetchSheetPdf(id: string, gid?: string, range?: string): Promise<
   catch (e) { if (gid) return await fetchPdfOnce(id, undefined, range); throw e; }
 }
 
+/**
+ * DANH SÁCH TAB KÈM GID của một Google Sheet.
+ *
+ * Đường xuất PDF của Google CHỈ chọn được tab bằng `gid`. Đo 02/10/2026: `range=TênTab!A1:L40`
+ * và `sheet=TênTab` đều trả về CẢ FILE (257.912 / 258.078 byte), còn `gid` trả đúng tab
+ * (141.225 và 45.621 byte cho hai tab khác nhau). Nên muốn người gắn link chọn tab theo TÊN thì
+ * app phải tự tra ra gid.
+ *
+ * Nguồn: trang `/htmlview` CÔNG KHAI của file có sẵn khối script liệt kê {name, gid} từng tab.
+ * Không cần API key, không cần đăng nhập — cùng mức quyền với mọi thứ khác app đang đọc
+ * ("Anyone with the link"). File .xlsx không có htmlview → trả danh sách rỗng, giao diện lùi về
+ * cho gõ tay.
+ */
+const TAB_TTL_S = 6 * 60 * 60;   // gid gần như không đổi; 6 giờ là đủ tươi mà khỏi tải lại 54KB mỗi lần
+export const listTabGids = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/) }).parse(input))
+  .handler(async ({ data }): Promise<{ tabs: { ten: string; gid: string }[] }> => {
+    const kv = await getKv();
+    const key = `tabs:v1:${data.fileId}`;
+    if (kv) { try { const hit = await kv.get(key); if (hit) return { tabs: JSON.parse(hit) as { ten: string; gid: string }[] }; } catch { /* cache hỏng → tải lại */ } }
+    let html = "";
+    try {
+      const r = await fetch(`https://docs.google.com/spreadsheets/d/${data.fileId}/htmlview`, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)" } });
+      if (r.ok) html = await r.text();
+    } catch { /* mạng lỗi → trả rỗng, KHÔNG ném: thiếu gid thì giao diện vẫn gõ tay được */ }
+    const tabs: { ten: string; gid: string }[] = [];
+    const seen = new Set<string>();
+    // Khối script dạng: {name: "1B. Báo cáo TCLĐ", pageUrl: "…&gid=1713779226", gid: "1713779226",…}
+    for (const m of html.matchAll(/\{name:\s*"((?:[^"\\]|\\.)*)"[\s\S]{0,300}?gid:\s*"(\d+)"/g)) {
+      const ten = m[1].replace(/\\(.)/g, "$1").trim();
+      if (!ten || seen.has(m[2])) continue;
+      seen.add(m[2]);
+      tabs.push({ ten, gid: m[2] });
+      if (tabs.length >= 60) break;
+    }
+    if (kv && tabs.length) { try { await kv.put(key, JSON.stringify(tabs), { expirationTtl: TAB_TTL_S }); } catch { /* cache lỗi kệ */ } }
+    return { tabs };
+  });
 export const getSheetPdf = createServerFn({ method: "POST" })
   // range = "TênSheet!A1:H30"; đã encodeURIComponent khi ghép URL nên chỉ chặn xuống dòng.
   .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), range: z.string().max(80).regex(/^[^\n\r]*$/).optional(), force: z.boolean().optional() }).parse(input))

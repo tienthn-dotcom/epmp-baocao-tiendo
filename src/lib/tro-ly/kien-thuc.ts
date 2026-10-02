@@ -24,6 +24,69 @@ export type MucKienThuc = {
 
 export const KIEN_THUC: MucKienThuc[] = [
   {
+    id: "app-la-gi",
+    tuKhoa: ["app la gi", "day la app gi", "app nay la gi", "dung nhu nao", "dung sao", "bat dau tu dau", "huong dan", "moi vao", "lam quen"],
+    tra: {
+      tieuDe: "ePMP dùng để làm gì, và bắt đầu từ đâu",
+      khoi: [
+        ...chu(
+          "ePMP theo dõi tiến độ Master Plan của mọi dự án đang chạy: mỗi dự án có 7 hạng mục (phát hành thiết kế, trình duyệt mẫu, LOA/tạm ứng, đặt vật tư, triển khai sản xuất, sản xuất nhập kho, thi công lắp đặt), mỗi hạng mục có ngày bắt đầu, hạn, % kế hoạch và % thực tế.",
+          "**Bắt đầu:** màn chính là bảng tiến độ. Bấm **Bảng** để xem dạng bảng, **Mở hết** để bung hạng mục của từng dự án. Thẻ số ở đầu trang cho biết bao nhiêu dự án đang trễ, cần cắt đầu việc, cần tập trung, bàn giao tháng này.",
+          "**Màu cảnh báo:** đỏ là trễ, vàng là cần tập trung hoặc cần cắt đầu việc. App xếp loại theo độ lệch % và số ngày quá hạn, siết dần khi gần tới mốc bàn giao.",
+          "**Ghi vướng mắc:** bấm vào ô Vướng mắc của hạng mục để viết. Ô vướng mắc cấp dự án dùng cho việc cần BOD duyệt.",
+        ),
+      ],
+      goiY: ["Dự án nào đang trễ?", "Màu đỏ với màu vàng khác nhau sao?", "Gắn link ma trận thế nào?"],
+    },
+  },
+  {
+    id: "mau-canh-bao",
+    tuKhoa: ["mau do", "mau vang", "canh bao", "badge", "tre tien do", "can cat", "tap trung"],
+    tra: {
+      tieuDe: "Màu cảnh báo trên hạng mục",
+      khoi: chu(
+        "**Đỏ — Trễ tiến độ:** lệch nhiều so với kế hoạch, hoặc đã quá hạn từ 14 ngày trở lên.",
+        "**Vàng — Cần tập trung:** lệch vừa phải, chưa tới mức trễ nhưng đang tụt.",
+        "**Cần cắt đầu việc:** bám sát kế hoạch mà vẫn quá hạn — thường là đầu việc còn sót vài phần trăm cuối kéo dài.",
+        "Càng gần mốc bàn giao app càng siết: cùng một độ lệch, dự án bàn giao trong 14 ngày sẽ lên đỏ, còn dự án bàn giao xa thì mới chỉ vàng.",
+      ),
+      nguon: "ma trận xếp loại trong lib/filter.ts",
+    },
+  },
+  {
+    id: "gan-link-ma-tran",
+    tuKhoa: ["gan link", "sua link", "ma tran", "mtld", "popup", "them trang", "chon vung", "marker", "tab", "gid"],
+    tra: {
+      tieuDe: "Gắn link ma trận cho hạng mục, và thêm trang cho popup",
+      khoi: [
+        ...chu(
+          "**Bước tối thiểu:** dán link Google Sheet (có `#gid=` của đúng tab) → chọn Sheet → gõ Vùng (vd B2:M45) → bấm Xem thử → Lưu link. File phải chia sẻ “Anyone with the link”.",
+          "**Marker thay cho Vùng:** gõ hai ký hiệu lạ (vd @TL@, @BR@) vào ô góc trên-trái và góc dưới-phải của vùng trong sheet, rồi điền hai ô Marker. App tự dò ra vùng, nên người ta chèn hay dời dòng cột vẫn đúng. Bỏ trống marker thì hiện cả sheet.",
+          "**Trang thêm:** một popup xem được nhiều tab. Trang đầu chính là ô Sheet + Vùng ở trên; bấm “+ Thêm trang” rồi chọn tab cho từng trang, hoặc “Dán nhiều dòng” rồi dán mỗi dòng một trang theo kiểu `1A | B2:M45`. Popup sẽ có thanh chọn trang.",
+        ),
+        { loai: "nhac", mau: "vang", chu: "Tab nào app không tra được trong file thì dòng đó hiện “⚠ không đổi được tab”, và popup sẽ chiếu lại trang đầu. Lý do: Google chỉ cắt đúng tab khi biết gid của tab đó; tên tab không đủ. Chọn tab từ danh sách thả xuống là app tự lấy gid." },
+        ...chu(
+          "**Bản có chart:** bật ô “Mặc định hiện bản CÓ CHART” thì mọi người mở ra thấy ảnh Google render (giữ nguyên chart và màu). Tắt thì app tự vẽ lại lưới.",
+          "**Tài liệu PDF:** công đoạn nào chỉ có một bản PDF (hồ sơ nghiệm thu, bản vẽ duyệt) thì tải thẳng lên, không cần link Sheet.",
+        ),
+      ],
+      goiY: ["Vì sao popup của tôi chiếu báo cáo cũ?"],
+      nguon: "hộp thoại Gắn link hiển thị (OCC)",
+    },
+  },
+  {
+    id: "popup-chieu-ban-cu",
+    tuKhoa: ["bao cao cu", "ban cu", "khong moi", "lam moi", "refresh", "popup cu"],
+    tra: {
+      tieuDe: "Popup ma trận chiếu bản cũ",
+      khoi: chu(
+        "App giữ sẵn một bản PDF của mỗi ma trận để mở cho nhanh, và làm mới bản đó MỖI SÁNG. Mở trong ngày thì thấy bản của sáng hôm đó.",
+        "Cần đúng bản vừa sửa xong thì bấm **Làm mới** trên màn MTLĐ — nút đó tải thẳng từ Google, bỏ qua bản đang giữ.",
+      ),
+      nguon: "cache spdf2 + lịch làm mới mỗi sáng",
+    },
+  },
+  {
     id: "cu-phap-mp",
     tuKhoa: ["cu phap", "ghi the nao", "viet the nao", "ghi sao", "cach ghi"],
     tra: {
@@ -160,12 +223,11 @@ export const KIEN_THUC: MucKienThuc[] = [
     id: "toi-lam-duoc-gi",
     tuKhoa: ["ban lam duoc gi", "giup gi", "biet gi", "huong dan", "help", "tro ly lam gi", "ban la ai"],
     tra: {
-      tieuDe: "Tôi giúp được gì",
+      tieuDe: "Hỏi được những gì",
       khoi: chu(
         "**Số liệu** — tổng quan, dự án nào trễ, bàn giao tháng nào, dự án của một PM, tra một dự án theo mã CT hay tên.",
         "**Master plan** — dự án nào cần trình BOD, hạn bao giờ, quá hạn mấy tuần.",
         "**Cách dùng app** — cú pháp ghi vướng mắc, bộ lọc, sắp xếp, xuất file, phân cấp, ẩn dòng, màn MTLĐ.",
-        "Tôi đọc đúng con số app đang bày, không tự tính lại, và luôn nói số lấy từ đâu. Hỏi gì tôi không chắc thì tôi nói thẳng là chưa biết chứ không đoán.",
       ),
       goiY: ["Tổng quan hôm nay", "Dự án nào đang trễ?", "Dự án nào cần trình BOD?"],
     },

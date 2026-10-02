@@ -159,7 +159,7 @@ describe("kiến thức về cách dùng app", () => {
   });
 
   it("hỏi trợ lý làm được gì", () => {
-    expect(traLoi("bạn làm được gì", nguon(DS)).tieuDe).toContain("giúp được gì");
+    expect(traLoi("bạn làm được gì", nguon(DS)).tieuDe).toContain("Hỏi được những gì");
   });
 
   it("phiên bản", () => {

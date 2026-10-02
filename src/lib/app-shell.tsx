@@ -20,7 +20,7 @@
  *     state, không refetch dữ liệu).
  *   • Thanh khi mở rộng PHỦ ĐÈ (overlay), KHÔNG đẩy nội dung → app ePMP không phải reflow.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, LayoutGrid, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X } from "lucide-react";
@@ -33,6 +33,7 @@ import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { track } from "@/lib/track";
 import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
+import { nhanTrang } from "@/lib/trang-pdf";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { DetailPlanApp } from "@/lib/detail-plan-app";
 import { PmoAiApp } from "@/lib/pmo-ai-app";
@@ -223,6 +224,9 @@ type InstallProj = {
   sheet?: string; range?: string; tl?: string; br?: string; formKey?: string; chart?: boolean;
   /** Chưa có ma trận — chỉ gắn link để xem (app Hình ảnh mỗi ngày gom ảnh chung cả dự án). */
   noMx?: boolean;
+  /** CÁC TRANG THÊM sau trang đầu: mỗi phần tử một cặp tab + vùng. Trang ĐẦU vẫn là sheet/range
+   *  ở trên, nên link cũ không phải sửa gì. Xem lib/trang-pdf.ts. */
+  trang?: { ten?: string; sheet?: string; gid?: string; range?: string }[];
 };
 // ID DUY NHẤT 1 ma trận = fileId + gid (nhiều dự án chung file, khác tab) — dùng cho React key + bộ lọc.
 const projId = (p: InstallProj) => p.fileId + (p.gid ? "|" + p.gid : "");
@@ -344,9 +348,43 @@ function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: nu
 
 /** Dialog xem CHI TIẾT 1 popup ở kích thước THẬT (100%), cuộn tự do — bấm nền tối hoặc ✕/Esc để đóng. */
 function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump: number; canEdit?: boolean; onClose: () => void }) {
+  /* DANH SÁCH TRANG = trang đầu (sheet/range của link) + các trang thêm. Link chưa khai trang
+     thêm thì danh sách còn đúng một phần tử và thanh chọn trang không hiện — popup y như trước.
+
+     THAM SỐ TÍNH RIÊNG TỪNG TRANG, KHÔNG dùng chung pdfArgsOf của dự án. Lý do: pdfArgsOf có
+     `if (p.gid) return { gid, range }` — có gid thì nó bỏ hẳn tên sheet, mà gid ghim đúng tab của
+     TRANG ĐẦU. Dùng chung thì bấm sang trang 1A chỉ đổi vùng, vẫn nằm ở tab cũ, và giao diện
+     trông như đã chạy (đo thật 02/10/2026). Nên:
+       · trang khai TAB riêng → gửi "TênTab!Vùng", KHÔNG gửi gid, để Google đọc theo tên;
+       · trang chỉ khai VÙNG → giữ gid trang đầu (cùng tab, khác vùng). */
+  const dsTrang = useMemo(() => {
+    const dau = { ten: (proj.sheet || "").trim() || "Trang 1", mo: (proj.sheet || "").trim() || "cả tab", args: pdfArgsOf(proj) };
+    const sau = (proj.trang ?? []).map((t, i) => {
+      const sheet = (t.sheet || "").trim();
+      const gid = (t.gid || "").trim();
+      const range = (t.range || "").trim();
+      /* GID LÀ THỨ DUY NHẤT CHỌN ĐƯỢC TAB. Đo 02/10/2026 trên file Villa Tulip 3:
+           range=Tab!A1:L40 → 257.912 byte (cả file) · sheet=Tab → 258.078 byte (cả file)
+           gid=1713779226   → 141.225 byte (đúng tab) · gid=411359724 → 45.621 byte (tab khác)
+         Nên trang có gid thì gửi gid; không có gid thì đành dùng tham số của trang đầu — popup sẽ
+         chiếu lại trang đầu, và hộp thoại gắn link đã cảnh báo "⚠ chưa có gid" đúng dòng đó. */
+      const args: { gid?: string; range?: string } = gid
+        ? { gid, ...(range ? { range } : {}) }
+        : pdfArgsOf({ ...proj, range });
+      return { ten: nhanTrang(t, i + 2), mo: `${sheet || "cùng tab"}${range ? " · " + range : " · cả tab"}`, args };
+    });
+    return [dau, ...sau];
+  }, [proj]);
+  const [iTrang, setITrang] = useState(0);
+  const tr = dsTrang[Math.min(iTrang, dsTrang.length - 1)];
+  /* CHIẾU MỘT TRANG MỘT LÚC. Xếp chồng 8 iframe PDF là đúng cái đã gây Error 1102 ở màn MTLĐ
+     (mỗi PDF một lượt gọi Worker, giữ cả tệp trong bộ nhớ). Đổi trang là đổi queryKey, bản đã
+     tải nằm trong cache nên bấm qua lại không tải lại. */
   const pdfQ = useQuery({
-    queryKey: ["mtld-pdf", proj.fileId, proj.gid ?? "", proj.sheet ?? "", proj.range ?? "", bump],
-    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...pdfArgsOf(proj), force: bump > 0 || undefined } }),
+    // Khoá theo CHÍNH tham số gửi đi (gid + range đã ghép) — đổi trang là đổi khoá, bản đã tải
+    // nằm trong cache nên bấm qua lại không tải lại.
+    queryKey: ["mtld-pdf", proj.fileId, tr.args.gid ?? "", tr.args.range ?? "", bump],
+    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...tr.args, force: bump > 0 || undefined } }),
     enabled: !!proj.chart, staleTime: 5 * 60 * 1000, retry: 1,
   });
   const [full, setFull] = useState(false);   // XEM TOÀN MÀN HÌNH để coi chi tiết
@@ -376,11 +414,24 @@ function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump:
             <X className="h-4 w-4" />
           </button>
         </div>
+        {proj.chart && dsTrang.length > 1 && (
+          /* THANH CHỌN TRANG — chỉ hiện khi link có nhiều hơn một trang. */
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 12px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#64748b", alignSelf: "center", marginRight: 2 }}>Trang</span>
+            {dsTrang.map((t, i) => (
+              <button key={`${t.args.gid || ""}|${t.args.range || ""}|${i}`} type="button" onClick={() => setITrang(i)}
+                title={t.mo}
+                style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+                  background: i === iTrang ? "#0f172a" : "#fff", color: i === iTrang ? "#fff" : "#334155",
+                  border: `1px solid ${i === iTrang ? "#0f172a" : "#cbd5e1"}` }}>{t.ten}</button>
+            ))}
+          </div>
+        )}
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: proj.chart ? 0 : 16, background: "#fff" }}>
           {proj.chart ? (
             pdfQ.isPending ? <div style={{ color: "#64748b", fontSize: 13, padding: 12 }}>Đang tải chart…</div>
               : pdfQ.isError ? <div style={{ color: "#b91c1c", fontSize: 13, padding: 12, lineHeight: 1.6 }}>{(pdfQ.error as Error).message}</div>
-              : pdfQ.data ? <iframe title={proj.name} src={`data:application/pdf;base64,${pdfQ.data.b64}#view=FitH`} style={{ width: "100%", height: full ? "calc(100vh - 48px)" : "82vh", border: "none" }} /> : null
+              : pdfQ.data ? <iframe key={`${iTrang}`} title={`${proj.name} · ${tr.ten}`} src={`data:application/pdf;base64,${pdfQ.data.b64}#view=FitH`} style={{ width: "100%", height: full ? "calc(100vh - 48px)" : "82vh", border: "none" }} /> : null
           ) : (
             <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }} formKey={proj.formKey || ""} canEdit={!!canEdit} force={bump} />
           )}

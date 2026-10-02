@@ -17,7 +17,8 @@
  * MÀU và bo góc lấy của app (navy #1e3a5f), để trợ lý trông như một phần của app chứ không như
  * một cửa sổ lạ dán vào.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ghiCauHoiTroLy } from "@/lib/edits.functions";
 import { Sparkles, X, Maximize2, Minimize2, ArrowUp, RotateCcw, ChevronRight } from "lucide-react";
 import type { CauTraLoi, Khoi, Lenh, Mau, NguCanh, NguonHoi } from "./kieu";
 import { traLoi } from "./hoi-dap";
@@ -124,6 +125,70 @@ function VeKhoi({ k, chayLenh }: { k: Khoi; chayLenh: (l: Lenh) => void }) {
 
 /* ── khung chính ────────────────────────────────────────────────────────────── */
 
+/** CHỖ ĐỨNG CỦA NÚT TRỢ LÝ — nhớ riêng từng máy, không phải dữ liệu chung. */
+const KHOA_CHO = "troly:cho:v1";
+const LE = 8;        // chừa mép màn hình
+const NGUONG = 4;    // đi quá ngần này pixel mới tính là KÉO, dưới nữa vẫn là BẤM
+
+/** Kéo thả nút nổi: trả ref để gắn vào nút, chỗ đứng hiện tại, và cờ 'vừa kéo xong'. */
+function dungKeoTha() {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [cho, setCho] = useState<{ x: number; y: number } | null>(null);
+  const vuaKeo = useRef(false);
+
+  // Đọc chỗ đã lưu (nếu có) sau khi dựng — đọc lúc dựng thì bản máy chủ và máy khách lệch nhau.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(KHOA_CHO);
+      if (raw) { const o = JSON.parse(raw) as { x: number; y: number }; if (Number.isFinite(o?.x) && Number.isFinite(o?.y)) setCho(o); }
+    } catch { /* chặn kho cục bộ → dùng góc mặc định */ }
+  }, []);
+
+  const kep = useCallback((x: number, y: number) => {
+    const el = ref.current;
+    const w = el?.offsetWidth ?? 120, h = el?.offsetHeight ?? 44;
+    return {
+      x: Math.min(Math.max(LE, x), Math.max(LE, window.innerWidth - w - LE)),
+      y: Math.min(Math.max(LE, y), Math.max(LE, window.innerHeight - h - LE)),
+    };
+  }, []);
+
+  // Đổi cỡ cửa sổ / xoay máy → kéo nút về trong màn, kẻo nó nằm ngoài vùng nhìn.
+  useEffect(() => {
+    if (!cho) return;
+    const lai = () => setCho((c) => (c ? kep(c.x, c.y) : c));
+    window.addEventListener("resize", lai);
+    return () => window.removeEventListener("resize", lai);
+  }, [cho, kep]);
+
+  const batDau = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const el = ref.current;
+    if (!el || e.button !== 0) return;
+    const r = el.getBoundingClientRect();
+    const lechX = e.clientX - r.left, lechY = e.clientY - r.top;
+    const x0 = e.clientX, y0 = e.clientY;
+    let daKeo = false;
+    const di = (ev: PointerEvent) => {
+      if (!daKeo && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < NGUONG) return;
+      daKeo = true;
+      setCho(kep(ev.clientX - lechX, ev.clientY - lechY));
+    };
+    const thoi = () => {
+      window.removeEventListener("pointermove", di);
+      window.removeEventListener("pointerup", thoi);
+      window.removeEventListener("pointercancel", thoi);
+      if (!daKeo) return;
+      vuaKeo.current = true;                      // chặn đúng cú click ngay sau khi thả
+      setTimeout(() => { vuaKeo.current = false; }, 0);
+      setCho((c) => { if (c) { try { localStorage.setItem(KHOA_CHO, JSON.stringify(c)); } catch { /* kệ */ } } return c; });
+    };
+    window.addEventListener("pointermove", di);
+    window.addEventListener("pointerup", thoi);
+    window.addEventListener("pointercancel", thoi);
+  };
+
+  return { ref, cho, batDau, vuaKeo };
+}
 export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHoi; nguCanh: NguCanh; chayLenh: (l: Lenh) => void }) {
   const [mo, setMo] = useState(false);
   const [rong, setRong] = useState(false);
@@ -169,6 +234,11 @@ export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHo
     const tra = traLoi(c, n);
     setDangNghi(null);
     setTin((t) => [...t, { ai: "troly", tra }]);
+    /* GHI LẠI CÂU HỎI để còn biết người dùng đang bí chỗ nào mà bổ sung (xem
+       docs/tro-ly/kho-cau-hoi.md). Chạy nền, hụt cũng kệ — không được để việc ghi nhật ký
+       chắn mất câu trả lời. Cờ traLoiDuoc là thứ đáng giá nhất: nhóm false chính là danh
+       sách việc cần viết thêm. */
+    void ghiCauHoiTroLy({ data: { hoi: c, traLoiDuoc: !tra.khongBiet, man: n.nguCanh?.man } }).catch(() => {});
   }, [dangNghi, layNguon, pham]);
 
   /* NGỮ CẢNH LÀ PROP RIÊNG, KHÔNG gọi layNguon() ở đây.
@@ -187,13 +257,17 @@ export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHo
         ? ["Màn MTLĐ dùng để làm gì?", "Dự án nào chưa gắn báo cáo?", "Tổng quan hôm nay"]
         : ["Tổng quan hôm nay", "Dự án nào đang trễ?", "Dự án nào cần trình BOD?", "Bàn giao tháng sau có gì?"];
 
+  const keo = dungKeoTha();
+
   return (
     <>
-      {/* NÚT MỞ — nhỏ, nép góc, không che nội dung. Ẩn khi in. */}
+      {/* NÚT MỞ — nhỏ, nép góc, KÉO THẢ ĐƯỢC (nhớ chỗ riêng từng máy). Ẩn khi in. */}
       {!mo && (
-        <button type="button" onClick={() => setMo(true)} title="Trợ lý ePMP (Ctrl+K)"
-          className="fixed bottom-4 right-4 z-[60] flex h-11 items-center gap-2 rounded-full pl-3 pr-4 text-[12.5px] font-semibold text-white shadow-lg transition hover:brightness-110 print:hidden"
-          style={{ background: NAVY }}>
+        <button type="button" ref={keo.ref} onPointerDown={keo.batDau}
+          onClick={() => { if (keo.vuaKeo.current) return; setMo(true); }}
+          title="Trợ lý ePMP (Ctrl+K) — kéo để dời"
+          className={`fixed z-[60] flex h-11 touch-none items-center gap-2 rounded-full pl-3 pr-4 text-[12.5px] font-semibold text-white shadow-lg transition hover:brightness-110 print:hidden ${keo.cho ? "" : "bottom-4 right-4"}`}
+          style={{ background: NAVY, ...(keo.cho ? { left: keo.cho.x, top: keo.cho.y } : {}) }}>
           <Sparkles className="h-4 w-4" />
           Trợ lý
         </button>
@@ -214,7 +288,7 @@ export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHo
                 <Sparkles className="h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-bold leading-tight">Trợ lý ePMP</div>
-                  <div className="text-[10px] leading-tight text-white/70">hỏi về dữ liệu và cách dùng app</div>
+                  <div className="text-[10px] leading-tight text-white/70">số liệu dự án · cách dùng app</div>
                 </div>
                 <button type="button" onClick={() => setRong((v) => !v)} title={rong ? "Thu hẹp" : "Nới rộng"}
                   className="hidden rounded p-1 text-white/80 hover:bg-white/15 hover:text-white sm:block">
@@ -251,9 +325,9 @@ export function TroLy({ layNguon, nguCanh, chayLenh }: { layNguon: () => NguonHo
             <div ref={oCuon} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50 px-3 py-3">
               {tin.length === 0 && (
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="text-[13px] font-semibold text-slate-800">Hỏi tôi bất cứ gì về ePMP</div>
+                  <div className="text-[13px] font-semibold text-slate-800">Gõ câu hỏi, hoặc chọn một gợi ý bên dưới</div>
                   <p className="text-[12px] leading-relaxed text-slate-600">
-                    Tôi đọc đúng con số app đang bày và luôn nói số lấy từ đâu. Không chắc thì tôi nói thẳng là chưa biết chứ không đoán.
+                    Hỏi được: số liệu dự án, dự án nào trễ, dự án nào cần trình BOD, và cách dùng từng chức năng trên app.
                   </p>
                 </div>
               )}
