@@ -1621,7 +1621,9 @@ const PERFDATA_KEY = "perfdata:v1";
 const DEV_PERFDATA_FILE = ".data/pmo-perfdata.json";
 export type PerfProj = { no: number; name: string; rev: number[]; ns: number[] };
 export type PerfBlock = { rev: number[]; ns: number[] };
-export type PerfData = { projects: PerfProj[]; block?: PerfBlock; src: string; at: string; by: string };
+/** srcUrl = link Google Sheet đã dán (mở thẳng). srcPath = đường dẫn file .xlsx trên Drive
+ *  (tra ra link tải). Chỉ một trong hai có giá trị, tuỳ lần nạp gần nhất là link hay file. */
+export type PerfData = { projects: PerfProj[]; block?: PerfBlock; src: string; srcUrl?: string; srcPath?: string; at: string; by: string };
 
 async function readPerfData(): Promise<PerfData | null> {
   const kv = await getKv();
@@ -1651,11 +1653,15 @@ export const savePerfData = createServerFn({ method: "POST" })
      *  "Sản lượng đầu người khối dự án" khớp ĐÚNG con số trong báo cáo tuần. */
     block: z.object({ rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24) }).optional(),
     src: z.string().max(200).optional(),
+    /* Chỉ nhận link Google Sheet — ô này đi thẳng vào thẻ <a> của mọi người xem, nhận chuỗi
+       bất kỳ là mở đường cho link lạ. */
+    srcUrl: z.string().max(500).regex(/^$|^https:\/\/docs\.google\.com\//).optional(),
+    srcPath: z.string().max(300).regex(/^[^\n\r]*$/).optional(),
     devAs: z.string().nullable().optional(),
   }).parse(input))
   .handler(async ({ data }): Promise<{ data: PerfData }> => {
     if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được cập nhật dữ liệu hiệu suất.");
-    const d: PerfData = { projects: data.projects, block: data.block, src: (data.src ?? "").slice(0, 200), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
+    const d: PerfData = { projects: data.projects, block: data.block, src: (data.src ?? "").slice(0, 200), ...((data.srcUrl ?? "") ? { srcUrl: data.srcUrl } : {}), ...((data.srcPath ?? "") ? { srcPath: data.srcPath } : {}), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
     await writePerfData(d);
     // MIRROR sang Drive: "Data Source" › DATABASE › Hiệu suất dự án › HieuSuatDuAn_latest.json (ghi đè, bản mới
     // nhất). Best-effort: Drive lỗi/chưa cấu hình → bỏ qua, không chặn KV.
@@ -1664,6 +1670,28 @@ export const savePerfData = createServerFn({ method: "POST" })
       if (await drive.driveIsConfigured()) await drive.driveArchiveJson(["Hiệu suất dự án"], "HieuSuatDuAn_latest.json", JSON.stringify(d, null, 2));
     } catch (e) { console.warn("[perfdata] mirror Drive bỏ qua:", (e as Error).message); }
     return { data: d };
+  });
+
+/** ĐƯỜNG VỀ FILE NGUỒN đang dùng — cho nút "Xem / Tải file nguồn".
+ *  Nạp bằng LINK → trả thẳng link đó. Nạp bằng FILE → tra Drive theo đường dẫn đã lưu rồi trả
+ *  link của file. Không có gì → trả null, giao diện tự ẩn nút. ĐỌC công khai như getPerfData. */
+export const linkFileNguonHieuSuat = createServerFn({ method: "POST" })
+  .handler(async (): Promise<{ kieu: "link" | "file" | null; url?: string; ten?: string }> => {
+    const d = await readPerfData();
+    if (!d) return { kieu: null };
+    if (d.srcUrl) return { kieu: "link", url: d.srcUrl, ten: d.src };
+    if (!d.srcPath) return { kieu: null };
+    // srcPath dạng "Hiệu suất dự án / Nguồn tuần / 2026 / 2026-10-02_tên.xlsx" — tách ra thư mục + tên.
+    const phan = d.srcPath.split("/").map((x) => x.trim()).filter(Boolean);
+    const ten = phan.pop() ?? "";
+    if (!ten) return { kieu: null };
+    try {
+      const drive = await import("@/lib/drive.functions");
+      if (!(await drive.driveIsConfigured())) return { kieu: null };
+      const ds = await drive.driveListDirImpl(phan);
+      const f = ds.find((x) => x.name === ten);
+      return f ? { kieu: "file", url: f.link, ten } : { kieu: null };
+    } catch { return { kieu: null }; }
   });
 
 /** LƯU FILE NGUỒN TUẦN (.xlsx báo cáo hiệu suất) LÊN DRIVE — lưu trữ có hệ thống, app KHÔNG giữ byte:

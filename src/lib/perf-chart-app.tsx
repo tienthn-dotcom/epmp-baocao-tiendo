@@ -16,12 +16,12 @@
  *   tháng mới nhất, bằng nhau → theo tên tự nhiên (APEC S2<S3<S4). Lưới mini: trên→xuống rồi trái→phải.
  * THANG: mini dùng thang CHUNG cố định (−1→4 tỷ) để so cao thấp; bar lớn dùng thang ĐỘNG (fit dữ liệu).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X } from "lucide-react";
+import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X, ExternalLink } from "lucide-react";
 import { getSummaryFile, getProjRegions, getInstallList } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
-import { getPerfData, savePerfData, startPerfSourceUpload, fetchUserRoles } from "@/lib/edits.functions";
+import { getPerfData, savePerfData, startPerfSourceUpload, linkFileNguonHieuSuat, fetchUserRoles } from "@/lib/edits.functions";
 import { roleOf } from "@/lib/roles";
 import { useIsNarrow } from "@/lib/use-breakpoint";
 import { track } from "@/lib/track";
@@ -727,40 +727,58 @@ export function PerfChartApp() {
     return arr;
   }, [ordered, rowsN]);
 
-  async function apply(list: Proj[], src: string, blk?: { rev: number[]; ns: number[] } | null) {
+  /** Nguồn đang dùng: link Google Sheet hay file trên Drive — cho nút mở lại file nguồn. */
+  const [nguon, setNguon] = useState<{ kieu: "link" | "file" | null; url?: string; ten?: string }>({ kieu: null });
+  const doNguon = useCallback(() => {
+    linkFileNguonHieuSuat().then(setNguon).catch(() => setNguon({ kieu: null }));
+  }, []);
+  useEffect(doNguon, [doNguon]);
+
+  async function apply(list: Proj[], src: string, blk?: { rev: number[]; ns: number[] } | null, duong?: { srcUrl?: string; srcPath?: string }) {
     setProjs(list);
     setBlock(blk ?? null);
     const lnm = nmOf(list); const lm = latestMonth(list, lnm);
     try {
-      await savePerfData({ data: { projects: list, block: blk ?? undefined, src, devAs: devAsPerf() } });
+      await savePerfData({ data: { projects: list, block: blk ?? undefined, src, ...duong, devAs: devAsPerf() } });
       setStatus(`Đã nạp & LƯU ${list.length} dự án · ${lnm} tháng · mới nhất tháng ${lm + 1} (giữ đến khi cập nhật file mới)`);
     } catch {
       setStatus(`Đã nạp ${list.length} dự án · ${lnm} tháng — nhưng CHƯA lưu (chỉ PMO/admin mới lưu được)`);
     }
   }
-  async function loadWorkbook(buf: ArrayBuffer, src: string) {
+  async function loadWorkbook(buf: ArrayBuffer, src: string, duong?: { srcUrl?: string; srcPath?: string }) {
     const XLSX = await import("xlsx");
     const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
     const flex = parseFlexible(wb, XLSX);
     const list = flex && flex.projects.length ? flex.projects : parsePositional(wb);
     const blk = parseBlockTotals(wb, XLSX);   // khối A "SLTB (kết quả)" (nếu file có)
     if (!list.length) throw new Error('Không nhận dạng được dữ liệu. Cần các cột: Tên dự án · Doanh thu theo tháng · Nhân sự theo tháng. Tải template để làm mẫu.');
-    await apply(list, src, blk);
+    await apply(list, src, blk, duong);
+    doNguon();
     // Nhật ký giám sát: nạp file tuần là thay số cho CẢ KHỐI — phải biết ai nạp, file nào.
     track("perf_import", `${src} — ${list.length} nhóm dự án`);
   }
   /** LƯU TRỮ file nguồn tuần lên Drive (Hiệu suất dự án › Nguồn tuần › <năm> › <ngày>_<tên file>).
    *  App KHÔNG giữ byte — client PUT thẳng lên Google. Lỗi/không có quyền → BỎ QUA, không chặn việc nạp. */
-  async function archiveSource(f: File) {
+  /** Trả ĐƯỜNG DẪN trên Drive để bên gọi lưu kèm bản dữ liệu — nhờ đó sau này mở lại được file
+   *  nguồn. Không có quyền / Drive lỗi → trả rỗng, việc nạp số vẫn chạy bình thường. */
+  async function archiveSource(f: File): Promise<string> {
     try {
       const { uploadUrl, path } = await startPerfSourceUpload({ data: { name: f.name, mime: f.type || "", devAs: devAsPerf() } });
       await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
       setStatus((v) => `${v} · đã lưu file nguồn: ${path}`);
-    } catch { /* không có quyền / Drive lỗi → vẫn dùng được dữ liệu vừa nạp */ }
+      return path;
+    } catch { return ""; }
   }
   async function onFile(f?: File | null) {
     if (!f) return; setBusy(true); setErr(null);
-    try { await loadWorkbook(await f.arrayBuffer(), f.name); await archiveSource(f); } catch (e) { setErr((e as Error).message); }
+    try {
+      /* TẢI LÊN DRIVE TRƯỚC, rồi mới nạp số — để lần lưu dữ liệu mang luôn đường dẫn file.
+         Làm ngược lại thì phải lưu hai lần, và lần thứ hai dễ hụt (mất quyền, mạng rớt) nên
+         bản lưu có số mà không có đường về file nguồn. */
+      const buf = await f.arrayBuffer();
+      const path = await archiveSource(f);
+      await loadWorkbook(buf, f.name, path ? { srcPath: path } : undefined);
+    } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   }
   async function onLink() {
@@ -771,7 +789,7 @@ export function PerfChartApp() {
       const r = await getSummaryFile({ data: { fileId: id, full: true } });
       const bin = atob(r.b64); const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      await loadWorkbook(bytes.buffer, "Google Sheet");
+      await loadWorkbook(bytes.buffer, "Google Sheet", { srcUrl: url.trim() });
     } catch (e) { setErr((e as Error).message + " · Sheet cần chia sẻ “Anyone with the link”."); }
     setBusy(false);
   }
@@ -889,6 +907,17 @@ export function PerfChartApp() {
                 </div>
               )}
             </span>
+          )}
+          {/* MỞ LẠI FILE NGUỒN đang dùng. Link Google Sheet thì mở thẳng; file .xlsx thì mở bản
+              đã lưu trên Drive. Không có đường về thì KHÔNG hiện nút — đừng bày nút bấm vào
+              không ra gì. */}
+          {nguon.kieu && nguon.url && (
+            <a href={nguon.url} target="_blank" rel="noreferrer" title={nguon.ten || nguon.url}
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11.5px] font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700">
+              {nguon.kieu === "link"
+                ? <><ExternalLink className="h-3.5 w-3.5" /> Xem file nguồn</>
+                : <><FileDown className="h-3.5 w-3.5" /> Tải file nguồn</>}
+            </a>
           )}
           <span className="max-w-[240px] truncate text-[11px] text-slate-400">
             {busy ? "Đang tải…" : err ? <span className="text-red-600">{err}</span> : status}
