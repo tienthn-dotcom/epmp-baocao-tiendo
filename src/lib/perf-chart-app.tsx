@@ -62,7 +62,13 @@ const PERF_TEN_HIEN: Record<string, string> = {
   "nam phuong pq": "Nam Phương Hoàng Hậu",
   "mini hotel pq": "Mini Hotel",
   "hyatt pq": "Hyatt Phú Quốc",
-  "cosmo da nang": "Khu du lịch ven sông Hàn",
+  /* Nhóm "COSMO ĐÀ NẴNG" gồm B4.1 · B4.2 · Ponte Apartment · CT25-077 ven sông Hàn — chỉ
+     CT25-077 có doanh thu (đo file T1-T9 ngày 02/10/2026), nên số của thẻ là của ven sông Hàn.
+     Ponte Apartment mà phát sinh doanh thu thì số sẽ gộp vào đây mà tên thẻ không nói ra. */
+  "cosmo da nang": "KDL ven sông Hàn",
+  /* Nhóm "CÁT BÀ" gồm 3 căn mẫu AATN · HH1 · HH3 — chỉ HH3 có doanh thu. HH1 chạy thì số sẽ
+     gộp vào đây. */
+  "cat ba": "Cát Bà HH3",
 };
 
 /** DÒNG GOM, KHÔNG PHẢI DỰ ÁN — cấm lên lưới dù có ai lỡ khai vào PERF_SHOW hay file tuần có đánh STT.
