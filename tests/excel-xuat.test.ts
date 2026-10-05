@@ -102,6 +102,16 @@ describe("file Excel tải về", () => {
     expect(den).toBe(3 + HANG.length);   // 3 dòng đầu + số hàng
   });
 
+  it("mức ưu tiên định dạng có điều kiện phải DUY NHẤT trong cả sheet", () => {
+    /* Trùng priority là Excel coi file hỏng và THAY cả xl/worksheets/sheet1.xml bằng bản rỗng:
+       "Replaced Part: /xl/worksheets/sheet1.xml part with XML error" — mở lên trắng trơn.
+       File vẫn WELL-FORMED về XML (đã chạy saxes: 0 lỗi) nên thư viện đọc vẫn ra đủ dòng; chỉ
+       Excel mới bắt. Đó là lý do lỗi này sống lâu mà không ai thấy. */
+    const ds = [...xml.matchAll(/<cfRule[^>]*priority="(\d+)"/g)].map((m) => m[1]);
+    expect(ds.length).toBeGreaterThan(0);
+    expect(new Set(ds).size).toBe(ds.length);
+  });
+
   it("dòng dự án chữ TRẮNG thì phải có nền đậm — nếu không là trắng trên trắng", () => {
     const o = ws.getRow(4).getCell(2);
     const chu = (o.font?.color as { argb?: string } | undefined)?.argb;

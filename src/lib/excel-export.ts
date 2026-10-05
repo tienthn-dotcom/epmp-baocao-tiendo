@@ -787,12 +787,19 @@ export async function exportTableXlsx(opts: {
     // THANG 0..100 DÍNH CHẶT VÀO CÁCH CỘT NÀY LƯU SỐ: cột % đang lưu `85` (kèm định dạng hiển thị
     // `0"%"`), không lưu `0.85`. Ai đổi sang lối `0.85` + định dạng `0%` thì PHẢI đổi `cfvo` xuống
     // 0..1, nếu không mọi thanh màu co lại còn khoảng 1% bề ngang ô mà chẳng có gì báo lỗi.
+    /* MỨC ƯU TIÊN PHẢI DUY NHẤT TRONG CẢ SHEET.
+       Trước đây hai khối định dạng có điều kiện đều gán cứng priority 1 → Excel coi file hỏng và
+       THAY cả xl/worksheets/sheet1.xml bằng bản rỗng ("Replaced Part ... with XML error"), tức mở
+       lên trắng trơn. File vẫn well-formed về XML nên thư viện đọc được bình thường, chỉ Excel mới
+       bắt — đó là lý do lỗi sống lâu mà không ai thấy. Đánh số chạy, không gõ tay nữa. */
+    let uuTien = 0;
+    const uuTienKe = () => ++uuTien;
     if (opts.pctColIndex != null && opts.pctColIndex >= 0) {
       const c = chuCot(opts.pctColIndex);
       ws.addConditionalFormatting({
         ref: `${c}${dongDau}:${c}${dongCuoi}`,
         rules: [{
-          type: "dataBar", priority: 1, gradient: false,
+          type: "dataBar", priority: uuTienKe(), gradient: false,
           minLength: 0, maxLength: 100, showValue: true,
           cfvo: [{ type: "num", value: 0 }, { type: "num", value: 100 }],
           color: { argb: MAU.hoanThanh },
@@ -810,10 +817,10 @@ export async function exportTableXlsx(opts: {
       ws.addConditionalFormatting({
         ref: `${c}${dongDau}:${c}${dongCuoi}`,
         rules: [
-          { type: "cellIs", operator: "greaterThanOrEqual", priority: 1, formulae: [String(nguong)],
+          { type: "cellIs", operator: "greaterThanOrEqual", priority: uuTienKe(), formulae: [String(nguong)],
             style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: STATUS_FILL.RED.bg } },
                      font: { bold: true, color: { argb: "FFFFFFFF" } } } } as any,
-          { type: "cellIs", operator: "greaterThan", priority: 2, formulae: ["0"],
+          { type: "cellIs", operator: "greaterThan", priority: uuTienKe(), formulae: ["0"],
             style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: MAU.quaHanNen } } } } as any,
         ],
       });

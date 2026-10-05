@@ -581,6 +581,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.133.0", date: "05/10/2026", items: [
+    "SỬA LỖI EXCEL BÁO HỎNG FILE. Mở file xuất ra, Excel hiện “Excel was able to open the file by repairing or removing the unreadable content” rồi thay cả trang tính bằng bản rỗng — nên mở lên không thấy gì. Nguyên nhân: hai khối tô màu theo điều kiện trùng số thứ tự ưu tiên. Nay file mở sạch, không còn hộp thoại sửa lỗi.",
+  ] },
   { v: "3.132.0", date: "05/10/2026", items: [
     "XUẤT EXCEL NAY CHÉP ĐÚNG BẢNG ĐANG XEM. Khi đang lọc theo giai đoạn, bảng chuyển sang dạng phẳng (mỗi dòng một hạng mục, kèm mã CT, tên dự án, mốc bàn giao) — trước đây file Excel vẫn xuất theo dạng gộp nên mở ra chỉ thấy tên dự án, không có số nào. Nay file giống hệt màn hình.",
     "File Excel cũng theo đúng bộ lọc bình luận đang bật, không còn xuất dư dòng.",
