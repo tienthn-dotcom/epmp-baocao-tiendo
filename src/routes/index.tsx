@@ -579,6 +579,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.128.0", date: "05/10/2026", items: [
+    "Nút “Hiện tất cả đầu việc” nay nói rõ nó đang giấu bao nhiêu dòng — “Hiện tất cả đầu việc (đang giấu 210)”. Lựa chọn này nhớ theo từng máy, nên tắt hôm trước thì hôm sau mở lên vẫn tắt; trước đây không có dấu hiệu nào, nhìn vào tưởng app đọc sót file nguồn.",
+  ] },
   { v: "3.127.0", date: "05/10/2026", items: [
     "Hiệu suất dự án: thêm tab “Chi tiết dự án” — bày thẳng sản lượng (tỷ) và số người của từng dự án theo từng tháng, kèm cột cả năm và dòng TOÀN KHỐI. Ba tab cũ chỉ chiếu tỉ số nên nhìn “3,1 tỷ/người” không biết là 31 tỷ chia 10 người hay 6 tỷ chia 2 người.",
     "SỬA LỖI PDF DƯ MỘT TRANG: popup ma trận và báo cáo tab bị dính thêm một trang chỉ chứa ghi chú ô của file gốc (kiểu “Chuyển lựa chọn ở B29…”). Nay bỏ hẳn trang đó.",
@@ -3670,6 +3673,25 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       else if (v === "1") setShowDone(true);
     } catch { /* không đọc được kho cục bộ thì thôi, giữ mặc định */ }
   }, []);
+  /** SỐ ĐẦU VIỆC 100% ĐANG BỊ GIẤU — để cái nút tự khai thay vì giấu trong im lặng.
+   *
+   *  Lựa chọn này nhớ theo TỪNG MÁY (localStorage), nên một người tắt hôm trước thì hôm sau mở lên
+   *  vẫn tắt, mà trên màn hình không có dấu hiệu nào. 05/10 đã mất cả buổi truy "file nguồn có dòng
+   *  Shop drawing mà app không có" chỉ vì vậy: nút đang tắt, CT26-041 mất đúng hai dòng 100%.
+   *
+   *  Đếm THÔ, không qua enrichItem: chỉ cần con số, chạy enrich 1.200 dòng mỗi lượt vẽ là phí.
+   *  Phạm vi đếm khớp đúng câu tooltip của nút — "đầu việc đã hoàn thành của dự án đang Show". */
+  const soViecXongDangGiau = useMemo(() => {
+    if (showDone) return 0;
+    let n = 0;
+    for (const p of data.projects) for (const raw of (p.allItems ?? [])) {
+      if (raw.shown === false) continue;
+      if (!(raw.pctActual != null && raw.pctActual >= 100)) continue;
+      if (hiddenKeys.has(nk(raw)) && !showHidden) continue;   // dòng đã ẩn tay thì không tính vào đây
+      n++;
+    }
+    return n;
+  }, [showDone, data.projects, hiddenKeys, showHidden, nk]);
   /** Đổi lựa chọn "hiện việc đã xong" và ghi nhớ trên ĐÚNG máy này. KHÔNG đụng tới KV: đây là
    *  thiết lập của từng máy, mà mỗi lượt bấm nhân với 10–17 người là đủ ăn vào trần 1.000 lượt
    *  ghi/ngày. Ghi hỏng thì bỏ qua — mất trí nhớ còn hơn ném lỗi vào mặt người đang bấm nút. */
@@ -5116,6 +5138,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         sortChain={sortChain}
         onSort={toggleSort}
         showDone={showDone}
+        soViecXongDangGiau={soViecXongDangGiau}
         onToggleDone={doiShowDone}
         showHidden={showHidden}
         onToggleShowHidden={() => setShowHidden(v => !v)}
@@ -6696,7 +6719,7 @@ function ExportReportMenu({ onSlide, onPdf }: { onSlide: () => void; onPdf: () =
   );
 }
 
-function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, onNguCanh, sortGantt, onSortGantt, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
+function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadlineMonthOptions, regionOptions, cdtOptions, groupDAOptions, pmOptions, pesOptions, showGanttChildTasks, ganttRows, today, isAdmin, myEmail, installLinks, onOpenSummary, onOpenPdf, sheetViews, canSetupLink, onSetupLink, projImgIdx, onOpenImage, onOpenVideo, hasMedia, onSetupImage, onExportReport, onExportPdf, filters, setFilters, sortChain, onSort, showDone, soViecXongDangGiau, onToggleDone, showHidden, onToggleShowHidden, hiddenCount, onHideRow, onNguCanh, sortGantt, onSortGantt, locCmt, onLocCmt, onLocCmtXoa, demCmt, completedDates, itemFp, onPrint, onExportExcel, onMsgOp }: {
   items: EnrichedItem[];
   /** Chế độ "Cần cập nhật MP": bảng gộp — mỗi dự án 1 dòng. */
   mpMode: boolean;
@@ -6741,6 +6764,8 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   onSort: (k: SortKey) => void;
   /** Bật/tắt "Hiện tất cả đầu việc" (kể cả đã hoàn thành). */
   showDone: boolean;
+  /** Số đầu việc 100% đang bị giấu (0 khi nút đang bật) — hiện ngay trên nhãn nút. */
+  soViecXongDangGiau: number;
   onToggleDone: () => void;
   /** DÒNG ẨN THỦ CÔNG (admin + PMO): showHidden = đang soi các dòng đã ẩn; hiddenCount = số dòng đang
    *  ẩn; onHideRow = ẩn/bỏ ẩn 1 dòng. Chỉ admin/PMO thấy nút; server vẫn chốt quyền. */
@@ -7445,7 +7470,10 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
           <button aria-label={"Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"} type="button" onClick={onToggleDone}
             title="Hiện / ẩn các đầu việc ĐÃ HOÀN THÀNH (100%) của dự án đang Show"
             className={`rounded-md border px-2.5 text-[11px] font-medium ${narrowScreen ? "h-9" : "py-0.5"} ${showDone ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600 hover:border-emerald-400"}`}>
-            {narrowScreen ? (showDone ? "✓ Cả việc xong" : "Cả việc xong") : (showDone ? "✓ Đang hiện việc đã xong" : "Hiện tất cả đầu việc")}
+            {/* ĐANG TẮT thì kèm SỐ ĐANG GIẤU — không có nó, người xem tưởng app đọc sót file nguồn. */}
+            {narrowScreen
+              ? (showDone ? "✓ Cả việc xong" : soViecXongDangGiau > 0 ? `Cả việc xong (${soViecXongDangGiau})` : "Cả việc xong")
+              : (showDone ? "✓ Đang hiện việc đã xong" : soViecXongDangGiau > 0 ? `Hiện tất cả đầu việc (đang giấu ${soViecXongDangGiau})` : "Hiện tất cả đầu việc")}
           </button>
           {/* DÒNG ĐÃ ẨN (admin + PMO) — chỉ hiện khi CÓ dòng ẩn. Bật → soi lại các dòng đã ẩn (làm mờ) để bỏ ẩn. */}
           {canHideRow && hiddenCount > 0 && (
