@@ -174,11 +174,16 @@ describe("file .xlsx dựng ra — soi ngược từng ô", () => {
     expect(ws.getRow(4).getCell(2).numFmt).toBeFalsy();
   });
 
-  it("nhóm xổ giữ nguyên: dòng con ẩn sẵn, mức outline đúng, nút xổ ở TRÊN", async () => {
+  it("nhóm xổ giữ nguyên, nhưng dòng con KHÔNG ẩn sẵn nữa", async () => {
     const ws = WS;
     expect(ws.getRow(4).outlineLevel).toBe(0);    // dòng dự án
     expect(ws.getRow(5).outlineLevel).toBe(1);    // công đoạn con
-    expect(ws.getRow(5).hidden).toBe(true);       // thu lại mặc định — người dùng đã chốt, đừng đổi
+    /* ĐỔI 05/10/2026. Trước đây chỗ này khẳng định `hidden === true` kèm ghi chú "người dùng
+       đã chốt, đừng đổi". Lật lại vì cái chốt ấy dựa trên một giả định SAI: rằng bung ra được.
+       Anh Tiến gửi file thật đã xuất — 61 dòng ẩn, 61 cờ `collapsed="1"` và TẤT CẢ nằm trên
+       dòng BỊ ẨN chứ không phải dòng tổng kết, nên Excel không vẽ nút `+` nào. Thu gọn mà
+       không có đường bung thì không còn là thu gọn, là mất dữ liệu trước mắt người dùng. */
+    expect(ws.getRow(5).hidden).toBeFalsy();
     // summaryBelow: false = nút xổ nằm ở dòng dự án phía TRÊN. Gán qua `as any` nên phải soi lại
     // trong file thật chứ không tin vào mã nguồn.
     expect((ws.properties as unknown as { outlineProperties?: { summaryBelow?: boolean } })

@@ -73,14 +73,17 @@ describe("file Excel tải về", () => {
     xml = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
   }, 60_000);
 
-  it("dòng hạng mục ẩn sẵn — nhưng DỮ LIỆU vẫn nằm trong file, không mất", () => {
-    /* Thu gọn mặc định là lựa chọn anh Tiến đã chốt (xem tests/excel-o-that.test.ts). Test này
-       KHÔNG lật lại, chỉ ghim một chuyện: "không nhìn thấy" khác "không có". Dữ liệu phải nằm
-       nguyên trong file để người dùng bung outline ra là thấy. */
+  it("KHÔNG dòng nào bị ẩn — mở file lên là đọc được ngay", () => {
+    /* Soi XML THÔ chứ không soi model ExcelJS: ExcelJS đọc lại file KHÔNG khôi phục cờ
+       `hidden`, nên assert trên model của nó là viết một test không bao giờ đỏ được — đã thử,
+       nó xanh cả khi lỗi còn nguyên. */
     const an = xml.match(/<row [^>]*hidden="1"[^>]*>/g) ?? [];
-    expect(an.length).toBe(3);                                   // đúng 3 hàng hạng mục
-    expect(ws.getRow(5).getCell(3).value).toBe("Phát hành thiết kế");
-    expect(ws.getRow(8).getCell(3).value).toBe("Thi công lắp đặt");
+    expect(an).toEqual([]);
+  });
+
+  it("vẫn giữ nhóm outline để ai muốn thu gọn thì bấm 1/2 ở lề trái", () => {
+    expect(ws.getRow(4).outlineLevel).toBe(0);
+    expect(ws.getRow(5).outlineLevel).toBe(1);
   });
 
   it("đủ số dòng dữ liệu: 3 dòng đầu + từng hàng truyền vào", () => {
@@ -97,11 +100,6 @@ describe("file Excel tải về", () => {
     const tu = typeof af === "string" ? 3 : af.from.row;
     expect(tu).toBe(3);
     expect(den).toBe(3 + HANG.length);   // 3 dòng đầu + số hàng
-  });
-
-  it("vẫn giữ nhóm outline để ai muốn thu gọn thì thu", () => {
-    expect(ws.getRow(4).outlineLevel).toBe(0);   // dòng dự án
-    expect(ws.getRow(5).outlineLevel).toBe(1);   // dòng hạng mục
   });
 
   it("dòng dự án chữ TRẮNG thì phải có nền đậm — nếu không là trắng trên trắng", () => {

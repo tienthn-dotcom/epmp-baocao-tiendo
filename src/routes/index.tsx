@@ -581,6 +581,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.131.0", date: "05/10/2026", items: [
+    "SỬA LỖI XUẤT EXCEL: file tải về mở lên chỉ thấy dòng dự án, toàn bộ dòng hạng mục bị ẩn mà KHÔNG có nút nào bung ra. Nay file bày đủ mọi dòng, mở là đọc được ngay. Vẫn giữ nhóm — muốn thu gọn thì bấm số 1/2 ở lề trái Excel.",
+    "Nút lọc trên đầu bảng Excel nay lọc được thật. Trước đây vùng lọc chỉ phủ đúng dòng tiêu đề nên bấm mũi tên không ra gì.",
+  ] },
   { v: "3.130.0", date: "05/10/2026", items: [
     "Báo cáo tuân thủ: ô “Cần PM trình Master Plan BOD phê duyệt” chuyển chữ ĐỎ khi đã quá 2 tuần chưa trình. Mốc tính đúng nghĩa đen — vượt 14 ngày, ngày thứ 15 mới đỏ. Rê chuột vào ô thấy số ngày quá hạn.",
   ] },

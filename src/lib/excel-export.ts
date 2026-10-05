@@ -718,7 +718,20 @@ export async function exportTableXlsx(opts: {
     const row = ws.addRow(r.cells);
     const isGroup = r.kind === "group";
     row.outlineLevel = isGroup ? 0 : 1;
-    if (!isGroup) row.hidden = true; // công đoạn con thu lại mặc định (mở nhóm để xem)
+    /* KHÔNG ẩn dòng hạng mục nữa — anh Tiến 05/10/2026: tải file về không thấy gì, bung cũng
+       không ra. Soi file thật anh gửi (BaoCao_TienDo_20261005.xlsx, 129 dòng / 61 dòng ẩn):
+
+           <outlinePr summaryBelow="0">     ← dòng tổng kết nằm TRÊN (dòng dự án)
+           61 cờ collapsed="1", TẤT CẢ nằm trên dòng BỊ ẨN, 0 cờ trên dòng dự án
+
+       Theo chuẩn OOXML, `collapsed` phải nằm trên DÒNG TỔNG KẾT để Excel biết vẽ nút `+` bung
+       nhóm. ExcelJS suy cờ này từ `outlineLevel` của chính dòng đó nên gắn ngược chỗ, và không
+       cho đặt tay (`collapsed` chỉ có getter). Kết quả: 61 dòng chi tiết bị ẩn mà KHÔNG có nút
+       nào mở ra được.
+
+       Lựa chọn "thu gọn sẵn" trước đây dựa trên giả định bung ra được — giả định đó sai, nên
+       mặc định đổi thành BÀY RA. Nhóm outline vẫn giữ (outlineLevel + summaryBelow), ai muốn
+       thu gọn thì bấm số 1/2 ở lề trái, đó là đường dùng được thật. */
     // KHÔNG đặt `row.height`. Excel CHỈ tự giãn chiều cao khi hàng không có chiều cao đặt tay —
     // đặt cứng 20/18 như bản cũ thì hai cột Vướng mắc / Giải pháp (rộng 48, có xuống dòng) bị CẮT
     // CỤT, mất hẳn phần chữ phía dưới. Đây là thứ hỏng rõ nhất khi đặt file cạnh bản PDF.
