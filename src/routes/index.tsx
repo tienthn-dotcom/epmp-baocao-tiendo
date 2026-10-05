@@ -581,6 +581,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.135.0", date: "05/10/2026", items: [
+    "Tên file PDF báo cáo tuân thủ theo khuôn mới: 261005_Báo cáo tuân thủ cập nhật Master Plan_09.2026.pdf — ngày xuất ở đầu, kỳ báo cáo ở cuối. Hai bản xuất khác ngày của cùng một kỳ không còn đè tên nhau.",
+  ] },
   { v: "3.134.0", date: "05/10/2026", items: [
     "Báo cáo tuân thủ — đầu báo cáo gọn lại: bỏ dòng “Kỳ chấm”, đổi “Số liệu tính đến” thành “Dữ liệu tính đến”.",
   ] },
@@ -10043,11 +10046,16 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
     hKids.forEach((k, i) => { k.style.lineHeight = "1.5"; k.style.marginTop = i === 0 ? "0" : "3px"; });
     try {
       const { exportDashboardPdf } = await import("@/lib/pdf-export");
-      /* TÊN FILE GIỮ ĐÚNG DÃY ĐÃ CÓ TRÊN DRIVE.
-         Tháng ĐANG CHẠY → "BaoCaoTuanThu_MP_<ngày>.pdf": dãy này có từ 28/08 và chỗ gửi mail lấy
-         "bản mới nhất" theo đó, nên đừng đổi khuôn. Tháng CŨ → mang tên THÁNG, vì đó là bản tra
-         lại chứ không phải bản của tuần này, để trong hộp thư hai bản không lẫn vào nhau. */
-      const fileName = laThangCu ? `BaoCaoTuanThu_MP_${thang}.pdf` : `BaoCaoTuanThu_MP_${today}.pdf`;
+      /* TÊN FILE — khuôn PMO chốt 05/10/2026:
+             yymmdd_Báo cáo tuân thủ cập nhật Master Plan_MM.YYYY.pdf
+             vd  261005_Báo cáo tuân thủ cập nhật Master Plan_09.2026.pdf
+         HAI MỐC KHÁC NHAU, đừng gộp: `yymmdd` là ngày XUẤT file, `MM.YYYY` là KỲ của báo cáo.
+         Ngày 05/10 xuất bản tháng 09 là chuyện thường, nên tên phải nói được cả hai — khuôn cũ chỉ
+         mang một mốc nên hai bản xuất khác ngày của cùng một kỳ thì đè nhau.
+         Nhờ vậy cũng bỏ được nhánh "tháng cũ / tháng đang chạy": kỳ đã nằm trong tên rồi. */
+      const yymmdd = today.slice(2).replace(/-/g, "");                     // 2026-10-05 → 261005
+      const kyBaoCao = `${thang.slice(5, 7)}.${thang.slice(0, 4)}`;         // 2026-09   → 09.2026
+      const fileName = `${yymmdd}_Báo cáo tuân thủ cập nhật Master Plan_${kyBaoCao}.pdf`;
       // CHỈ 1 báo cáo: header + khối "Cách tính điểm" + bảng, ép gọn.
       const blocks: HTMLElement[] = [headerRef.current];
       if (rulesRef.current) blocks.push(rulesRef.current);

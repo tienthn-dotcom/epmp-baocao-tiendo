@@ -154,7 +154,11 @@ const AUDIT_FILE = "nhat-ky-giam-sat.csv";
 const CPL_PATH = ["DATABASE", "ePMP", "Báo cáo tuân thủ"];
 const CPL_SHEET_ID = "15pcqb0ExFQ5uF9CuKSx6O6y9GN4kfiNf6IARN98pJbA";
 const CPL_GID = "490936703";
-const CPL_PREFIX = "BaoCaoTuanThu_MP_";
+/* TÊN FILE — khuôn PMO chốt 05/10/2026, TRÙNG KHUÔN bản app xuất tay:
+       yymmdd_Báo cáo tuân thủ cập nhật Master Plan_MM.YYYY.pdf
+   `yymmdd` = ngày dựng file, `MM.YYYY` = kỳ báo cáo. Máy dựng tự động thì hai mốc này cùng tháng,
+   nhưng vẫn ghi đủ để một dãy file đọc lên là biết kỳ nào, khỏi suy từ ngày. */
+const CPL_TEN = "Báo cáo tuân thủ cập nhật Master Plan";
 
 async function driveToken(env) {
   const body = new URLSearchParams({
@@ -595,7 +599,8 @@ async function backupCompliancePdf(env) {
   // Ngày theo GIỜ VN (worker chạy UTC) — tên file phải là ngày của người dùng.
   const vn = new Date(Date.now() + 7 * 3600_000);
   const p2 = (n) => String(n).padStart(2, "0");
-  const name = `${CPL_PREFIX}${vn.getUTCFullYear()}-${p2(vn.getUTCMonth() + 1)}-${p2(vn.getUTCDate())}.pdf`;
+  const yy = String(vn.getUTCFullYear()).slice(2), mm = p2(vn.getUTCMonth() + 1), dd = p2(vn.getUTCDate());
+  const name = `${yy}${mm}${dd}_${CPL_TEN}_${mm}.${vn.getUTCFullYear()}.pdf`;
 
   const root = env.GDRIVE_ROOT || DRIVE_ROOT_DEFAULT;
   let folder = root;
