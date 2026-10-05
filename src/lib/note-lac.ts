@@ -57,6 +57,32 @@ export function dinh4(s?: string): string {
   return s ? s.split("||").slice(0, 4).join("||") : "";
 }
 
+/** Danh tính rút về 4 trường đầu, BỎ các trường RỖNG Ở ĐUÔI.
+ *
+ *  Hai kho ghi danh tính khác độ dài ở CẤP DỰ ÁN: mỏ neo ghi "mã‖tên‖__DUAN__" (3 trường), còn dấu
+ *  dc ghi "mã‖tên‖__DUAN__‖‖RID" — cắt 4 trường ra thì còn một trường rỗng ở đuôi. So thẳng hai
+ *  chuỗi đó là LỆCH GIẢ. Mà lệch giả ở chỗ này không vô hại: nó chặn nhầm mọi lượt đóng dấu cấp
+ *  dự án, và chặn im lặng. */
+export function goi4(s?: string): string {
+  const p = String(s ?? "").split("||").slice(0, 4);
+  while (p.length && p[p.length - 1] === "") p.pop();
+  return p.join("||");
+}
+
+/** Mỏ neo có NÓI KHÁC dấu mới không?
+ *
+ *  Dùng để quyết định có cho phép ghi đè `ItemEdit.dc` hay không. Mỏ neo ghi MỘT LẦN rồi giữ, nên
+ *  nó là lời khai gốc "note này sinh ra ở dòng nào"; còn dc thì bị viết lại theo DÒNG ĐANG HIỂN
+ *  THỊ. Ghi chú đang đứng nhầm dòng mà cứ đè thì mỗi lần admin mở app là bằng chứng cuối cùng bị
+ *  xoá, sau đó không còn đường nào tra về đúng chỗ.
+ *
+ *  KHÔNG có mỏ neo thì KHÔNG cản — ô thiếu dấu vẫn phải được điền, đó là việc chính của việc đóng dấu. */
+export function soKhac(neo: string | undefined, dc: string): boolean {
+  const a = goi4(neo);
+  if (!a) return false;
+  return a !== goi4(dc);
+}
+
 export function timNoteLac(n: NguonLac): NoteLac[] {
   // danh tính → mọi khoá dòng đang mang danh tính đó
   const theoDanhTinh = new Map<string, string[]>();

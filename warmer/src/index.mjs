@@ -837,6 +837,18 @@ export default {
       const r = await tuBamNutGuiMail(env);
       return new Response(JSON.stringify(r, null, 2), { status: r && r.ok ? 200 : 500, headers: { "content-type": "application/json" } });
     }
+    /* SAO LƯU TOÀN BỘ KV RA DRIVE NGAY: mở "…/?saoluu=1". Lịch tự động chạy 23:30 mỗi ngày,
+       nhưng trước mỗi thao tác NGUY HIỂM trên kho ghi chú (dời khoá hàng loạt) phải có bản TƯƠI
+       của đúng phút đó. Trước đây muốn chạy việc này phải gọi URL trần, mà URL trần làm liền bốn
+       việc — chính thứ đã gây Error 1102. Nên tách ra một cửa riêng, y như ?pdf=1. */
+    if (tham.get("saoluu")) {
+      try {
+        const r = await backupKvData(env);
+        return new Response(JSON.stringify(r, null, 2), { headers: { "content-type": "application/json" } });
+      } catch (e) {
+        return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
+      }
+    }
     if (tham.get("pdf")) {
       try {
         const r = await backupCompliancePdf(env);

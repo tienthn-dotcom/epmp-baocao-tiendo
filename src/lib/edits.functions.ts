@@ -69,6 +69,8 @@ async function callerIsPmo(devAs?: string | null): Promise<boolean> {
  * Ghi = đọc → merge → ghi (last-write-wins theo từng đầu việc, đủ cho quy mô team).
  */
 
+import { soKhac } from "@/lib/note-lac";
+
 const KV_KEY = "edits:v1";
 
 /** Đoạn tô đỏ = [start, end) theo OFFSET ký tự trong chuỗi text của MỘT message. */
@@ -648,16 +650,26 @@ export const dongDauDanhChi = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     if (!(await callerIsAdmin(data.devAs))) return { changed: 0, skipped: true };
     const { map } = await readAll();
-    let changed = 0;
+    const neo = await readNoteAnchors();
+    let changed = 0, giuLai = 0;
     for (const [k, dc] of Object.entries(data.dc)) {
       const cur = map[k];
       if (!cur) continue;                       // không có ô note thì thôi, không đẻ ô rỗng
       if (cur.dc === dc) continue;
+      /* KHÔNG ĐÈ KHI DẤU MỚI MÂU THUẪN VỚI MỎ NEO.
+         Mỏ neo ghi MỘT LẦN rồi giữ, nên nó là lời khai gốc: "note này sinh ra ở dòng nào". Dấu dc
+         thì viết lại theo DÒNG ĐANG HIỂN THỊ. Ghi chú nào đang đứng nhầm dòng — đo 05/10: 34 ô nằm
+         ở dự án khác — mà cứ đè thì mỗi lần admin mở app là bằng chứng cuối cùng bị xoá, sau đó
+         không còn đường nào tra về đúng chỗ.
+         Lệch thì GIỮ NGUYÊN dấu cũ và để Cảnh báo dữ liệu lôi ra cho người quyết. Ô THIẾU dấu vẫn
+         được điền bình thường — đó mới là việc chính của hàm này. */
+      if (cur.dc && soKhac(neo[k], dc)) { giuLai++; continue; }
       cur.dc = dc; changed++;
     }
     if (changed > 0) await writeAll(map);
-    return { changed, skipped: false };
+    return { changed, giuLai, skipped: false };
   });
+
 
 export type NoteAnchors = Record<string, string>;   // { [noteKey]: "maCT||tên||giai đoạn||mô tả" }
 const NOTEANCHOR_KEY = "noteanchor:v1";
@@ -915,6 +927,20 @@ export const listBackups = createServerFn({ method: "GET" }).handler(async () =>
   const list = await readBaks();
   return { backups: list.map((b) => ({ id: b.id, label: b.label, at: b.at, counts: bakCounts(b) })) };
 });
+
+/** TẢI NGUYÊN 1 bản sao lưu (cả nội dung) — để admin giữ một bản NGOÀI hệ thống.
+ *  Tám bản sao lưu hiện nằm trong CÙNG KV với dữ liệu gốc: mất namespace là mất cả hai. Bản chép ra
+ *  Drive mỗi 23:30 là lớp thứ hai, nhưng cũng là một tài khoản, một nhà cung cấp. File nằm trong máy
+ *  người quản trị là lớp thứ ba, không phụ thuộc gì cả. Dung lượng cỡ vài trăm KB nên tải thẳng được.
+ *  CHỈ ADMIN: kho này chứa toàn bộ ghi chú của mọi dự án. */
+export const getBackup = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({ id: z.string().min(1).max(80), devAs: z.string().nullable().optional() }).parse(input))
+  .handler(async ({ data }) => {
+    if (!(await callerIsAdmin(data.devAs))) throw new Error("Chỉ admin tải được bản sao lưu");
+    const bak = (await readBaks()).find((b) => b.id === data.id);
+    if (!bak) throw new Error("Không thấy bản sao lưu này");
+    return { bak };
+  });
 
 /** KHÔI PHỤC 1 bản sao lưu → ghi đè 4 kho. Tự chụp bản HIỆN TẠI trước (khôi phục nhầm vẫn quay lại được). */
 export const restoreBackup = createServerFn({ method: "POST" })

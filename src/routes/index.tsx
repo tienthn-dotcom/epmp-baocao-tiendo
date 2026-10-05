@@ -69,7 +69,7 @@ import { sapXepGantt, bamCot, type ThuTuGantt, type KhoaGantt } from "@/lib/sap-
 import { TroLy } from "@/lib/tro-ly/tro-ly";
 import type { DuAnTom, Lenh, ManHinh, NguonHoi } from "@/lib/tro-ly/kieu";
 import { fetchItemFp, syncItemFp, type ItemFpMap } from "@/lib/edits.functions";
-import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
+import { fetchEdits, editMessages, fetchAppConfig, saveAppConfig, fetchUpdateHistory, recordUpdateDates, fetchCompletedDates, syncCompletedDates, fetchMpFlags, syncMpFlags, remapKeys, remapInsertShift, dongDauDanhChi, backupEdits, listBackups, restoreBackup, getBackup, fetchNoteAnchors, syncNoteAnchors, fetchUserRoles, saveUserRole, fetchHiddenRows, setHiddenRow, getSheetViews, saveSheetView, getSheetSnap, saveSheetSnap, getProjImageIndex, getProjImage, saveProjImage, saveComplianceReportPdf, getComplianceForm, saveComplianceForm, type EditsMap, type ChatMsg, type UpdateHistory, type CompletedDates, type MpFlagFirstSeen, type NoteAnchors, type HiddenRows, type SheetViewCfg, type SheetViewMap, type ProjImgIdx } from "@/lib/edits.functions";
 import { loadRegion } from "@/lib/region-load";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { whoami, recordActivity, fetchActivityLog, fetchActivityFromDrive, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
@@ -8687,6 +8687,25 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
   useEffect(() => { if (tab === "backup" && baks == null) loadBaks(); }, [tab, baks]);
   const fmt = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
   const doBackup = () => { setBusy(true); void backupEdits({ data: { label: "Sao lưu thủ công" } }).then(() => { track("backup_create"); toast.success("Đã tạo bản sao lưu."); loadBaks(); }).catch((e) => toast.error(`Lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); };
+  /* TẢI BẢN SAO LƯU VỀ MÁY — lớp phòng thủ thứ ba.
+     Tám bản sao lưu nằm trong CÙNG KV với dữ liệu gốc; bản chép ra Drive mỗi 23:30 là lớp hai
+     nhưng vẫn là một tài khoản, một nhà cung cấp. File nằm trong máy người quản trị không phụ
+     thuộc gì cả. Trước khi dời ghi chú hàng loạt thì bấm cái này, cầm file rồi hẵng làm. */
+  const doTai = (b: Bak) => {
+    setBusy(true);
+    void getBackup({ data: { id: b.id, devAs: devAs() } })
+      .then((r) => {
+        const ten = `epmp-ghichu-${b.at.slice(0, 10)}-${b.id.slice(0, 8)}.json`;
+        const url = URL.createObjectURL(new Blob([JSON.stringify(r.bak, null, 1)], { type: "application/json" }));
+        const a = document.createElement("a");
+        a.href = url; a.download = ten; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        track("backup_download", ten);
+        toast.success(`Đã tải ${ten}`);
+      })
+      .catch((e) => toast.error(`Tải lỗi: ${(e as Error).message}`))
+      .finally(() => setBusy(false));
+  };
   const doRestore = (b: Bak) => {
     toast(`Khôi phục về bản ${fmt(b.at)} (${b.counts.edits} ghi chú)? Ghi đè dữ liệu HIỆN TẠI (bản hiện tại tự chụp lại trước).`, {
       duration: 15000,
@@ -8857,7 +8876,7 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <button onClick={doBackup} disabled={busy} className="rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">+ Tạo bản sao lưu ngay</button>
-                <span className="text-[11px] text-slate-500">Tự sao lưu trước mỗi lần “Sửa lệch STT”. Giữ 8 bản gần nhất.</span>
+                <span className="text-[11px] text-slate-500">Tự sao lưu trước mỗi thao tác dời ghi chú. Giữ 8 bản gần nhất — bản thứ 9 đẩy bản cũ nhất ra, nên bản nào cần giữ lâu thì bấm “Tải về máy”.</span>
               </div>
               {baks == null ? <div className="py-6 text-center text-sm text-slate-400">Đang tải…</div>
                 : baks.length === 0 ? <div className="py-6 text-center text-sm text-slate-400">Chưa có bản sao lưu nào.</div>
@@ -8867,6 +8886,7 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
                         <div className="truncate text-[12px] font-semibold text-slate-800">{b.label}</div>
                         <div className="text-[10px] text-slate-500">{fmt(b.at)} · {b.counts.edits} ghi chú · {b.counts.mpflag} cờ MP</div>
                       </div>
+                      <button onClick={() => doTai(b)} disabled={busy} title="Tải file .json về máy — giữ một bản ngoài hệ thống" className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Tải về máy</button>
                       <button onClick={() => doRestore(b)} disabled={busy} className="shrink-0 rounded-md border border-amber-400 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">Khôi phục</button>
                     </div>
                   ))}</div>}
