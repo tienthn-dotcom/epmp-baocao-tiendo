@@ -321,9 +321,13 @@ export const getSummaryFile = createServerFn({ method: "POST" })
 async function fetchPdfOnce(id: string, gid?: string, range?: string): Promise<string> {
   const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
   const rg = range && range.trim() ? `&range=${encodeURIComponent(range.trim())}` : "";   // giới hạn ĐÚNG vùng admin khai (A1, vd A1:H30) — bỏ trống = cả tab
+  // printnotes=false: Google in GHI CHÚ Ô thành MỘT TRANG RIÊNG ở cuối — người xem tưởng báo cáo
+  //   dài 2 trang, trang 2 lại chỉ có một dòng nhắc nội bộ kiểu "Chuyển lựa chọn ở B29…". Đo 05/10
+  //   trên 31 popup đang gắn: 6 tab ra nhiều hơn 1 trang, thêm tham số này thì 3 cái bớt đúng 1
+  //   trang (3→2, 5→4, 6→5); tab không có ghi chú thì byte ra Y HỆT nên không ảnh hưởng gì.
   // scale=4 = "Fit to page" → gói trọn vùng vào 1 TRANG. MARGIN=0 + căn TRÊN-TRÁI → bỏ lề trắng thừa của khổ giấy
   // (vùng vẫn cắt đúng theo range; phần "thừa" trước đây là lề A4). fzr=false: không lặp hàng/cột tiêu đề.
-  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&scale=4&fzr=false&top_margin=0&bottom_margin=0&left_margin=0&right_margin=0&horizontal_alignment=LEFT&vertical_alignment=TOP&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&_ts=${Date.now()}`;
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&scale=4&fzr=false&top_margin=0&bottom_margin=0&left_margin=0&right_margin=0&horizontal_alignment=LEFT&vertical_alignment=TOP&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&printnotes=false&_ts=${Date.now()}`;
   const r = await fetch(url, { redirect: "follow", cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP/1.0)", Accept: "application/pdf,*/*", "Cache-Control": "no-cache, no-store" } });
   if (!r.ok) throw new Error(`Không tải được PDF (HTTP ${r.status}). Kiểm tra quyền chia sẻ "Anyone with the link".`);
   const bytes = new Uint8Array(await r.arrayBuffer());

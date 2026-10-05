@@ -581,7 +581,8 @@ async function backupCompliancePdf(env) {
 
   // Khổ ngang A3, vừa bề ngang, bỏ lưới + mấy thứ Google chèn thêm.
   const url = `https://docs.google.com/spreadsheets/d/${CPL_SHEET_ID}/export?format=pdf&gid=${CPL_GID}`
-    + "&portrait=false&size=A3&scale=4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false"
+    // printnotes=false: khỏi dính thêm một trang chỉ chứa ghi chú ô (xem mtld-install.functions.ts).
+    + "&portrait=false&size=A3&scale=4&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false&printnotes=false"
     + "&top_margin=0.30&bottom_margin=0.30&left_margin=0.30&right_margin=0.30";
   const pr = await fetch(url, { headers: AUTH });
   if (!pr.ok) return { error: `export ${pr.status}` };
