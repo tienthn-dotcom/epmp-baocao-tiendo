@@ -581,6 +581,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.134.0", date: "05/10/2026", items: [
+    "Báo cáo tuân thủ — đầu báo cáo gọn lại: bỏ dòng “Kỳ chấm”, đổi “Số liệu tính đến” thành “Dữ liệu tính đến”.",
+  ] },
   { v: "3.133.0", date: "05/10/2026", items: [
     "SỬA LỖI EXCEL BÁO HỎNG FILE. Mở file xuất ra, Excel hiện “Excel was able to open the file by repairing or removing the unreadable content” rồi thay cả trang tính bằng bản rỗng — nên mở lên không thấy gì. Nguyên nhân: hai khối tô màu theo điều kiện trùng số thứ tự ưu tiên. Nay file mở sạch, không còn hộp thoại sửa lỗi.",
   ] },
@@ -9905,14 +9908,6 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
   // MAX cho data bar "số lần không cập nhật" = TỔNG số tuần trong THÁNG (không phải số tuần đã
   // trôi qua) → tháng có 4 tuần thì count 1 chỉ chiếm 1/4 ô (theo yêu cầu hiển thị của PMO).
   const maxRequired = useMemo(() => (data ? data.weeks.length : 0), [data]);
-  // NGÀY CẬP NHẬT = ngày cột tuần HIỆN HÀNH (ô header xanh lá, curWeekIdx) — vd "26/08" → "26/08/2026".
-  const updateDateLabel = useMemo(() => {
-    const w = data && curWeekIdx >= 0 ? data.weeks[curWeekIdx] : undefined;
-    const m = w?.match(/^(\d{1,2})\/(\d{1,2})$/);
-    if (!m) return today;
-    const yr = +m[2] > repMon ? repYear - 1 : repYear;
-    return `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}/${yr}`;
-  }, [data, curWeekIdx, repMon, repYear, today]);
   /* MỐC THẬT CỦA SỐ LIỆU ĐANG HIỆN = lúc file tuân thủ được TẢI VỀ (dataUpdatedAt của chính truy vấn
      đọc nó), KHÔNG phải Date.now(). Hai cái khác nhau thật: mở hộp thoại lúc 9h rồi để đó tới trưa
      thì Date.now() nói 12h trong khi số liệu vẫn là bản 9h. Chưa có dữ liệu → "—", không bịa giờ. */
@@ -10226,7 +10221,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                   là ngày của CỘT TUẦN đang chấm (curWeekIdx), một mốc trong tương lai gần. Bản này
                   gửi Ban điều hành, người nhận đọc "Ngày cập nhật 30/09" sẽ hiểu là số liệu tính đến
                   30/09 — một ngày chưa tới, mà không ai nghi vì con số trông hợp lý. */}
-              <div className="mt-0.5 text-[11px] text-slate-500">Kỳ chấm: <b className="tabular-nums text-slate-700">{updateDateLabel}</b> · Số liệu tính đến: <b className="tabular-nums text-slate-700">{mocSoLieu}</b> · {phamViLoc
+              <div className="mt-0.5 text-[11px] text-slate-500">Dữ liệu tính đến: <b className="tabular-nums text-slate-700">{mocSoLieu}</b> · {phamViLoc
                 ? <>Đang xem: <b className="tabular-nums text-slate-700">{baseRows.length}</b> / {tongDuAn} dự án</>
                 : <>Tổng số: <b className="tabular-nums text-slate-700">{tongDuAn}</b> dự án</>}</div>
               {/* NẰM TRONG headerRef nên đi vào bản PDF. Không có dòng này thì người nhận file thấy
