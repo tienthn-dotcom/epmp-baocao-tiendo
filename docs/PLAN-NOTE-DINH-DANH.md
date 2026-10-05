@@ -2,6 +2,22 @@
 
 Đo ngày 05/10/2026. Chưa sửa một dòng code nào.
 
+> **ĐÍNH CHÍNH 05/10/2026, sau khi đo lại trên bản nguồn mới nhất.** Hai chỗ trong bản đầu sai:
+>
+> 1. **Con số "61 ghi chú đứng sai chỗ" là sai, đúng là 34.** Bản đo đầu so dấu danh tính bằng cả
+>    4 trường. Nhưng trường [2] app ghi là TÊN GIAI ĐOẠN (`it.stage`, ví dụ "Khác") và trường [3]
+>    là MÔ TẢ ĐÃ CHUẨN HOÁ (`normDesc`, ví dụ "shop drawing"), còn bản mô phỏng chạy ngoài app
+>    dựng trường [2] bằng MÃ giai đoạn ("SD"). Hai thứ không bao giờ bằng nhau, nên 50 dòng bị
+>    đếm nhầm thành lệch. Chỉ trường [0] mã CT và [1] tên dự án là so được từ bên ngoài. Mọi con
+>    số dưới đây đã đo lại chỉ bằng hai trường đó.
+> 2. **RID trong file nguồn ĐÃ ĐƯỢC SỬA SẠCH.** Sáng 05/10 còn 159 số trùng phủ 360 dòng; trưa
+>    cùng ngày còn **0 số trùng**, 3 ô trống. Các mục nói về RID trùng bên dưới giữ lại để ghi vết
+>    chuyện đã xảy ra, không còn là hiện trạng.
+>
+> Điều quan trọng nhất rút ra: **sửa RID ở nguồn KHÔNG tự kéo 34 ghi chú đã trôi về đúng chỗ.**
+> Chúng đang nằm ở địa chỉ `id:<STT>` trong kho, và `nk()` vẫn bám vào đó vì ô `rid:` còn trống.
+> Sửa nguồn chặn được trôi MỚI; muốn dọn chỗ đã trôi thì vẫn phải đi tiếp Phase 2 và Phase 5.
+
 **Nguồn số liệu**
 - File nguồn: `mp26.xlsx` = bản tải trực tiếp từ Project Master Plan 2.6 (`fileId 1hx8yzpoQio4yla3jmooni5cu1g9-M7tu`), sheet `Timeline`, đúng bản app đang đọc.
 - Kho ghi chú: `.data/pmo-edits.json`, **bản chụp local ngày 02/10/2026**, KHÔNG phải KV production. Mọi con số về kho note bên dưới phải đo lại trên production trước khi chốt khối lượng di trú. Lý do: đọc KV production đang bị chặn (xem memory `khong-doc-duoc-production`).
@@ -121,31 +137,38 @@ id:14.5 <- CT26-078 Nam Phương Hoàng Hậu / SD + CT26-077 43 ĐTM_Marriott_P
 Đây là phép đo quan trọng nhất. Chạy trên file nguồn 2.6 + kho note bản chụp 02/10:
 
 ```
-dòng hạng mục trong nguồn               : 1178
-dòng đang hiện một ghi chú              :  215
-  trong đó BÁM vào ô KHÔNG phải ưu tiên :  142
-     - dấu danh tính KHÁC dòng đang hiện:   61   <- GHI CHÚ ĐỨNG SAI CHỖ
-     - ô không có dấu danh tính         :   81   <- không kết luận được
-Ô ghi chú bị >=2 dòng cùng chiếu        :   62 ô / 124 dòng
+dòng hạng mục trong nguồn               : 1194
+dòng đang hiện một ghi chú              :  159
+  KHÁC DỰ ÁN (so bằng mã CT)            :   34   <- GHI CHÚ ĐỨNG SAI DỰ ÁN
+  cùng mã CT nhưng TÊN dự án đã đổi      :    3
+  khớp cả mã CT lẫn tên                 :   50
+  ô không có dấu danh tính              :   72   <- không kết luận được
+Ô ghi chú bị >=2 dòng cùng chiếu        :    3 ô / 6 dòng
 ```
 
-**61 ghi chú đang hiện ở dòng mà chính dấu danh tính của nó nói là của dòng khác.** Đây không phải suy đoán: `ItemEdit.dc` do app tự đóng dấu lúc người dùng ghi, nên nó là lời khai của chính ghi chú đó.
+**34 ghi chú đang hiện ở dòng của một DỰ ÁN KHÁC với dự án ghi trên dấu danh tính.** Đây không phải suy đoán: `ItemEdit.dc` do app tự đóng dấu lúc người dùng ghi, nên nó là lời khai của chính ghi chú đó, và mã CT là trường so được chắc chắn.
+
+Con số 34 KHÔNG đổi trước và sau khi sửa RID ở nguồn — đã chạy cùng phép đo trên cả hai bản file. Đúng như vậy mới phải: những ghi chú này đang nằm ở địa chỉ `id:<STT>` trong kho, mà sửa cột RID ở nguồn thì không đụng gì tới kho.
 
 Ví dụ cụ thể:
 
 ```
-ô id:6.1    đang hiện ở : CT25-070 Nam Phương Hoàng Hậu Public / TK
-            dấu ghi là  : CT26-011 · Trục Đông Tây 2C_Phòng (6 blocks) · Phát hành thiết kế
-            nội dung    : "Còn căn Suite 2BR chưa chốt TK"
+ô id:26.3   đang hiện ở : CT26-083 APEC_S4_Khách sạn Marriott / MA
+            dấu ghi là  : CT26-129 APEC_S4_Vách modular đại trà
 
-ô id:27.6   đang hiện ở : CT26-041 APEC_S3_Public / TKSX
-            dấu ghi là  : CT26-129 · APEC_S4_Vách modular đại trà · Triển khai sản xuất
+ô id:28.6   đang hiện ở : CT26-041 APEC_S3_Public / TKSX
+            dấu ghi là  : CT26-040 APEC_S2_Public
 
-ô id:33.6   đang hiện ở : CT26-074 Mini Hotel_GĐ2_ĐẠI TRÀ / SX
-            dấu ghi là  : CT26-122 · APEC S6_M-Gallery_MUR · Triển khai sản xuất
+ô id:44.2   đang hiện ở : CT26-061 43 ĐTM_St.Regis_Căn mẫu tại site / MA
+            dấu ghi là  : CT26-119 Cải tạo nâng cấp Phủ Chủ Tịch
 
-ô id:25.7   đang hiện ở : CT26-029 THV_Căn hộ 2B-L06 / TC
-            dấu ghi là  : CT26-083 · APEC_S4_Khách sạn Marriott Khối phòng · Sản xuất nhập kho
+ô id:40.6   đang hiện ở : CT26-062 Số 1 VIP / SX
+            dấu ghi là  : CT26-044 Văn Lang Empire Golf Club
+
+Ba ô đang bị hai dòng cùng chiếu, đều là hai dự án Mini Hotel dùng chung STT 35.x:
+    id:35.1 <- CT25-051/TK  ,  CT25-040/TK
+    id:35.2 <- CT25-051/BG  ,  CT25-040/MA
+    id:35.3 <- CT25-051/MA  ,  CT25-040/BG
 ```
 
 ### B7. Kho note đang nằm ở tầng nào
@@ -175,7 +198,8 @@ Mức `warn`, hiện trong Hệ thống → Cảnh báo dữ liệu, chỉ PMO/a
 - Cơ chế bám của `nk()`; `id:` không gắn dự án; `rowHasData` tính cả completed/hidden.
 - Cột IDCUNG không có trong file 2.6, tầng `h:` chết.
 - Toàn bộ số ở B4, B5, B7.
-- 61 ghi chú đứng sai chỗ và 62 ô bị 2 dòng cùng chiếu (B6), trên bản chụp 02/10.
+- 34 ghi chú đứng sai DỰ ÁN và 3 ô bị 2 dòng cùng chiếu (B6), trên bản chụp kho note 02/10 đối với file nguồn 05/10.
+- RID trong nguồn nay sạch: 0 số trùng, 3 ô trống, 1191/1194 dòng hạng mục có địa chỉ `rid:` (99,7%).
 - Lệch dấu ngăn `projectKeyOf` / `projectKeysOf`; `projectKeysOf` không được gọi.
 
 **Likely**:
@@ -184,6 +208,8 @@ Mức `warn`, hiện trong Hệ thống → Cảnh báo dữ liệu, chỉ PMO/a
 
 **Unknown / cần xác minh**:
 - Số thật trên KV production. Phải đo lại trước khi chạy di trú.
+- 50 ô "khớp cả mã CT lẫn tên" có lệch GIAI ĐOẠN hay không. Từ ngoài app không so được trường [2]/[3] (xem hộp đính chính). Phải đo BÊN TRONG app, nơi có `it.stage` và `normDesc` thật.
+- 72 ô không có dấu danh tính: không kết luận được, phải đóng dấu trước (Phase 5 bước 2) rồi đo lại.
 - `completedDates` và `hiddenMap` góp thêm bao nhiêu lượt bám sai. Đo B6 chỉ dùng `edits`, nên 142 là **cận dưới**.
 - Ghi chú cấp dự án lệch bao nhiêu. Phép đo B6 chỉ mô phỏng dòng hạng mục, chưa mô phỏng `pkProj`.
 
@@ -228,7 +254,7 @@ nk(it):
 
 Bước 2 cần biết "ô này có dòng nào khác cũng ứng không" - tính một lần cho cả bảng, không tính theo từng dòng.
 
-**D3. `task_id` bất biến.** `rid:<số>` chính là nó, miễn RID duy nhất. Tiêu chí bất biến: một số RID chỉ được một dòng dùng, và không bao giờ bị gán lại cho dòng khác. Hiện 158 số vi phạm. Việc này **phải sửa ở file nguồn**, app không tự sửa được: app không có cách nào biết trong 5 dòng cùng RID 205 thì dòng nào là chủ.
+**D3. `task_id` bất biến.** `rid:<số>` chính là nó, miễn RID duy nhất. Tiêu chí bất biến: một số RID chỉ được một dòng dùng, và không bao giờ bị gán lại cho dòng khác. Sáng 05/10 còn 158 số vi phạm; anh Tiến đã sửa sạch trong ngày, nay **0 số trùng**. Việc này phải sửa ở file nguồn, app không tự sửa được: app không có cách nào biết trong 5 dòng cùng RID 205 thì dòng nào là chủ.
 
 Không dùng tên công việc làm ID. Không sinh ID mới phía app, vì ID do app sinh sẽ mất mỗi khi nguồn thay dòng.
 
@@ -313,7 +339,7 @@ Nguyên tắc: **không xoá, không reset, không dời hàng loạt một lư�
 2. **Đóng dấu `dc` cho đủ 100% ô** bằng effect `dongDauDanhChi` đã có (`index.tsx:2995-3008`). Hiện effect này chỉ chạy khi `me?.isAdmin` và chỉ một lượt mỗi phiên. Phải chạy cho tới khi không còn ô thiếu dấu. Đây là bước ĐẦU TIÊN vì mọi bước sau dựa vào `dc`.
 3. **Dời G1** bằng `remapKeys` đã có (`edits.functions.ts:754`). Hàm này đã xử lý đúng: đích trống thì dời, đích có rồi thì **gộp danh sách message** chứ không đè, và đổi id message trùng để không mất tin. Dùng nguyên, không viết mới.
 4. **Đẩy G2 + G3 + G5 ra bảng** trong Hệ thống → Cảnh báo dữ liệu, mỗi dòng một nút "Đưa về đây". `note-lac.ts` đã có sẵn ba luật an toàn cho việc này, dùng lại.
-5. **Sửa 158 RID trùng và 56 RID trống ở file nguồn.** Việc này của PMO, app chỉ liệt kê. Sửa xong thì phủ `rid:` lên gần 100% và tầng `id:` gần như không còn ai dùng.
+5. ~~**Sửa 158 RID trùng và 56 RID trống ở file nguồn.**~~ **ĐÃ XONG 05/10**: 0 số trùng, còn 3 ô trống (excel 221 CT26-083/SX, 934 CT26-105/TC, 1359 CT23-038). Phủ `rid:` nay 99,7%. Từ nay trôi MỚI gần như không còn sinh ra; phần còn lại của kế hoạch là dọn 34 ghi chú đã trôi từ trước.
 
 ### Trường hợp không tự dời được
 
@@ -430,7 +456,7 @@ Viết trong `tests/`, dùng vitest như các test có sẵn. Dựng bảng ngu�
 
 Thêm vào: lấy đúng 22 ô va chạm đo ở B5 làm fixture. Test nào cũng tốt hơn nếu dùng dữ liệu thật đã gây lỗi.
 
-Ngoài unit test, cần một phép đo chạy được trên file nguồn thật, kiểu `do-bam.mjs` trong scratchpad, để sau Phase 2 xác nhận con số 61 và 62 về 0.
+Ngoài unit test, cần một phép đo chạy được trên file nguồn thật, kiểu `so-sach.mjs` trong scratchpad, để sau Phase 2 xác nhận 34 và 3 về 0. Phép đo này CHỈ so được mã CT và tên dự án; muốn soát cả giai đoạn thì phải đo bên trong app.
 
 ---
 
@@ -479,8 +505,8 @@ Mục cuối là một phát hiện phụ cần xác minh thêm: cả hai cấp 
 
 ## M. Definition of Done
 
-1. Chạy lại `do-bam.mjs` trên file nguồn mới nhất: **0 ghi chú có dấu danh tính khác dòng đang hiện** (hiện 61), **0 ô bị 2 dòng cùng chiếu** (hiện 62).
-2. Chạy lại `mo-phong-khoa.mjs`: **0 ô lưu bị nhiều dòng dùng chung** (hiện 22).
+1. Chạy lại `so-sach.mjs` trên file nguồn mới nhất: **0 ghi chú đứng sai dự án** (hiện 34), **0 ô bị 2 dòng cùng chiếu** (hiện 3).
+2. Chạy lại `mo-phong-khoa.mjs`: **0 ô lưu bị nhiều dòng dùng chung** — ĐÃ ĐẠT 05/10 sau khi sửa RID nguồn (trước đó 22).
 3. 100% ô có chữ đều có `dc`. Hiện 150/324.
 4. Toàn bộ test ở mục I xanh.
 5. Đổi tên một công việc trong file nguồn, re-import, note vẫn đúng dòng. Kiểm bằng tay trên 3 dự án.
@@ -517,6 +543,6 @@ PERSISTENCE  KV PMO_EDITS  "edits:v1"
 
 ## Việc đầu tiên nên làm
 
-Không phải sửa code. Là **sửa 158 RID trùng ở file nguồn**. Riêng việc đó đưa phủ `rid:` từ 68,9% lên gần 100%, và khi gần như mọi dòng có địa chỉ bền thì tầng `id:<STT>` gần như không còn ai dùng, cái bẫy của `nk()` gần như không nổ nữa. Sửa code là để bịt bẫy cho chắc, nhưng sửa nguồn là thứ cho kết quả nhiều nhất trên một đơn vị công.
+**ĐÃ XONG trong ngày 05/10.** Việc đầu tiên là sửa RID trùng ở file nguồn, và anh Tiến đã làm: 159 số trùng về 0, phủ `rid:` từ 68,9% lên 99,7%. Va chạm khoá trong không gian nguồn về 0.
 
-App không tự sửa được chuyện này: trong 5 dòng cùng mang RID 205, app không có cách nào biết dòng nào là chủ.
+Việc tiếp theo KHÔNG tự xong theo: **34 ghi chú đã trôi vẫn nằm nguyên chỗ sai.** Chúng ở địa chỉ `id:<STT>` trong kho, `nk()` vẫn bám vào đó vì ô `rid:` của dòng còn trống. Muốn dọn thì phải đi Phase 2 (bịt `nk()`) rồi Phase 5 (dời có kiểm soát), theo đúng thứ tự, vì dời trước khi bịt thì bịt xong lại bám sai chỗ khác.
