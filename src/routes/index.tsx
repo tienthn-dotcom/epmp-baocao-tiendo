@@ -60,6 +60,7 @@ import { fetchSheetCsv, fetchSheetXlsx } from "@/lib/sheets.functions";
 import { getLinkUpdatedAt, getLinksUpdatedAt, getSummaryFile, getSheetPdf, recordSummaryFiles, listSheetTabs, saveInstallList, saveMediaProjects, saveProjRegions } from "@/lib/mtld-install.functions";
 import { readInstallLinks } from "@/lib/mtld-links";
 import { ridKeys } from "@/lib/rid";
+import { donNoteVeRid, demDon, type DongNguon, type ODon } from "@/lib/don-note-rid";
 import { timNoteLac } from "@/lib/note-lac";
 import { ngayKetThucThucTe } from "@/lib/ket-thuc-thuc-te";
 import { parseMpDeadlineIso } from "@/lib/mp-deadline";
@@ -579,6 +580,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.129.0", date: "05/10/2026", items: [
+    "DỌN GHI CHÚ VỀ ĐÚNG DÒNG: Hệ thống ▸ Công cụ dữ liệu có thêm thẻ “Dọn về RID”. PMO vừa sửa sạch cột RID trong file nguồn, nhưng ghi chú cũ vẫn nằm ở địa chỉ theo STT — mà STT đổi là ghi chú nhảy sang dự án khác. Thẻ này chỉ rõ từng ô nên về dòng nào, căn cứ vào đâu, rồi dọn một lượt. Tự sao lưu trước khi dọn.",
+    "Ô nào ứng nhiều dòng, không còn dòng nào, hoặc không có dấu vết thì app KHÔNG đoán — để riêng cho người chọn tay.",
+  ] },
   { v: "3.128.0", date: "05/10/2026", items: [
     "Nút “Hiện tất cả đầu việc” nay nói rõ nó đang giấu bao nhiêu dòng — “Hiện tất cả đầu việc (đang giấu 210)”. Lựa chọn này nhớ theo từng máy, nên tắt hôm trước thì hôm sau mở lên vẫn tắt; trước đây không có dấu hiệu nào, nhìn vào tưởng app đọc sót file nguồn.",
   ] },
@@ -2901,6 +2906,49 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     return m;
   }, [data.projects, pkProj]);
   const noteHasText = useCallback((k: string) => { const e = edits[k]; return !!e && !!(visibleText(e.noteMsgs) || visibleText(e.actionMsgs)); }, [edits]);
+  /* DỌN GHI CHÚ VỀ ĐỊA CHỈ RID.
+     PMO sửa sạch RID trong nguồn ngày 05/10 (159 số trùng → 0), nên từ nay mỗi dòng có một địa chỉ
+     bền. Nhưng ghi chú CŨ vẫn nằm ở `id:<STT>` — sửa nguồn không tự kéo chúng về. Danh sách dưới
+     đây chỉ ra từng ô nên về dòng nào, dựa vào mỏ neo trước, dấu dc sau. Xem lib/don-note-rid.ts. */
+  const dongNguonDon = useMemo<DongNguon[]>(() => {
+    const ra: DongNguon[] = [];
+    for (const p of data.projects) {
+      const pk = pkProj(p);
+      ra.push({ dich: pk, danhTinh: noteAnchorNow[pk] ?? "", nhan: `${p.code} · ${p.name}` });
+      for (const it of (p.allItems ?? p.items ?? [])) {
+        const k = itemKeyOf(it);
+        ra.push({ dich: k, danhTinh: noteAnchorNow[k] ?? "",
+          nhan: `${it.maCT || it.projectCode} · ${it.projectName} · ${it.stage || it.rawCode}` });
+      }
+    }
+    return ra;
+  }, [data.projects, pkProj, noteAnchorNow]);
+  const oDonRid = useMemo<ODon[]>(() => {
+    if (!data.projects.length) return [];
+    return donNoteVeRid({
+      dong: dongNguonDon, edits, neo: noteAnchors,
+      coChu: noteHasText,
+      trichDoan: (k) => { const e = edits[k]; return (visibleText(e?.noteMsgs) || visibleText(e?.actionMsgs) || "").replace(/\s+/g, " ").slice(0, 110); },
+    });
+  }, [data.projects, dongNguonDon, edits, noteAnchors, noteHasText]);
+  /** Dời MỘT lô ô về địa chỉ RID: chụp sao lưu trước, dời khoá, rồi dời luôn mỏ neo theo. */
+  const doiVeRid = useCallback((ds: ODon[]) => {
+    const co = ds.filter((x) => x.dich);
+    if (!co.length) return;
+    const em: Record<string, string> = {}, cm: Record<string, string> = {}, set: Record<string, string> = {}, remove: string[] = [];
+    for (const x of co) {
+      em[x.key] = x.dich!; cm[x.key] = x.dich!;
+      // Mỏ neo PHẢI đi theo: để nguyên là ô mới mất bằng chứng, dời lần sau không tra được nữa.
+      const n = noteAnchors[x.key]; if (n) { set[x.dich!] = n; remove.push(x.key); }
+    }
+    void backupEdits({ data: { label: `Trước khi dọn ${co.length} ghi chú về RID` } })
+      .then(() => remapKeys({ data: { edits: em, completed: cm, updates: {} } }))
+      .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set, remove } }); })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
+      .then(() => { toast.success(`Đã dọn ${co.length} ghi chú về địa chỉ RID.`); track("don_note_rid", `${co.length} ô`); })
+      .catch((e) => toast.error("Dọn lỗi: " + (e as Error).message));
+  }, [noteAnchors, queryClient]);
+
   // Danh tính HIỆN TẠI → khoá đang giữ (để tìm hạng mục khớp mỏ neo cũ = ĐÍCH đưa note về).
   const idToKeyNow = useMemo(() => {
     const m: Record<string, string> = {};
@@ -5075,7 +5123,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         />
       </HeaderSlot>
 
-      {showDataQ && <AdminDataToolsDialog checks={dataQualityBad} qualityStats={data?.quality?.stats} lac={noteLac} onFixLacOne={fixLacOne} onFixLacAll={fixLacAll} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
+      {showDataQ && <AdminDataToolsDialog checks={dataQualityBad} qualityStats={data?.quality?.stats} lac={noteLac} onFixLacOne={fixLacOne} onFixLacAll={fixLacAll} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} donRid={oDonRid} onDoiVeRid={doiVeRid} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
       {pdfPreview && <PdfPreviewDialog url={pdfPreview.url} fileName={pdfPreview.name} onClose={() => setPdfPreview(null)} />}
 
       <OverviewStrip
@@ -8696,10 +8744,10 @@ function fpLabel(fp: string | null): string {
 type AuditDriftItem = { key: string; text: string; now: string; correct: string; target: string | null };
 /** Ghi chú MẤT ĐỊA CHỈ — khoá không còn khớp dòng nào, nên không hiện ở đâu trên bảng. */
 type NoteLacItem = { key: string; text: string; nhan: string; dich: string | null; nhanDich: string; canGop: boolean; vuong: string };
-function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, onFixLacAll, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, onClose }: { checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; lac: NoteLacItem[]; onFixLacOne: (key: string, dich: string) => void; onFixLacAll: () => void; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; onClose: () => void }) {
+function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, onFixLacAll, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, donRid, onDoiVeRid, onClose }: { checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; lac: NoteLacItem[]; onFixLacOne: (key: string, dich: string) => void; onFixLacAll: () => void; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; donRid: ODon[]; onDoiVeRid: (ds: ODon[]) => void; onClose: () => void }) {
   useEscapeToClose(onClose);
   type Bak = { id: string; label: string; at: string; counts: { edits: number; completed: number; updates: number; mpflag: number } };
-  const [tab, setTab] = useState<"quality" | "shift" | "backup">((lac.length || audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
+  const [tab, setTab] = useState<"quality" | "shift" | "backup" | "donrid">((lac.length || audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
   // GỘP audit + drift thành 1 danh sách "ghi chú đặt sai chỗ" (dedupe theo note): audit (theo nhật ký) là chuẩn,
   // drift (lệch so lần trước) bổ sung. Mỗi note: Đang ở (wrong) → Phải ở (right) + nguồn phát hiện.
   const misplaced = useMemo(() => {
@@ -8748,7 +8796,9 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
     });
   };
   if (typeof document === "undefined") return null;
-  const tabBtn = (id: "quality" | "shift" | "backup", label: string, badge?: number) => (
+  const donDoiDuoc = useMemo(() => donRid.filter((x) => x.dich), [donRid]);
+  const donSo = useMemo(() => demDon(donRid), [donRid]);
+  const tabBtn = (id: "quality" | "shift" | "backup" | "donrid", label: string, badge?: number) => (
     <button onClick={() => setTab(id)} className={`rounded-md px-3 py-1.5 text-[12px] font-semibold ${tab === id ? "bg-teal-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
       {label}{badge != null && badge > 0 && <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">{badge}</span>}
     </button>
@@ -8767,6 +8817,7 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
         <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5">
           {tabBtn("shift", "Ghi chú sai chỗ", misplaced.length + lac.length)}
           {tabBtn("quality", "Cảnh báo dữ liệu", checks.length)}
+          {tabBtn("donrid", "Dọn về RID", donDoiDuoc.length)}
           {tabBtn("backup", "Sao lưu & Khôi phục")}
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
@@ -8903,6 +8954,64 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
                     <button onClick={() => onApplyShift(shiftDiag.from, shiftDiag.delta)} className="rounded-md bg-orange-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-orange-700">Áp dụng: dời {shiftDiag.moved} khoá về đúng dự án</button>
                     <span className="text-[11px] text-slate-500">Chạy 1 lần cho đợt này · tự sao lưu trước khi dời · ghi Nhật ký giám sát.</span>
                   </div>
+                </>
+              )}
+            </div>
+          )}
+          {tab === "donrid" && (
+            <div className="space-y-3">
+              {/* Nói trước BẰNG CHỨNG lấy từ đâu — người bấm phải biết mình đang tin vào cái gì. */}
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11.5px] leading-relaxed text-slate-700">
+                Mỗi ô ghi chú vốn mang một <b>mỏ neo</b> ghi lúc viết lần đầu — chỗ đó không bao giờ bị ghi đè, nên nó nói đúng ghi chú thuộc dòng nào.
+                Danh sách này dò theo mỏ neo trước, không có mới dùng tới dấu trong ô.
+                Ô nào ứng nhiều dòng hoặc không còn dòng nào thì để người chọn, app không đoán.
+              </div>
+              {donRid.length === 0 ? (
+                <div className="py-8 text-center text-[13px] text-emerald-700">Mọi ghi chú đã nằm đúng địa chỉ RID.</div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-teal-300 bg-teal-50 px-3 py-2">
+                    <span className="text-[12.5px] text-teal-900">
+                      <b>{donSo.doiDuoc}</b> ô dọn tự động được{donSo.soOBiGop > 0 ? ` (${donSo.soOBiGop} ô sẽ NỐI vào ô khác — tin được thêm vào, không ô nào bị đè)` : ""}
+                      {donSo.chonTay > 0 ? ` · ${donSo.chonTay} ô phải chọn tay` : ""}
+                    </span>
+                    {donDoiDuoc.length > 0 && (
+                      <button onClick={() => onDoiVeRid(donDoiDuoc)}
+                        className="rounded-md bg-teal-700 px-3 py-1 text-[12px] font-bold text-white hover:bg-teal-800">
+                        Sao lưu rồi dọn {donDoiDuoc.length} ô
+                      </button>
+                    )}
+                  </div>
+                  {donRid.map((x) => (
+                    <div key={x.key} className={`rounded-lg border bg-white p-3 ${x.dich ? "border-slate-200" : "border-amber-300"}`}>
+                      <div className="mb-1.5 text-[12.5px] font-medium text-slate-800">“{x.text}”</div>
+                      <div className="grid grid-cols-[86px_1fr] gap-x-2 gap-y-1 text-[11.5px]">
+                        <span className="font-semibold text-slate-500">Đang ở:</span>
+                        <span className="font-mono text-[11px] text-slate-600">{x.key.replace(/\u0000/g, " | ")}</span>
+                        {x.dich ? (
+                          <>
+                            <span className="font-semibold text-slate-500">Dời về:</span>
+                            <span className="font-semibold text-slate-800">{x.nhanDich} <span className="font-mono text-[10.5px] text-slate-500">({x.dich})</span></span>
+                            <span className="font-semibold text-slate-500">Căn cứ:</span>
+                            <span className="text-slate-600">{x.nguon}{x.canGop ? " · đích đã có ghi chú, sẽ nối thêm" : ""}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-amber-700">Vướng:</span>
+                            <span className="text-amber-800">{x.vuong}</span>
+                          </>
+                        )}
+                      </div>
+                      {x.dich && (
+                        <div className="mt-2">
+                          <button onClick={() => onDoiVeRid([x])}
+                            className="rounded-md border border-teal-500 px-2.5 py-1 text-[11.5px] font-semibold text-teal-700 hover:bg-teal-50">
+                            Dọn riêng ô này
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </>
               )}
             </div>
