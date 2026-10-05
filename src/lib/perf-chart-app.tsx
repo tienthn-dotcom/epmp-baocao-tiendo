@@ -609,13 +609,121 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
   );
 }
 
+/* ══════════ CHI TIẾT TỪNG DỰ ÁN — sản lượng & nhân sự theo tháng ══════════
+ *
+ * Ba tab kia đều chiếu TỈ SỐ (doanh thu / nhân sự). Nhìn thấy "3,1 tỷ/người" nhưng không biết đó là
+ * 31 tỷ chia 10 người hay 6 tỷ chia 2 người — hai chuyện khác hẳn nhau khi ngồi họp. Tab này bày
+ * thẳng HAI SỐ GỐC của mỗi ô: sản lượng và số người.
+ *
+ * SỐ Ở ĐÂY LÀ SỐ CỦA FILE, không qua xử lý. Tab "Hiệu suất theo tháng" có luật dồn tháng âm về trước
+ * (absorbNegBack) cho đường xu hướng khỏi gãy; tab này KHÔNG áp, vì đây đúng là chỗ người ta vào để
+ * đối chiếu với file nguồn. Tháng âm hiện đúng là âm, tô đỏ.
+ *
+ * Bày ĐỦ mọi dự án trong file, kể cả dự án tra không ra vùng. Lưới xu hướng được phép giấu dự án đã
+ * rời ePMP vì nó là bảng chiếu; bảng chi tiết mà giấu dòng thì người đọc cộng lại không khớp dòng
+ * tổng, rồi mất lòng tin vào cả bảng.
+ */
+function BangChiTiet({ projs, block, nm, regionMap }: {
+  projs: Proj[]; block: { rev: number[]; ns: number[] } | null; nm: number; regionMap: Record<string, string>;
+}) {
+  /** Tỷ đồng, 1 chữ số thập phân, dấu phẩy kiểu Việt. */
+  const ty = (v: number | undefined): string =>
+    v == null || v === 0 ? "" : (v / 1e9).toLocaleString("vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  const rows = useMemo(() => {
+    const vungCua = (p: Proj) => vungVN(lookupRegion(regionMap, p.name) || PERF_REGION[keyName(p.name)] || "");
+    const co = projs.filter((p) => !PERF_EXCLUDE.test(keyName(p.name))).map((p) => ({ ...p, vung: vungCua(p) }));
+    // Xếp theo VÙNG (Phú Quốc → Bắc → Trung → Nam → Nước ngoài) y như lưới xu hướng; trong vùng thì
+    // theo thứ tự PERF_SHOW chủ nhà đã chốt, dự án không có trong đó rơi xuống cuối vùng.
+    const uuTien = (p: Proj) => { const i = SHOW_KEYS.indexOf(keyName(p.name)); return i < 0 ? 9999 : i; };
+    return co.sort((a, b) => vungRank(a.vung) - vungRank(b.vung) || uuTien(a) - uuTien(b) || a.name.localeCompare(b.name, "vi", { numeric: true }));
+  }, [projs, regionMap]);
+
+  /** Cộng dồn cả năm của một dự án — để người xem khỏi tự cộng 9 ô. */
+  const tongDt = (p: Proj) => p.rev.slice(0, nm).reduce((s, v) => s + (v || 0), 0);
+  /** Nhân sự KHÔNG cộng dồn được (một người có mặt nhiều tháng) → lấy tháng cuối có số. */
+  const nsCuoi = (p: Proj) => { for (let m = nm - 1; m >= 0; m--) if (p.ns[m] > 0) return p.ns[m]; return 0; };
+
+  const thMonth: React.CSSProperties = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" };
+  const tdNum: React.CSSProperties = { padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap", borderTop: "1px solid #f1f5f9" };
+  // Cột tên DÍNH TRÁI: bảng rộng hơn màn hình là chuyện chắc chắn (9 tháng + 2 cột tổng), cuộn ngang
+  // mà mất tên dự án thì không còn đọc được dòng nào.
+  const stickyName: React.CSSProperties = {
+    position: "sticky", left: 0, zIndex: 2, background: "#fff",
+    padding: "5px 10px", textAlign: "left", whiteSpace: "nowrap",
+    borderTop: "1px solid #f1f5f9", borderRight: "1px solid #e2e8f0",
+  };
+
+  let vungTruoc = "";
+  return (
+    <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+      <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 12, width: "100%", minWidth: 760 }}>
+        <thead>
+          <tr style={{ background: "#f8fafc", color: "#334155" }}>
+            <th style={{ ...stickyName, background: "#f8fafc", zIndex: 3, fontWeight: 700, borderTop: "none" }}>
+              Dự án
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 500, color: "#94a3b8" }}>trên: sản lượng (tỷ) · dưới: nhân sự</span>
+            </th>
+            {Array.from({ length: nm }, (_, m) => <th key={m} style={thMonth}>T{m + 1}</th>)}
+            <th style={{ ...thMonth, borderLeft: "1px solid #e2e8f0" }}>Cả năm</th>
+            <th style={thMonth}>NS nay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p) => {
+            const moiVung = p.vung !== vungTruoc; vungTruoc = p.vung;
+            const vien = moiVung ? "2px solid #cbd5e1" : "1px solid #f1f5f9";
+            return (
+              <tr key={`${p.no}-${p.name}`}>
+                {/* Vạch màu bên trái = vùng, trùng mã màu với viền thẻ ở tab xu hướng. */}
+                <td style={{ ...stickyName, borderLeft: `4px solid ${vungColor(p.vung)}`, fontWeight: 600, color: "#0f172a", borderTop: vien }}>
+                  {tenHien(p.name)}
+                  {p.vung !== "—" && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: "#94a3b8" }}>{p.vung}</span>}
+                </td>
+                {Array.from({ length: nm }, (_, m) => {
+                  const dt = p.rev[m] ?? 0, ns = p.ns[m] ?? 0;
+                  return (
+                    <td key={m} style={{ ...tdNum, borderTop: vien }}>
+                      <div style={{ fontWeight: 700, color: dt < 0 ? "#dc2626" : dt === 0 ? "#cbd5e1" : "#0f172a" }}>{dt === 0 ? "–" : ty(dt)}</div>
+                      <div style={{ fontSize: 10.5, color: ns === 0 ? "#cbd5e1" : "#64748b" }}>{ns === 0 ? "–" : ns}</div>
+                    </td>
+                  );
+                })}
+                <td style={{ ...tdNum, borderTop: vien, borderLeft: "1px solid #e2e8f0", fontWeight: 700, color: tongDt(p) < 0 ? "#dc2626" : "#0f172a" }}>{ty(tongDt(p)) || "–"}</td>
+                <td style={{ ...tdNum, borderTop: vien, color: "#334155" }}>{nsCuoi(p) || "–"}</td>
+              </tr>
+            );
+          })}
+          {/* TOÀN KHỐI đọc thẳng dòng tổng của file, KHÔNG cộng lại từ các dòng trên: file còn các
+              nhóm ngoài dự án (OEM, xuất lẻ…) nên cộng tay sẽ ra số khác số báo cáo tuần. */}
+          {block && (
+            <tr style={{ background: "#0f172a", color: "#fff" }}>
+              <td style={{ ...stickyName, background: "#0f172a", color: "#fff", fontWeight: 700, borderTop: "2px solid #0f172a", borderRight: "1px solid #334155" }}>TOÀN KHỐI</td>
+              {Array.from({ length: nm }, (_, m) => (
+                <td key={m} style={{ ...tdNum, borderTop: "2px solid #0f172a" }}>
+                  <div style={{ fontWeight: 700 }}>{ty(block.rev[m]) || "–"}</div>
+                  <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{block.ns[m] || "–"}</div>
+                </td>
+              ))}
+              <td style={{ ...tdNum, borderTop: "2px solid #0f172a", borderLeft: "1px solid #334155", fontWeight: 700 }}>
+                {ty(block.rev.slice(0, nm).reduce((s, v) => s + (v || 0), 0)) || "–"}
+              </td>
+              <td style={{ ...tdNum, borderTop: "2px solid #0f172a", color: "#cbd5e1" }}>{block.ns[nm - 1] || "–"}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────── APP ──
 export function PerfChartApp() {
   const narrow = useIsNarrow();        // điện thoại/tablet → đổi bố cục (xem use-breakpoint.ts)
   const [projs, setProjs] = useState<Proj[]>([]);
   /** TOÀN KHỐI đọc thẳng từ khối A sheet "SLTB (kết quả)" — số CHUẨN của báo cáo tuần. */
   const [block, setBlock] = useState<{ rev: number[]; ns: number[] } | null>(null);
-  const [view, setView] = useState<"trend" | "rank" | "percap">("trend");
+  const [view, setView] = useState<"trend" | "rank" | "percap" | "chitiet">("trend");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -853,6 +961,7 @@ export function PerfChartApp() {
             <button type="button" onClick={() => setView("percap")} className={`flex shrink-0 items-center whitespace-nowrap px-3 ${view === "percap" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Sản lượng đầu người</button>
             <button type="button" onClick={() => setView("trend")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "trend" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Hiệu suất theo tháng</button>
             <button type="button" onClick={() => setView("rank")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "rank" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Doanh thu đầu người theo dự án</button>
+            <button type="button" onClick={() => setView("chitiet")} className={`flex shrink-0 items-center whitespace-nowrap border-l border-slate-300 px-3 ${view === "chitiet" ? "bg-teal-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>Chi tiết dự án</button>
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -974,6 +1083,11 @@ export function PerfChartApp() {
           ) : view === "rank" ? (
             <div style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
               <FitOrScroll min={620}><BigChart rows={rankRows} monthIdx={rm} /></FitOrScroll>
+            </div>
+          ) : view === "chitiet" ? (
+            <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>SẢN LƯỢNG &amp; NHÂN SỰ TỪNG DỰ ÁN</div>
+              <BangChiTiet projs={projs} block={block} nm={nm} regionMap={regionMap} />
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>
