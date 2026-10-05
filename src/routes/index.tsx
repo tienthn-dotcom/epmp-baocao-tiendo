@@ -579,6 +579,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.127.0", date: "05/10/2026", items: [
+    "Hiệu suất dự án: thêm tab “Chi tiết dự án” — bày thẳng sản lượng (tỷ) và số người của từng dự án theo từng tháng, kèm cột cả năm và dòng TOÀN KHỐI. Ba tab cũ chỉ chiếu tỉ số nên nhìn “3,1 tỷ/người” không biết là 31 tỷ chia 10 người hay 6 tỷ chia 2 người.",
+    "SỬA LỖI PDF DƯ MỘT TRANG: popup ma trận và báo cáo tab bị dính thêm một trang chỉ chứa ghi chú ô của file gốc (kiểu “Chuyển lựa chọn ở B29…”). Nay bỏ hẳn trang đó.",
+    "Sao lưu ghi chú: mỗi bản sao lưu thêm nút “Tải về máy” để giữ một bản ngoài hệ thống. Bản thứ 9 đẩy bản cũ nhất ra, nên bản nào cần giữ lâu thì tải về.",
+    "Số liệu TCLĐ tự làm mới 2 lần mỗi ngày, 18:00 và 20:00 — vẫn có số mới đều, khỏi phải bấm tay.",
+    "Hiệu suất dự án: thêm nút mở lại FILE NGUỒN (link Google Sheet, hoặc tải file .xlsx đã nạp).",
+  ] },
   { v: "3.126.0", date: "02/10/2026", items: [
     "SỬA LỖI MẤT SỐ MÃ: ba dự án đang hiện “nhập tay, không có chi tiết số mã” dù file nguồn có đủ số — APEC_S2_Public (5/334 mã), APEC_S3_Public (40/421), Nam Phương Hoàng Hậu Phòng (10/10). Nguyên nhân: ô nhãn gõ “TKSX;” hoặc “TKSX” thay vì “TKSX:”, app cũ bỏ qua mà không báo. Nay gõ thiếu dấu vẫn đọc được.",
     "Lưới Hiệu suất theo tháng: thêm thẻ KDL ven sông Hàn; thẻ Cát Bà đổi tên thành Cát Bà HH3; bốn thẻ đổi tên theo cách gọi của OCC (Tropical, Nam Phương Hoàng Hậu, Mini Hotel, Hyatt Phú Quốc). Tên thẻ in hoa hết cho đều.",
