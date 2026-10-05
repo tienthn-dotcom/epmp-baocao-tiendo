@@ -44,6 +44,7 @@ import {
   type StageMatcher,
 } from "@/lib/filter";
 import { TABLE_FONT_CSS } from "@/lib/table-scale";
+import { doViQuaHanBod, soNgayQuaHanBod } from "@/lib/mp-deadline";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { AppShell, MTLD_INSTALL_LS } from "@/lib/app-shell";
 import { CanMediaDialog } from "@/lib/can-media-app";
@@ -580,6 +581,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.130.0", date: "05/10/2026", items: [
+    "Báo cáo tuân thủ: ô “Cần PM trình Master Plan BOD phê duyệt” chuyển chữ ĐỎ khi đã quá 2 tuần chưa trình. Mốc tính đúng nghĩa đen — vượt 14 ngày, ngày thứ 15 mới đỏ. Rê chuột vào ô thấy số ngày quá hạn.",
+  ] },
   { v: "3.129.0", date: "05/10/2026", items: [
     "DỌN GHI CHÚ VỀ ĐÚNG DÒNG: Hệ thống ▸ Công cụ dữ liệu có thêm thẻ “Dọn về RID”. PMO vừa sửa sạch cột RID trong file nguồn, nhưng ghi chú cũ vẫn nằm ở địa chỉ theo STT — mà STT đổi là ghi chú nhảy sang dự án khác. Thẻ này chỉ rõ từng ô nên về dòng nào, căn cứ vào đâu, rồi dọn một lượt. Tự sao lưu trước khi dọn.",
     "Ô nào ứng nhiều dòng, không còn dòng nào, hoặc không có dấu vết thì app KHÔNG đoán — để riêng cho người chọn tay.",
@@ -10409,10 +10413,18 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
                           // → KHÔNG có deadline → để dấu "–" (không hiện "mới", không trừ điểm).
                           const iso = mpDeadlineByName.get(normProjName(r.name));
                           const dlDate = iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
+                          /* QUÁ 2 TUẦN CHƯA TRÌNH → chữ ĐỎ (anh Tiến chốt 05/10/2026).
+                             Mốc đọc đúng nghĩa đen: VƯỢT 14 ngày. KHÔNG mượn `w` ở trên — `w` làm
+                             tròn LÊN theo tuần để trừ điểm, nên "2 tuần" của nó là 8–14 ngày, tô
+                             theo đó là bôi đỏ PM sớm tới 6 ngày. Xem lib/mp-deadline.ts.
+                             Màu đặt bằng HEX inline, không dùng lớp Tailwind: bản xuất PDF chụp lại
+                             DOM và vỡ màu oklch — cùng lý do với tone3 ở trên. */
+                          const doVi = doViQuaHanBod(iso, today);
+                          const soNgay = iso ? soNgayQuaHanBod(iso, today) : 0;
                           return (
-                            <td style={cellStyle(2)} className="border-r border-slate-100 px-2 py-1 text-center align-middle" title={dlDate ? (w > 0 ? `Hạn trình BOD ${dlDate} — đã quá ${w} tuần → −${w * 10} điểm` : `Hạn trình BOD ${dlDate} (chưa quá hạn, chưa trừ điểm)`) : "Chưa ghi deadline (không có “trước dd/mm”) → không trừ điểm"}>
+                            <td style={cellStyle(2)} className="border-r border-slate-100 px-2 py-1 text-center align-middle" title={dlDate ? (w > 0 ? `Hạn trình BOD ${dlDate} — đã quá ${soNgay} ngày (${w} tuần) → −${w * 10} điểm` : `Hạn trình BOD ${dlDate} (chưa quá hạn, chưa trừ điểm)`) : "Chưa ghi deadline (không có “trước dd/mm”) → không trừ điểm"}>
                               {dlDate ? (
-                                <span className="font-semibold leading-tight text-slate-900">trước <span className="tabular-nums">{dlDate}</span></span>
+                                <span className="font-semibold leading-tight" style={{ color: doVi ? "#dc2626" : "#0f172a" }}>trước <span className="tabular-nums">{dlDate}</span></span>
                               ) : <span className="text-slate-300">–</span>}
                             </td>
                           );

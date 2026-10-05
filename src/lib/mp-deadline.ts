@@ -173,3 +173,28 @@ function namGanNhat(d: number, mo: number, homNay: string): number {
   }
   return tot;
 }
+
+/**
+ * ĐÃ QUÁ HẠN TRÌNH BOD BAO NHIÊU NGÀY — số nguyên, âm nghĩa là còn hạn.
+ *
+ * Tính THẲNG theo ngày, KHÔNG mượn con số "số tuần quá hạn" đang dùng để trừ điểm. Con số kia
+ * làm tròn LÊN theo tuần (`ceil`), nên "2 tuần" của nó thật ra là 8–14 ngày — lệch hẳn với cách
+ * người ta đọc chữ "quá 2 tuần". Trừ điểm thì làm tròn lên là đúng (trễ 1 ngày cũng mất 10 điểm),
+ * còn tô màu cảnh báo thì phải đúng nghĩa đen, nếu không PM bị bôi đỏ oan 6 ngày.
+ */
+export function soNgayQuaHanBod(dlIso: string, homNay: string): number {
+  const t = (s: string) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+  return Math.round((t(homNay) - t(dlIso)) / 86400000);
+}
+
+/**
+ * QUÁ 2 TUẦN CHƯA TRÌNH → ô hạn tô ĐỎ (anh Tiến chốt 05/10/2026).
+ *
+ * "Quá 2 tuần" đọc đúng nghĩa đen: VƯỢT 14 ngày, tức ngày thứ 15 mới đỏ. Đúng 14 ngày là vừa tròn
+ * hai tuần, chưa "quá".
+ */
+export const QUA_HAN_DO_NGAY = 14;
+export function doViQuaHanBod(dlIso: string | null | undefined, homNay: string): boolean {
+  if (!dlIso) return false;
+  return soNgayQuaHanBod(dlIso, homNay) > QUA_HAN_DO_NGAY;
+}
