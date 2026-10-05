@@ -581,6 +581,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.132.0", date: "05/10/2026", items: [
+    "XUẤT EXCEL NAY CHÉP ĐÚNG BẢNG ĐANG XEM. Khi đang lọc theo giai đoạn, bảng chuyển sang dạng phẳng (mỗi dòng một hạng mục, kèm mã CT, tên dự án, mốc bàn giao) — trước đây file Excel vẫn xuất theo dạng gộp nên mở ra chỉ thấy tên dự án, không có số nào. Nay file giống hệt màn hình.",
+    "File Excel cũng theo đúng bộ lọc bình luận đang bật, không còn xuất dư dòng.",
+  ] },
   { v: "3.131.0", date: "05/10/2026", items: [
     "SỬA LỖI XUẤT EXCEL: file tải về mở lên chỉ thấy dòng dự án, toàn bộ dòng hạng mục bị ẩn mà KHÔNG có nút nào bung ra. Nay file bày đủ mọi dòng, mở là đọc được ngay. Vẫn giữ nhóm — muốn thu gọn thì bấm số 1/2 ở lề trái Excel.",
     "Nút lọc trên đầu bảng Excel nay lọc được thật. Trước đây vùng lọc chỉ phủ đúng dòng tiêu đề nên bấm mũi tên không ra gì.",
@@ -5243,52 +5247,96 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
             { label: "Vướng mắc / Cần xử lý", width: 48, wrap: true, align: "left" as const },
             { label: "Giải pháp / Action plan", width: 48, wrap: true, align: "left" as const },
           ];
-          const rows: XlsxTableRow[] = [];
-          for (const g of dueMonthGroups) {
-            const groupLate = !g.delivered && !!g.deadline && g.deadline.slice(0, 10) < today;
-            rows.push({
-              kind: "group", delivered: !!g.delivered, late: groupLate,
-              statusColor: g.delivered ? "GREEN" : null,
-              cells: [
-                oNgay(g.updateDate), g.maCT || "", g.name || "", clean(g.pm),
-                // Dòng nhóm dự án không có % và Quá hạn → TRỐNG THẬT, không phải 0. Ghi 0 vào đây là
-                // biến một dòng chưa có số thành dòng 0%, tức báo cáo sai sự thật về một PM (luật 5.2).
-                oNgay(g.start), oNgay(g.deadline), null, null,
-                // textXuat (không phải visibleText) vì ô này CÓ câu của file nguồn trộn cùng ghi chú
-                // gõ trong app; hàng hạng mục bên dưới chỉ có tin gõ trong app nên giữ visibleText.
-                g.delivered ? "Đã bàn giao" : "", textXuat(tinDangChieu(g.noteMsgs)), visibleText(g.actionMsgs),
-              ],
-            });
-            for (const it of g.items) {
-              const st = itemStatus(it);
-              // Chưa 100% thì KHÔNG hiện ngày kết thúc thực tế, dù kho còn lưu — xem ngayKetThucThucTe.
+          /* BẢNG PHẲNG — lọc theo giai đoạn thì màn hình đổi hẳn bộ cột (13 cột, xem HEADER_COLS):
+             thêm "Bàn giao" và tách riêng cột "Hạng mục", vì mỗi dòng đứng một mình, không có dòng
+             dự án phía trên để mượn mã CT với tên. File Excel phải theo đúng như vậy. */
+          const colsPhang = [
+            { label: "Ngày update", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "Mã CT", width: 15, align: "left" as const },
+            { label: "Tên dự án", width: 40, wrap: true, align: "left" as const },
+            { label: "Bàn giao", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "Hạng mục", width: 22, wrap: true, align: "left" as const },
+            { label: "Nhân sự phụ trách", width: 24, wrap: true, align: "left" as const },
+            { label: "Ngày bắt đầu", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "Ngày kết thúc", width: 12, align: "center" as const, numFmt: "dd/mm/yy" },
+            { label: "% thực tế", width: 9, align: "center" as const, numFmt: '0"%"' },
+            { label: "Quá hạn", width: 9, align: "center" as const, numFmt: '0" ngày"' },
+            { label: "Tình trạng", width: 15, align: "center" as const },
+            { label: "Vướng mắc / Cần xử lý", width: 48, wrap: true, align: "left" as const },
+            { label: "Giải pháp / Action plan", width: 48, wrap: true, align: "left" as const },
+          ];
+          /** Ngày kết thúc BÀY RA: chưa 100% thì không hiện ngày kết thúc thực tế (xem ngayKetThucThucTe). */
+          const ngayKT = (it: EnrichedItem) => {
             const doneOn = ngayKetThucThucTe(completedDates, it._key, it.pctActual);
+            return doneOn ? oNgay(doneOn) : oNgay(it.deadline);
+          };
+          const picCua = (it: EnrichedItem) =>
+            clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm));
+          /* Hai ô số dùng phép kiểm KHÁC NHAU, cố ý:
+             · % thực tế: `!= null` — 0% là con số THẬT (đã đo, được 0), khác hẳn "chưa đo";
+             · Quá hạn  : truthy — quá hạn 0 ngày để trống như bản cũ, đổi sang `!= null` là làm
+               hiện thêm một cột "0 ngày" chưa ai yêu cầu. */
+          const pctCua = (it: EnrichedItem) => (it.pctActual != null ? Math.round(it.pctActual) : null);
+          const qhCua = (it: EnrichedItem) => (it.overdueDays ? it.overdueDays : null);
+
+          /* Bảng đang PHẲNG hay GỘP? Dùng ĐÚNG phép mà bảng dùng (groupMode ở chỗ gọi FlatTablePanel). */
+          const bangPhang = filters.stages.length > 0;
+          const rows: XlsxTableRow[] = [];
+          if (bangPhang) {
+            // Đi theo `alertsLoc` — đúng mảng bảng đang vẽ (items={alertsLoc}).
+            for (const it of alertsLoc) {
+              const st = itemStatus(it);
               rows.push({
-                // Đầu việc đang quá hạn → cả hàng tô nền ấm như trên app. Dùng ĐÚNG phép kiểm
-                // truthy của cột Quá hạn để hàng được tô đúng bằng tập hàng có số trong cột đó.
                 kind: "item", statusColor: st.color, overdue: !!it.overdueDays,
                 cells: [
-                  null, stageAbbrOf(it._stageId), it._stageLabel || "",
-                  clean(it._picEdited ? it._pic : picByStageConv(it.owner, it._stageId, it._projectPm)),
-                  oNgay(it.start), doneOn ? oNgay(doneOn) : oNgay(it.deadline),
-                  // `!= null` chứ KHÔNG phải kiểm tra rỗng: 0% là một con số THẬT (đã đo, được 0),
-                  // còn chưa đo được thì là TRỐNG. Gộp hai cái lại là xoá mất khác biệt đó.
-                  it.pctActual != null ? Math.round(it.pctActual) : null,
-                  // Giữ nguyên phép kiểm truthy của bản cũ: quá hạn 0 ngày vẫn để trống như trước,
-                  // đổi sang `!= null` là làm hiện thêm một cột "0 ngày" chưa ai yêu cầu.
-                  it.overdueDays ? it.overdueDays : null,
+                  oNgay(it.updateDate), it.maCT || it.projectCode || "", it.projectName || "",
+                  oNgay(it.projectDeadline), it._stageLabel || stageAbbrOf(it._stageId), picCua(it),
+                  oNgay(it.start), ngayKT(it), pctCua(it), qhCua(it),
                   st.text, visibleText(it._noteMsgs), visibleText(it._actionMsgs),
                 ],
               });
             }
+          } else {
+            /* Đi theo `groupsLoc` (bảng vẽ từ đó) chứ KHÔNG phải `dueMonthGroups` — hai cái lệch
+               nhau khi đang lọc bình luận, và lệch im lặng. */
+            for (const g of groupsLoc) {
+              const groupLate = !g.delivered && !!g.deadline && g.deadline.slice(0, 10) < today;
+              rows.push({
+                kind: "group", delivered: !!g.delivered, late: groupLate,
+                statusColor: g.delivered ? "GREEN" : null,
+                cells: [
+                  oNgay(g.updateDate), g.maCT || "", g.name || "", clean(g.pm),
+                  // Dòng dự án không có % và Quá hạn → TRỐNG THẬT, không phải 0. Ghi 0 vào đây là
+                  // biến một dòng chưa có số thành dòng 0%, tức báo cáo sai sự thật về một PM.
+                  oNgay(g.start), oNgay(g.deadline), null, null,
+                  // textXuat (không phải visibleText) vì ô này CÓ câu của file nguồn trộn cùng ghi
+                  // chú gõ trong app; hàng hạng mục bên dưới chỉ có tin gõ trong app.
+                  g.delivered ? "Đã bàn giao" : "", textXuat(tinDangChieu(g.noteMsgs)), visibleText(g.actionMsgs),
+                ],
+              });
+              for (const it of g.items) {
+                const st = itemStatus(it);
+                rows.push({
+                  kind: "item", statusColor: st.color, overdue: !!it.overdueDays,
+                  cells: [
+                    null, stageAbbrOf(it._stageId), it._stageLabel || "", picCua(it),
+                    oNgay(it.start), ngayKT(it), pctCua(it), qhCua(it),
+                    st.text, visibleText(it._noteMsgs), visibleText(it._actionMsgs),
+                  ],
+                });
+              }
+            }
           }
+          if (rows.length === 0) { toast.error("Không có dữ liệu để xuất"); return; }
           // Ngưỡng quá hạn lấy THẲNG từ lib/filter, không gõ lại số: đổi ngưỡng ở đó thì file Excel
           // đổi theo, khỏi lệch âm thầm với cảnh báo trên bảng.
-          await exportTableXlsx({ columns: cols, statusColIndex: 8, finishColIndex: 5, pctColIndex: 6,
-            overdueColIndex: 7, overdueAlertDays: OD_ALERT_DAYS,
-            rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
-          const projCount = dueMonthGroups.length;
-          const itemCount = rows.length - projCount;
+          await exportTableXlsx(bangPhang
+            ? { columns: colsPhang, statusColIndex: 10, finishColIndex: 7, pctColIndex: 8, overdueColIndex: 9,
+                overdueAlertDays: OD_ALERT_DAYS, rows, todayIso: today, filterSummary, updatedAt: data.updatedAt }
+            : { columns: cols, statusColIndex: 8, finishColIndex: 5, pctColIndex: 6, overdueColIndex: 7,
+                overdueAlertDays: OD_ALERT_DAYS, rows, todayIso: today, filterSummary, updatedAt: data.updatedAt });
+          const projCount = bangPhang ? new Set(rows.map((r) => String(r.cells[1] ?? ""))).size : groupsLoc.length;
+          const itemCount = bangPhang ? rows.length : rows.length - projCount;
           track("export_excel", `Lọc: ${filterSummary} · ${projCount} dự án, ${itemCount} đầu việc`.slice(0, 300));
           toast.success(`Đã xuất ${projCount} dự án (${itemCount} đầu việc)`);
         }}
