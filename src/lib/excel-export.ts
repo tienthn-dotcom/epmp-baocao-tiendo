@@ -754,7 +754,11 @@ export async function exportTableXlsx(opts: {
     });
   }
 
-  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: N } };
+  /* Vùng lọc phải phủ CẢ DỮ LIỆU, không chỉ dòng tiêu đề.
+     Từ v3.23.0 (31/07) chỗ này ghi `to: { row: 3 }`. Mở ruột file ra đo ngày 05/10 thấy đúng
+     `<autoFilter ref="A3:K3"/>` — vùng lọc gói gọn trong MỘT dòng header, không chứa dòng dữ liệu
+     nào. Excel vẫn vẽ nút mũi tên trên header, nhưng bấm vào thì không có gì để lọc. */
+  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + opts.rows.length, column: N } };
 
   const dongDau = 4;                        // 3 dòng đầu là tiêu đề / phạm vi lọc / header cột
   const dongCuoi = 3 + opts.rows.length;
