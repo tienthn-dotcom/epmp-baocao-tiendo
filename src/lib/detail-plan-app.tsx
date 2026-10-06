@@ -6,6 +6,7 @@
  *   • Các dòng SỐ NGUYÊN = các KHU của 1 DỰ ÁN (không phải dự án). Bộ lọc theo DỰ ÁN → hiện đủ khu.
  * Dev-first. Có DỮ LIỆU MẪU khi chưa đọc được file thật.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink, SlidersHorizontal, Trash2 } from "lucide-react";
@@ -284,7 +285,7 @@ Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. F
       await qc.invalidateQueries({ queryKey: ["dst-sources"] });
       setImportName(null); setReal(null);   // buộc dựng lại bảng từ danh sách nguồn mới
       track("dst_source_xoa", `${nhan} · ${x.fileId}${x.sheet ? " · tab " + x.sheet : ""}`);
-    } catch (e) { setImportErr("Không xoá được nguồn: " + (e as Error).message); }
+    } catch (e) { setImportErr("Không xoá được nguồn: " + loiNoi(e)); }
     finally { setXoaBusy(null); }
   };
   const [colW, setColW] = useState<number[]>(COL_W0);      // độ rộng cột (co giãn được)
@@ -323,7 +324,7 @@ Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. F
           // Nhãn nguồn đi theo từng dự án → bảng "Nguồn dữ liệu" xoá đúng phần của nguồn đó, và
           // người xem biết dòng này đến từ file nào (trước đây mọi dòng chung một link, nhìn là lệch).
           for (const x of p) gom.push({ ...x, srcId: f.src.id, groupDA: f.src.tag || x.groupDA });
-        } catch (e) { loi.push((e as Error).message); }
+        } catch (e) { loi.push(loiNoi(e)); }
       }
       if (off) return;
       setTabDo(tabs);
@@ -345,7 +346,7 @@ Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. F
       const nHang = p.reduce((n, x) => n + countAll(x), 0);
       track("dst_import", `${label || sheetName || "không tên"}${sheetName && label ? " · tab " + sheetName : ""}`
         + ` · ${p.length} dự án · ${nHang} dòng${tag ? " · gộp về “" + tag + "”" : ""}`);
-    } catch (e) { setImportErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setImportErr(loiNoi(e)); } finally { setBusy(false); }
   };
   const onFile = (f?: File) => { if (f) f.arrayBuffer().then((b) => importBuf(b, f.name.replace(/\.(xlsx|xls)$/i, ""))); };
   // Dán link hợp lệ → tải DANH SÁCH SHEET cho dropdown (để chọn đúng sheet, không đoán).
@@ -377,8 +378,8 @@ Dữ liệu của nguồn này sẽ biến khỏi bảng của MỌI người. F
         // Ghim xong thì BỎ bản xem tạm, để bảng dựng lại từ DANH SÁCH NGUỒN. Nhờ vậy cái đang hiện và
         // các link "Mở file gốc" luôn là một — trước đây bảng hiện file vừa dán mà link trỏ nguồn cũ.
         setImportName(null); setReal(null); setLinkVal(""); setLinkSheet(""); }
-      catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/OCC): " + (e as Error).message); }
-    } catch (e) { setImportErr((e as Error).message); setBusy(false); }
+      catch (e) { setImportErr("Đã nạp nhưng CHƯA ghim được nguồn (cần quyền admin/OCC): " + loiNoi(e)); }
+    } catch (e) { setImportErr(loiNoi(e)); setBusy(false); }
   };
   // LÀM MỚI = tải lại DỮ LIỆU MỚI từ NGUỒN ĐANG XEM với force (nguồn = link đã ghim ở KV, hoặc file mẫu).
   //  Xoá importName + real để parse effect chạy lại trên bản mới của danh sách nguồn.

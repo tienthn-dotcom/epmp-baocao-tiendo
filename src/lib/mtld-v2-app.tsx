@@ -14,6 +14,7 @@
  *
  * Bấm vào thẻ vẫn mở bảng gốc, heatmap và mã màu giữ nguyên.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Database, X } from "lucide-react";
@@ -660,7 +661,7 @@ function KhoSo({ onDong, narrow, soDong, xong }: { onDong: () => void; narrow: b
       const r = await napCsvKho({ data: { csv } });
       setKetQua(`Đã nạp ${r.ghi} dòng${r.bo ? `, bỏ ${r.bo} dòng` : ""}.${r.loi.length ? " " + r.loi.join(" · ") : ""}`);
       if (r.ghi) { setCsv(""); xong(); }
-    } catch (e) { setKetQua((e as Error).message); }
+    } catch (e) { setKetQua(loiNoi(e)); }
     finally { setDangNap(false); }
   }
   async function xuat() {
@@ -672,7 +673,7 @@ function KhoSo({ onDong, narrow, soDong, xong }: { onDong: () => void; narrow: b
       a.click();
       URL.revokeObjectURL(a.href);
       setKetQua(`Đã xuất ${r.soDong} dòng.`);
-    } catch (e) { setKetQua((e as Error).message); }
+    } catch (e) { setKetQua(loiNoi(e)); }
   }
 
   const o = { background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, color: T.ink, fontSize: 12, padding: 9, width: "100%", fontFamily: "ui-monospace,monospace" } as const;

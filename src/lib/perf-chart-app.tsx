@@ -16,6 +16,7 @@
  *   tháng mới nhất, bằng nhau → theo tên tự nhiên (APEC S2<S3<S4). Lưới mini: trên→xuống rồi trái→phải.
  * THANG: mini dùng thang CHUNG cố định (−1→4 tỷ) để so cao thấp; bar lớn dùng thang ĐỘNG (fit dữ liệu).
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X, ExternalLink } from "lucide-react";
@@ -886,7 +887,7 @@ export function PerfChartApp() {
       const buf = await f.arrayBuffer();
       const path = await archiveSource(f);
       await loadWorkbook(buf, f.name, path ? { srcPath: path } : undefined);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   }
   async function onLink() {
@@ -898,7 +899,7 @@ export function PerfChartApp() {
       const bin = atob(r.b64); const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       await loadWorkbook(bytes.buffer, "Google Sheet", { srcUrl: url.trim() });
-    } catch (e) { setErr((e as Error).message + " · Sheet cần chia sẻ “Anyone with the link”."); }
+    } catch (e) { setErr(loiNoi(e) + " · Sheet cần chia sẻ “Anyone with the link”."); }
     setBusy(false);
   }
   /** TEMPLATE = ĐÚNG FORM file báo cáo tuần chủ nhà gửi (Pivot_DoanhThu_NhanSu_theo_Nhom):

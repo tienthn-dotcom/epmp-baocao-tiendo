@@ -1,3 +1,4 @@
+import { loiNoi, loiNoiVaGhi } from "@/lib/loi-noi";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -581,6 +582,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.136.0", date: "06/10/2026", items: [
+    "Thông báo lỗi nay nói được nguyên nhân. Trước đây nhiều thao tác hỏng chỉ hiện “thất bại: undefined” — không ai biết chuyện gì, kể cả người sửa app. Nay hiện câu mô tả thật, và ghi nguyên con lỗi ra Console để tra ngược.",
+  ] },
   { v: "3.135.0", date: "05/10/2026", items: [
     "Tên file PDF báo cáo tuân thủ theo khuôn mới: 261005_Báo cáo tuân thủ cập nhật Master Plan_09.2026.pdf — ngày xuất ở đầu, kỳ báo cáo ở cuối. Hai bản xuất khác ngày của cùng một kỳ không còn đè tên nhau.",
   ] },
@@ -1848,7 +1852,7 @@ function Dashboard() {
                     track("change_source", c.sheetUrl.slice(0, 200));
                     shareMsg = " Đã đặt làm nguồn mặc định cho MỌI NGƯỜI.";
                   } catch (e) {
-                    shareMsg = ` LƯU Ý: chưa lưu được mặc định chung (${(e as Error).message}). Chỉ áp dụng trên máy này.`;
+                    shareMsg = ` LƯU Ý: chưa lưu được mặc định chung (${loiNoi(e)}). Chỉ áp dụng trên máy này.`;
                   }
                 }
                 return {
@@ -1856,7 +1860,7 @@ function Dashboard() {
                   message: `Link ĐẠT kiểm tra: ${parsed.projects.length} dự án · ${parsed.items.length} đầu việc, đã áp dụng.${shareMsg}`,
                 };
               } catch (e) {
-                return { ok: false, message: `KHÔNG áp dụng link: ${(e as Error).message}` };
+                return { ok: false, message: `KHÔNG áp dụng link: ${loiNoi(e)}` };
               }
             }
             resetPipeline(); saveConfig(c); setConfig(c);
@@ -2062,7 +2066,7 @@ function SettingsDialog({ config, onClose, onSave, onUpload }: {
       setStatus({ ok: r.ok, msg: r.message });
       if (r.ok) setTimeout(onClose, 1800); // cho kịp đọc kết quả rồi tự đóng
     } catch (e) {
-      setStatus({ ok: false, msg: `Lỗi không xác định: ${(e as Error).message}` });
+      setStatus({ ok: false, msg: `Lỗi không xác định: ${loiNoi(e)}` });
     } finally {
       setBusy(false);
     }
@@ -2073,7 +2077,7 @@ function SettingsDialog({ config, onClose, onSave, onUpload }: {
       const buf = await file.arrayBuffer();
       const data = assertDataQuality(await parseXlsxBuffer(buf, todayIso()));
       onUpload({ ...data, source: "upload", sourceLabel: file.name, fetchedAt: new Date().toISOString() });
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
@@ -2967,7 +2971,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set, remove } }); })
       .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
       .then(() => { toast.success(`Đã dọn ${co.length} ghi chú về địa chỉ RID.`); track("don_note_rid", `${co.length} ô`); })
-      .catch((e) => toast.error("Dọn lỗi: " + (e as Error).message));
+      .catch((e) => toast.error("Dọn lỗi: " + loiNoi(e)));
   }, [noteAnchors, queryClient]);
 
   // Danh tính HIỆN TẠI → khoá đang giữ (để tìm hạng mục khớp mỏ neo cũ = ĐÍCH đưa note về).
@@ -3018,7 +3022,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set: dt ? { [dich]: dt } : {}, remove: [key] } }); })
       .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
       .then(() => { toast.success("Đã tìm lại ghi chú và đưa về đúng dòng."); track("fix_drift", `Tim lai note: ${key.slice(0, 40)} → ${dich.slice(0, 40)}`); })
-      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+      .catch((e) => toast.error("Lỗi đưa về: " + loiNoi(e)));
   }, [noteAnchorNow, queryClient]);
   const fixLacAll = useCallback(() => {
     const em: Record<string, string> = {}, cm: Record<string, string> = {}, set: Record<string, string> = {}, remove: string[] = [];
@@ -3032,7 +3036,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set, remove } }); })
       .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
       .then(() => { toast.success(`Đã tìm lại ${n} ghi chú và đưa về đúng dòng.`); track("fix_drift", `Tim lai ${n} note mat dia chi`); })
-      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+      .catch((e) => toast.error("Lỗi đưa về: " + loiNoi(e)));
   }, [noteLac, noteAnchorNow, queryClient]);
 
   // Đưa 1 note trôi VỀ đúng hạng mục (dời khoá + cập nhật mỏ neo). Đích có note sẵn → remapKeys GỘP thêm (note
@@ -3042,7 +3046,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set: { [target]: before }, remove: [key] } }); })
       .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
       .then(() => { toast.success("Đã đưa ghi chú về đúng hạng mục."); track("fix_drift", `Đưa note về đúng chỗ: ${key.slice(0, 40)} → ${target.slice(0, 40)}`); })
-      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+      .catch((e) => toast.error("Lỗi đưa về: " + loiNoi(e)));
   }, [queryClient]);
   const fixAllDrift = useCallback(() => {
     const em: Record<string, string> = {}, cm: Record<string, string> = {}, set: Record<string, string> = {}, remove: string[] = [];
@@ -3052,7 +3056,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       .then((r) => { queryClient.setQueryData(["edits"], r.edits); void queryClient.invalidateQueries({ queryKey: ["completedDates"] }); return syncNoteAnchors({ data: { set, remove } }); })
       .then(() => queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }))
       .then(() => { toast.success(`Đã đưa ${n} ghi chú trôi về đúng chỗ.`); track("fix_drift", `Đưa hàng loạt ${n} note trôi về đúng chỗ`); })
-      .catch((e) => toast.error("Lỗi đưa về: " + (e as Error).message));
+      .catch((e) => toast.error("Lỗi đưa về: " + loiNoi(e)));
   }, [noteDrift, queryClient]);
   // Ghi BASELINE lần đầu (giữ "trước đó ở đâu") + dọn mỏ neo của note đã xoá. Chờ di trú khoá xong.
   useEffect(() => {
@@ -3155,7 +3159,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         ]);
         toast.success(totalMoved ? `Đã đưa ${totalMoved} khoá về đúng chỗ${totalMerged ? ` (${totalMerged} chỗ đích đã có ghi chú → GỘP thêm vào, không mất tin nào)` : ""} (đề xuất ${items.length}). Tải lại trang (Ctrl+F5) để thấy.` : "Không có gì cần dời.");
         track("audit_recover", `Rà soát nhật ký: dời ${totalMoved} khoá (đề xuất ${items.length})`);
-      } catch (e) { toast.error("Lỗi: " + (e as Error).message); }
+      } catch (e) { toast.error("Lỗi: " + loiNoi(e)); }
     })();
   }, [auditDrift, noteAnchorNow, queryClient]);
   const applyAuditOne = useCallback((key: string, target: string) => {
@@ -3167,7 +3171,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         return syncNoteAnchors({ data: { set: { [target]: noteAnchorNow[target] || "" }, remove: [key] } })
           .then(() => { void queryClient.invalidateQueries({ queryKey: ["noteAnchors"] }); toast.success(r.merged ? "Đích đã có ghi chú sẵn → đã GỘP note vào đó (không mất tin nào). Tải lại (Ctrl+F5)." : "Đã đưa về đúng chỗ. Tải lại (Ctrl+F5) để thấy."); });
       })
-      .catch((e) => toast.error("Lỗi: " + (e as Error).message));
+      .catch((e) => toast.error("Lỗi: " + loiNoi(e)));
   }, [queryClient, noteAnchorNow]);
 
   /** Thao tác BOX CHAT Vướng mắc / Giải pháp (add/hide/unhide/delete[admin]/sethi[admin]). */
@@ -3187,7 +3191,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         if (done) return; done = true;
         void editMessages({ data: { key, field, op: "delete", msgId: opts?.msgId, devAs: devAs() } })
           .then((r) => queryClient.setQueryData(["edits"], r.items))
-          .catch((e) => { if (prev) queryClient.setQueryData(["edits"], prev); toast.error(`Xoá thất bại: ${(e as Error).message}`); });
+          .catch((e) => { if (prev) queryClient.setQueryData(["edits"], prev); toast.error(`Xoá thất bại: ${loiNoi(e)}`); });
       };
       const timer = setTimeout(commit, 6000);
       toast("Đã xoá message.", {
@@ -3215,7 +3219,11 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       }
       return true;
     } catch (e) {
-      toast.error(`Thao tác thất bại: ${(e as Error).message}`);
+      /* GHI NGUYÊN CON LỖI RA CONSOLE rồi mới rút gọn cho toast.
+         06/10/2026 anh Tiến gặp "Thao tác thất bại: undefined" — chỗ này xưa đọc `(e as Error).message`,
+         mà thứ bị ném không phải Error nên ra undefined, và KHÔNG CÒN GÌ để tra ngược. Toast thì phải
+         ngắn, Console thì phải đủ: hai việc khác nhau. */
+      toast.error(`Thao tác thất bại: ${loiNoiVaGhi("ghi vướng mắc/giải pháp", e)}`);
       return false;
     }
   };
@@ -3240,7 +3248,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           `${hide ? (pham === "chung" ? "[mọi người] " : "[chỉ mình tôi] ") : ""}${label}`.slice(0, 290));
       } catch (e) {
         queryClient.setQueryData(["hiddenRows"], prev); // rollback nếu server từ chối
-        toast.error(`${hide ? "Ẩn" : "Bỏ ẩn"} dòng thất bại: ${(e as Error).message}`);
+        toast.error(`${hide ? "Ẩn" : "Bỏ ẩn"} dòng thất bại: ${loiNoi(e)}`);
       }
     })();
   }, [queryClient, me.email, devAs, track]);
@@ -4823,7 +4831,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       if (isPreview && blobUrl) { setPdfPreview({ url: blobUrl, name: fileName }); toast.success(`Đã dựng PDF (${pages} trang) — soát rồi Tải xuống / In`); }
       else toast.success(`Đã tạo PDF ${isPortrait ? "khổ dọc" : "khổ ngang"} (${pages} trang), đúng như giao diện đang xem`);
     } catch (e) {
-      toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
+      toast.error(`Tạo PDF lỗi: ${loiNoi(e)}`);
     } finally {
       toast.dismiss(tid);
     }
@@ -4861,7 +4869,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       try {
         const dry = await remapInsertShift({ data: { from, delta, tag: shiftTagFor(from, delta), dryRun: true } });
         setShiftDiag({ status: "ready", from, delta, already: !!dry.already, moved: dry.moved ?? 0, breakdown: dry.breakdown, moves: buildShiftMoves(from, delta) });
-      } catch (e) { setShiftDiag({ status: "error", error: (e as Error).message }); }
+      } catch (e) { setShiftDiag({ status: "error", error: loiNoi(e) }); }
     })();
   };
   const applyShiftDiag = (from: number, delta: number) => {
@@ -4881,7 +4889,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         ]);
         setShiftDiag({ status: "applied", moved: r.moved, moves });
         toast.success(`Đã dời ${r.moved} khoá về đúng dự án. Chi tiết đã ghi vào Nhật ký giám sát.`);
-      } catch (e) { toast.error(`Áp dụng lỗi: ${(e as Error).message}`); }
+      } catch (e) { toast.error(`Áp dụng lỗi: ${loiNoi(e)}`); }
     })();
   };
 
@@ -5738,7 +5746,7 @@ function PdfDocDialog({ id, name, onClose }: { id: string; name: string; onClose
         if (dead) { URL.revokeObjectURL(made); return; }
         setUrl(made);
       })
-      .catch((e: unknown) => { if (!dead) setErr((e as Error).message); });
+      .catch((e: unknown) => { if (!dead) setErr(loiNoi(e)); });
     return () => { dead = true; if (made) URL.revokeObjectURL(made); };
   }, [id]);
   if (typeof document === "undefined") return null;
@@ -5808,7 +5816,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
     const args = pdfRangeArgs(gid, ov.sheet, ov.range);
     getSheetPdf({ data: { fileId: fid, gid: args.gid, range: args.range, force: force || undefined } })
       .then((r) => { if (!off) setPdf(r.b64); })
-      .catch((e) => { if (!off) setChartErr((e as Error).message); })
+      .catch((e) => { if (!off) setChartErr(loiNoi(e)); })
       .finally(() => { if (!off) setChartLoading(false); });
     return () => { off = true; };
   }, [hasOverride, chartMode, fid, gid, ov?.sheet, ov?.range, refreshN]);
@@ -5862,7 +5870,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
           if (off) return;
           setRender({ html: dump.sheetToHtml(sh), css: dump.SHEET_DUMP_CSS });
         }
-      } catch (e) { if (!off) setParseErr((e as Error).message); }
+      } catch (e) { if (!off) setParseErr(loiNoi(e)); }
     })();
     return () => { off = true; };
   }, [q.data, hasOverride, fid, gid, force]);
@@ -6033,7 +6041,7 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
     try {
       const out = await renderSheetRegion(parsed.fileId, { sheetName: sheet, range, tl, br }, true);   // render ma trận đúng vùng
       setRender(out);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   };
   // Tải PDF thẳng lên Drive: xin phiên resumable ở server rồi PUT TỪ TRÌNH DUYỆT (không đẩy tệp qua
@@ -6050,7 +6058,7 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
       const j = await res.json() as { id?: string };
       if (!j.id) throw new Error("Không nhận được id tệp từ Drive.");
       setPdfId(j.id); setPdfName(f.name || name);
-    } catch (e) { setErr(`Tải PDF hỏng: ${(e as Error).message}`); }
+    } catch (e) { setErr(`Tải PDF hỏng: ${loiNoi(e)}`); }
     setPdfBusy(null);
   };
   const save = async () => {
@@ -6065,12 +6073,12 @@ function LinkSetupDialog({ projKey, projName, projMa, initCfg, onClose, onSaved 
       track(parsed ? "link_matrix" : "link_pdf",
         parsed ? `${projKey} · ${sheet} · ${range || `${tl}~${br}`}${trang.length ? ` · +${trang.length} trang` : ""}${pdfId ? " · kèm PDF " + pdfName : ""}` : `${projKey} · PDF ${pdfName}`);
       onSaved(); onClose();
-    } catch (e) { setErr((e as Error).message); setSaving(false); }
+    } catch (e) { setErr(loiNoi(e)); setSaving(false); }
   };
   const remove = async () => {
     setSaving(true); setErr(null);
     try { await saveSheetView({ data: { key: projKey, pdf: false, devAs: devAs() } }); track("link_matrix_off", projKey); onSaved(); onClose(); }
-    catch (e) { setErr((e as Error).message); setSaving(false); }
+    catch (e) { setErr(loiNoi(e)); setSaving(false); }
   };
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -6334,26 +6342,26 @@ function ProjImageSetupDialog({ projKey, projName, projHid, count, canManage, on
       for (const f of chosen) outs.push(await compressImageFile(f));
       setPending((p) => [...p, ...outs]);
       if ([...files].filter((f) => /^image\//.test(f.type)).length > room) setErr(`Chỉ nhận thêm ${room} ảnh (đã đạt trần ${PROJIMG_MAX_CLIENT}).`);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   };
   const saveAdds = async () => {
     if (!pending.length) return;
     setSaving(true); setErr(null);
     try { await saveProjImage({ data: { key: projKey, projectName: projName, add: pending, toa: toa.trim(), can: can.trim(), hid: projHid, devAs: devAs() } }); setPending([]); await refresh(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(loiNoi(e)); }
     setSaving(false);
   };
   const removeExisting = async (idx: number) => {
     setSaving(true); setErr(null);
     try { await saveProjImage({ data: { key: projKey, removeIdx: idx, devAs: devAs() } }); await refresh(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(loiNoi(e)); }
     setSaving(false);
   };
   const clearAll = async () => {
     setSaving(true); setErr(null);
     try { await saveProjImage({ data: { key: projKey, clear: true, devAs: devAs() } }); setPending([]); await refresh(); }
-    catch (e) { setErr((e as Error).message); }
+    catch (e) { setErr(loiNoi(e)); }
     setSaving(false);
   };
   if (typeof document === "undefined") return null;
@@ -8834,7 +8842,7 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
   const loadBaks = () => { void listBackups().then((r) => setBaks(r.backups)).catch(() => setBaks([])); };
   useEffect(() => { if (tab === "backup" && baks == null) loadBaks(); }, [tab, baks]);
   const fmt = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  const doBackup = () => { setBusy(true); void backupEdits({ data: { label: "Sao lưu thủ công" } }).then(() => { track("backup_create"); toast.success("Đã tạo bản sao lưu."); loadBaks(); }).catch((e) => toast.error(`Lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); };
+  const doBackup = () => { setBusy(true); void backupEdits({ data: { label: "Sao lưu thủ công" } }).then(() => { track("backup_create"); toast.success("Đã tạo bản sao lưu."); loadBaks(); }).catch((e) => toast.error(`Lỗi: ${loiNoi(e)}`)).finally(() => setBusy(false)); };
   /* TẢI BẢN SAO LƯU VỀ MÁY — lớp phòng thủ thứ ba.
      Tám bản sao lưu nằm trong CÙNG KV với dữ liệu gốc; bản chép ra Drive mỗi 23:30 là lớp hai
      nhưng vẫn là một tài khoản, một nhà cung cấp. File nằm trong máy người quản trị không phụ
@@ -8851,13 +8859,13 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
         track("backup_download", ten);
         toast.success(`Đã tải ${ten}`);
       })
-      .catch((e) => toast.error(`Tải lỗi: ${(e as Error).message}`))
+      .catch((e) => toast.error(`Tải lỗi: ${loiNoi(e)}`))
       .finally(() => setBusy(false));
   };
   const doRestore = (b: Bak) => {
     toast(`Khôi phục về bản ${fmt(b.at)} (${b.counts.edits} ghi chú)? Ghi đè dữ liệu HIỆN TẠI (bản hiện tại tự chụp lại trước).`, {
       duration: 15000,
-      action: { label: "Khôi phục", onClick: () => { setBusy(true); void restoreBackup({ data: { id: b.id } }).then(() => { track("backup_restore", b.label || b.id); toast.success("Đã khôi phục — tải lại trang (Ctrl+F5) để thấy."); loadBaks(); }).catch((e) => toast.error(`Khôi phục lỗi: ${(e as Error).message}`)).finally(() => setBusy(false)); } },
+      action: { label: "Khôi phục", onClick: () => { setBusy(true); void restoreBackup({ data: { id: b.id } }).then(() => { track("backup_restore", b.label || b.id); toast.success("Đã khôi phục — tải lại trang (Ctrl+F5) để thấy."); loadBaks(); }).catch((e) => toast.error(`Khôi phục lỗi: ${loiNoi(e)}`)).finally(() => setBusy(false)); } },
     });
   };
   if (typeof document === "undefined") return null;
@@ -9480,7 +9488,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
         action: r.link ? { label: "Mở Drive", onClick: () => window.open(r.link!, "_blank") } : undefined,
       });
     } catch (e) {
-      toast.error("Sao lưu lỗi: " + (e as Error).message);
+      toast.error("Sao lưu lỗi: " + loiNoi(e));
     } finally {
       setBacking(false);
     }
@@ -9553,7 +9561,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
       if (r.users?.length) setUsers(r.users);        // dropdown chỉ nạp ở trang đầu
       if (r.actions?.length) setActions(r.actions);
     } catch (e) {
-      setErr((e as Error).message || "Không tải được nhật ký.");
+      setErr(loiNoi(e) || "Không tải được nhật ký.");
     } finally {
       setLoading(false);
     }
@@ -10079,8 +10087,8 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
       toast.success(`Đã tải PDF báo cáo tuân thủ (${pages} trang).`);
       return { ok: true, fileName };
     } catch (e) {
-      toast.error(`Tạo PDF lỗi: ${(e as Error).message}`);
-      return { ok: false, loi: (e as Error).message };
+      toast.error(`Tạo PDF lỗi: ${loiNoi(e)}`);
+      return { ok: false, loi: loiNoi(e) };
     } finally {
       hKids.forEach((k, i) => { k.style.cssText = hSaved[i]; });                 // trả lại cụm tiêu đề như cũ (app không đổi)
       stripped.forEach((el) => el.classList.add("print:hidden"));
@@ -10199,7 +10207,7 @@ function ComplianceDialog({ data, loading, error, regionByName, mpWeeksByName, m
       setLocked(lk); setDirty(false); if (nextLocked === true) setEditLayout(false);
       toast.success(nextLocked === true ? "Đã CHỐT & KHOÁ form (áp cho mọi người + bản in)." : nextLocked === false ? "Đã mở khoá — chỉnh tiếp được." : "Đã lưu & chốt form (áp cho mọi người + bản in).");
     }
-    catch (e) { toast.error(`Lưu form lỗi: ${(e as Error).message}`); }
+    catch (e) { toast.error(`Lưu form lỗi: ${loiNoi(e)}`); }
     finally { setSavingForm(false); }
   };
   const resetForm = () => { setColW(defaultColW(nWeekCols)); setFontPx(11); setBold(false); setColBold(Array(nCols).fill(false)); setColFontPx(Array(nCols).fill(0)); setRowH(0); setSel(new Set()); setDirty(true); };

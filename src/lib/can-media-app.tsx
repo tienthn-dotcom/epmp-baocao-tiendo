@@ -6,6 +6,7 @@
  *   3) Mọi file tự tổ chức folder trên Drive: DATABASE › ePMP › Media › <dự án> › <tên phòng> › Hình ảnh|Video.
  * Mã căn suy từ ô bấm (nhãn hàng × tiêu đề cột) — cho SỬA TAY để không bao giờ gắn nhầm.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useIsMobile } from "@/lib/use-breakpoint";
@@ -686,7 +687,7 @@ function ZoneBoard({ proj, canEdit, onPick }: { proj: InstallProj; canEdit: bool
       await saveSheetForm({ data: { key: zoneKey(proj), spec: { zones: draft }, devAs: new URLSearchParams(window.location.search).get("as") } });
       await qc.invalidateQueries({ queryKey: ["sheetforms"] });
       setDraft(null);
-    } catch (e) { window.alert((e as Error).message); } finally { setSaving(false); }
+    } catch (e) { window.alert(loiNoi(e)); } finally { setSaving(false); }
   };
 
   const btn: React.CSSProperties = { border: "1px solid #dbe2ea", background: "#fff", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "#475569", cursor: "pointer" };
@@ -839,7 +840,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
         if (off) { URL.revokeObjectURL(url); return; }
         setVidSrc((m) => ({ ...m, [curVid]: url }));
       } catch (e) {
-        if (!off) setVidErr((m) => ({ ...m, [curVid]: (e as Error).message || "khong tai duoc" }));
+        if (!off) setVidErr((m) => ({ ...m, [curVid]: loiNoi(e) || "khong tai duoc" }));
       }
     })();
     return () => { off = true; };
@@ -914,7 +915,7 @@ export function CanMediaDialog({ project, hid, maCT, projKey, initialToa, initia
       await qc.invalidateQueries({ queryKey: ["projmedia", projKey] });
       if (op === "add") setCap("");
       setCapEditId(null);
-    } catch (e) { setCapErr((e as Error).message); }
+    } catch (e) { setCapErr(loiNoi(e)); }
     setCapBusy(false);
   }
 

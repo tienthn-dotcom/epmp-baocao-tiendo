@@ -4,6 +4,7 @@
  * rồi ENGINE TẤT ĐỊNH (pmo-engine) chẩn đoán tiến độ theo skill PMO → cảnh báo 4 mức + hành động đề xuất.
  * Tách RIÊNG khỏi các app hiển thị — đây là "bộ não" ra quyết định. Dev-first.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useState, type CSSProperties } from "react";
 import { Brain, RefreshCw, AlertTriangle } from "lucide-react";
 import { getSummaryFile } from "@/lib/mtld-install.functions";
@@ -52,7 +53,7 @@ export function PmoAiApp() {
       track("pmoai_import", `${records.length} dòng từ bảng tiến độ chi tiết`);
       // ── DIAGNOSE (engine) ──
       setRecCount(records.length); setDiags(diagnoseAll(records)); setRanAt(at);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   };
 

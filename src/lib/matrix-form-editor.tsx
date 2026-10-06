@@ -8,6 +8,7 @@
  *
  * HIỆU NĂNG: KHÔNG nghe mousemove toàn cửa sổ (gây lag) — chỉ gắn khi ĐANG kéo. Quét khối = DOM thuần.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadRegion, type LoadedRegion } from "@/lib/region-load";
@@ -97,7 +98,7 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
     let off = false; setRegion(null); setErr(null);
     (async () => {
       try { const r = await loadRegion(fid, opts, force ? true : undefined); if (!off) setRegion(r); }
-      catch (e) { if (!off) setErr((e as Error).message); }
+      catch (e) { if (!off) setErr(loiNoi(e)); }
     })();
     return () => { off = true; };
   }, [fid, opts.sheetName, opts.range, opts.tl, opts.br, force]);
@@ -295,14 +296,14 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
     setSaving(true);
     // Lưu form = MỌI NGƯỜI thấy bảng đổi theo → ghi nhật ký giám sát.
     try { await saveSheetForm({ data: { key: formKey, spec: { ...spec, zoom } as SheetForm, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setDirty(false); setSavedTick((n) => n + 1); track("matrix_save_form", formKey.slice(0, 120)); }
-    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+    catch (e) { setErr(loiNoi(e)); } finally { setSaving(false); }
   };
   const doClearForm = async () => {
     if (!window.confirm("Xoá FORM đã lưu cho ma trận này? Bảng sẽ về đúng như file gốc.")) return;
     setSaving(true);
     // Xoá form = mọi người mất bố cục đang dùng → phải có trong nhật ký giám sát.
     try { await saveSheetForm({ data: { key: formKey, spec: null, devAs: devAs() } }); await qc.invalidateQueries({ queryKey: ["sheetforms"] }); setSpec({}); setDirty(false); setSelBoxes([]); track("matrix_reset_form", formKey.slice(0, 120)); }
-    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+    catch (e) { setErr(loiNoi(e)); } finally { setSaving(false); }
   };
   const resetLocal = () => { setSpec(savedSpec ? structuredClone(savedSpec) : {}); setDirty(false); setSelBoxes([]); };
 

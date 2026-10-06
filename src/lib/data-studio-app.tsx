@@ -6,6 +6,7 @@
  * Phía dưới VẪN là pipeline ETL cũ (profileSheet → suggestMapping → normalize → publish) — chỉ đổi lớp UI.
  * THUẦN CLIENT, không đụng app khác, không server change.
  */
+import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Database, RefreshCw, Upload, Library, Brain, CheckCircle2, AlertTriangle, XCircle,
@@ -171,7 +172,7 @@ export function DataStudioApp() {
       const wb = await readWorkbookB64(res.b64);
       const name = wb.SheetNames[0];
       await ingest(await sheetRows(wb.Sheets[name]), name, "File mẫu · " + name);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   };
   const onFile = async (f?: File) => {
@@ -202,7 +203,7 @@ export function DataStudioApp() {
       }
       const name = wb.SheetNames[0];
       await ingest(await sheetRows(wb.Sheets[name]), name, f.name);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr(loiNoi(e)); }
     setBusy(false);
   };
   const reset = () => { setRows(null); setProfile(null); setMapping([]); setSrcName(""); setErr(null); setPublished(false); setPublishMsg(null); setShowTech(false); setInstall(null); setInstallName(""); };
@@ -254,7 +255,7 @@ export function DataStudioApp() {
       track("ds_publish", `${dataset.name} · ${dataset.records.length} dòng · nguồn ${srcName}`);
       setPublished(true); setPublishMsg(null); loadLib();
       setHighlightId(dataset.id); setToast(`Đã nhập ${dataset.records.length} dòng vào Kho dữ liệu.`); setView("library");
-    } catch (e) { setPublishMsg("Lỗi: " + (e as Error).message); }
+    } catch (e) { setPublishMsg("Lỗi: " + loiNoi(e)); }
   };
 
   const step1Done = !!dataType;
