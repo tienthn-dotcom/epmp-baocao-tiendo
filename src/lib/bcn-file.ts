@@ -137,8 +137,23 @@ export function parseBcnGrid(grid: unknown[][]): BcnData {
      các cột ngày, nên nó tự khai đâu là vùng ngày. Dòng hdr+1 cho thứ trong tuần. */
   const hThu = grid[hdr + 1] ?? [], hSo = grid[hdr + 2] ?? [];
   const cotNgay: number[] = [];
-  for (let c = 0; c < hSo.length; c++) if (/^\d{1,2}$/.test(s(hSo[c]))) cotNgay.push(c);
-  const ngay: BcnNgay[] = cotNgay.map((c) => ({ so: s(hSo[c]).padStart(2, "0"), thu: s(hThu[c]) }));
+  /* Ô NGÀY CÓ THỂ MANG THÊM THỨ Ở DÒNG DƯỚI. Đo trên file thật 07/10/2026: ô cuối của dòng số ngày
+     ghi "31\nT7" chứ không phải "31". Khớp cứng `^\d{1,2}$` thì NGÀY 31 BỊ BỎ SÓT — và bỏ sót im
+     lặng: bảng vẫn vẽ ra, vẫn chấm điểm, chỉ là thiếu đúng một ngày. Trong báo cáo chấm người thì
+     đó là chấm oan. Nên lấy DÒNG ĐẦU của ô rồi mới khớp. */
+  const soNgayCuaO = (v: unknown): string => {
+    const d1 = String(v ?? "").split(/\r?\n/)[0].trim();
+    return /^\d{1,2}$/.test(d1) ? d1 : "";
+  };
+  for (let c = 0; c < hSo.length; c++) if (soNgayCuaO(hSo[c])) cotNgay.push(c);
+  /* Thứ lấy ở dòng trên; ô nào để trống thì lấy phần sau dấu xuống dòng của chính ô ngày. */
+  const thuCuaO = (c: number): string => {
+    const t = s(hThu[c]);
+    if (t) return t;
+    const sau = String(hSo[c] ?? "").split(/\r?\n/).slice(1).join(" ");
+    return s(sau);
+  };
+  const ngay: BcnNgay[] = cotNgay.map((c) => ({ so: soNgayCuaO(hSo[c]).padStart(2, "0"), thu: thuCuaO(c) }));
 
   /* NHÃN THÁNG nằm trên chính dòng tiêu đề, ở ô mở đầu vùng ngày ("THÁNG 09/2026"). */
   const thangLabel = (() => {
