@@ -11,8 +11,9 @@ import puppeteer from "@cloudflare/puppeteer";
 
 const CACHE_TTL_S = 3 * 86_400;
 
-async function fetchXlsxById(id) {
-  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx&_ts=${Date.now()}`;
+async function fetchXlsxById(id, gid) {
+  const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx${g}&_ts=${Date.now()}`;
   // KHÔNG dùng `cache: "no-store"`: Cloudflare Workers CHƯA cài field này, đặt vào là fetch ném lỗi
   // ngay ("The 'cache' field on 'RequestInitializerDict' is not implemented") — cả 24 lượt warm hỏng
   // sạch mà log thì nuốt lỗi nên không ai hay. Chống cache đã có `_ts` trên URL + header Cache-Control,
@@ -60,13 +61,216 @@ function extractSummaryXlsx(buf) {
   return zipSync(out, { level: 6 });
 }
 
-async function warmOne(kv, id) {
-  const raw = await fetchXlsxById(id);
-  let bytes;
-  try { bytes = extractSummaryXlsx(raw); }
-  catch { bytes = new Uint8Array(raw); }
-  const b64 = toB64(bytes);
-  await kv.put(`sfile:${id}`, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S });
+/* ── MỐC LÀM MỚI TRONG NGÀY ───────────────────────────────────────────────────
+   PHẢI KHỚP MOC_LAM_MOI_VN trong src/lib/mtld-install.functions.ts. App coi bản cache ghi TRƯỚC
+   mốc gần nhất là cũ; warm phải đo bằng ĐÚNG cái thước đó.
+
+   Trước nay hai bên đo bằng hai thước khác nhau và đó là lý do thật khiến anh Tiến vẫn phải bấm
+   "Làm mới": bản deploy đang chạy (01/10) warm lúc 09:00 · 14:30 · 17:30, còn app coi mốc là 18:00
+   và 20:00. Nên MỌI lượt warm đều xong TRƯỚC mốc, rồi tới 18:00 là app coi chính bản vừa warm đó
+   là cũ — người mở đầu tiên thấy số hôm qua, app tải lại ở nền, và lượt warm kia thành công cốc. */
+const MOC_LAM_MOI_VN = [[18, 0], [20, 0]];
+const DAY_MS = 86_400_000;
+const VN_OFFSET_MS = 7 * 3_600_000;
+function mocGanNhat(now) {
+  const nuaDem = Math.floor((now + VN_OFFSET_MS) / DAY_MS) * DAY_MS - VN_OFFSET_MS;  // 00:00 VN hôm nay
+  const moc = (ngay, i) => ngay + MOC_LAM_MOI_VN[i][0] * 3_600_000 + MOC_LAM_MOI_VN[i][1] * 60_000;
+  for (let i = MOC_LAM_MOI_VN.length - 1; i >= 0; i--) { const t = moc(nuaDem, i); if (t <= now) return t; }
+  return moc(nuaDem - DAY_MS, MOC_LAM_MOI_VN.length - 1);   // chưa qua mốc nào → mốc cuối hôm qua
+}
+
+/* ── SỔ MỐC — ĐỂ NỘI DUNG KHÔNG ĐỔI KHÔNG TỐN LƯỢT GHI ───────────────────────
+   Gói KV free cho 1.000 lượt GHI mỗi ngày, và app đã tràn thật: 1.228 lượt ngày 03/10/2026. Warm
+   cả danh sách ma trận mỗi ngày là thêm một lượt ghi cho MỖI ô, kể cả ô mà số trong đó y nguyên.
+   Đo trên bảng kv_write 14 ngày gần nhất: kho `spdf2` ghi 253 lượt mà chỉ 142 nội dung khác nhau,
+   tức 111 lượt (44%) ghi lại đúng byte cũ.
+
+   Cách chặn: TÁCH mốc dữ liệu ra khỏi giá trị lớn. Mốc nằm ở MỘT khoá nhỏ dùng chung; warm tải về,
+   băm, so với băm cũ:
+     · băm TRÙNG → KHÔNG ghi giá trị, chỉ ghi mốc vào sổ;
+     · băm KHÁC  → ghi giá trị rồi ghi mốc.
+   Cả lượt warm tốn ĐÚNG 1 lượt ghi cho sổ, cộng số ô thật sự đổi. Ngày không ai sửa gì: 1 lượt.
+
+   App đọc sổ để biết mốc thật (xem docSoMoc trong mtld-install.functions.ts). Sổ hỏng hay thiếu
+   khoá → app lùi về đọc `ts` nằm trong giá trị, tức về đúng hành vi cũ. */
+const SO_MOC_KEY = "warm:moc:v1";
+
+/* TTL DÀI HƠN cho bản do warm ghi. Vì không ghi lại khi nội dung y nguyên thì TTL cũng không được
+   gia hạn — để 3 ngày như app thì ô nào đứng yên 3 ngày là cache BIẾN MẤT, người mở phải chờ tải
+   nguội. 10 ngày + hàng rào gia hạn dưới đây cho ô đứng yên chỉ bị ghi lại khoảng 8 ngày một lần.
+   Warmer chết hẳn thì cache vẫn còn 10 ngày (cũ nhưng CÓ), app tự làm mới ở nền khi ai mở. */
+const WARM_TTL_S = 10 * 86_400;
+const NGUONG_GIA_HAN_S = 2 * 86_400;   // còn sống dưới 2 ngày → ghi lại để gia hạn, kể cả y nguyên
+
+/* BĂM NGẮN nội dung đã base64. CHỈ 256KB ĐẦU + độ dài thật: băm trọn bản 2MB là đốt CPU ở đúng chỗ
+   đã từng chết (trần ~2.010.000µs mỗi lượt Worker). Hai bản trùng cả 256KB đầu LẪN độ dài mà vẫn
+   khác nhau thì bị coi là một — chấp nhận, vì hụt một lượt warm thì app vẫn tự làm mới khi ai mở. */
+const CAT_BAM = 262_144;
+async function bamNgan(s) {
+  try {
+    const mau = s.length + ":" + (s.length > CAT_BAM ? s.slice(0, CAT_BAM) : s);
+    const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(mau)));
+    let h = ""; for (let i = 0; i < 8; i++) h += d[i].toString(16).padStart(2, "0");
+    return h;
+  } catch { return ""; }
+}
+
+async function docSoMoc(kv) {
+  try { const raw = await kv.get(SO_MOC_KEY); const o = raw ? JSON.parse(raw) : null; return o && typeof o === "object" ? o : {}; }
+  catch { return {}; }
+}
+
+/** GHI GIÁ TRỊ CHỈ KHI KHÁC bản cũ (hoặc sắp hết hạn); mốc thì LUÔN vào sổ. Trả về true nếu đã ghi. */
+async function ghiNeuKhac(kv, so, key, b64, hanHet) {
+  const bam = await bamNgan(b64);
+  const cu = so[key];
+  const bayGio = Math.floor(Date.now() / 1000);
+  const sapHetHan = !hanHet || hanHet - bayGio < NGUONG_GIA_HAN_S;
+  so[key] = { ts: Date.now(), bam };
+  if (cu && bam && cu.bam === bam && !sapHetHan) return false;
+  await kv.put(key, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: WARM_TTL_S });
+  return true;
+}
+
+/** Hạn hết của mọi khoá mang tiền tố — lấy qua list (metadata), KHÔNG đọc giá trị (mỗi bản tới 2MB). */
+async function hanHetCua(kv, tienTo) {
+  const han = new Map();
+  try {
+    let cursor;
+    do {
+      const p = await kv.list({ prefix: tienTo, ...(cursor ? { cursor } : {}) });
+      for (const k of p.keys) if (k.expiration) han.set(k.name, k.expiration);
+      cursor = p.list_complete ? null : p.cursor;
+    } while (cursor);
+  } catch { /* không lấy được hạn → coi như mọi khoá đều cần làm */ }
+  return han;
+}
+
+/* ── TRA GID CỦA MỘT TAB ──────────────────────────────────────────────────────
+   Lấy ĐÚNG khuôn regex của listTabGids trong src/lib/mtld-install.functions.ts: trang /htmlview
+   CÔNG KHAI có khối script liệt kê {name: "…", …, gid: "…"} từng tab. Không cần API key, cùng mức
+   quyền "Anyone with the link" như mọi thứ khác app đang đọc.
+
+   Gid gần như không bao giờ đổi, nên NHỚ LUÔN VÀO SỔ MỐC (so[key].gid) thay vì cache riêng — sổ dù
+   sao cũng ghi một lượt mỗi lần warm, nên nhớ thêm cái gid vào đó là MIỄN PHÍ. Cache riêng theo
+   khoá `tabs:v1:` có TTL 6 giờ, hết hạn là lại một lượt ghi cho MỖI file — tức tự đốt đúng cái
+   hạn mức đang muốn giữ. */
+async function gidCuaTab(id, ten) {
+  try {
+    const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/htmlview`, {
+      redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP-warmer/1.0)" },
+    });
+    if (!r.ok) return null;
+    const h = await r.text();
+    for (const m of h.matchAll(/\{name:\s*"((?:[^"\\]|\\.)*)"[\s\S]{0,300}?gid:\s*"(\d+)"/g)) {
+      if (m[1].replace(/\\(.)/g, "$1").trim() === ten) return m[2];
+    }
+  } catch { /* .xlsx không có htmlview, hoặc mạng lỗi → lùi về đường cũ */ }
+  return null;
+}
+
+/* WARM MỘT FILE SUMMARY.
+
+   ĐƯỜNG NHẸ: `export?format=xlsx&gid=<Summary>` trả về ĐÚNG MỘT TAB → chỉ cần base64, KHÔNG giải
+   nén, KHÔNG dựng lại file zip. Đo thật 07/10/2026 trên file 1le0CS6… (20 tab):
+       cả file 1.391.068 byte / parse 1.427ms  ·  một tab 301.313 byte / parse 177ms
+       so từng ô: 96.071 ô, 0 ô thiếu, 0 ô lệch; merge 194=194, cols 96=96, rows 1002=1002,
+       ô có màu 15.464=15.464  → y nguyên cả dữ liệu lẫn định dạng.
+   Phần giải nén + nén lại chính là chỗ warmer chết CPU mỗi ngày từ 07/09 tới 13/09/2026 (đụng trần
+   2.010.000µs, 6 file một lượt là gãy). Bỏ được nó thì một lượt warm phủ được cả danh sách.
+
+   LÙI VỀ ĐƯỜNG CŨ khi không tra ra gid (file .xlsx không có /htmlview) hoặc tải theo gid hỏng. Thà
+   chậm như trước còn hơn để trống cache. */
+async function warmOne(kv, id, so, han) {
+  const key = `sfile:${id}`;
+  let bytes = null;
+  const gid = so[key]?.gid ?? await gidCuaTab(id, "Summary");
+  if (gid) {
+    try { bytes = new Uint8Array(await fetchXlsxById(id, gid)); } catch { bytes = null; }
+  }
+  if (!bytes) {
+    const raw = await fetchXlsxById(id);
+    try { bytes = extractSummaryXlsx(raw); }
+    catch { bytes = new Uint8Array(raw); }
+  }
+  const daGhi = await ghiNeuKhac(kv, so, key, toB64(bytes), han.get(key));
+  if (gid && so[key]) so[key].gid = gid;      // nhớ gid cho lượt sau, khỏi hỏi /htmlview lại
+  return daGhi;
+}
+
+/* ── WARM MA TRẬN (PDF do Google render) ─────────────────────────────────────
+   ĐÂY LÀ THỨ ANH TIẾN XEM: màn MTLĐ bày 21 thẻ ma trận, thẻ nào có cờ `chart` thì hiện bản PDF
+   Google render (y hệt màn hình: chart + màu điều kiện + format). Cron CHƯA TỪNG warm kho này —
+   nó chỉ warm file Summary .xlsx — nên tới mốc 18:00 thẻ nào cũng bị coi là cũ và người mở đầu
+   tiên luôn phải bấm "Làm mới". Đó là việc anh Tiến nói "rất mất thời gian".
+
+   RẺ HƠN warm Summary RẤT NHIỀU: Google render sẵn, worker chỉ tải byte rồi base64 — KHÔNG giải
+   nén, KHÔNG nén lại file 2MB. Nhờ thế làm được CẢ danh sách trong một lượt, khác hẳn warm Summary
+   (đo thật trên Cloudflare: 6 file một lượt là chết CPU, xem ghi chú ở warmAll).
+
+   THAM SỐ URL PHẢI TRÙNG TUYỆT ĐỐI với fetchPdfOnce trong src/lib/mtld-install.functions.ts. Khác
+   một tham số là ra PDF khác, mà khoá cache thì vẫn một — app sẽ bày bản warm chứ không phải bản
+   nó tự tải, nên lệch là lệch âm thầm. */
+const INSTALL_LIST_KEY = "mtld:install:list:v2";
+const MATRAN_NGAN_SACH_MS = 20_000;
+
+/** KHỚP pdfArgsOf trong src/lib/app-shell.tsx — có gid thì cắt vùng trên tab đó, không thì "Tab!vùng". */
+function pdfArgs(p) {
+  const r = (p.range || "").trim();
+  if (p.gid) return { gid: p.gid, range: r || undefined };
+  const s = (p.sheet || "").trim();
+  return { range: s && r ? `${s}!${r}` : (s || r || undefined) };
+}
+
+async function taiPdf(id, gid, range) {
+  const g = gid ? `&gid=${encodeURIComponent(gid)}` : "";
+  const rg = range && range.trim() ? `&range=${encodeURIComponent(range.trim())}` : "";
+  const url = `https://docs.google.com/spreadsheets/d/${id}/export?format=pdf${g}${rg}&portrait=false&scale=4&fzr=false&top_margin=0&bottom_margin=0&left_margin=0&right_margin=0&horizontal_alignment=LEFT&vertical_alignment=TOP&gridlines=true&sheetnames=false&printtitle=false&pagenumbers=false&printnotes=false&_ts=${Date.now()}`;
+  const r = await fetch(url, {
+    redirect: "follow", cf: { cacheTtl: 0, cacheEverything: false },
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; ePMP-warmer/1.0)", Accept: "application/pdf,*/*", "Cache-Control": "no-cache, no-store" },
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50) throw new Error("không phải PDF");
+  return toB64(bytes);
+}
+
+async function warmMaTran(env) {
+  const kv = env.PMO_EDITS;
+  if (!kv) return { note: "thiếu KV PMO_EDITS" };
+  let list = [];
+  try { const raw = await kv.get(INSTALL_LIST_KEY); list = raw ? JSON.parse(raw) : []; } catch { /* chưa có danh sách */ }
+  const o = list.filter((p) => p && p.chart && p.fileId);
+  if (!o.length) return { tong: 0 };
+
+  const so = await docSoMoc(kv);
+  const han = await hanHetCua(kv, "spdf2:");
+  const moc = mocGanNhat(Date.now());
+
+  // Chỉ làm ô có mốc CŨ HƠN mốc làm mới gần nhất — ô vừa warm ở lượt 18:00 thì lượt 20:00 bỏ qua.
+  const canLam = o.filter((p) => {
+    const a = pdfArgs(p);
+    const key = `spdf2:${p.fileId}:${a.gid ?? ""}:${(a.range ?? "").trim()}`;
+    return (so[key]?.ts ?? 0) < moc;
+  });
+
+  let ghi = 0, nguyen = 0, hong = 0, lam = 0, hetGio = false;
+  const lyDo = [];
+  const batDau = Date.now();
+  for (const p of canLam) {
+    if (lam > 0 && Date.now() - batDau > MATRAN_NGAN_SACH_MS) { hetGio = true; break; }
+    lam++;
+    const a = pdfArgs(p);
+    const key = `spdf2:${p.fileId}:${a.gid ?? ""}:${(a.range ?? "").trim()}`;
+    try {
+      const b64 = await taiPdf(p.fileId, a.gid, a.range);
+      if (await ghiNeuKhac(kv, so, key, b64, han.get(key))) ghi++; else nguyen++;
+    } catch (e) { hong++; if (lyDo.length < 3) lyDo.push(`${p.maCT || p.fileId}: ${String(e && e.message || e).slice(0, 90)}`); }
+  }
+  // MỘT lượt ghi cho cả sổ, dù vừa warm bao nhiêu ô.
+  try { await kv.put(SO_MOC_KEY, JSON.stringify(so)); } catch { /* sổ hỏng → app lùi về ts trong giá trị */ }
+  return { tong: o.length, canLam: canLam.length, lam, ghi, nguyen, hong, ...(hetGio ? { hetGio: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* WARM SUMMARY — CHỈ LÀM FILE SẮP HẾT HẠN, KHÔNG XOAY VÒNG MÙ.
@@ -83,10 +287,14 @@ async function warmOne(kv, id) {
    giá trị 2MB), rồi chỉ làm những file đang THIẾU cache hoặc sắp hết hạn trong vòng NGUONG_LAM_MOI.
    File nào còn tươi thì bỏ qua sạch: không tải, không ghi. Nhờ vậy ngân sách nhỏ vẫn phủ được cả
    danh sách, vì mỗi ngày chỉ có vài file thật sự tới hạn. */
-const WARM_MOI_LUOT = 3;
+/* ĐƯỜNG NHẸ (xem warmOne) bỏ hẳn phần giải nén + nén lại — đúng chỗ đốt CPU. Nhờ vậy nâng từ 3 lên
+   12 file mỗi lượt, tức hai mốc 18:00 + 20:00 phủ tới 24 file/ngày thay vì 6. Hàng rào thời gian
+   WARM_NGAN_SACH_MS bên dưới vẫn giữ nguyên để một file nặng bất thường không kéo sập cả lượt, và
+   log trả về cờ `hetGio` để biết lượt nào bị cắt giữa đường — cứ đọc log mà điều con số này, ĐỪNG
+   đoán. */
+const WARM_MOI_LUOT = 12;
 
-/* Làm mới khi cache còn sống dưới 1 ngày — sớm hơn hạn để không bao giờ có khoảng trống. */
-const NGUONG_LAM_MOI_S = 86_400;
+/* CHỌN THEO MỐC LÀM MỚI, KHÔNG THEO HẠN TTL (xem khối chọn file trong warmAll). */
 
 /* Trần CPU không đo được từ trong Worker → thêm hàng rào theo GIỜ ĐỒNG HỒ. Việc này CPU-bound nên
    hai thứ đi cùng nhau; hàng rào để một file nặng bất thường không kéo sập cả lượt. */
@@ -99,27 +307,32 @@ async function warmAll(env, soLuong = WARM_MOI_LUOT) {
   try { const raw = await kv.get("sfile:index"); ids = raw ? JSON.parse(raw) : []; } catch { /* registry rỗng */ }
   if (!ids.length) return { ok: 0, fail: 0, total: 0 };
 
-  // HẠN HẾT của từng khoá cache — lấy qua list (metadata), KHÔNG đọc giá trị (mỗi giá trị ~2MB).
-  const han = new Map();
-  try {
-    let cursor;
-    do {
-      const p = await kv.list({ prefix: "sfile:", ...(cursor ? { cursor } : {}) });
-      for (const k of p.keys) if (k.expiration) han.set(k.name, k.expiration);
-      cursor = p.list_complete ? null : p.cursor;
-    } while (cursor);
-  } catch { /* không lấy được hạn → coi như mọi file đều cần làm, về đúng hành vi cũ */ }
+  const han = await hanHetCua(kv, "sfile:");
+  const so = await docSoMoc(kv);
 
-  // Xếp theo ĐỘ GẤP: thiếu cache trước, rồi tới cái hết hạn sớm nhất.
-  const bayGio = Math.floor(Date.now() / 1000);
+  /* CHỌN FILE THEO MỐC LÀM MỚI, KHÔNG THEO HẠN TTL.
+     Bản cũ lọc "sắp hết hạn trong 1 ngày" với TTL 3 ngày, nghĩa là file vừa warm hôm nay thì HAI
+     NGÀY SAU mới được warm lại. Nó giữ cho cache khỏi biến mất, nhưng KHÔNG mang về số mới — mà số
+     mới mới là việc anh Tiến cần. Nay đo đúng thước của app: mốc ghi cũ hơn mốc làm mới gần nhất
+     thì làm.
+
+     Mốc ghi lấy từ sổ; sổ chưa có khoá đó thì suy từ hạn hết (hạn = lúc ghi + TTL) — nhờ vậy lượt
+     chạy đầu sau khi deploy không coi cả danh sách là cũ rồi đòi warm lại sạch. */
+  const moc = mocGanNhat(Date.now());
+  const tsGhiCua = (key) => {
+    const s = so[key]?.ts;
+    if (s) return s;
+    const hh = han.get(key);
+    return hh ? (hh - WARM_TTL_S) * 1000 : 0;    // chưa có cache → 0 → luôn cần làm
+  };
   const canLam = ids
-    .map((id) => ({ id, hh: han.get(`sfile:${id}`) ?? 0 }))
-    .filter((x) => x.hh - bayGio < NGUONG_LAM_MOI_S)
-    .sort((a, b) => a.hh - b.hh);
+    .map((id) => ({ id, ts: tsGhiCua(`sfile:${id}`) }))
+    .filter((x) => x.ts < moc)
+    .sort((a, b) => a.ts - b.ts);                 // cũ nhất làm trước
   if (!canLam.length) return { ok: 0, fail: 0, lam: 0, total: ids.length, conTuoi: ids.length };
   const lo = canLam.slice(0, Math.min(soLuong, canLam.length)).map((x) => x.id);
 
-  let ok = 0, fail = 0, lam = 0, hetGio = false;
+  let ok = 0, fail = 0, nguyen = 0, lam = 0, hetGio = false;
   const lyDo = [];   // giữ vài lỗi đầu để còn biết vì sao hỏng — nuốt sạch lỗi thì chẩn đoán bằng gì
   const batDau = Date.now();
   for (const id of lo) {
@@ -127,12 +340,14 @@ async function warmAll(env, soLuong = WARM_MOI_LUOT) {
     // thứ hai và mất cả lượt (file đang làm dở không được ghi, coi như công cốc).
     if (lam > 0 && Date.now() - batDau > WARM_NGAN_SACH_MS) { hetGio = true; break; }
     lam++;
-    try { await warmOne(kv, id); ok++; }
+    try { if (await warmOne(kv, id, so, han)) ok++; else nguyen++; }
     catch (e) { fail++; if (lyDo.length < 3) lyDo.push(`${id}: ${String(e).slice(0, 120)}`); }
   }
+  // MỘT lượt ghi cho cả sổ, dù vừa warm bao nhiêu file.
+  try { await kv.put(SO_MOC_KEY, JSON.stringify(so)); } catch { /* sổ hỏng → app lùi về ts trong giá trị */ }
   // KHÔNG còn con trỏ: thứ tự do ĐỘ GẤP quyết định, nên chẳng có gì phải nhớ giữa hai lượt —
   // bớt luôn một lượt ghi KV mỗi lần chạy.
-  return { ok, fail, lam, total: ids.length, canLam: canLam.length, ...(hetGio ? { hetGio: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
+  return { ok, fail, nguyen, lam, total: ids.length, canLam: canLam.length, ...(hetGio ? { hetGio: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -764,6 +979,8 @@ export default {
          src/lib/mtld-install.functions.ts). Warm MỖI NGÀY để tới mốc là đã có bản tươi sẵn. */
       ctx.waitUntil(warmAll(env).then((r) => console.log("warm 20h:", JSON.stringify(r)))
         .catch((e) => console.error("warmAll 20h lỗi:", e)));
+      ctx.waitUntil(warmMaTran(env).then((r) => console.log("maTran 20h:", JSON.stringify(r)))
+        .catch((e) => console.error("warmMaTran 20h lỗi:", e)));
       const vn = new Date(Date.now() + 7 * 3600_000);   // worker chạy UTC
       if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ — PDF chỉ dựng thứ Tư
       /* TỰ BẤM NÚT TRÊN APP — ra ĐÚNG bản app xuất (~1.5MB), đúng thứ cần đính mail.
@@ -796,11 +1013,13 @@ export default {
          nên warm buổi sáng chỉ tốn lượt ghi KV mà tới chiều vẫn phải warm lại. */
       return;
     }
-    // Các mốc WARM (10:30 · 14:30 · 17:30 VN) — CHỈ warm Summary.
-    // Trước đây mốc 17:30 sao lưu nhật ký giám sát thêm một lần nữa, trong khi mốc 23:30 đã làm đúng
-    // việc đó — làm hai lần vừa thừa vừa lấy mất phần CPU mà warm đang thiếu.
+    /* MỐC 18:00 VN ("0 11 * * *") — mốc làm mới THỨ NHẤT của app. Warm CẢ HAI kho, vì màn MTLĐ
+       bày hai dạng thẻ: thẻ có cờ `chart` đọc PDF (kho spdf2), thẻ còn lại đọc file Summary
+       (kho sfile). Thiếu một kho là dạng thẻ đó vẫn phải bấm "Làm mới". */
     ctx.waitUntil(warmAll(env).then((r) => console.log("warm:", JSON.stringify(r)))
       .catch((e) => console.error("warmAll lỗi:", e)));
+    ctx.waitUntil(warmMaTran(env).then((r) => console.log("maTran:", JSON.stringify(r)))
+      .catch((e) => console.error("warmMaTran lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(req, env) {
@@ -822,6 +1041,12 @@ export default {
       } catch (e) {
         return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } });
       }
+    }
+    /* WARM MA TRẬN NGAY: mở "…/?matran=1". Để kiểm ngay sau khi deploy, khỏi đợi tới 18:00 —
+       trả về JSON nói rõ làm mấy ô, ghi mấy ô, mấy ô y nguyên (không tốn lượt ghi) và hỏng ô nào. */
+    if (tham.get("matran")) {
+      try { return new Response(JSON.stringify(await warmMaTran(env), null, 2), { headers: { "content-type": "application/json" } }); }
+      catch (e) { return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } }); }
     }
     /* LÀM SẴN NGÀY SỬA LINK ngay bây giờ: mở "…/?ngaylink=1". Dùng khi vừa đổi danh sách link,
        không muốn đợi tới lượt cron 09:00 sáng mai. */

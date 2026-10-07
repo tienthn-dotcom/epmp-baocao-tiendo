@@ -135,6 +135,65 @@ export function lastRefreshBoundary(now: number): number {
   return moc(vnMidnight - DAY_MS, MOC_LAM_MOI_VN.length - 1);   // mốc cuối của hôm qua
 }
 
+/* ── SỔ MỐC WARM — MỐC DỮ LIỆU THẬT, NẰM NGOÀI GIÁ TRỊ ────────────────────────
+   Warmer (warmer/src/index.mjs) tải bản mới mỗi mốc 18:00 và 20:00, băm rồi so với băm cũ. Nội dung
+   y nguyên thì nó KHÔNG ghi lại giá trị — vì gói KV free chỉ cho 1.000 lượt GHI mỗi ngày và app đã
+   tràn thật 1.228 lượt ngày 03/10/2026. Đo trên bảng kv_write 14 ngày: kho `spdf2` ghi 253 lượt mà
+   chỉ 142 nội dung khác nhau, tức 111 lượt ghi lại đúng byte cũ.
+
+   Hệ quả: `ts` nằm TRONG giá trị sẽ đứng im ở lần ghi cuối. Nếu app chỉ nhìn cái `ts` đó thì nó coi
+   bản vừa kiểm là cũ, tự tải lại ở nền — mất đúng lượt ghi vừa tiết kiệm, mà số thì y hệt. Nên mốc
+   thật phải đọc từ sổ, và mốc hiện cho người xem cũng lấy ở đây: đó là lúc dữ liệu được đối chiếu
+   với nguồn lần cuối, không phải lúc byte được ghi.
+
+   SỔ HỎNG / THIẾU KHOÁ → trả về rỗng, app lùi về `ts` trong giá trị, tức ĐÚNG hành vi cũ.
+
+   GHIM TRONG ISOLATE 30 GIÂY: màn MTLĐ bày 21 thẻ, mỗi thẻ một lượt gọi — đọc sổ 21 lần cho cùng
+   một con số là thừa. Lượt ĐỌC KV thì rẻ (100.000/ngày) nhưng ghim lại vẫn nhanh hơn hẳn, và 30
+   giây thì không thể trễ hơn mốc làm mới (cách nhau 2 tiếng). */
+const SO_MOC_KEY = "warm:moc:v1";
+const SO_GHIM_MS = 30_000;
+type SoMoc = Record<string, { ts?: number; bam?: string } | undefined>;
+let soGhim: { luc: number; so: SoMoc } | null = null;
+
+async function docSoMoc(kv: KVLike | null): Promise<SoMoc> {
+  if (!kv) return {};
+  if (soGhim && Date.now() - soGhim.luc < SO_GHIM_MS) return soGhim.so;
+  try {
+    const raw = await kv.get(SO_MOC_KEY);
+    const o = raw ? (JSON.parse(raw) as SoMoc) : null;
+    const so = o && typeof o === "object" ? o : {};
+    soGhim = { luc: Date.now(), so };
+    return so;
+  } catch { return {}; }
+}
+
+/** MỐC DỮ LIỆU THẬT của một khoá cache: muộn nhất giữa mốc ghi byte và mốc warm đối chiếu nguồn. */
+async function mocThat(kv: KVLike | null, cacheKey: string, tsTrongGiaTri: number): Promise<number> {
+  const so = await docSoMoc(kv);
+  return Math.max(tsTrongGiaTri, so[cacheKey]?.ts ?? 0);
+}
+
+/* ── KHOÁ CACHE — MỘT NGUỒN DUY NHẤT ────────────────────────────────────────────
+   Warmer (worker RIÊNG, không import được chỗ này) phải dựng ĐÚNG những khoá này, nếu không nó warm
+   vào khoá A mà app đọc khoá B: app vẫn chạy, số vẫn cũ, và KHÔNG CÓ lỗi nào hiện ra. Lệch âm thầm
+   kiểu đó đã xảy ra một lần với mốc giờ (warm 17:30 / app đo 18:00), nên lần này tách hẳn thành hàm
+   XUẤT RA ĐƯỢC để test đối chiếu hai bên — xem tests/warm-ma-tran.test.ts. */
+
+/** Khoá cache bản PDF Google render của một vùng sheet. */
+export function khoaPdf(fileId: string, gid?: string, range?: string): string {
+  return `spdf2:${fileId}:${gid ?? ""}:${(range ?? "").trim()}`;   // v2 = scale=4 (1 trang); vùng khác → cache riêng
+}
+
+/** Khoá cache file .xlsx đã tách: theo gid, nguyên file, theo tên tab, hay bản "Summary" mặc định. */
+export function khoaSummary(fileId: string, o?: { gid?: string; full?: boolean; sheet?: string }): string {
+  const sh = (o?.sheet ?? "").trim();
+  return o?.gid ? `sfile:${fileId}:${o.gid}`
+    : o?.full ? `sfile:${fileId}:full`
+    : (sh && sh !== "Summary") ? `sfile:${fileId}:sh:${sh}`
+    : `sfile:${fileId}`;
+}
+
 /** Lấy waitUntil (nếu có) để chạy refresh ở NỀN không chặn phản hồi. */
 async function getWaitUntil(): Promise<((p: Promise<unknown>) => void) | null> {
   try {
@@ -294,22 +353,20 @@ export const getSummaryFile = createServerFn({ method: "POST" })
     const kv = await getKv();
     // sheet != "Summary" → cache RIÊNG theo tab. full=true → nguyên file (cache riêng) cho "Tự động" quét mọi sheet.
     const sh = (data.sheet ?? "").trim();
-    const cacheKey = data.gid ? `sfile:${data.fileId}:${data.gid}`
-      : data.full ? `sfile:${data.fileId}:full`
-      : (sh && sh !== "Summary") ? `sfile:${data.fileId}:sh:${sh}`
-      : `sfile:${data.fileId}`;
+    const cacheKey = khoaSummary(data.fileId, { gid: data.gid, full: data.full, sheet: sh });
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
         let b64 = hit, ts = 0;
         try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } }
         catch { /* cache đời cũ (b64 thô) → coi như ts=0 để refresh nền 1 lần */ }
-        if (ts < lastRefreshBoundary(Date.now())) {          // cũ hơn mốc quét hôm nay → làm mới ở NỀN
+        const tsThat = await mocThat(kv, cacheKey, ts);      // sổ warm biết mốc muộn hơn — xem docSoMoc
+        if (tsThat < lastRefreshBoundary(Date.now())) {       // cũ hơn mốc quét hôm nay → làm mới ở NỀN
           const job = refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full).catch(() => { /* nền, lỗi kệ */ });
           const wu = await getWaitUntil();
           if (wu) wu(job);
         }
-        return { b64, cached: true, ts: ts || Date.now() };  // LUÔN trả cache tức thì (kèm mốc dữ liệu)
+        return { b64, cached: true, ts: tsThat || Date.now() };  // LUÔN trả cache tức thì (kèm mốc dữ liệu)
       }
     }
     const b64 = await refreshAndStore(data.fileId, data.gid, kv, cacheKey, sh || undefined, data.full);
@@ -383,12 +440,13 @@ export const getSheetPdf = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), range: z.string().max(80).regex(/^[^\n\r]*$/).optional(), force: z.boolean().optional() }).parse(input))
   .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
     const kv = await getKv();
-    const cacheKey = `spdf2:${data.fileId}:${data.gid ?? ""}:${(data.range ?? "").trim()}`;   // v2 = scale=4 (1 trang); vùng khác → cache riêng
+    const cacheKey = khoaPdf(data.fileId, data.gid, data.range);
     if (kv && !data.force) {
       const hit = await kv.get(cacheKey);
       if (hit) {
         let b64 = hit, ts = 0;
         try { const o = JSON.parse(hit) as { b64?: string; ts?: number }; if (o && typeof o.b64 === "string") { b64 = o.b64; ts = o.ts ?? 0; } } catch { /* cache cũ */ }
+        ts = await mocThat(kv, cacheKey, ts);                // sổ warm biết mốc muộn hơn — xem docSoMoc
         if (ts < lastRefreshBoundary(Date.now())) {
           const job = fetchSheetPdf(data.fileId, data.gid, data.range).then((b) => kv.put(cacheKey, JSON.stringify({ b64: b, ts: Date.now() }), { expirationTtl: CACHE_TTL_S })).catch(() => { /* nền */ });
           const wu = await getWaitUntil(); if (wu) wu(job);
