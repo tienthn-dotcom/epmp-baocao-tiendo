@@ -582,6 +582,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.138.0", date: "07/10/2026", items: [
+    "Hiệu suất dự án — chọn dự án lên lưới bằng FILE NGUỒN. Thêm cột “Thứ tự hiện” rồi gõ 1, 2, 3… vào dòng nào thì dự án đó lên lưới theo đúng số đó; để trống là không hiện. Chưa ai gõ số thì giữ nguyên danh sách cũ.",
+  ] },
   { v: "3.137.0", date: "07/10/2026", items: [
     "Ma trận tự có số mới mỗi ngày 18 giờ, khỏi bấm “Làm mới”. Trước đây máy chỉ làm sẵn file Summary chứ không làm bản ma trận, lại làm vào lúc 17:30 — sớm hơn mốc 18:00 mà app dùng để tính số mới — nên mở lên vẫn là số hôm qua. Nay máy làm cả bản ma trận, đúng mốc 18 giờ và 20 giờ.",
     "Mỗi thẻ ma trận hiện mốc dữ liệu ở góc phải: cùng ngày thì hiện giờ, khác ngày thì hiện ngày. Quá một ngày chưa làm mới thì đổi màu vàng để thấy ngay.",

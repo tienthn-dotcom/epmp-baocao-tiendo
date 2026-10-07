@@ -81,6 +81,21 @@ const PERF_EXCLUDE = /^(others?|oem|looses*export|congs*nos*cu|khac|thiets*ke|to
 const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
 const SHOW_KEYS = PERF_SHOW.map(keyName);
+
+/** CHỌN DỰ ÁN LÊN LƯỚI HIỆU SUẤT, theo cột "Thứ tự hiện" trong file nguồn (xem HIEN_RE).
+ *
+ *  Gõ 1, 2, 3… vào dòng nào thì dự án đó lên lưới theo đúng số đó; để trống là không hiện. Nhờ vậy
+ *  PMO tự đổi danh sách bằng file, khỏi nhờ sửa code rồi deploy.
+ *
+ *  KHÔNG AI GÕ SỐ NÀO thì lùi về PERF_SHOW như cũ — cần đường lùi vì file đang dùng chưa có cột đó,
+ *  mà lưới trắng bong còn tệ hơn danh sách cũ. Hễ có DÙ CHỈ MỘT dòng được gõ số là chuyển HẲN sang
+ *  cột đó: nửa nọ nửa kia thì không ai lần ra được vì sao một dự án hiện hay không hiện. */
+export function chonHien(projs: readonly Proj[]): Proj[] {
+  const coGoSo = projs.some((p) => p.hien != null);
+  if (coGoSo) return projs.filter((p) => p.hien != null).sort((a, b) => (a.hien as number) - (b.hien as number));
+  const byKey = new Map(projs.map((p) => [keyName(p.name), p] as const));
+  return SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p);
+}
 /** Tên đưa lên thẻ / bảng xếp hạng. Khớp vẫn theo tên file, chỉ chữ hiển thị đổi.
  *  IN HOA HẾT: tên trong file tuần vốn đã viết hoa toàn bộ, nên tên khai tay cũng phải viết hoa,
  *  kẻo trên cùng một lưới có thẻ hoa thẻ thường. Dùng locale "vi" cho chắc phần dấu. */
@@ -94,7 +109,9 @@ const COLS = 5;
 const DEFAULT_NM = 7;
 const SERIF = '"Times New Roman", Times, serif';
 
-type Proj = { no: number; name: string; rev: number[]; ns: number[] };
+/** `hien` = số gõ ở cột "Thứ tự hiện" trong file nguồn (xem HIEN_RE). Có số → lên lưới Hiệu suất
+ *  theo đúng số đó; không có → không hiện. Cả file không ai gõ thì lùi về PERF_SHOW (xem `ordered`). */
+type Proj = { no: number; name: string; rev: number[]; ns: number[]; hien?: number };
 /** Dự án đã gắn VÙNG (lấy từ ePMP) — chỉ dùng ở tab "Hiệu suất theo tháng" để gom cụm + tô viền. */
 type ProjV = Proj & { vung: string };
 
@@ -179,18 +196,27 @@ const REV_RE = /(^|[^a-z])(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|doan
 // không có chữ "dự án" nên bộ dò cũ trượt → app báo "Không nhận dạng được dữ liệu". Nhận thêm "nhóm".
 const NAME_RE = /row labels|dự án|du an|^tên|^ten|nhóm|nhom|các khu|cac khu|công trình|cong trinh|project/i;
 const STT_RE = /^stt$|số thứ tự|so thu tu|^tt$|^no\.?$|^#$/i;
+/* CỘT "THỨ TỰ HIỆN" — anh Tiến chốt 07/10/2026: gõ 1, 2, 3… vào dòng nào thì dự án đó lên lưới
+   Hiệu suất, theo đúng thứ tự đó; để trống là không hiện.
+   Thay cho PERF_SHOW — danh sách 20 tên CỨNG TRONG CODE, nên mỗi lần đổi dự án là phải sửa code
+   rồi deploy, mà người nắm danh sách lại là PMO chứ không phải người sửa app.
+   Dò rộng vài cách viết: file do nhiều người gõ, ép đúng một chữ thì hụt là im lặng không hiện gì.
+   KHÔNG đụng STT_RE: cột STT sẵn có đánh 1..58 cho MỌI dòng theo ABC nên không dùng chọn được. */
+const HIEN_RE = /thứ tự hiện|thu tu hien|thứ tự hiển thị|thu tu hien thi|thứ tự hiển|stt hiện|stt hien|^hiện$|^hien$/i;
 
-type Detect = { hr: number; nameCol: number; sttCol: number; revCols: number[]; nsCols: number[]; score: number };
+type Detect = { hr: number; nameCol: number; sttCol: number; hienCol: number; revCols: number[]; nsCols: number[]; score: number };
 function detectHeader(rows: unknown[][]): Detect | null {
   let best: Detect | null = null;
   for (let hr = 0; hr < Math.min(rows.length, 14); hr++) {
     const L = (rows[hr] || []).map((c) => (c == null ? "" : String(c).trim().toLowerCase()));
-    let nameCol = -1, sttCol = -1; const revCols: number[] = [], nsCols: number[] = [];
-    L.forEach((h, i) => { if (!h) return; if (NS_RE.test(h)) nsCols.push(i); else if (REV_RE.test(h)) revCols.push(i); });
+    let nameCol = -1, sttCol = -1, hienCol = -1; const revCols: number[] = [], nsCols: number[] = [];
+    // "Thứ tự hiện" dò TRƯỚC: nó là cột chọn, không phải cột số liệu, nên không được rơi vào rev/ns.
+    L.forEach((h, i) => { if (h && hienCol < 0 && HIEN_RE.test(h)) hienCol = i; });
+    L.forEach((h, i) => { if (!h || i === hienCol) return; if (NS_RE.test(h)) nsCols.push(i); else if (REV_RE.test(h)) revCols.push(i); });
     L.forEach((h, i) => { if (nameCol < 0 && NAME_RE.test(h)) nameCol = i; if (sttCol < 0 && STT_RE.test(h)) sttCol = i; });
     if (nameCol >= 0 && revCols.length >= 1 && nsCols.length >= 1) {
       const score = revCols.length + nsCols.length;
-      if (!best || score > best.score) best = { hr, nameCol, sttCol, revCols, nsCols, score };
+      if (!best || score > best.score) best = { hr, nameCol, sttCol, hienCol, revCols, nsCols, score };
     }
   }
   return best;
@@ -204,7 +230,7 @@ function sheetPriority(n: string): number {
 }
 /** Parse LINH HOẠT theo tiêu đề — duyệt sheet THEO ƯU TIÊN, lấy sheet ĐẦU TIÊN parse được (≥1 dự án).
  *  → File có "Pivot (2)" thì chọn đúng nó; file bất kỳ (tên/sheet khác) vẫn nhận nếu format hợp lý. */
-function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { projects: Proj[]; sheet: string } | null {
+export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { projects: Proj[]; sheet: string } | null {
   const names = [...wb.SheetNames].sort((a, b) => sheetPriority(a) - sheetPriority(b) || wb.SheetNames.indexOf(a) - wb.SheetNames.indexOf(b));
   for (const name of names) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as unknown[][];
@@ -236,18 +262,32 @@ function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx"))
       const row = rows[r] || []; const nmv = row[d.nameCol];
       const nameS = nmv == null ? "" : String(nmv).trim(); if (!nameS) continue;
       if (/grand total|tổng cộng|^total$|^tổng$/i.test(nameS)) continue;
+
+      /* Ô "Thứ tự hiện" — ĐỌC TRƯỚC bộ lọc STT bên dưới. Nếu đọc sau thì dòng nào không có STT và
+         cũng không nằm trong PERF_SHOW đã bị bỏ mất rồi, tức anh Tiến gõ số vào đó mà dự án vẫn
+         KHÔNG hiện, lại không có dấu hiệu gì báo vì sao. Gõ số là ý định rõ ràng, phải thắng.
+         Chấp cả số lẫn chuỗi số ("3" gõ vào ô định dạng text là chuyện thường). Chỉ nhận số DƯƠNG:
+         0 hay chữ coi như bỏ trống, tức không hiện. */
+      let hien: number | undefined;
+      if (d.hienCol >= 0) {
+        const hv = row[d.hienCol];
+        const n = typeof hv === "number" ? hv : (typeof hv === "string" && hv.trim() ? Number(hv.trim().replace(/,/g, "")) : NaN);
+        if (Number.isFinite(n) && n > 0) hien = n;
+      }
+
       let no: number;
       if (sttCol >= 0) {
         const sv = row[sttCol];
         if (typeof sv === "number") no = sv;                       // có STT → lấy theo STT
-        // KHÔNG có STT: bình thường là dòng phụ / dòng tổng → bỏ. NGOẠI LỆ: tên nằm trong PERF_SHOW.
+        // KHÔNG có STT: bình thường là dòng phụ / dòng tổng → bỏ. NGOẠI LỆ: có gõ "Thứ tự hiện",
+        // hoặc tên nằm trong PERF_SHOW.
         // File tuần chỉ đánh STT cho các nhóm ĐANG hiện; muốn thêm dự án mới vào lưới mà phải chờ
         // người làm file đánh thêm số thì thêm không nổi. Dòng tổng ("TỔNG", "(−) OEM"…) không bao
         // giờ trùng tên trong PERF_SHOW nên vẫn bị loại.
-        else if (SHOW_KEYS.includes(keyName(nameS))) no = 1000 + projs.length;
+        else if (hien != null || SHOW_KEYS.includes(keyName(nameS))) no = 1000 + projs.length;
         else continue;
       } else no = projs.length + 1;
-      projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) });
+      projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])), ...(hien != null ? { hien } : {}) });
     }
     if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name };   // sheet ưu tiên cao NHẤT parse được
   }
@@ -778,11 +818,16 @@ export function PerfChartApp() {
   const latestIdx = useMemo(() => latestMonth(projs, nm), [projs, nm]);
   // Tháng đang xem cho KDA — mặc định tháng mới nhất; người dùng chọn được ở bộ lọc góc phải.
   const rm = rankMonth != null && rankMonth < nm ? rankMonth : latestIdx;
-  // XU HƯỚNG (20 mini): 2 tầng — có-data trước, rỗng sau, tên tự nhiên (để dự án rỗng không chen lên).
-  // HIỆN ĐÚNG 20 DỰ ÁN trong PERF_SHOW, THEO ĐÚNG THỨ TỰ đó (không xếp lại theo số liệu).
+  /* XU HƯỚNG (lưới mini): DANH SÁCH VÀ THỨ TỰ LẤY TỪ CỘT "THỨ TỰ HIỆN" TRONG FILE NGUỒN.
+     Anh Tiến chốt 07/10/2026: gõ 1, 2, 3… vào dòng nào thì dự án đó lên lưới theo đúng số đó, để
+     trống là không hiện — khỏi phải nhờ sửa code mỗi lần đổi dự án.
+
+     KHÔNG AI GÕ SỐ NÀO thì lùi về PERF_SHOW như cũ. Cần đường lùi này vì file hiện tại chưa có cột
+     đó: không có nó thì ngay lượt nạp đầu tiên lưới trắng bong, mà lưới trắng còn tệ hơn danh sách
+     cũ. Hễ có DÙ CHỈ MỘT dòng được gõ số là chuyển hẳn sang cột đó — nửa nọ nửa kia thì không ai
+     lần ra được vì sao một dự án hiện hay không hiện. */
   const ordered = useMemo<ProjV[]>(() => {
-    const byKey = new Map(projs.map((p) => [keyName(p.name), p] as const));
-    const list = SHOW_KEYS.map((k) => byKey.get(k)).filter((p): p is Proj => !!p && !PERF_EXCLUDE.test(keyName(p.name)))
+    const list = chonHien(projs).filter((p) => !PERF_EXCLUDE.test(keyName(p.name)))
       // Nguyên tắc loại trừ tháng âm — CHỈ ở tab này (xem absorbNegBack). Hai tab kia đọc thẳng
       // projs nên vẫn giữ nguyên số của file.
       .map((p) => ({ ...p, rev: absorbNegBack(p.rev), vung: vungVN(lookupRegion(regionMap, p.name) || PERF_REGION[keyName(p.name)] || "") }));
