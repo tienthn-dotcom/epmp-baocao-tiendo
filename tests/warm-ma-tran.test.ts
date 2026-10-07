@@ -29,11 +29,13 @@ type SoMoc = Record<string, { ts?: number; bam?: string }>;
 type KhoWarm = {
   mocGanNhat(now: number): number;
   pdfArgs(p: O): { gid?: string; range?: string };
-  ghiNeuKhac(kv: KvGia, so: SoMoc, key: string, b64: string, hanHet?: number): Promise<boolean>;
+  ghiNeuKhac(kv: KvGia, so: SoMoc, key: string, bytes: Uint8Array, hanHet?: number): Promise<boolean>;
   warmMaTran(env: { PMO_EDITS: KvGia }): Promise<O>;
   warmOne(kv: KvGia, id: string, so: SoMoc, han: Map<string, number>): Promise<boolean>;
+  toB64(bytes: Uint8Array): string;
   WARM_TTL_S: number;
   WARM_MOI_LUOT: number;
+  MATRAN_GHI_MOI_LUOT: number;
 };
 
 /* ── KV GIẢ: đếm ĐÚNG số lượt ghi, vì đó là con số cả bài này nói về ───────────── */
@@ -59,6 +61,7 @@ let kho: KhoWarm;
 let soLuotTai = 0;
 let noiDungPdf = "PDF-A";
 let noiDungTab = "T1";
+let demB64 = 0;             // số lần base64 THẬT SỰ chạy — phần đắt nhất của một lượt warm
 let htmlTraRong = false;    // giả lập file .xlsx — không có trang /htmlview nên tra gid ra rỗng
 let urlDaGoi: string[] = [];
 /* KHUÔN THẬT của trang /htmlview: khoá KHÔNG ngoặc kép, gid nằm sau pageUrl. Lấy nguyên dạng từ
@@ -70,9 +73,12 @@ beforeAll(() => {
     .split(/\r?\n/).filter((l) => !/^import\s/.test(l)).join("\n")
     .replace("export default {", "const _handler = {");
 
-  const taoKho = new Function("fetch", "unzipSync", "zipSync", "strFromU8", "puppeteer", `
+  /* `btoa` nhận vào qua THAM SỐ nên nó che hẳn bản toàn cục bên trong mã warmer. Nhờ vậy đếm được
+     số lần base64 thật sự chạy — không gán đè được từ ngoài, vì ghiNeuKhac gọi `toB64` trong
+     closure của chính nó chứ không qua object trả về. */
+  const taoKho = new Function("fetch", "btoa", "unzipSync", "zipSync", "strFromU8", "puppeteer", `
     ${src}
-    return { mocGanNhat, pdfArgs, ghiNeuKhac, warmMaTran, warmOne, docSoMoc, WARM_TTL_S, WARM_MOI_LUOT };
+    return { mocGanNhat, pdfArgs, ghiNeuKhac, warmMaTran, warmOne, docSoMoc, toB64, WARM_TTL_S, WARM_MOI_LUOT, MATRAN_GHI_MOI_LUOT };
   `) as (...a: unknown[]) => KhoWarm;
 
   /* fetch giả — phục vụ ba đường mà warmer gọi ra ngoài:
@@ -91,7 +97,8 @@ beforeAll(() => {
     if (u.includes("format=pdf")) return tra("%PDF-1.4 " + noiDungPdf);
     return tra(u.includes("&gid=") ? "XLSX-MOT-TAB " + noiDungTab : "XLSX-CA-FILE " + noiDungTab);
   };
-  kho = taoKho(fetchGia, () => ({}), () => new Uint8Array(), () => "", {});
+  const btoaDem = (s: string) => { demB64++; return Buffer.from(s, "binary").toString("base64"); };
+  kho = taoKho(fetchGia, btoaDem, () => ({}), () => new Uint8Array(), () => "", {});
 });
 
 /* Dựng mốc từ giờ VN → UTC ms (VN = UTC+7). */
@@ -143,31 +150,35 @@ describe("vùng PDF tính y như app", () => {
   }
 });
 
+/** Chuỗi → byte. ghiNeuKhac nhận BYTE THÔ: nó băm byte rồi mới base64, và chỉ base64 ở nhánh
+ *  thật sự ghi — xem bamByte trong warmer. */
+const by = (t: string) => new TextEncoder().encode(t);
+
 describe("nội dung y nguyên thì KHÔNG tốn lượt ghi", () => {
   it("lần đầu ghi, lần hai y nguyên thì bỏ qua", async () => {
     const kv = new KvGia(); const so: SoMoc = {};
     const han = Math.floor(Date.now() / 1000) + kho.WARM_TTL_S;      // còn hạn dài, không phải gia hạn
-    expect(await kho.ghiNeuKhac(kv, so, "spdf2:x::", "AAA", han)).toBe(true);
+    expect(await kho.ghiNeuKhac(kv, so, "spdf2:x::", by("AAA"), han)).toBe(true);
     expect(kv.soLuotGhi).toBe(1);
-    expect(await kho.ghiNeuKhac(kv, so, "spdf2:x::", "AAA", han)).toBe(false);
+    expect(await kho.ghiNeuKhac(kv, so, "spdf2:x::", by("AAA"), han)).toBe(false);
     expect(kv.soLuotGhi).toBe(1);                                     // vẫn 1 — đây là cả mục đích
   });
 
   it("nội dung ĐỔI thì ghi", async () => {
     const kv = new KvGia(); const so: SoMoc = {};
     const han = Math.floor(Date.now() / 1000) + kho.WARM_TTL_S;
-    await kho.ghiNeuKhac(kv, so, "k", "AAA", han);
-    expect(await kho.ghiNeuKhac(kv, so, "k", "BBB", han)).toBe(true);
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), han);
+    expect(await kho.ghiNeuKhac(kv, so, "k", by("BBB"), han)).toBe(true);
     expect(kv.soLuotGhi).toBe(2);
   });
 
   it("mốc vào sổ KỂ CẢ khi không ghi giá trị — nếu không app lại coi là cũ rồi tự tải lại", async () => {
     const kv = new KvGia(); const so: SoMoc = {};
     const han = Math.floor(Date.now() / 1000) + kho.WARM_TTL_S;
-    await kho.ghiNeuKhac(kv, so, "k", "AAA", han);
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), han);
     const truoc = so["k"].ts!;
     await new Promise((r) => setTimeout(r, 5));
-    await kho.ghiNeuKhac(kv, so, "k", "AAA", han);
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), han);
     expect(so["k"].ts!).toBeGreaterThan(truoc);
   });
 
@@ -176,14 +187,32 @@ describe("nội dung y nguyên thì KHÔNG tốn lượt ghi", () => {
   it("sắp hết hạn thì ghi dù y nguyên — cache không được phép biến mất", async () => {
     const kv = new KvGia(); const so: SoMoc = {};
     const conDai = Math.floor(Date.now() / 1000) + kho.WARM_TTL_S;
-    await kho.ghiNeuKhac(kv, so, "k", "AAA", conDai);
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), conDai);
     const sapHet = Math.floor(Date.now() / 1000) + 3600;              // còn 1 tiếng
-    expect(await kho.ghiNeuKhac(kv, so, "k", "AAA", sapHet)).toBe(true);
+    expect(await kho.ghiNeuKhac(kv, so, "k", by("AAA"), sapHet)).toBe(true);
   });
 
   it("chưa có hạn (khoá mới) thì ghi", async () => {
     const kv = new KvGia(); const so: SoMoc = { k: { ts: Date.now(), bam: "x" } };
-    expect(await kho.ghiNeuKhac(kv, so, "k", "AAA", undefined)).toBe(true);
+    expect(await kho.ghiNeuKhac(kv, so, "k", by("AAA"), undefined)).toBe(true);
+  });
+
+  /* ĐÂY LÀ CA LÀM CHẾT WORKER THẬT. Bản đầu base64 MỌI ô rồi mới băm chuỗi đó để so — tức làm phần
+     đắt nhất cho cả ô lát nữa phát hiện y nguyên và vứt đi. Gọi thử trên live 07/10/2026 ra đúng
+     `error code: 1102` (worker vượt tài nguyên).
+
+     Gác bằng cách ĐẾM: cho toB64 báo mỗi lần bị gọi. Ô y nguyên mà vẫn gọi base64 là sai. */
+  it("ô y nguyên thì KHÔNG base64 — đó mới là phần đắt", async () => {
+    const kv = new KvGia(); const so: SoMoc = {};
+    const han = Math.floor(Date.now() / 1000) + kho.WARM_TTL_S;
+
+    demB64 = 0;
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), han);     // lần đầu: phải base64 để ghi
+    expect(demB64).toBeGreaterThan(0);
+
+    const sauLanDau = demB64;
+    await kho.ghiNeuKhac(kv, so, "k", by("AAA"), han);     // y nguyên: KHÔNG được base64 nữa
+    expect(demB64).toBe(sauLanDau);
   });
 });
 

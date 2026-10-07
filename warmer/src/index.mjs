@@ -102,15 +102,27 @@ const SO_MOC_KEY = "warm:moc:v1";
 const WARM_TTL_S = 10 * 86_400;
 const NGUONG_GIA_HAN_S = 2 * 86_400;   // còn sống dưới 2 ngày → ghi lại để gia hạn, kể cả y nguyên
 
-/* BĂM NGẮN nội dung đã base64. CHỈ 256KB ĐẦU + độ dài thật: băm trọn bản 2MB là đốt CPU ở đúng chỗ
-   đã từng chết (trần ~2.010.000µs mỗi lượt Worker). Hai bản trùng cả 256KB đầu LẪN độ dài mà vẫn
-   khác nhau thì bị coi là một — chấp nhận, vì hụt một lượt warm thì app vẫn tự làm mới khi ai mở. */
+/* BĂM TRÊN BYTE THÔ, KHÔNG TRÊN CHUỖI BASE64 — và băm TRƯỚC khi base64.
+
+   Bản đầu làm ngược: base64 cả 21 ma trận rồi mới băm chuỗi đó để so. Gọi thử trên live
+   07/10/2026 ra ĐÚNG lỗi đã lường: `error code: 1102` (worker vượt tài nguyên). Base64 là chỗ
+   đắt nhất trong cả lượt — nó dựng chuỗi dài gấp 4/3 lần file rồi `btoa` — mà làm nó cho MỌI ô,
+   kể cả ô lát nữa phát hiện là y nguyên và vứt đi.
+
+   Nay đảo thứ tự: băm byte thô → trùng thì DỪNG, không base64, không ghi. Ngày thường hầu hết ô
+   không đổi nên cả lượt gần như chỉ còn phần tải. Băm byte cũng rẻ hơn băm chuỗi vì khỏi
+   TextEncoder dựng lại 256KB.
+
+   CHỈ 256KB ĐẦU + độ dài thật: băm trọn bản 2MB là đốt CPU ở đúng chỗ đã từng chết. Hai bản trùng
+   cả 256KB đầu LẪN độ dài mà vẫn khác nhau thì bị coi là một — chấp nhận, vì hụt một lượt warm
+   thì app vẫn tự làm mới khi ai mở. */
 const CAT_BAM = 262_144;
-async function bamNgan(s) {
+async function bamByte(bytes) {
   try {
-    const mau = s.length + ":" + (s.length > CAT_BAM ? s.slice(0, CAT_BAM) : s);
-    const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(mau)));
-    let h = ""; for (let i = 0; i < 8; i++) h += d[i].toString(16).padStart(2, "0");
+    const than = bytes.length > CAT_BAM ? bytes.subarray(0, CAT_BAM) : bytes;
+    const d = new Uint8Array(await crypto.subtle.digest("SHA-256", than));
+    let h = String(bytes.length) + "-";
+    for (let i = 0; i < 6; i++) h += d[i].toString(16).padStart(2, "0");
     return h;
   } catch { return ""; }
 }
@@ -120,15 +132,16 @@ async function docSoMoc(kv) {
   catch { return {}; }
 }
 
-/** GHI GIÁ TRỊ CHỈ KHI KHÁC bản cũ (hoặc sắp hết hạn); mốc thì LUÔN vào sổ. Trả về true nếu đã ghi. */
-async function ghiNeuKhac(kv, so, key, b64, hanHet) {
-  const bam = await bamNgan(b64);
+/** GHI GIÁ TRỊ CHỈ KHI KHÁC bản cũ (hoặc sắp hết hạn); mốc thì LUÔN vào sổ. Trả về true nếu đã ghi.
+ *  Nhận BYTE THÔ — base64 chỉ chạy ở nhánh thật sự ghi (xem ghi chú ở bamByte). */
+async function ghiNeuKhac(kv, so, key, bytes, hanHet) {
+  const bam = await bamByte(bytes);
   const cu = so[key];
   const bayGio = Math.floor(Date.now() / 1000);
   const sapHetHan = !hanHet || hanHet - bayGio < NGUONG_GIA_HAN_S;
-  so[key] = { ts: Date.now(), bam };
+  so[key] = { ...(cu || {}), ts: Date.now(), bam };
   if (cu && bam && cu.bam === bam && !sapHetHan) return false;
-  await kv.put(key, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: WARM_TTL_S });
+  await kv.put(key, JSON.stringify({ b64: toB64(bytes), ts: Date.now() }), { expirationTtl: WARM_TTL_S });
   return true;
 }
 
@@ -193,7 +206,7 @@ async function warmOne(kv, id, so, han) {
     try { bytes = extractSummaryXlsx(raw); }
     catch { bytes = new Uint8Array(raw); }
   }
-  const daGhi = await ghiNeuKhac(kv, so, key, toB64(bytes), han.get(key));
+  const daGhi = await ghiNeuKhac(kv, so, key, bytes, han.get(key));
   if (gid && so[key]) so[key].gid = gid;      // nhớ gid cho lượt sau, khỏi hỏi /htmlview lại
   return daGhi;
 }
@@ -213,6 +226,10 @@ async function warmOne(kv, id, so, han) {
    nó tự tải, nên lệch là lệch âm thầm. */
 const INSTALL_LIST_KEY = "mtld:install:list:v2";
 const MATRAN_NGAN_SACH_MS = 20_000;
+/* Ô THẬT SỰ GHI tối đa mỗi lượt. Chặn ở đây chứ không ở số ô đã xem, vì ô y nguyên gần như không
+   tốn gì còn ô đổi mới phải base64. Con số 6 là để lượt gọi NẶNG NHẤT (sổ trống, ô nào cũng coi là
+   đổi) vẫn lọt — cứ đọc cờ `dayGhi` trong log mà điều, ĐỪNG đoán. */
+const MATRAN_GHI_MOI_LUOT = 6;
 
 /** KHỚP pdfArgsOf trong src/lib/app-shell.tsx — có gid thì cắt vùng trên tab đó, không thì "Tab!vùng". */
 function pdfArgs(p) {
@@ -233,7 +250,7 @@ async function taiPdf(id, gid, range) {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const bytes = new Uint8Array(await r.arrayBuffer());
   if (bytes.length < 5 || bytes[0] !== 0x25 || bytes[1] !== 0x50) throw new Error("không phải PDF");
-  return toB64(bytes);
+  return bytes;        // BYTE THÔ — base64 để dành cho nhánh thật sự ghi, xem ghi chú ở bamByte
 }
 
 async function warmMaTran(env) {
@@ -255,22 +272,28 @@ async function warmMaTran(env) {
     return (so[key]?.ts ?? 0) < moc;
   });
 
-  let ghi = 0, nguyen = 0, hong = 0, lam = 0, hetGio = false;
+  let ghi = 0, nguyen = 0, hong = 0, lam = 0, hetGio = false, dayGhi = false;
   const lyDo = [];
   const batDau = Date.now();
   for (const p of canLam) {
     if (lam > 0 && Date.now() - batDau > MATRAN_NGAN_SACH_MS) { hetGio = true; break; }
+    /* CHẶN THEO SỐ Ô THẬT SỰ GHI, không theo số ô đã xem.
+       Ô y nguyên gần như không tốn gì (tải + băm byte), còn ô ĐỔI thì phải base64 — đó mới là phần
+       đắt, và là thứ làm lượt gọi đầu tiên ngày 07/10/2026 chết với `error code: 1102`. Lượt đầu
+       sau khi deploy thì sổ trống nên ô nào cũng tính là đổi; chặn ở đây để lượt đó không gãy, mấy
+       ô còn lại để lượt sau làm — sổ đã nhớ nên không làm lại từ đầu. */
+    if (ghi >= MATRAN_GHI_MOI_LUOT) { dayGhi = true; break; }
     lam++;
     const a = pdfArgs(p);
     const key = `spdf2:${p.fileId}:${a.gid ?? ""}:${(a.range ?? "").trim()}`;
     try {
-      const b64 = await taiPdf(p.fileId, a.gid, a.range);
-      if (await ghiNeuKhac(kv, so, key, b64, han.get(key))) ghi++; else nguyen++;
+      const bytes = await taiPdf(p.fileId, a.gid, a.range);
+      if (await ghiNeuKhac(kv, so, key, bytes, han.get(key))) ghi++; else nguyen++;
     } catch (e) { hong++; if (lyDo.length < 3) lyDo.push(`${p.maCT || p.fileId}: ${String(e && e.message || e).slice(0, 90)}`); }
   }
   // MỘT lượt ghi cho cả sổ, dù vừa warm bao nhiêu ô.
   try { await kv.put(SO_MOC_KEY, JSON.stringify(so)); } catch { /* sổ hỏng → app lùi về ts trong giá trị */ }
-  return { tong: o.length, canLam: canLam.length, lam, ghi, nguyen, hong, ...(hetGio ? { hetGio: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
+  return { tong: o.length, canLam: canLam.length, lam, ghi, nguyen, hong, ...(hetGio ? { hetGio: true } : {}), ...(dayGhi ? { dayGhi: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* WARM SUMMARY — CHỈ LÀM FILE SẮP HẾT HẠN, KHÔNG XOAY VÒNG MÙ.
