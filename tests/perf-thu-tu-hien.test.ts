@@ -14,7 +14,11 @@
  */
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { chonHien, docChonHien, parseFlexible, tenHien } from "@/lib/perf-chart-app";
+import { chonHien, docChonHien, parseFlexible, tenHien, PERF_EXCLUDE } from "@/lib/perf-chart-app";
+
+/** Chuan hoa ten y het app (bo dau, gop khoang trang, thuong hoa) de so voi PERF_EXCLUDE. */
+const keyNameTest = (t: string) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
 
 /** Dựng một workbook như file thật: cột STT, tên nhóm, DT từng tháng, NS từng tháng. */
 function dungFile(cotHien: boolean, dong: { stt?: number; ten: string; hien?: number | string }[]) {
@@ -161,6 +165,81 @@ describe("cột ở sheet nào cũng nhận", () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["STT", "Nhóm DA", "DT T1", "NS T1"], [1, "TROPICAL", 1, 1]]), "Pivot (2)");
     expect(docChonHien(wb, XLSX).size).toBe(0);
+  });
+});
+
+/* ── DÒNG TỔNG CỦA BẢNG PIVOT ────────────────────────────────────────────────
+   Anh Tiến 07/10/2026: *"lấy từ bên pivot lại, ra line cuối là line tổng là xong"*.
+   Lấy theo VỊ TRÍ, không dò theo chữ: tên dòng tổng mỗi kỳ gõ một kiểu, trượt một chữ là app im
+   lặng không thấy dòng tổng nào. Nhưng chỉ xét trong số dòng ĐÃ BỊ LOẠI khỏi danh sách dự án —
+   lấy nhầm một dự án làm dòng tổng là dự án đó biến mất khỏi lưới mà không ai hay. */
+describe("dòng tổng lấy từ dòng cuối bảng Pivot", () => {
+  /** Bảng Pivot: cột STT chỉ đánh cho DỰ ÁN; dòng tổng ở đáy để trống STT (đúng như file thật). */
+  function bangCoDongCuoi(tenDongCuoi: string) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["STT", "Nhóm DA", "DT T1", "DT T2", "NS T1", "NS T2"],
+      [1, "TROPICAL PQ", 12_000_000_000, 8_000_000_000, 10, 11],
+      [2, "CHATEAU", 5_000_000_000, 3_000_000_000, 7, 7],
+      [null, tenDongCuoi, 17_000_000_000, 11_000_000_000, 17, 18],
+    ]), "Pivot (2)");
+    return wb;
+  }
+
+  it('dòng cuối KHÔNG mang chữ "Tổng" vẫn được nhận là dòng tổng', () => {
+    const r = parseFlexible(bangCoDongCuoi("KẾT QUẢ CHUNG"), XLSX)!;
+    expect(r.tong).not.toBeNull();
+    expect(r.tong!.rev[0]).toBe(17_000_000_000);
+    expect(r.tong!.ns[1]).toBe(18);
+  });
+
+  it("dòng tổng KHÔNG lọt vào danh sách dự án", () => {
+    const r = parseFlexible(bangCoDongCuoi("KẾT QUẢ CHUNG"), XLSX)!;
+    expect(docTen(r.projects)).toEqual(["TROPICAL PQ", "CHATEAU"]);
+  });
+
+  it('dòng cuối ghi "Grand Total" cũng nhận như thường', () => {
+    const r = parseFlexible(bangCoDongCuoi("Grand Total"), XLSX)!;
+    expect(r.tong!.rev[0]).toBe(17_000_000_000);
+    expect(docTen(r.projects)).toEqual(["TROPICAL PQ", "CHATEAU"]);
+  });
+
+  /* HÀNG RÀO QUAN TRỌNG NHẤT: bảng KHÔNG có dòng tổng thì tuyệt đối không được lấy dự án cuối làm
+     dòng tổng — dự án đó sẽ biến mất khỏi lưới mà chẳng có dấu hiệu gì. */
+  it("bảng KHÔNG có dòng tổng → không nuốt mất dự án cuối", () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["STT", "Nhóm DA", "DT T1", "NS T1"],
+      [1, "TROPICAL PQ", 12_000_000_000, 10],
+      [2, "CHATEAU", 5_000_000_000, 7],
+      [3, "CÁT BÀ", 3_000_000_000, 4],
+    ]), "Pivot (2)");
+    const r = parseFlexible(wb, XLSX)!;
+    expect(docTen(r.projects)).toEqual(["TROPICAL PQ", "CHATEAU", "CÁT BÀ"]);
+    expect(r.tong).toBeNull();
+  });
+});
+
+/* ── DÒNG GOM KHÔNG ĐƯỢC NẰM TRONG BẢNG DỰ ÁN ────────────────────────────────
+   Phát hiện 07/10/2026 khi anh Tiến xem bảng trên localhost: "LOOSE EXPORT", "CÔNG NỢ CŨ",
+   "THIẾT KẾ" nằm lẫn trong bảng như thể là dự án. Nguyên nhân: biểu thức lọc ghi `looses*export`
+   — MẤT DẤU `\`, nên `\s` thành `s*`, tức nó đòi "looseexport" chứ không khớp "loose export" có
+   khoảng trắng. Hỏng im lặng suốt: bảng vẫn chạy, chỉ là có mấy dòng không phải dự án.
+   Đo trên file thật: bản hỏng loại được 2/5 dòng gom. */
+describe("loại dòng gom khỏi bảng dự án", () => {
+  const loc = (ten: string[]) => ten.filter((t) => !PERF_EXCLUDE.test(keyNameTest(t)));
+
+  it("loại đủ cả năm dòng gom có khoảng trắng trong tên", () => {
+    expect(loc(["OEM", "KHÁC", "LOOSE EXPORT", "CÔNG NỢ CŨ", "THIẾT KẾ"])).toEqual([]);
+  });
+
+  it("không loại nhầm dự án thật", () => {
+    const giu = ["TROPICAL PQ", "CHATEAU", "CÁT BÀ", "43 ĐTM", "OLALANI", "TULIP 3", "HYATT HỒ TRÀM"];
+    expect(loc(giu)).toEqual(giu);
+  });
+
+  it("vẫn loại mấy dòng tổng / luỹ kế / claim như trước", () => {
+    expect(loc(["TỔNG", "TỔNG CỘNG", "LUỸ KẾ 2026", "CLAIM ABC"])).toEqual([]);
   });
 });
 

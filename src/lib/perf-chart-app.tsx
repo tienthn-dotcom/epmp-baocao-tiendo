@@ -80,7 +80,12 @@ const PERF_TEN_HIEN: Record<string, string> = {
  *  Chủ nhà chốt: KHÔNG dùng nhóm "OTHERS". Mấy dòng còn lại cùng loại (OEM, Loose Export, công nợ cũ,
  *  thiết kế, "khác") là các khoản bị TRỪ RA hoặc gom việc lẻ — đưa lên lưới "các dự án" là sai bản chất
  *  và còn che mất dự án thật. */
-const PERF_EXCLUDE = /^(others?|oem|looses*export|congs*nos*cu|khac|thiets*ke|tong.*|.*claim.*|luys*ke.*)$/i;
+/*  SỬA LỖI 07/10/2026: bản cũ ghi `looses*export`, `congs*nos*cu`, `thiets*ke`, `luys*ke` — MẤT DẤU
+   `\` nên `\s` thành `s*`, tức nó đòi "looseexport" chứ không khớp "loose export" có khoảng trắng.
+   Hậu quả: ba dòng gom CÔNG NỢ CŨ · LOOSE EXPORT · THIẾT KẾ chưa bao giờ bị loại, cứ nằm trong
+   bảng "Chi tiết dự án" như thể là dự án. Hỏng im lặng: bảng vẫn chạy, chỉ là có mấy dòng không
+   phải dự án. Đo trên file 07/10: bản hỏng loại được 2/5 dòng gom. */
+export const PERF_EXCLUDE = /^(others?|oem|loose\s*export|cong\s*no\s*cu|khac|thiet\s*ke|tong.*|.*claim.*|luy\s*ke.*)$/i;
 /** So tên nhóm: bỏ dấu + gộp khoảng trắng + không phân biệt hoa thường (file gõ mỗi kỳ một kiểu). */
 const keyName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/đ/g, "d").replace(/\s+/g, " ").trim();
@@ -303,21 +308,32 @@ export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("
     }
     const revScale = rawMax > 1e6 ? 1 : rawMax > 0 ? 1e9 : (TY_RE.test(hdrTxt) ? 1e9 : 1);
     const projs: Proj[] = [];
-    /* DÒNG TỔNG CỦA CHÍNH SHEET NÀY — số "toàn khối" lấy thẳng ở đây, KHÔNG cộng lại từ các dòng.
-       Anh Tiến chốt 07/10/2026: *"lấy bên Pivot ấy, nó mới đúng, bạn không cần tính đâu, tôi chỉ
-       cần bạn chọn vùng data từ pivot là được"*.
-       Trước đó app đọc dòng "Sản lượng" ở sheet SLTB. Đo trên file ngày 07/10: hai sheet vênh nhau
-       MỌI THÁNG, từ 1,4 tới 19,9 tỷ (T9: SLTB 352,9 — Pivot 362,8), cả năm lệch 108,2 tỷ; trong khi
-       dòng nhân sự thì khớp tuyệt đối 9/9 tháng. Nên chỗ sai là dòng sản lượng bên SLTB.
-       Đọc ở ĐÂY chứ không dò lại sheet riêng: dùng chung đúng bộ cột `rc`/`nc` và đúng `revScale`
-       mà các dòng dự án đang dùng, nên dòng tổng không thể lệch cột hay lệch đơn vị so với phần
-       còn lại của bảng. */
+    /* DÒNG TỔNG = DÒNG CUỐI CÙNG CỦA BẢNG. Anh Tiến chốt 07/10/2026: *"lấy từ bên pivot lại, ra
+       line cuối là line tổng là xong"*.
+
+       Lấy theo VỊ TRÍ chứ không dò theo chữ. Bản trước dò tên ("Grand Total", "Tổng cộng"…) — mà
+       tên dòng tổng thì mỗi kỳ gõ một kiểu, trượt một chữ là app im lặng không thấy dòng tổng nào,
+       rồi hoặc mất dòng TOÀN KHỐI hoặc tệ hơn: dòng tổng bị đếm nhầm thành một dự án và lọt vào
+       lưới. Vị trí "dòng cuối" thì không có chỗ cho chữ nghĩa xen vào.
+
+       Vẫn GIỮ phép dò theo tên làm lưới an toàn: tên khớp thì nhận ngay dù nó không nằm cuối (file
+       có thể có thêm dòng ghi chú bên dưới).
+
+       Dùng chung đúng bộ cột `rc`/`nc` và đúng `revScale` với các dòng dự án, nên dòng tổng không
+       thể lệch cột hay lệch đơn vị so với phần còn lại của bảng.
+
+       VÌ SAO KHÔNG DÙNG SLTB NỮA: đo file 07/10 thì hai sheet vênh nhau MỌI THÁNG, 1,4 tới 19,9 tỷ
+       (T9: SLTB 352,9 — Pivot 362,8), cả năm 108,2 tỷ, trong khi dòng nhân sự khớp tuyệt đối 9/9
+       tháng. Bảng "Chi tiết dự án" phải khớp với chính các dòng ngay trên nó. */
     let tong: { rev: number[]; ns: number[] } | null = null;
+    let cuoi: { rev: number[]; ns: number[] } | null = null;   // dòng CUỐI CÙNG có tên
+    let tenCuoi = "";                                           // tên của chính dòng đó
     for (let r = d.hr + 1; r < rows.length; r++) {
       const row = rows[r] || []; const nmv = row[d.nameCol];
       const nameS = nmv == null ? "" : String(nmv).trim(); if (!nameS) continue;
+      const soCuaDong = () => ({ rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) });
       if (/grand total|tổng cộng|^total$|^tổng$/i.test(nameS)) {
-        if (!tong) tong = { rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) };
+        if (!tong) tong = soCuaDong();
         continue;
       }
 
@@ -343,10 +359,23 @@ export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("
         // người làm file đánh thêm số thì thêm không nổi. Dòng tổng ("TỔNG", "(−) OEM"…) không bao
         // giờ trùng tên trong PERF_SHOW nên vẫn bị loại.
         else if (hien != null || SHOW_KEYS.includes(keyName(nameS))) no = 1000 + projs.length;
-        else continue;
+        else {
+          /* DÒNG BỊ LOẠI — giữ lại làm ứng viên "dòng tổng". Ghi đè mỗi lần, nên hết vòng lặp thì
+             đây là DÒNG CUỐI CÙNG bị loại, tức dòng tổng ở đáy bảng (xem khối sau vòng lặp).
+             CHỈ nhận trong số dòng BỊ LOẠI, tuyệt đối không đụng tới dòng đã thành dự án: lấy nhầm
+             một dự án làm dòng tổng là dự án đó biến mất khỏi lưới mà không ai hay. */
+          cuoi = soCuaDong(); tenCuoi = nameS;
+          continue;
+        }
       } else no = projs.length + 1;
       projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])), ...(hien != null ? { hien } : {}) });
     }
+    /* DÒNG CUỐI LÀ DÒNG TỔNG — dùng khi phép dò theo tên ở trên không bắt được gì.
+       Chỉ xét trong số dòng ĐÃ BỊ LOẠI khỏi danh sách dự án, nên không thể nuốt mất một dự án.
+       Bảng mà không có dòng tổng nào thì `tong` ở lại null và app tự cộng các dòng — vẫn ra đúng
+       con số của Pivot, chỉ là cộng thay vì đọc. */
+    if (!tong && cuoi) tong = cuoi;
+    void tenCuoi;
     if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name, tong };   // sheet ưu tiên cao NHẤT parse được
   }
   return null;
@@ -946,6 +975,17 @@ export function PerfChartApp() {
     return Array.from({ length: nm }, (_, m) => (ns[m] > 0 ? rev[m] / ns[m] : null));
   }, [projs, nm, block]);
 
+  /* ĐƯỜNG LÙI cho bản lưu CŨ (lưu trước 07/10/2026 nên chưa có dòng tổng Pivot): cộng từ chính các
+     dòng dự án đang bày, bỏ mấy dòng gom (OEM, Loose Export…). Ra đúng con số của Pivot, chỉ là
+     cộng thay vì đọc — nhờ vậy không phải nạp lại file mới thấy dòng TOÀN KHỐI. */
+  const tongCong = useMemo(() => {
+    const co = projs.filter((p) => !PERF_EXCLUDE.test(keyName(p.name)));
+    if (!co.length || !nm) return null;
+    const rev = Array(nm).fill(0), ns = Array(nm).fill(0);
+    co.forEach((p) => { for (let m = 0; m < nm; m++) { rev[m] += p.rev[m] || 0; ns[m] += p.ns[m] || 0; } });
+    return { rev, ns };
+  }, [projs, nm]);
+
   const rowsN = Math.max(1, Math.ceil(ordered.length / COLS));
   const gridItems = useMemo(() => {
     const arr: (ProjV | null)[] = Array(rowsN * COLS).fill(null);
@@ -1227,9 +1267,10 @@ export function PerfChartApp() {
           ) : view === "chitiet" ? (
             <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>SẢN LƯỢNG &amp; NHÂN SỰ TỪNG DỰ ÁN</div>
-              {/* TOAN KHOI o bang nay lay dong tong cua Pivot, KHONG phai SLTB - anh Tien chot
-                  07/10/2026. Chua co dong tong thi de null, bang tu khong hien dong do. */}
-              <BangChiTiet projs={projs} block={tongPivot} nm={nm} regionMap={regionMap} />
+              {/* TOÀN KHỐI ở bảng này lấy DÒNG CUỐI của bảng Pivot, KHÔNG phải SLTB — anh Tiến chốt
+                  07/10/2026. Bản lưu cũ chưa có dòng đó thì cộng từ chính các dòng đang bày: vẫn ra
+                  đúng con số của Pivot, chỉ là cộng thay vì đọc, và khỏi bắt nạp lại file mới thấy. */}
+              <BangChiTiet projs={projs} block={tongPivot ?? tongCong} nm={nm} regionMap={regionMap} />
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>

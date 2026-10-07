@@ -582,6 +582,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.141.0", date: "07/10/2026", items: [
+    "Hiệu suất dự án — dòng TỔNG KHỐI lấy đúng dòng cuối của bảng Pivot.",
+    "SỬA LỖI: ba dòng gộp — CÔNG NỢ CŨ, LOOSE EXPORT, THIẾT KẾ — lâu nay nằm lẫn trong bảng “Chi tiết dự án” như thể là dự án. Nay đã loại.",
+  ] },
   { v: "3.140.0", date: "07/10/2026", items: [
     "Hiệu suất dự án — thẻ để đúng tên trong file nguồn, trừ mấy tên đã chốt đổi từ trước. “KDL ven sông Hàn” nay hiện là “Cosmo Đà Nẵng”. Bảng “Chi tiết dự án” xếp theo số ở cột “STT xuất hiện trên app”.",
   ] },
