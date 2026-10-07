@@ -1,4 +1,5 @@
 import { loiNoi, loiNoiVaGhi } from "@/lib/loi-noi";
+import { BaoCaoNgayDialog } from "@/lib/bao-cao-ngay-app";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -582,6 +583,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.142.0", date: "07/10/2026", items: [
+    "MỚI: Báo cáo tuân thủ hằng ngày. Mở ở Hệ thống ▸ “Tuân thủ báo cáo hằng ngày”. Mỗi dự án ba dòng — Quân số, Thi công lắp đặt, Sản lượng — mỗi ngày một cột dấu, kèm điểm từng hạng mục và điểm trung bình của PM. Bảng cuộn ngang, ghim cột tên dự án. Số liệu đọc thẳng từ file nguồn, app không chấm lại.",
+  ] },
   { v: "3.141.0", date: "07/10/2026", items: [
     "Hiệu suất dự án — dòng TỔNG KHỐI lấy đúng dòng cuối của bảng Pivot.",
     "SỬA LỖI: ba dòng gộp — CÔNG NỢ CŨ, LOOSE EXPORT, THIẾT KẾ — lâu nay nằm lẫn trong bảng “Chi tiết dự án” như thể là dự án. Nay đã loại.",
@@ -4721,6 +4725,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   /* ── BÁO CÁO TUÂN THỦ CẬP NHẬT — theo THÁNG hiện tại. Không ăn theo bộ lọc: đây là
         báo cáo đánh giá PM trên TOÀN BỘ dự án đang chạy. ── */
   const [showCompliance, setShowCompliance] = useState(false);
+  /* Bao cao tuan thu MOI NGAY — hop thoai rieng, nguon rieng. Xem src/lib/bao-cao-ngay-app.tsx. */
+  const [showBcn, setShowBcn] = useState(false);
   /* ?tudong=1 → mở hộp thoại tuân thủ rồi TỰ bấm "Cập nhật bản gửi mail".
      Đường này dành cho warmer: thứ Tư 20:00 VN nó mở app bằng trình duyệt trên mây, vì nút đó
      dựng PDF bằng cách chụp giao diện nên phải có trình duyệt thật.
@@ -5121,6 +5127,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
       {showRoles && <RoleManagerDialog roleMap={roleMap} onClose={() => setShowRoles(false)}
         onSaved={(m) => queryClient.setQueryData(["userRoles"], m)} />}
+      {/* BAO CAO TUAN THU MOI NGAY — nap LUOI khi mo, khong nap san: file nguon rieng, khong
+          lien quan gi toi man hinh chinh. */}
+      {showBcn && <BaoCaoNgayDialog onClose={() => setShowBcn(false)} />}
       {showCompliance && <ComplianceDialog
         data={duLieuTuanThu}
         loading={complianceFileQuery.isLoading}
@@ -5157,6 +5166,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           showCompliance={ff.compliance}
           complianceBadge={complianceReport.duAnTong - complianceReport.duAnDungHan}
           onOpenCompliance={() => { setShowCompliance(true); track("open_compliance"); }}
+          onOpenBcn={() => { setShowBcn(true); track("open_bcn"); }}
           isAdmin={me.isAdmin}
           canXemNhuUser={meThat.isAdmin || roleOf(roleMap, meThat.email ?? "") === "PMO"}
           onXemNhuUser={() => { datXemNhuUser(true); track("xem_nhu_user", "bật"); }}
@@ -9134,13 +9144,15 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
   );
 }
 
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmin, canXemNhuUser, onXemNhuUser, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, onOpenBcn, isAdmin, canXemNhuUser, onXemNhuUser, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
   /** Quyền THẬT (không bị che) — để còn hiện mục "Xem như người dùng thường". */
   canXemNhuUser?: boolean;
   onXemNhuUser?: () => void;
   showCompliance: boolean;
   complianceBadge: number;
   onOpenCompliance: () => void;
+  /** Bao cao tuan thu MOI NGAY — doc file nguon rieng, xem src/lib/bao-cao-ngay-app.tsx. */
+  onOpenBcn?: () => void;
   isAdmin: boolean;
   onOpenActivity: () => void;
   onOpenRoles: () => void;
@@ -9167,6 +9179,8 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, isAdmi
 
   const items: { icon: ReactNode; label: string; badge?: number; badgeAmber?: boolean; active?: boolean; onClick: () => void }[] = [];
   if (showCompliance) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-slate-500" />, label: "Đánh giá tuân thủ", badge: complianceBadge, onClick: onOpenCompliance });
+  /* Bao cao tuan thu MOI NGAY — dat ngay duoi ban thang, cung mot cho, cung mot quyen. */
+  if (showCompliance && onOpenBcn) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-sky-600" />, label: "Tuân thủ báo cáo hằng ngày", onClick: onOpenBcn });
   if (isAdmin && onOpenDataTools) items.push({ icon: <AlertTriangle className="h-4 w-4 text-indigo-500" />, label: "Công cụ dữ liệu (Admin)", badge: qualityIssues, badgeAmber: true, onClick: onOpenDataTools });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });
