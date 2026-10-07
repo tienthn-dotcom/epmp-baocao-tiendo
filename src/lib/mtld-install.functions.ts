@@ -287,6 +287,7 @@ export const recordSummaryFiles = createServerFn({ method: "POST" })
 // Dashboard (sau khi parse installLinks) ĐẨY danh sách này vào KV; app MTLĐ ĐỌC thẳng từ KV →
 // không còn phụ thuộc cầu nối localStorage (ghi/đọc lệch thời điểm, khác tab → trống).
 const INSTALL_LIST_KEY = "mtld:install:list:v2";
+const DEV_INSTALL_LIST_FILE = ".data/pmo-install-list.json";   // chạy ở máy không có KV → ghi/đọc tệp
 
 /**
  * GHI KV chỉ khi nội dung KHÁC bản đang có.
@@ -334,14 +335,29 @@ export const saveInstallList = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
     const kv = await getKv();
     if (kv) { try { await putNeuKhac(kv, INSTALL_LIST_KEY, JSON.stringify(data.list)); } catch { /* KV lỗi → bỏ qua */ } }
+    else {
+      // DEV không có KV — ghi ra tệp, y như các kho khác của app (xem saveMediaProjects).
+      try {
+        const fsp = await import("node:fs/promises");
+        await fsp.mkdir(".data", { recursive: true });
+        await fsp.writeFile(DEV_INSTALL_LIST_FILE, JSON.stringify(data.list, null, 2), "utf8");
+      } catch { /* ghi hụt ở dev cũng không sao */ }
+    }
     return { ok: true };
   });
 export const getInstallList = createServerFn({ method: "POST" })
   .handler(async (): Promise<{ list: InstallListItem[] }> => {
     const kv = await getKv();
-    if (!kv) return { list: [] };
-    try { const raw = await kv.get(INSTALL_LIST_KEY); return { list: raw ? (JSON.parse(raw) as InstallListItem[]) : [] }; }
-    catch { return { list: [] }; }
+    if (kv) {
+      try { const raw = await kv.get(INSTALL_LIST_KEY); return { list: raw ? (JSON.parse(raw) as InstallListItem[]) : [] }; }
+      catch { return { list: [] }; }
+    }
+    /* KHÔNG CÓ KV (chạy ở máy) → đọc tệp. Trước đây chỗ này trả về rỗng thẳng, nên màn MTLĐ ở máy
+       LUÔN trống và không ai xem trước được bản sửa ma trận — phải deploy lên live mới thấy. */
+    try {
+      const fsp = await import("node:fs/promises");
+      return { list: JSON.parse(await fsp.readFile(DEV_INSTALL_LIST_FILE, "utf8")) as InstallListItem[] };
+    } catch { return { list: [] }; }
   });
 
 /** TẢI file Summary về CLIENT — chỉ gửi riêng sheet "Summary" (~170KB) thay vì cả file 2MB.
