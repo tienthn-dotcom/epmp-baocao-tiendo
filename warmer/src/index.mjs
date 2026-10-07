@@ -225,11 +225,22 @@ async function warmOne(kv, id, so, han) {
    một tham số là ra PDF khác, mà khoá cache thì vẫn một — app sẽ bày bản warm chứ không phải bản
    nó tự tải, nên lệch là lệch âm thầm. */
 const INSTALL_LIST_KEY = "mtld:install:list:v2";
-const MATRAN_NGAN_SACH_MS = 20_000;
+const MATRAN_NGAN_SACH_MS = 60_000;
 /* Ô THẬT SỰ GHI tối đa mỗi lượt. Chặn ở đây chứ không ở số ô đã xem, vì ô y nguyên gần như không
-   tốn gì còn ô đổi mới phải base64. Con số 6 là để lượt gọi NẶNG NHẤT (sổ trống, ô nào cũng coi là
-   đổi) vẫn lọt — cứ đọc cờ `dayGhi` trong log mà điều, ĐỪNG đoán. */
-const MATRAN_GHI_MOI_LUOT = 6;
+   tốn gì còn ô đổi mới phải base64.
+
+   SỐ 12 LÀ ĐO ĐƯỢC, không phải đoán. Chạy thật trên live 07/10/2026 (44 ma trận, sổ trống):
+       ghi=12 → lam 12 · ghi 12 · 29,4 giây · không lỗi
+       ghi=12 → lam 12 · ghi 12 · 27,7 giây · không lỗi
+       ghi=16 → lam 12 · ghi 10 · 21,0 giây · 2 ô HTTP 401 (sheet chưa mở chia sẻ)
+   Tức 12 lượt ghi gói trong khoảng 30 giây và không chạm trần tài nguyên. Muốn đổi thì ĐO LẠI
+   bằng cửa tay `…/?matran=1&ghi=<số>&ms=<số>` — chạy thử không cần deploy — rồi mới sửa số này.
+   Cờ `dayGhi` trong log cho biết lượt nào bị chặn ở đây. */
+const MATRAN_GHI_MOI_LUOT = 12;
+/* Số bản tải CÙNG LÚC. Đo 07/10/2026: mỗi bản PDF Google trả về mất khoảng 4 giây, mà chờ mạng
+   không ăn CPU — xếp hàng từng cái thì 44 ô cần hơn 2 phút. Lô nhỏ vì mỗi bản nằm trong bộ nhớ
+   tới lúc băm xong. */
+const MATRAN_SONG_SONG = 6;
 
 /** KHỚP pdfArgsOf trong src/lib/app-shell.tsx — có gid thì cắt vùng trên tab đó, không thì "Tab!vùng". */
 function pdfArgs(p) {
@@ -253,7 +264,10 @@ async function taiPdf(id, gid, range) {
   return bytes;        // BYTE THÔ — base64 để dành cho nhánh thật sự ghi, xem ghi chú ở bamByte
 }
 
-async function warmMaTran(env) {
+/** `dieu` = hai con số điều được từ cửa tay `?matran=1&ghi=…&ms=…`, để ĐO rồi mới chốt hằng số. */
+async function warmMaTran(env, dieu) {
+  const ghiToiDa = (dieu && dieu.ghiToiDa) || MATRAN_GHI_MOI_LUOT;
+  const nganSachMs = (dieu && dieu.nganSachMs) || MATRAN_NGAN_SACH_MS;
   const kv = env.PMO_EDITS;
   if (!kv) return { note: "thiếu KV PMO_EDITS" };
   let list = [];
@@ -275,25 +289,43 @@ async function warmMaTran(env) {
   let ghi = 0, nguyen = 0, hong = 0, lam = 0, hetGio = false, dayGhi = false;
   const lyDo = [];
   const batDau = Date.now();
-  for (const p of canLam) {
-    if (lam > 0 && Date.now() - batDau > MATRAN_NGAN_SACH_MS) { hetGio = true; break; }
+
+  /* TẢI SONG SONG THEO LÔ — vì chỗ tốn là CHỜ MẠNG, không phải CPU.
+     Đo trên live 07/10/2026: tải tuần tự thì 20 giây chỉ xong 5 ô trong 44 (log `lam:5, hetGio`),
+     tức mỗi bản PDF Google trả về mất khoảng 4 giây. Chờ mạng KHÔNG ăn CPU, nên xếp hàng từng cái
+     là phí trắng: 44 ô cần hơn 2 phút, mà một lượt chỉ có chừng ấy ngân sách.
+     Lô nhỏ thôi: mỗi bản PDF nằm trong bộ nhớ tới lúc băm xong, worker có trần bộ nhớ riêng. */
+  const LO = MATRAN_SONG_SONG;
+  for (let i = 0; i < canLam.length; i += LO) {
+    if (i > 0 && Date.now() - batDau > nganSachMs) { hetGio = true; break; }
     /* CHẶN THEO SỐ Ô THẬT SỰ GHI, không theo số ô đã xem.
        Ô y nguyên gần như không tốn gì (tải + băm byte), còn ô ĐỔI thì phải base64 — đó mới là phần
        đắt, và là thứ làm lượt gọi đầu tiên ngày 07/10/2026 chết với `error code: 1102`. Lượt đầu
        sau khi deploy thì sổ trống nên ô nào cũng tính là đổi; chặn ở đây để lượt đó không gãy, mấy
        ô còn lại để lượt sau làm — sổ đã nhớ nên không làm lại từ đầu. */
-    if (ghi >= MATRAN_GHI_MOI_LUOT) { dayGhi = true; break; }
-    lam++;
-    const a = pdfArgs(p);
-    const key = `spdf2:${p.fileId}:${a.gid ?? ""}:${(a.range ?? "").trim()}`;
-    try {
-      const bytes = await taiPdf(p.fileId, a.gid, a.range);
-      if (await ghiNeuKhac(kv, so, key, bytes, han.get(key))) ghi++; else nguyen++;
-    } catch (e) { hong++; if (lyDo.length < 3) lyDo.push(`${p.maCT || p.fileId}: ${String(e && e.message || e).slice(0, 90)}`); }
+    if (ghi >= ghiToiDa) { dayGhi = true; break; }
+
+    const lo = canLam.slice(i, i + LO);
+    const tai = await Promise.all(lo.map(async (p) => {
+      const a = pdfArgs(p);
+      const key = `spdf2:${p.fileId}:${a.gid ?? ""}:${(a.range ?? "").trim()}`;
+      try { return { key, bytes: await taiPdf(p.fileId, a.gid, a.range) }; }
+      catch (e) { return { key, loi: `${p.maCT || p.fileId}: ${String(e && e.message || e).slice(0, 90)}` }; }
+    }));
+
+    // GHI thì LẦN LƯỢT: base64 là phần nặng, chạy song song chỉ dồn bộ nhớ cùng lúc chứ không nhanh hơn.
+    for (const t of tai) {
+      lam++;
+      if (t.loi) { hong++; if (lyDo.length < 3) lyDo.push(t.loi); continue; }
+      if (ghi >= ghiToiDa) { dayGhi = true; continue; }
+      try {
+        if (await ghiNeuKhac(kv, so, t.key, t.bytes, han.get(t.key))) ghi++; else nguyen++;
+      } catch (e) { hong++; if (lyDo.length < 3) lyDo.push(`${t.key}: ${String(e && e.message || e).slice(0, 90)}`); }
+    }
   }
   // MỘT lượt ghi cho cả sổ, dù vừa warm bao nhiêu ô.
   try { await kv.put(SO_MOC_KEY, JSON.stringify(so)); } catch { /* sổ hỏng → app lùi về ts trong giá trị */ }
-  return { tong: o.length, canLam: canLam.length, lam, ghi, nguyen, hong, ...(hetGio ? { hetGio: true } : {}), ...(dayGhi ? { dayGhi: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
+  return { tong: o.length, canLam: canLam.length, lam, ghi, nguyen, hong, giay: Math.round((Date.now() - batDau) / 100) / 10, ...(hetGio ? { hetGio: true } : {}), ...(dayGhi ? { dayGhi: true } : {}), ...(lyDo.length ? { lyDo } : {}) };
 }
 
 /* WARM SUMMARY — CHỈ LÀM FILE SẮP HẾT HẠN, KHÔNG XOAY VÒNG MÙ.
@@ -1068,7 +1100,9 @@ export default {
     /* WARM MA TRẬN NGAY: mở "…/?matran=1". Để kiểm ngay sau khi deploy, khỏi đợi tới 18:00 —
        trả về JSON nói rõ làm mấy ô, ghi mấy ô, mấy ô y nguyên (không tốn lượt ghi) và hỏng ô nào. */
     if (tham.get("matran")) {
-      try { return new Response(JSON.stringify(await warmMaTran(env), null, 2), { headers: { "content-type": "application/json" } }); }
+      /* `ghi` và `ms` để ĐO thử một con số mà không phải deploy lại — xem MATRAN_GHI_MOI_LUOT. */
+      const dieu = { ghiToiDa: Number(tham.get("ghi")) || 0, nganSachMs: Number(tham.get("ms")) || 0 };
+      try { return new Response(JSON.stringify(await warmMaTran(env, dieu), null, 2), { headers: { "content-type": "application/json" } }); }
       catch (e) { return new Response(JSON.stringify({ loi: String(e && e.message || e) }, null, 2), { status: 500, headers: { "content-type": "application/json" } }); }
     }
     /* LÀM SẴN NGÀY SỬA LINK ngay bây giờ: mở "…/?ngaylink=1". Dùng khi vừa đổi danh sách link,
