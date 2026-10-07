@@ -454,7 +454,11 @@ export const listTabGids = createServerFn({ method: "POST" })
 export const getSheetPdf = createServerFn({ method: "POST" })
   // range = "TênSheet!A1:H30"; đã encodeURIComponent khi ghép URL nên chỉ chặn xuống dòng.
   .inputValidator((input) => z.object({ fileId: z.string().min(10).max(120).regex(/^[a-zA-Z0-9_-]+$/), gid: z.string().regex(/^\d+$/).max(30).optional(), range: z.string().max(80).regex(/^[^\n\r]*$/).optional(), force: z.boolean().optional() }).parse(input))
-  .handler(async ({ data }): Promise<{ b64: string; cached: boolean }> => {
+  /* TRẢ KÈM `ts` — MỐC DỮ LIỆU, để giao diện nói được số này tính tới lúc nào.
+     Trước đây chỉ trả b64: người xem KHÔNG có cách nào biết ma trận đang là số hôm nay hay số tuần
+     trước, mà cũng không có cách nào biết lượt làm mới tự động có còn chạy không. Đúng kiểu warmer
+     nằm im từ 01/10 tới 07/10 mà cả tuần không ai hay. */
+  .handler(async ({ data }): Promise<{ b64: string; cached: boolean; ts: number }> => {
     const kv = await getKv();
     const cacheKey = khoaPdf(data.fileId, data.gid, data.range);
     if (kv && !data.force) {
@@ -467,12 +471,12 @@ export const getSheetPdf = createServerFn({ method: "POST" })
           const job = fetchSheetPdf(data.fileId, data.gid, data.range).then((b) => kv.put(cacheKey, JSON.stringify({ b64: b, ts: Date.now() }), { expirationTtl: CACHE_TTL_S })).catch(() => { /* nền */ });
           const wu = await getWaitUntil(); if (wu) wu(job);
         }
-        return { b64, cached: true };
+        return { b64, cached: true, ts: ts || Date.now() };
       }
     }
     const b64 = await fetchSheetPdf(data.fileId, data.gid, data.range);
     if (kv) { try { await kv.put(cacheKey, JSON.stringify({ b64, ts: Date.now() }), { expirationTtl: CACHE_TTL_S }); } catch { /* cache lỗi kệ */ } }
-    return { b64, cached: false };
+    return { b64, cached: false, ts: Date.now() };
   });
 
 // ── VÙNG CỦA TỪNG DỰ ÁN — cầu nối ePMP → các app khác ────────────────────────

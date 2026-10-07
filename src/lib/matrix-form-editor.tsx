@@ -52,7 +52,7 @@ const MFE_CSS = `
 // KIỂU 2 — 7 màu theo LEGEND (ô trống→[0], mã 1→[1] … mã 6→[6]); đọc từ ảnh user gửi (chỉnh lại nếu lệch).
 const STEP7 = ["#A6432E", "#FBF2D5", "#77E7F2", "#5B93D6", "#F4A24A", "#98D34F", "#8B3FD5"];
 
-export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrome, natural, blendText, zoomable, boxResize, onLegend }: {
+export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrome, natural, blendText, zoomable, boxResize, onLegend, onMoc }: {
   fid: string;
   opts: { sheetName?: string; range?: string; tl?: string; br?: string };
   formKey: string;
@@ -65,6 +65,7 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
                                          // khung cuộn (màn Media), vì ô MTLĐ đã co bằng transform rồi
   onLegend?: (rows: { code: string; text: string; color: string }[]) => void;   // chú giải màu đọc TỪ FILE
                                          // (không đọc DOM: admin hay xoá cột legend khỏi bảng cho gọn)
+  onMoc?: (ts: number) => void;          // MỐC DỮ LIỆU của bản vừa tải — để ngoài bày "tính đến lúc nào"
   boxResize?: boolean;                   // KHUNG CHIẾU kéo được: admin kéo mép TRÁI/PHẢI (nới đều 2 bên,
                                          // bảng luôn cân giữa) và mép DƯỚI. Cỡ lưu vào FORM (spec.boxW/boxH)
                                          // → ai mở cũng thấy đúng khung admin đã lưu
@@ -72,6 +73,10 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
   const qc = useQueryClient();
   const formsQuery = useQuery({ queryKey: ["sheetforms"], queryFn: () => getSheetForms(), staleTime: 5 * 60 * 1000 });
   const savedSpec = (formsQuery.data?.forms ?? {})[formKey] as SheetForm | undefined;
+
+  /* Giữ onMoc trong ref: để nó LÀ dependency của effect tải thì mỗi lần cha render lại (cha truyền
+     hàm inline) là tải lại cả ma trận — một lượt gọi Google cho mỗi lần render. */
+  const mocRef = useRef(onMoc); mocRef.current = onMoc;
 
   const [region, setRegion] = useState<LoadedRegion | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -97,7 +102,7 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
   useEffect(() => {
     let off = false; setRegion(null); setErr(null);
     (async () => {
-      try { const r = await loadRegion(fid, opts, force ? true : undefined); if (!off) setRegion(r); }
+      try { const r = await loadRegion(fid, opts, force ? true : undefined); if (!off) { setRegion(r); mocRef.current?.(r.ts); } }
       catch (e) { if (!off) setErr(loiNoi(e)); }
     })();
     return () => { off = true; };

@@ -23,7 +23,8 @@ export function findMarkerRange(rows: (string | number | null)[][], tl: string, 
   return `${colA1(c1)}${r1 + 1}:${colA1(c2)}${r2 + 1}`;
 }
 
-export type LoadedRegion = { sh: WorkSheet; range: string; codeColors: Record<string, string>; name: string };
+/** `ts` = MỐC DỮ LIỆU (lúc bản này được đối chiếu với nguồn), để giao diện nói được số tính tới lúc nào. */
+export type LoadedRegion = { sh: WorkSheet; range: string; codeColors: Record<string, string>; name: string; ts: number };
 
 /** Tải file → parse (cellStyles) → chọn sheet theo tên → dò range (marker hoặc range gõ) → đọc màu-theo-mã.
  *  force=true bỏ cache (bản mới nhất từ Drive). Dùng lại `sh` để render nhiều FORM mà không tải lại. */
@@ -39,5 +40,5 @@ export async function loadRegion(fid: string, opts: { sheetName?: string; range?
   let range = (opts.range ?? "").trim();
   if (opts.tl && opts.br) { const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sh, { header: 1, raw: false, defval: "" }); range = findMarkerRange(rows, opts.tl, opts.br); }
   const cf = await import("@/lib/cf-colors");
-  return { sh, range, codeColors: cf.readCodeColors(bytes, name), name };
+  return { sh, range, codeColors: cf.readCodeColors(bytes, name), name, ts: res.ts || Date.now() };
 }

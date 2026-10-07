@@ -584,6 +584,7 @@ type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
   { v: "3.137.0", date: "07/10/2026", items: [
     "Ma trận tự có số mới mỗi ngày 18 giờ, khỏi bấm “Làm mới”. Trước đây máy chỉ làm sẵn file Summary chứ không làm bản ma trận, lại làm vào lúc 17:30 — sớm hơn mốc 18:00 mà app dùng để tính số mới — nên mở lên vẫn là số hôm qua. Nay máy làm cả bản ma trận, đúng mốc 18 giờ và 20 giờ.",
+    "Mỗi thẻ ma trận hiện mốc dữ liệu ở góc phải: cùng ngày thì hiện giờ, khác ngày thì hiện ngày. Quá một ngày chưa làm mới thì đổi màu vàng để thấy ngay.",
   ] },
   { v: "3.136.0", date: "06/10/2026", items: [
     "Thông báo lỗi nay nói được nguyên nhân. Trước đây nhiều thao tác hỏng chỉ hiện “thất bại: undefined” — không ai biết chuyện gì, kể cả người sửa app. Nay hiện câu mô tả thật, và ghi nguyên con lỗi ra Console để tra ngược.",

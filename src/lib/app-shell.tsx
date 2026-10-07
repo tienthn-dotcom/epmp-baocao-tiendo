@@ -236,6 +236,24 @@ function dedupInstall(arr: InstallProj[]): InstallProj[] {
   for (const p of arr) { const sig = `${p.fileId}|${p.gid || ""}|${p.formKey || ""}`; if (seen.has(sig)) continue; seen.add(sig); out.push(p); }
   return out;
 }
+/* ── MỐC DỮ LIỆU TRÊN THẺ MA TRẬN ────────────────────────────────────────────
+   Máy tự làm mới ma trận mỗi ngày 18:00 và 20:00 (xem MOC_LAM_MOI_VN và warmer/src/index.mjs).
+   Nhưng việc đó CHẠY NGẦM: không bày mốc ra thì người xem không có cách nào biết số đang là của
+   hôm nay hay của tuần trước, mà cũng không ai phát hiện được khi nó ngừng chạy. Đã xảy ra thật:
+   warmer nằm im từ 01/10 tới 07/10/2026, cả tuần không ai hay.
+
+   Bày NGẮN: cùng ngày thì chỉ giờ ("18:02"), khác ngày thì ngày ("05/10"). Chi tiết đầy đủ nằm ở
+   tooltip, khỏi chiếm chỗ trên thẻ. */
+const nhanMoc = (ts: number): string => {
+  const d = new Date(ts), n = new Date();
+  const cungNgay = d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  const p2 = (x: number) => String(x).padStart(2, "0");
+  return cungNgay ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : `${p2(d.getDate())}/${p2(d.getMonth() + 1)}`;
+};
+/* Quá MỘT NGÀY mà chưa làm mới là có chuyện (bình thường mỗi ngày hai lượt) → đổi màu để thấy ngay,
+   chứ không nói gì thêm. Dưới một ngày thì xám như các nhãn phụ khác, không gây chú ý. */
+const mauMoc = (ts: number): string => (Date.now() - ts > 26 * 3600_000 ? "#e0a33e" : "#6b7488");
+
 // Vùng cho bản PDF "có chart" (Google render) — khớp cách dashboard tính: có gid → cắt A1 trên tab đó;
 // không gid → dùng "TênSheet!range".
 const pdfArgsOf = (p: InstallProj): { gid?: string; range?: string } => {
@@ -292,6 +310,9 @@ function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: nu
   const contentRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [scaledH, setScaledH] = useState(0);
+  /* Thẻ dạng PDF lấy mốc thẳng từ lượt gọi; thẻ dạng ma trận nhận qua onMoc (xem MatrixFormEditor). */
+  const [mocMt, setMocMt] = useState(0);
+  const moc = proj.chart ? (pdfQ.data?.ts ?? 0) : mocMt;
   useEffect(() => {
     if (proj.chart) return;
     const box = boxRef.current, content = contentRef.current;
@@ -315,7 +336,9 @@ function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: nu
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4aa6ee", flexShrink: 0 }} />
         <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={proj.name}>{proj.name || proj.maCT || proj.fileId}</span>
         {proj.maCT && <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#6b7488", flexShrink: 0 }}>{proj.maCT}</span>}
-        <Maximize2 className="h-3 w-3" style={{ marginLeft: "auto", color: "#6b7488", flexShrink: 0 }} />
+        {moc ? <span title={`Dữ liệu tính đến ${new Date(moc).toLocaleString("vi-VN")}`}
+          style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600, color: mauMoc(moc), flexShrink: 0 }}>{nhanMoc(moc)}</span> : null}
+        <Maximize2 className="h-3 w-3" style={{ marginLeft: moc ? 6 : "auto", color: "#6b7488", flexShrink: 0 }} />
       </div>
       {proj.chart ? (
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
@@ -337,7 +360,7 @@ function PopupCell({ proj, bump, h, idx, onOpen }: { proj: InstallProj; bump: nu
         <div ref={boxRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarGutter: "stable", background: "#fff" }}>
           <div style={{ height: scaledH || undefined }}>
             <div ref={contentRef} style={{ width: "max-content", transformOrigin: "top left", transform: `scale(${scale})` }}>
-              <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }} formKey={proj.formKey || ""} canEdit={false} force={bump} hideChrome natural />
+              <MatrixFormEditor fid={proj.fileId} opts={{ sheetName: proj.sheet, range: proj.range, tl: proj.tl, br: proj.br }} formKey={proj.formKey || ""} canEdit={false} force={bump} hideChrome natural onMoc={setMocMt} />
             </div>
           </div>
         </div>
