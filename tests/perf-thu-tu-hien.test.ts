@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { chonHien, docChonHien, parseFlexible } from "@/lib/perf-chart-app";
+import { chonHien, docChonHien, parseFlexible, tenHien } from "@/lib/perf-chart-app";
 
 /** Dựng một workbook như file thật: cột STT, tên nhóm, DT từng tháng, NS từng tháng. */
 function dungFile(cotHien: boolean, dong: { stt?: number; ten: string; hien?: number | string }[]) {
@@ -120,10 +120,71 @@ describe("cột ở sheet nào cũng nhận", () => {
     expect(m.get("tropical")).toBe(2);
   });
 
+  /* BỐ CỤC THẬT của sheet SLTB (ảnh anh Tiến gửi 07/10/2026): tiêu đề, chú thích, khối A "TOÀN KHỐI
+     DỰ ÁN" 5 dòng, rồi mới tới khối B "SLTB THEO NHÓM DỰ ÁN ĐANG LÀM" — nơi đặt cột. Tiêu đề khối B
+     nằm sâu trong sheet, nên bộ dò KHÔNG được chặn ở mấy dòng đầu. */
+  it("cột nằm ở khối B, sâu trong sheet → vẫn dò ra", () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["STT", "Nhóm DA", "DT T1", "NS T1"],
+      [1, "TROPICAL PQ", 12_000_000_000, 10],
+      [2, "NAM PHƯƠNG PQ", 8_000_000_000, 7],
+      [3, "CÁT BÀ", 5_000_000_000, 4],
+    ]), "Pivot (2)");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["SẢN LƯỢNG ĐẦU NGƯỜI (SLTB) KHỐI DỰ ÁN 2026"],
+      ["SLTB = Doanh thu ÷ Số nhân sự. Đơn vị: tỷ/người."],
+      ["A. TOÀN KHỐI DỰ ÁN (T1—T9)"],
+      ["Chỉ tiêu", "T1", "T2"],
+      ["Sản lượng KDA (tỷ)", 184.9, 46.7],
+      ["Tổng nhân sự (file BCH)", 244, 244],
+      ["SLTB (tỷ/người)", 0.76, 0.19],
+      ["Tổng nhân sự (số đã công bố)", 240, 240],
+      ["SLTB theo số đã công bố", 0.77, 0.19],
+      ["B. SLTB THEO NHÓM DỰ ÁN ĐANG LÀM (tỷ/người) — 25 nhóm"],
+      ["STT XUẤT HIỆN TRÊN APP", "STT", "Nhóm DA", "T3", "T4"],
+      [10, 1, "CÁT BÀ", 0, 0],
+      [null, 2, "CHATEAU", 0, 0.13],              // chưa đánh số → không hiện
+      [1, 11, "TROPICAL PQ", 1.33, 0],
+      [2, 8, "NAM PHƯƠNG PQ", 1.39, 0],
+    ]), "SLTB (kết quả)");
+    const m = docChonHien(wb, XLSX);
+    expect(m.get("tropical pq")).toBe(1);
+    expect(m.get("nam phuong pq")).toBe(2);
+    expect(m.get("cat ba")).toBe(10);
+    expect(m.has("chateau")).toBe(false);
+    // Cột "STT" thường (1, 11, 8…) KHÔNG được nhầm thành cột chọn.
+    expect(m.get("tropical pq")).not.toBe(11);
+  });
+
   it("file KHÔNG có cột đó → bảng rỗng, không ném", () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["STT", "Nhóm DA", "DT T1", "NS T1"], [1, "TROPICAL", 1, 1]]), "Pivot (2)");
     expect(docChonHien(wb, XLSX).size).toBe(0);
+  });
+});
+
+/* ── TÊN TRÊN THẺ ────────────────────────────────────────────────────────────
+   Anh Tiến 07/10/2026: *"cứ giữ nguyên, trừ cái KDL ven sông hàn -> Cosmo Đà Nẵng, còn lại cứ giữ,
+   cái nào tôi không yêu cầu đổi tên thì 1 khi đánh số cứ mang y nguyên lên là xong"*. */
+describe("tên hiển thị trên thẻ", () => {
+  it("COSMO ĐÀ NẴNG giữ đúng tên file, không còn đổi thành KDL ven sông Hàn", () => {
+    expect(tenHien("COSMO ĐÀ NẴNG")).toBe("COSMO ĐÀ NẴNG");
+    expect(tenHien("COSMO ĐÀ NẴNG")).not.toContain("VEN SÔNG HÀN");
+  });
+
+  it("mấy tên anh Tiến đã yêu cầu đổi thì GIỮ NGUYÊN cách đổi", () => {
+    expect(tenHien("TROPICAL PQ")).toBe("TROPICAL");
+    expect(tenHien("NAM PHƯƠNG PQ")).toBe("NAM PHƯƠNG HOÀNG HẬU");
+    expect(tenHien("MINI HOTEL PQ")).toBe("MINI HOTEL");
+    expect(tenHien("HYATT PQ")).toBe("HYATT PHÚ QUỐC");
+    expect(tenHien("CÁT BÀ")).toBe("CÁT BÀ HH3");
+  });
+
+  it("dự án KHÔNG nằm trong danh sách đổi tên → lên thẻ y nguyên tên file", () => {
+    for (const t of ["OLALANI", "TRỤC ĐÔNG TÂY", "APEC S4", "TIẾN BỘ PLAZA", "43 ĐTM", "TULIP 3"]) {
+      expect(tenHien(t)).toBe(t);
+    }
   });
 });
 

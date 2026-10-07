@@ -582,6 +582,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.140.0", date: "07/10/2026", items: [
+    "Hiệu suất dự án — thẻ để đúng tên trong file nguồn, trừ mấy tên đã chốt đổi từ trước. “KDL ven sông Hàn” nay hiện là “Cosmo Đà Nẵng”. Bảng “Chi tiết dự án” xếp theo số ở cột “STT xuất hiện trên app”.",
+  ] },
   { v: "3.139.0", date: "07/10/2026", items: [
     "Hiệu suất dự án — bảng “Chi tiết dự án” lấy dòng TỔNG KHỐI từ bảng Pivot, khớp với các dòng dự án ngay trên nó. Mấy tab biểu đồ vẫn lấy từ SLTB như cũ.",
     "Cột “STT xuất hiện trên app” đặt ở sheet nào trong file nguồn cũng được — SLTB hay Pivot. Sau khi nạp file, app báo ngay bao nhiêu dự án lên lưới và tên nào gõ số mà không khớp dự án nào.",

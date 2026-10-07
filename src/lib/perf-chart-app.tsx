@@ -54,19 +54,23 @@ const PERF_REGION: Record<string, string> = {
 };
 /** TÊN HIỂN THỊ TRÊN THẺ — chỉ đổi CHỮ, không đụng tới việc khớp.
  *
- *  Thẻ xưa nay lấy thẳng tên nhóm trong file tuần, mà tên đó là tên nội bộ của bên kế toán
- *  ("COSMO ĐÀ NẴNG" cho Khu du lịch ven sông Hàn, "HYATT PQ" cho Hyatt Phú Quốc). Sửa thẳng
- *  PERF_SHOW thì hỏng khớp, vì PERF_SHOW chính là danh sách dò theo tên file.
- *  Khoá = tên file đã chuẩn hoá (keyName). Thiếu khoá thì giữ nguyên tên file. */
+ *  DANH SÁCH ĐÓNG, CHỈ GỒM MẤY TÊN ANH TIẾN ĐÃ YÊU CẦU ĐỔI. Anh Tiến chốt 07/10/2026: *"cái nào
+ *  tôi không yêu cầu đổi tên thì 1 khi đánh số cứ mang y nguyên lên là xong"*. Nên dự án mới được
+ *  đánh số mà không có trong bảng này thì lên thẻ ĐÚNG tên trong file — đừng thêm khoá mới nếu
+ *  anh Tiến không nói.
+ *
+ *  Khoá = tên file đã chuẩn hoá (keyName). Thiếu khoá → giữ nguyên tên file. */
 const PERF_TEN_HIEN: Record<string, string> = {
   "tropical pq": "Tropical",
   "nam phuong pq": "Nam Phương Hoàng Hậu",
   "mini hotel pq": "Mini Hotel",
   "hyatt pq": "Hyatt Phú Quốc",
-  /* Nhóm "COSMO ĐÀ NẴNG" gồm B4.1 · B4.2 · Ponte Apartment · CT25-077 ven sông Hàn — chỉ
-     CT25-077 có doanh thu (đo file T1-T9 ngày 02/10/2026), nên số của thẻ là của ven sông Hàn.
-     Ponte Apartment mà phát sinh doanh thu thì số sẽ gộp vào đây mà tên thẻ không nói ra. */
-  "cosmo da nang": "KDL ven sông Hàn",
+  /* ĐÃ BỎ "cosmo da nang": "KDL ven sông Hàn".
+     Anh Tiến 07/10/2026: *"trừ cái KDL ven sông hàn -> Cosmo Đà Nẵng"*. Tên anh muốn thấy chính là
+     tên trong file, nên bỏ khoá này là thẻ tự hiện "COSMO ĐÀ NẴNG" — khỏi thêm một dòng đổi tên
+     vòng vo về đúng chỗ xuất phát.
+     (Nhóm này gồm B4.1 · B4.2 · Ponte Apartment · CT25-077 ven sông Hàn; đo file T1-T9 ngày
+     02/10/2026 thì chỉ CT25-077 có doanh thu.) */
   /* Nhóm "CÁT BÀ" gồm 3 căn mẫu AATN · HH1 · HH3 — chỉ HH3 có doanh thu. HH1 chạy thì số sẽ
      gộp vào đây. */
   "cat ba": "Cát Bà HH3",
@@ -99,7 +103,7 @@ export function chonHien(projs: readonly Proj[]): Proj[] {
 /** Tên đưa lên thẻ / bảng xếp hạng. Khớp vẫn theo tên file, chỉ chữ hiển thị đổi.
  *  IN HOA HẾT: tên trong file tuần vốn đã viết hoa toàn bộ, nên tên khai tay cũng phải viết hoa,
  *  kẻo trên cùng một lưới có thẻ hoa thẻ thường. Dùng locale "vi" cho chắc phần dấu. */
-const tenHien = (n: string) => (PERF_TEN_HIEN[keyName(n)] ?? n).toLocaleUpperCase("vi");
+export const tenHien = (n: string) => (PERF_TEN_HIEN[keyName(n)] ?? n).toLocaleUpperCase("vi");
 
 // Thang CHUNG cho mini (để so cao thấp giữa các dự án). ĐÁY = 0: từ khi có nguyên tắc loại trừ
 // tháng âm (absorbNegBack) thì không còn cột âm nào, chừa dải −1→0 chỉ tổ phí 1/5 chiều cao.
@@ -237,7 +241,12 @@ export function docChonHien(wb: import("xlsx").WorkBook, XLSX: typeof import("xl
   const map = new Map<string, number>();
   for (const sheet of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, blankrows: false, defval: null }) as unknown[][];
-    for (let hr = 0; hr < Math.min(rows.length, 14); hr++) {
+    /* QUÉT TRỌN SHEET, KHÔNG chặn ở 14 dòng đầu như bộ dò bảng chính.
+       Sheet SLTB thật (anh Tiến gửi 07/10/2026) xếp làm nhiều khối: tiêu đề, chú thích, rồi
+       "A. TOÀN KHỐI DỰ ÁN" 5 dòng, rồi mới tới "B. SLTB THEO NHÓM DỰ ÁN ĐANG LÀM" — nơi đặt cột
+       "STT XUẤT HIỆN TRÊN APP". Dòng tiêu đề khối B đã nằm quanh dòng 11-13; thêm vài dòng vào
+       khối A là vượt 14, và app sẽ lặng lẽ không thấy cột nào. */
+    for (let hr = 0; hr < rows.length; hr++) {
       const L = (rows[hr] || []).map((c) => (c == null ? "" : String(c).trim().toLowerCase()));
       const hienCol = L.findIndex((h) => h && HIEN_RE.test(h));
       if (hienCol < 0) continue;
@@ -731,7 +740,11 @@ function BangChiTiet({ projs, block, nm, regionMap }: {
     const co = projs.filter((p) => !PERF_EXCLUDE.test(keyName(p.name))).map((p) => ({ ...p, vung: vungCua(p) }));
     // Xếp theo VÙNG (Phú Quốc → Bắc → Trung → Nam → Nước ngoài) y như lưới xu hướng; trong vùng thì
     // theo thứ tự PERF_SHOW chủ nhà đã chốt, dự án không có trong đó rơi xuống cuối vùng.
-    const uuTien = (p: Proj) => { const i = SHOW_KEYS.indexOf(keyName(p.name)); return i < 0 ? 9999 : i; };
+    /* THỨ TỰ: số ở cột "STT xuất hiện trên app" đi trước — anh Tiến gõ số nào thì bảng xếp theo số
+       đó, khỏi phải nhớ danh sách cứng trong code. Chưa gõ số thì lùi về thứ tự PERF_SHOW cũ, dự án
+       không có trong đó rơi xuống cuối vùng. Bảng này bê TRỌN các dòng của Pivot (trừ dòng gom), để
+       anh Tiến sửa gì thì sửa thẳng trong Pivot. */
+    const uuTien = (p: Proj) => { if (p.hien != null) return p.hien; const i = SHOW_KEYS.indexOf(keyName(p.name)); return i < 0 ? 9999 : 1000 + i; };
     return co.sort((a, b) => vungRank(a.vung) - vungRank(b.vung) || uuTien(a) - uuTien(b) || a.name.localeCompare(b.name, "vi", { numeric: true }));
   }, [projs, regionMap]);
 
