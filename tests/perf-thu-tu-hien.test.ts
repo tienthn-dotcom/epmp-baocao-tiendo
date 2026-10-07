@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { chonHien, parseFlexible } from "@/lib/perf-chart-app";
+import { chonHien, docChonHien, parseFlexible } from "@/lib/perf-chart-app";
 
 /** Dựng một workbook như file thật: cột STT, tên nhóm, DT từng tháng, NS từng tháng. */
 function dungFile(cotHien: boolean, dong: { stt?: number; ten: string; hien?: number | string }[]) {
@@ -76,6 +76,54 @@ describe("đọc cột Thứ tự hiện", () => {
       { ten: "DỰ ÁN MỚI TINH", hien: 2 },          // chưa ai đánh STT, cũng không có trong PERF_SHOW
     ]);
     expect(docTen(parseFlexible(wb, XLSX)!.projects)).toContain("DỰ ÁN MỚI TINH");
+  });
+});
+
+/* ── CỘT NẰM Ở SHEET KHÁC ────────────────────────────────────────────────────
+   Anh Tiến 07/10/2026: *"bên sheet SLTB tôi sẽ thêm 1 cột nữa ở hàng đầu tiên, là STT xuất hiện
+   trên app"*. Số liệu tháng thì ở sheet Pivot, nên app phải dò cột ở MỌI sheet rồi ghép theo TÊN.
+   Ghim một sheet là anh đặt cột chỗ khác thì app im lặng không nhận — không lỗi, chỉ là lưới không
+   đổi, kiểu hỏng khó lần nhất. */
+describe("cột ở sheet nào cũng nhận", () => {
+  /** Dựng file hai sheet: Pivot mang số liệu, SLTB mang cột chọn — đúng như file thật. */
+  function haiSheet(tenCot: string, chon: [string, number | string][]) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["STT", "Nhóm DA", "DT T1", "NS T1"],
+      [1, "TROPICAL", 12_000_000_000, 10],
+      [2, "CHATEAU", 8_000_000_000, 7],
+      [3, "CÁT BÀ", 5_000_000_000, 4],
+    ]), "Pivot (2)");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Dự án", tenCot],
+      ...chon.map(([t, n]) => [t, n]),
+    ]), "SLTB (kết quả)");
+    return wb;
+  }
+
+  it('nhận đúng tên cột anh Tiến chốt: "STT xuất hiện trên app"', () => {
+    const m = docChonHien(haiSheet("STT xuất hiện trên app", [["TROPICAL", 2], ["CHATEAU", 1]]), XLSX);
+    expect(m.get("tropical")).toBe(2);
+    expect(m.get("chateau")).toBe(1);
+    expect(m.has("cat ba")).toBe(false);
+  });
+
+  it("nhận cả mấy cách viết khác (file do nhiều người gõ)", () => {
+    for (const ten of ["Thứ tự hiện", "STT hiện", "Thu tu hien", "STT xuat hien tren app"]) {
+      expect(docChonHien(haiSheet(ten, [["TROPICAL", 5]]), XLSX).get("tropical")).toBe(5);
+    }
+  });
+
+  it("ghép theo tên KHÔNG phân biệt dấu / hoa thường", () => {
+    const m = docChonHien(haiSheet("STT xuất hiện trên app", [["cat ba", 1], ["TrOpIcAl", 2]]), XLSX);
+    expect(m.get("cat ba")).toBe(1);
+    expect(m.get("tropical")).toBe(2);
+  });
+
+  it("file KHÔNG có cột đó → bảng rỗng, không ném", () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["STT", "Nhóm DA", "DT T1", "NS T1"], [1, "TROPICAL", 1, 1]]), "Pivot (2)");
+    expect(docChonHien(wb, XLSX).size).toBe(0);
   });
 });
 

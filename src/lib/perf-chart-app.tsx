@@ -202,7 +202,7 @@ const STT_RE = /^stt$|số thứ tự|so thu tu|^tt$|^no\.?$|^#$/i;
    rồi deploy, mà người nắm danh sách lại là PMO chứ không phải người sửa app.
    Dò rộng vài cách viết: file do nhiều người gõ, ép đúng một chữ thì hụt là im lặng không hiện gì.
    KHÔNG đụng STT_RE: cột STT sẵn có đánh 1..58 cho MỌI dòng theo ABC nên không dùng chọn được. */
-const HIEN_RE = /thứ tự hiện|thu tu hien|thứ tự hiển thị|thu tu hien thi|thứ tự hiển|stt hiện|stt hien|^hiện$|^hien$/i;
+const HIEN_RE = /thứ tự hiện|thu tu hien|thứ tự hiển|thu tu hien thi|xuất hiện|xuat hien|stt hiện|stt hien|^hiện$|^hien$/i;
 
 type Detect = { hr: number; nameCol: number; sttCol: number; hienCol: number; revCols: number[]; nsCols: number[]; score: number };
 function detectHeader(rows: unknown[][]): Detect | null {
@@ -221,6 +221,42 @@ function detectHeader(rows: unknown[][]): Detect | null {
   }
   return best;
 }
+/** DÒ CỘT "STT xuất hiện trên app" Ở MỌI SHEET → bảng {tên dự án → số}.
+ *
+ *  Anh Tiến 07/10/2026 nói sẽ thêm cột đó vào sheet SLTB; trước đó em đã làm cho sheet Pivot. Nên
+ *  quét HẾT các sheet thay vì ghim một chỗ: anh đặt cột ở đâu app cũng nhận, khỏi phải nhớ đúng
+ *  sheet nào mới ăn. Một cột đặt nhầm sheet mà app im lặng không nhận là kiểu hỏng khó chịu nhất —
+ *  không có lỗi, chỉ là lưới không đổi.
+ *
+ *  GHÉP VỚI DỮ LIỆU THEO TÊN DỰ ÁN (đã bỏ dấu, gộp khoảng trắng — xem keyName), vì số liệu tháng
+ *  nằm ở sheet Pivot còn cột chọn có thể nằm ở sheet khác. Tên bên nào gõ khác bên nào thì ghép
+ *  hụt; chỗ gọi có báo ra tên nào hụt, đừng nuốt lặng.
+ *
+ *  Cột TÊN ở sheet đó: nhận theo NAME_RE như bảng chính, hoặc lùi về cột liền trái cột số. */
+export function docChonHien(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const sheet of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, blankrows: false, defval: null }) as unknown[][];
+    for (let hr = 0; hr < Math.min(rows.length, 14); hr++) {
+      const L = (rows[hr] || []).map((c) => (c == null ? "" : String(c).trim().toLowerCase()));
+      const hienCol = L.findIndex((h) => h && HIEN_RE.test(h));
+      if (hienCol < 0) continue;
+      let nameCol = L.findIndex((h) => h && NAME_RE.test(h));
+      if (nameCol < 0) nameCol = hienCol > 0 ? hienCol - 1 : hienCol + 1;   // lùi: cột liền kề
+      for (let r = hr + 1; r < rows.length; r++) {
+        const row = rows[r] || [];
+        const ten = String(row[nameCol] ?? "").trim();
+        if (!ten) continue;
+        const hv = row[hienCol];
+        const n = typeof hv === "number" ? hv : (typeof hv === "string" && hv.trim() ? Number(hv.trim().replace(/,/g, "")) : NaN);
+        if (Number.isFinite(n) && n > 0 && !map.has(keyName(ten))) map.set(keyName(ten), n);
+      }
+      break;        // mỗi sheet chỉ lấy dòng tiêu đề ĐẦU TIÊN có cột này
+    }
+  }
+  return map;
+}
+
 /** Ưu tiên sheet: Pivot(2) → sheet báo-cáo/pivot khác → sheet thường → sheet thô/chart (Input, Chart…). */
 function sheetPriority(n: string): number {
   if (/pivot\s*\(?\s*2/i.test(n)) return 0;
@@ -230,7 +266,7 @@ function sheetPriority(n: string): number {
 }
 /** Parse LINH HOẠT theo tiêu đề — duyệt sheet THEO ƯU TIÊN, lấy sheet ĐẦU TIÊN parse được (≥1 dự án).
  *  → File có "Pivot (2)" thì chọn đúng nó; file bất kỳ (tên/sheet khác) vẫn nhận nếu format hợp lý. */
-export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { projects: Proj[]; sheet: string } | null {
+export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { projects: Proj[]; sheet: string; tong: { rev: number[]; ns: number[] } | null } | null {
   const names = [...wb.SheetNames].sort((a, b) => sheetPriority(a) - sheetPriority(b) || wb.SheetNames.indexOf(a) - wb.SheetNames.indexOf(b));
   for (const name of names) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as unknown[][];
@@ -258,10 +294,23 @@ export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("
     }
     const revScale = rawMax > 1e6 ? 1 : rawMax > 0 ? 1e9 : (TY_RE.test(hdrTxt) ? 1e9 : 1);
     const projs: Proj[] = [];
+    /* DÒNG TỔNG CỦA CHÍNH SHEET NÀY — số "toàn khối" lấy thẳng ở đây, KHÔNG cộng lại từ các dòng.
+       Anh Tiến chốt 07/10/2026: *"lấy bên Pivot ấy, nó mới đúng, bạn không cần tính đâu, tôi chỉ
+       cần bạn chọn vùng data từ pivot là được"*.
+       Trước đó app đọc dòng "Sản lượng" ở sheet SLTB. Đo trên file ngày 07/10: hai sheet vênh nhau
+       MỌI THÁNG, từ 1,4 tới 19,9 tỷ (T9: SLTB 352,9 — Pivot 362,8), cả năm lệch 108,2 tỷ; trong khi
+       dòng nhân sự thì khớp tuyệt đối 9/9 tháng. Nên chỗ sai là dòng sản lượng bên SLTB.
+       Đọc ở ĐÂY chứ không dò lại sheet riêng: dùng chung đúng bộ cột `rc`/`nc` và đúng `revScale`
+       mà các dòng dự án đang dùng, nên dòng tổng không thể lệch cột hay lệch đơn vị so với phần
+       còn lại của bảng. */
+    let tong: { rev: number[]; ns: number[] } | null = null;
     for (let r = d.hr + 1; r < rows.length; r++) {
       const row = rows[r] || []; const nmv = row[d.nameCol];
       const nameS = nmv == null ? "" : String(nmv).trim(); if (!nameS) continue;
-      if (/grand total|tổng cộng|^total$|^tổng$/i.test(nameS)) continue;
+      if (/grand total|tổng cộng|^total$|^tổng$/i.test(nameS)) {
+        if (!tong) tong = { rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])) };
+        continue;
+      }
 
       /* Ô "Thứ tự hiện" — ĐỌC TRƯỚC bộ lọc STT bên dưới. Nếu đọc sau thì dòng nào không có STT và
          cũng không nằm trong PERF_SHOW đã bị bỏ mất rồi, tức anh Tiến gõ số vào đó mà dự án vẫn
@@ -289,16 +338,22 @@ export function parseFlexible(wb: import("xlsx").WorkBook, XLSX: typeof import("
       } else no = projs.length + 1;
       projs.push({ no, name: nameS, rev: rc.map((c) => toNum(row[c]) * revScale), ns: nc.map((c) => toNum(row[c])), ...(hien != null ? { hien } : {}) });
     }
-    if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name };   // sheet ưu tiên cao NHẤT parse được
+    if (projs.length) return { projects: projs.sort((a, b) => a.no - b.no), sheet: name, tong };   // sheet ưu tiên cao NHẤT parse được
   }
   return null;
 }
-/** Đọc KHỐI A của sheet "SLTB (kết quả)" — bảng tổng của báo cáo tuần:
- *      Chỉ tiêu | T1 | T2 | …
- *      Sản lượng KDA (tỷ) | 184.9 | 46.7 | …
- *      Tổng nhân sự       | 240   | 240  | …
- *  Lấy THẲNG 2 dòng này làm số TOÀN KHỐI, KHÔNG tự cộng lại từ các nhóm — vì doanh thu khối đã trừ OEM
- *  và Loose Export, cộng tay sẽ ra số khác báo cáo. Không tìm thấy sheet/dòng → null (app tự cộng như cũ). */
+/* SO TOAN KHOI CHO CAC TAB BIEU DO - doc dong "San luong" o sheet SLTB.
+ *
+ * Anh Tien 07/10/2026: "SLTB la no da tru gi do de ra so a, lay data cho cac sheet kia tu SLTB,
+ * nhung chi tiet du an thi lay bang pivot vao". Tuc HAI SO KHAC NHAU, CO Y, dung cho hai cho:
+ *   - tab bieu do    -> SLTB, vi so do da tru san phan khong tinh vao khoi;
+ *   - Chi tiet du an -> dong tong cua chinh sheet Pivot (xem `tong` trong parseFlexible), de dong
+ *     TOAN KHOI khop voi cac dong du an ngay ben tren no.
+ *
+ * DUNG GOP LAI LAM MOT. Do tren file 07/10: SLTB thap hon tong Pivot o MOI thang (ca nam 108,2
+ * ty; T9 la 352,9 so voi 362,8) trong khi dong nhan su khop tuyet doi 9/9 thang. Lech nay la
+ * THAT va co chu y, khong phai loi.
+ */
 function parseBlockTotals(wb: import("xlsx").WorkBook, XLSX: typeof import("xlsx")): { rev: number[]; ns: number[] } | null {
   const name = wb.SheetNames.find((n) => /sltb/i.test(n)); if (!name) return null;
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: null }) as unknown[][];
@@ -764,6 +819,9 @@ export function PerfChartApp() {
   const [projs, setProjs] = useState<Proj[]>([]);
   /** TOÀN KHỐI đọc thẳng từ khối A sheet "SLTB (kết quả)" — số CHUẨN của báo cáo tuần. */
   const [block, setBlock] = useState<{ rev: number[]; ns: number[] } | null>(null);
+  /* Dong tong cua sheet Pivot - RIENG cho bang "Chi tiet du an". Khac `block` (SLTB) mot cach
+     co y, xem ghi chu o parseBlockTotals. */
+  const [tongPivot, setTongPivot] = useState<{ rev: number[]; ns: number[] } | null>(null);
   const [view, setView] = useState<"trend" | "rank" | "percap" | "chitiet">("trend");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -807,6 +865,7 @@ export function PerfChartApp() {
       if (off || !r.data) return;
       setProjs(r.data.projects);
       setBlock(r.data.block ?? null);   // số TOÀN KHỐI của báo cáo (nếu bản lưu có)
+      setTongPivot(r.data.tongPivot ?? null);
       setStatus(`Bản lưu: ${r.data.src || "—"} · ${new Date(r.data.at).toLocaleString("vi-VN")} · bởi ${(r.data.by || "?").split("@")[0]}`);
     }).catch(() => { /* chưa có bản lưu */ });
     return () => { off = true; };
@@ -888,12 +947,13 @@ export function PerfChartApp() {
   }, []);
   useEffect(doNguon, [doNguon]);
 
-  async function apply(list: Proj[], src: string, blk?: { rev: number[]; ns: number[] } | null, duong?: { srcUrl?: string; srcPath?: string }) {
+  async function apply(list: Proj[], src: string, blk?: { rev: number[]; ns: number[] } | null, tong?: { rev: number[]; ns: number[] } | null, duong?: { srcUrl?: string; srcPath?: string }) {
     setProjs(list);
     setBlock(blk ?? null);
+    setTongPivot(tong ?? null);
     const lnm = nmOf(list); const lm = latestMonth(list, lnm);
     try {
-      await savePerfData({ data: { projects: list, block: blk ?? undefined, src, ...duong, devAs: devAsPerf() } });
+      await savePerfData({ data: { projects: list, block: blk ?? undefined, tongPivot: tong ?? undefined, src, ...duong, devAs: devAsPerf() } });
       setStatus(`Đã nạp & LƯU ${list.length} dự án · ${lnm} tháng · mới nhất tháng ${lm + 1} (giữ đến khi cập nhật file mới)`);
     } catch {
       setStatus(`Đã nạp ${list.length} dự án · ${lnm} tháng — nhưng CHƯA lưu (chỉ PMO/admin mới lưu được)`);
@@ -904,9 +964,30 @@ export function PerfChartApp() {
     const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
     const flex = parseFlexible(wb, XLSX);
     const list = flex && flex.projects.length ? flex.projects : parsePositional(wb);
-    const blk = parseBlockTotals(wb, XLSX);   // khối A "SLTB (kết quả)" (nếu file có)
+    /* HAI SỐ TOÀN KHỐI, CỐ Ý KHÁC NHAU — xem ghi chú dài ở parseBlockTotals.
+         blk  = SLTB  → cho các tab biểu đồ (số đã trừ sẵn phần không tính vào khối)
+         tong = Pivot → cho bảng "Chi tiết dự án", để dòng TOÀN KHỐI khớp các dòng ngay trên nó */
+    const blk = parseBlockTotals(wb, XLSX);
+    const tong = flex?.tong ?? null;
+
+    /* CỘT "STT xuất hiện trên app" — dò ở MỌI sheet rồi gắn vào từng dự án theo TÊN.
+       Anh Tiến đặt cột ở sheet SLTB, còn số liệu tháng thì ở sheet Pivot, nên phải ghép theo tên.
+       TÊN NÀO GÕ SỐ MÀ KHÔNG TRA RA DỰ ÁN THÌ PHẢI NÓI: im lặng bỏ qua là anh gõ số xong thấy lưới
+       không đổi mà chẳng biết vì sao — đúng kiểu hỏng khó lần nhất. */
+    const chon = docChonHien(wb, XLSX);
+    const hutTen: string[] = [];
+    if (chon.size) {
+      const coTrongBang = new Set(list.map((p) => keyName(p.name)));
+      for (const [k] of chon) if (!coTrongBang.has(k)) hutTen.push(k);
+      list.forEach((p) => { const v = chon.get(keyName(p.name)); if (v != null) p.hien = v; });
+    }
     if (!list.length) throw new Error('Không nhận dạng được dữ liệu. Cần các cột: Tên dự án · Doanh thu theo tháng · Nhân sự theo tháng. Tải template để làm mẫu.');
-    await apply(list, src, blk, duong);
+    await apply(list, src, blk, tong, duong);
+    if (chon.size) {
+      const n = list.filter((p) => p.hien != null).length;
+      setStatus((v) => `${v} · cột "STT xuất hiện trên app": ${n} dự án lên lưới`
+        + (hutTen.length ? ` · ${hutTen.length} tên gõ số nhưng KHÔNG khớp dự án nào: ${hutTen.slice(0, 5).join(", ")}${hutTen.length > 5 ? "…" : ""}` : ""));
+    }
     doNguon();
     // Nhật ký giám sát: nạp file tuần là thay số cho CẢ KHỐI — phải biết ai nạp, file nào.
     track("perf_import", `${src} — ${list.length} nhóm dự án`);
@@ -1133,7 +1214,9 @@ export function PerfChartApp() {
           ) : view === "chitiet" ? (
             <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", marginBottom: 8, textAlign: "center" }}>SẢN LƯỢNG &amp; NHÂN SỰ TỪNG DỰ ÁN</div>
-              <BangChiTiet projs={projs} block={block} nm={nm} regionMap={regionMap} />
+              {/* TOAN KHOI o bang nay lay dong tong cua Pivot, KHONG phai SLTB - anh Tien chot
+                  07/10/2026. Chua co dong tong thi de null, bang tu khong hien dong do. */}
+              <BangChiTiet projs={projs} block={tongPivot} nm={nm} regionMap={regionMap} />
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>

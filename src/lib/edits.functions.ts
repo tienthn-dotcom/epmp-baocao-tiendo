@@ -1649,7 +1649,7 @@ export type PerfProj = { no: number; name: string; rev: number[]; ns: number[] }
 export type PerfBlock = { rev: number[]; ns: number[] };
 /** srcUrl = link Google Sheet đã dán (mở thẳng). srcPath = đường dẫn file .xlsx trên Drive
  *  (tra ra link tải). Chỉ một trong hai có giá trị, tuỳ lần nạp gần nhất là link hay file. */
-export type PerfData = { projects: PerfProj[]; block?: PerfBlock; src: string; srcUrl?: string; srcPath?: string; at: string; by: string };
+export type PerfData = { projects: PerfProj[]; block?: PerfBlock; tongPivot?: PerfBlock; src: string; srcUrl?: string; srcPath?: string; at: string; by: string };
 
 async function readPerfData(): Promise<PerfData | null> {
   const kv = await getKv();
@@ -1678,6 +1678,12 @@ export const savePerfData = createServerFn({ method: "POST" })
     /** TOÀN KHỐI đọc THẲNG từ sheet "SLTB (kết quả)" khối A (không tự cộng lại từ các nhóm) — để chart
      *  "Sản lượng đầu người khối dự án" khớp ĐÚNG con số trong báo cáo tuần. */
     block: z.object({ rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24) }).optional(),
+    /** TOÀN KHỐI theo DÒNG TỔNG CỦA SHEET PIVOT — riêng cho bảng "Chi tiết dự án", để dòng TOÀN KHỐI
+     *  khớp với các dòng dự án ngay trên nó. KHÁC `block` một cách CỐ Ý: anh Tiến 07/10/2026 nói
+     *  *"SLTB là nó đã trừ gì đó để ra số á, lấy data cho các sheet kia từ SLTB, nhưng chi tiết dự án
+     *  thì lấy bảng pivot vào"*. Đo trên file cùng ngày: SLTB thấp hơn Pivot ở mọi tháng, cả năm
+     *  108,2 tỷ. ĐỪNG gộp hai trường này làm một. */
+    tongPivot: z.object({ rev: z.array(z.number()).max(24), ns: z.array(z.number()).max(24) }).optional(),
     src: z.string().max(200).optional(),
     /* Chỉ nhận link Google Sheet — ô này đi thẳng vào thẻ <a> của mọi người xem, nhận chuỗi
        bất kỳ là mở đường cho link lạ. */
@@ -1687,7 +1693,7 @@ export const savePerfData = createServerFn({ method: "POST" })
   }).parse(input))
   .handler(async ({ data }): Promise<{ data: PerfData }> => {
     if (!((await callerIsAdmin(data.devAs)) || (await callerIsPmo(data.devAs)))) throw new Error("Chỉ admin/OCC mới được cập nhật dữ liệu hiệu suất.");
-    const d: PerfData = { projects: data.projects, block: data.block, src: (data.src ?? "").slice(0, 200), ...((data.srcUrl ?? "") ? { srcUrl: data.srcUrl } : {}), ...((data.srcPath ?? "") ? { srcPath: data.srcPath } : {}), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
+    const d: PerfData = { projects: data.projects, block: data.block, tongPivot: data.tongPivot, src: (data.src ?? "").slice(0, 200), ...((data.srcUrl ?? "") ? { srcUrl: data.srcUrl } : {}), ...((data.srcPath ?? "") ? { srcPath: data.srcPath } : {}), at: new Date().toISOString(), by: (await callerEmail(data.devAs)) ?? "?" };
     await writePerfData(d);
     // MIRROR sang Drive: "Data Source" › DATABASE › Hiệu suất dự án › HieuSuatDuAn_latest.json (ghi đè, bản mới
     // nhất). Best-effort: Drive lỗi/chưa cấu hình → bỏ qua, không chặn KV.
