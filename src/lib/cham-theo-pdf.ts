@@ -36,6 +36,18 @@
 export const HAN_PHUT = 18 * 60;      // 18:00 — trước mốc này là đúng hạn
 export const HET_TRE_PHUT = 20 * 60;  // 20:00 — quá mốc này là không báo cáo
 
+/* ── NGÀY BẮT ĐẦU CHẤM ────────────────────────────────────────────────────────
+   App CHỈ BẮT ĐẦU ghi nhật ký lượt xuất PDF từ 08/10/2026 (commit này). Trước đó nút xuất PDF báo
+   cáo dự án không ghi lại gì cả — không phải người ta không làm, mà là app không nhìn.
+
+   Thiếu mốc này thì luật "ngày đã qua mà không có lượt xuất → x" sẽ quét sạch MỌI ngày trước đó
+   thành x cho MỌI dự án. Một bảng chấm người bỗng dưng toàn điểm liệt vì app mới cắm cảm biến —
+   đó là kiểu sai tệ nhất ở đây: nó nhìn như dữ liệu thật, không ai biết để cãi.
+
+   Ngày trước mốc này luôn trả về `null` (để trống), đừng đổi thành "x". Khi nào chạy đủ lâu và
+   anh Tiến muốn chốt lại mốc thì sửa đúng hằng số này. */
+export const NGAY_BAT_DAU_CHAM = "2026-10-08";
+
 /** Dấu chấm theo lượt xuất PDF. Cùng bộ ký hiệu với file nguồn (xem BcnMark). */
 export type DauPdf = "P" | "o" | "x";
 
@@ -104,10 +116,15 @@ export function daQuaHan(ngay: string, bayGio: number): boolean {
   return bayGio > moc - VN_OFFSET_MS + HET_TRE_PHUT * 60_000;
 }
 
-/** Dấu của một dự án trong một ngày. `null` = chưa tới lúc chấm, để trống. */
-export function dauCuaNgay(bang: BangDau, duAn: string, ngay: string, bayGio: number): DauPdf | null {
+/** Dấu của một dự án trong một ngày. `null` = chưa tới lúc chấm, hoặc trước ngày app bắt đầu ghi.
+ *
+ *  `batDau` để test đổi mốc được; thường thì cứ để mặc định. */
+export function dauCuaNgay(bang: BangDau, duAn: string, ngay: string, bayGio: number, batDau: string = NGAY_BAT_DAU_CHAM): DauPdf | null {
   const co = bang.get(duAn)?.get(ngay);
   if (co) return co;
+  /* TRƯỚC NGÀY APP BẮT ĐẦU GHI thì KHÔNG CHẤM — xem ghi chú ở NGAY_BAT_DAU_CHAM. Kiểm sau khi đã
+     tra bảng: nếu nhật ký lỡ có dòng cũ hơn mốc thì vẫn tôn trọng dòng thật đó. */
+  if (ngay < batDau) return null;
   return daQuaHan(ngay, bayGio) ? "x" : null;
 }
 

@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dauTheoPhut, lucVn, gomLuot, daQuaHan, dauCuaNgay, ngayTrongThang, ghiLuot, khoaDuAn,
-  HAN_PHUT, HET_TRE_PHUT,
+  HAN_PHUT, HET_TRE_PHUT, NGAY_BAT_DAU_CHAM,
 } from "@/lib/cham-theo-pdf";
 
 /** Giờ VN → mốc ISO (UTC). VN = UTC+7, không có giờ mùa hè. */
@@ -95,12 +95,36 @@ describe("ngày chưa qua thì ĐỂ TRỐNG, không phải x", () => {
   it("ngày mai → TRỐNG", () => {
     expect(dauCuaNgay(bang, "CT26-040", "2026-10-09", bayGio("2026-10-08", 23))).toBeNull();
   });
+  /* Ngày phải NẰM SAU mốc app bắt đầu ghi, nếu không lại rơi vào hàng rào ở nhóm dưới. */
   it("ngày hôm qua không xuất → x", () => {
-    expect(dauCuaNgay(bang, "CT26-040", "2026-10-07", bayGio("2026-10-08", 9))).toBe("x");
+    expect(dauCuaNgay(bang, "CT26-040", "2026-10-09", bayGio("2026-10-10", 9))).toBe("x");
   });
   it("có xuất rồi thì lấy dấu đã gom, không đụng tới luật quá hạn", () => {
     const b = gomLuot([{ ts: vn("2026-10-08", 9, 0), duAn: "CT26-040" }]);
     expect(dauCuaNgay(b, "CT26-040", "2026-10-08", bayGio("2026-10-08", 10))).toBe("P");
+  });
+});
+
+/* HÀNG RÀO CHỐNG CHẤM OAN HÀNG LOẠT. App chỉ bắt đầu ghi nhật ký lượt xuất PDF từ 08/10/2026;
+   trước đó nút xuất không ghi lại gì — không phải người ta không làm, mà là app không nhìn.
+   Thiếu hàng rào này thì luật "ngày đã qua mà không xuất → x" quét sạch mọi ngày trước đó thành x
+   cho mọi dự án: một bảng chấm người bỗng toàn điểm liệt, mà nhìn như dữ liệu thật. */
+describe("không chấm ngược về trước ngày app bắt đầu ghi", () => {
+  const bang = gomLuot([]);
+  const bayGio = Date.parse(vn("2026-10-20", 9));
+
+  it("ngày trước mốc → để TRỐNG dù đã qua từ lâu", () => {
+    for (const n of ["2026-09-01", "2026-09-30", "2026-10-07"]) {
+      expect(dauCuaNgay(bang, "CT26-040", n, bayGio)).toBeNull();
+    }
+  });
+  it("đúng ngày mốc trở đi thì chấm bình thường", () => {
+    expect(dauCuaNgay(bang, "CT26-040", NGAY_BAT_DAU_CHAM, bayGio)).toBe("x");
+  });
+  /* Nhật ký lỡ có dòng cũ hơn mốc thì vẫn tôn trọng dòng THẬT đó — mốc chỉ chặn phần SUY RA. */
+  it("có lượt xuất thật trước mốc thì vẫn tính", () => {
+    const b = gomLuot([{ ts: vn("2026-10-01", 9, 0), duAn: "CT26-040" }]);
+    expect(dauCuaNgay(b, "CT26-040", "2026-10-01", bayGio)).toBe("P");
   });
 });
 
