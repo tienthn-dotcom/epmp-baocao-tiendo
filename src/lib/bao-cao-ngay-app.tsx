@@ -20,6 +20,8 @@ import { X, RefreshCw, ExternalLink, AlertTriangle } from "lucide-react";
 import { taiBangCham, BCN_FILE_URL } from "@/lib/bcn-tai";
 import type { BcnDuAn, BcnMark } from "@/lib/bcn-file";
 import { diemPm } from "@/lib/bcn-file";
+import { fetchLuotXuatPdf } from "@/lib/cham-pdf.functions";
+import { gomLuot, dauCuaNgay, NGAY_BAT_DAU_CHAM } from "@/lib/cham-theo-pdf";
 import { loiNoi } from "@/lib/loi-noi";
 import { track } from "@/lib/track";
 
@@ -48,6 +50,35 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
 
   const d = q.data?.data;
   const diemCuaPm = useMemo(() => (d ? diemPm(d.duAn) : new Map<string, number>()), [d]);
+
+  /* ── DẤU SUY RA TỪ LƯỢT XUẤT PDF ───────────────────────────────────────────
+     Anh Tiến 08/10/2026: *"nút xuất PDF TCLĐ của dự án đi, cứ xuất = báo cáo"*.
+     Bày thành MỘT DÒNG RIÊNG dưới ba hạng mục đọc từ file, KHÔNG đè lên dòng "Thi công lắp đặt".
+     Hai nguồn đang chạy song song nên phải nhìn thấy cả hai mới biết chúng có khớp nhau không;
+     đè lên là mất luôn cái đối chứng, mà đây là bảng chấm người. */
+  const thangIso = useMemo(() => {
+    const m = /^(\d{2})\/(\d{4})$/.exec(d?.thangLabel ?? "");
+    return m ? `${m[2]}-${m[1]}` : "";
+  }, [d?.thangLabel]);
+
+  const qPdf = useQuery({
+    queryKey: ["bcn-luot-pdf", thangIso],
+    queryFn: () => fetchLuotXuatPdf({ data: { thang: thangIso } }),
+    enabled: !!thangIso,
+    staleTime: 60_000,
+  });
+  const bangPdf = useMemo(() => gomLuot(qPdf.data?.luot ?? []), [qPdf.data]);
+  /* Mốc "bây giờ" ghim một lần mỗi lần mở: để nó chạy theo đồng hồ thì bảng tự đổi dấu giữa lúc
+     đang xem, mà người xem không hiểu vì sao. */
+  const [bayGio] = useState(() => Date.now());
+  /* Khoá ghép hai bên: mã CT bỏ khoảng trắng, chữ HOA. File chấm và app gõ mã khác kiểu
+     ("CT25-040, 038" vs "CT25-040,038"), còn tên dự án thì khác hẳn nhau nên không ghép theo tên. */
+  const chuanMa = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+  const bangPdfTheoMa = useMemo(() => {
+    const m = new Map<string, Map<string, "P" | "o" | "x">>();
+    for (const [k, v] of bangPdf) m.set(chuanMa(k), v);
+    return m;
+  }, [bangPdf]);
 
   /* Dự án CHƯA CÓ DẤU NÀO xếp xuống cuối: đầu bảng để dành cho chỗ thật sự có gì để xem. Trong
      mỗi nhóm thì điểm thấp lên trước — người cần nhắc nằm trên cùng, giống bản tháng. */
@@ -89,6 +120,15 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
               {d && <span>{d.duAn.length} dự án · {d.ngay.length} ngày · đã chấm {soNgayCoDau} ngày</span>}
             </div>
             {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "#475569" }}>{d.mocGio}</div>}
+            {/* NÓI THẲNG VÌ SAO DÒNG THEO PDF CÒN TRỐNG. Không nói thì người xem tưởng cả khối không
+                ai báo cáo — mà thật ra app mới bắt đầu ghi, chưa có gì để chấm. */}
+            {d && thangIso && (
+              <div style={{ marginTop: 4, fontSize: 11.5, color: "#0369a1" }}>
+                Dòng <b>TCLĐ (theo PDF)</b> chấm theo lượt bấm Xuất PDF báo cáo dự án: trước 18:00 ✓ · 18:00–20:00 O · sau 20:00 ✕.
+                {` App bắt đầu ghi từ ${NGAY_BAT_DAU_CHAM.split("-").reverse().join("/")}, ngày trước đó để trống.`}
+                {qPdf.data && ` Đã ghi nhận ${qPdf.data.luot.length} lượt trong tháng này.`}
+              </div>
+            )}
           </div>
           <button type="button" onClick={() => { setBump((n) => n + 1); track("bcn_lam_moi", ""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "#fff", cursor: "pointer" }}>
@@ -138,9 +178,18 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                 </tr>
               </thead>
               <tbody>
-                {duAnXep.map((p, pi) => p.hangMuc.map((h, hi) => {
+                {duAnXep.map((p, pi) => {
+                  /* DÒNG THỨ TƯ: dấu suy ra từ lượt xuất PDF. Dựng thành một "hạng mục ảo" để nó đi
+                     chung đường vẽ với ba hạng mục thật — khỏi có hai nhánh render dễ lệch nhau. */
+                  const ma = chuanMa(p.maCT);
+                  const marksPdf: BcnMark[] = d.ngay.map((n) => (
+                    thangIso ? dauCuaNgay(bangPdfTheoMa, ma, `${thangIso}-${n.so}`, bayGio) : null
+                  ));
+                  const hangMucVe = [...p.hangMuc, { ten: "TCLĐ (theo PDF)", marks: marksPdf, demP: 0, demO: 0, demX: 0, demNa: 0, diem: null, luyKe: null, theoPdf: true }];
+                  return hangMucVe.map((h, hi) => {
                   const dau = hi === 0;                       // dòng đầu của cụm → kẻ đậm phía trên
                   const vien = dau && pi > 0 ? "2px solid #cbd5e1" : undefined;
+                  const laPdf = "theoPdf" in h;
                   return (
                     <tr key={`${pi}-${hi}`}>
                       {dau && (
@@ -170,12 +219,14 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                           </td>
                         );
                       })}
-                      <td style={{ ...td, borderTop: vien, borderLeft: "2px solid #0f172a", textAlign: "center", fontWeight: 700, color: mauDiem(h.diem) }}>
-                        {h.diem ?? "–"}
+                      <td style={{ ...td, borderTop: vien, borderLeft: "2px solid #0f172a", textAlign: "center", fontWeight: 700,
+                        color: mauDiem(h.diem), background: laPdf ? "#f0f9ff" : undefined }}>
+                        {laPdf ? "" : (h.diem ?? "–")}
                       </td>
                     </tr>
                   );
-                }))}
+                  });
+                })}
               </tbody>
             </table>
           )}

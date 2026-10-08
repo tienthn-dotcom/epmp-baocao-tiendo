@@ -584,6 +584,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.143.0", date: "08/10/2026", items: [
+    "Báo cáo tuân thủ hằng ngày — thêm dòng “TCLĐ (theo PDF)”: chấm theo lượt bấm Xuất PDF báo cáo dự án. Trước 18:00 là đúng hạn, 18:00–20:00 là trễ, sau 20:00 là không báo cáo. Ngày chưa qua 20:00 thì để trống chứ không chấm thiếu. App bắt đầu ghi từ 08/10/2026.",
+  ] },
   { v: "3.142.0", date: "07/10/2026", items: [
     "MỚI: Báo cáo tuân thủ hằng ngày. Mở ở Hệ thống ▸ “Tuân thủ báo cáo hằng ngày”. Mỗi dự án ba dòng — Quân số, Thi công lắp đặt, Sản lượng — mỗi ngày một cột dấu, kèm điểm từng hạng mục và điểm trung bình của PM. Bảng cuộn ngang, ghim cột tên dự án. Số liệu đọc thẳng từ file nguồn, app không chấm lại.",
   ] },
