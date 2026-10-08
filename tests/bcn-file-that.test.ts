@@ -83,3 +83,36 @@ describe("đầu báo cáo", () => {
     expect(d.ngayCapNhat).toBe("07/10/2026");
   });
 });
+
+/* THÁNG LẤY Ở ĐÂU — chọn nhầm nhãn là cả báo cáo sai kỳ, mà bảng vẫn trông bình thường.
+   File thật ngày 08/10/2026 tự mâu thuẫn: tiêu đề sheet ghi "THÁNG 10/2026" còn nhãn trên vùng
+   ngày ghi "THÁNG 09/2026". Đo dấu thì thấy ngày 16-20 và 27 có 61-65 ô mỗi ngày — mấy ngày đó
+   CHƯA TỚI nếu là tháng 10, nên dữ liệu là tháng 9 và nhãn vùng ngày mới là cái đúng. */
+describe("lấy tháng ở nhãn vùng ngày, không lấy ở tiêu đề sheet", () => {
+  const luoi = (tieuDe: string, nhanVungNgay: string) => ([
+    [tieuDe],
+    ["   Báo cáo bởi: Phòng OCC.", null, null, null, "Ngày cập nhật: 08/10/2026"],
+    ["STT", "Vùng", "Mã CT", "Dự án", "PM", "Hạng mục", null, "Luỹ kế", nhanVungNgay],
+    [null, null, null, null, null, null, null, null, "T3", "T4"],
+    [null, null, null, null, null, null, null, null, "01", "02"],
+    [null, null, null, null, null, null, null, null, "0", "0"],
+    ["1", "Phú Quốc", "CT26-040", "Apec S2", "Nguyễn Văn Có", "Quân số", null, "0", "✓", "O"],
+  ] as unknown[][]);
+
+  it("hai nhãn lệch nhau → lấy nhãn vùng ngày", () => {
+    const r = parseBcnGrid(luoi("ĐÁNH GIÁ TUÂN THỦ BÁO CÁO HẰNG NGÀY - THÁNG 10/2026", "THÁNG 09/2026"));
+    expect(r.thangLabel).toBe("09/2026");
+    expect(r.thangTieuDe).toBe("10/2026");
+  });
+
+  it("hai nhãn khớp nhau → không có gì để cảnh báo", () => {
+    const r = parseBcnGrid(luoi("ĐÁNH GIÁ TUÂN THỦ BÁO CÁO HẰNG NGÀY - THÁNG 11/2026", "THÁNG 11/2026"));
+    expect(r.thangLabel).toBe("11/2026");
+    expect(r.thangTieuDe).toBe("11/2026");
+  });
+
+  it("file thật hiện tại: cột ngày 09/2026, tiêu đề 10/2026", () => {
+    expect(d.thangLabel).toBe("09/2026");
+    expect(d.thangTieuDe).toBe("10/2026");
+  });
+});

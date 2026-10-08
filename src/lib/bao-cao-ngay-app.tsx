@@ -48,6 +48,46 @@ const mauDiem = (d: number | null): string =>
 /** Cột ngày của CHỦ NHẬT tô nền xám — ngày không chấm, để mắt khỏi đọc nhầm ô trống thành bỏ sót. */
 const laChuNhat = (thu: string) => /^cn$/i.test(thu.trim());
 
+/* ── NỀN DÒNG THEO HẠNG MỤC — LẤY ĐÚNG MÀU CỦA FILE NGUỒN ─────────────────────
+   Anh Tiến 08/10/2026: *"màu sắc cũng chưa ổn, có form sẵn rồi, hãy triển khai theo đúng form mẫu
+   có sẵn đi"*.
+
+   Đọc thẳng định dạng tab BCN_BangCham mới thấy: FILE TÔ NỀN THEO HẠNG MỤC, không tô theo dấu.
+   Mỗi dự án thành một vệt ba màu, nên liếc dọc là biết đang đọc hàng nào — ở bảng 31 cột thì đó là
+   thứ giữ cho mắt khỏi lạc dòng. Bản đầu của em tô theo dấu, tức bỏ mất cái vệt đó.
+
+   Đo trên file ngày 08/10/2026, mỗi màu đúng 1.056 ô:
+       #FDE9D9  Quân số            #DAEEF3  Thi công lắp đặt        #E5DFEC  Sản lượng
+       #1E3A5F  dải tiêu đề
+   Trong file, DẤU không có màu chữ — nhưng vẫn giữ màu dấu theo báo cáo tuân thủ tháng
+   (✓ xanh · o vàng · ✕ đỏ), vì chính anh Tiến dặn lấy bản tháng làm mẫu phối màu, và trên màn hình
+   thì màu dấu là thứ chỉ ngay chỗ cần nhìn. */
+const NEN_HANG_MUC: { khop: RegExp; nen: string }[] = [
+  { khop: /qu[âa]n s[ốo]/i, nen: "#FDE9D9" },
+  { khop: /tcl[đd]|thi\s*c[ôo]ng\s*l[ắa]p\s*[đd][ặa]t/i, nen: "#DAEEF3" },
+  { khop: /s[ảa]n l[ưu][ợo]ng/i, nen: "#E5DFEC" },
+];
+const nenCuaHangMuc = (ten: string): string | undefined => NEN_HANG_MUC.find((x) => x.khop.test(ten))?.nen;
+
+/** Dải tiêu đề — cùng màu navy file dùng. */
+const NAVY = "#1E3A5F";
+
+/* ── BỀ NGANG BA CỘT GHIM — MỘT NGUỒN DUY NHẤT ────────────────────────────────
+   Ba cột trái ghim bằng `position:sticky` + `left`. Mốc `left` của cột sau PHẢI bằng tổng bề ngang
+   các cột trước nó. Bản đầu đặt tay 0 / 210 / 360 trong khi cột lại co giãn theo chữ — đo thật
+   08/10/2026: cột Dự án rộng 217 (ghim mốc 210, đè 7px), cột PM rộng 155 (ghim mốc 360, đè 28px).
+   Cuộn ngang là ba cột chồng lên nhau, chữ đè chữ.
+
+   Nay KHOÁ CỨNG bề ngang (width = minWidth = maxWidth) và TÍNH mốc `left` từ chính mấy số này, nên
+   không có đường nào lệch được nữa. Chữ dài thì cắt bằng "…", rê chuột xem đủ. */
+const W_DU_AN = 230, W_PM = 150, W_HANG_MUC = 130;
+const LEFT_PM = W_DU_AN, LEFT_HANG_MUC = W_DU_AN + W_PM;
+
+/** Ô chữ một dòng, dài thì cắt bằng "…" — để MỌI DÒNG CAO BẰNG NHAU.
+ *  Cho chữ xuống dòng thì chiều cao dòng nhảy loạn (đo thật: 27 → 81px, 7 kiểu), bảng đọc như răng
+ *  cưa và bản PDF cắt trang cũng lệch theo. */
+const motDong: React.CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+
 /** "TCLĐ" và "Thi công lắp đặt" là MỘT (anh Tiến chốt 08/10/2026) — nhận cả hai cách gõ trong file. */
 const laTcld = (ten: string) => /tcl[đd]|thi\s*c[ôo]ng\s*l[ắa]p\s*[đd][ặa]t/i.test(ten);
 
@@ -202,41 +242,50 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
         style={{ background: "#fff", borderRadius: 12, width: "min(1500px, 100%)", height: "min(900px, 100%)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,.35)" }}>
 
         {/* ── ĐẦU BÁO CÁO ─────────────────────────────────────────────── */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <div ref={refDau} style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 800, color: "#0f172a" }}>
+        {/* DẢI TIÊU ĐỀ NAVY — đúng màu #1E3A5F file nguồn dùng cho dòng tiêu đề của nó. */}
+        <div style={{ padding: "12px 16px", borderBottom: `1px solid ${NAVY}`, display: "flex", alignItems: "flex-start", gap: 12, background: NAVY, color: "#fff" }}>
+          <div ref={refDau} style={{ minWidth: 0, flex: 1, background: NAVY, color: "#fff", padding: 2 }}>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: "#fff" }}>
               Đánh giá tuân thủ báo cáo hằng ngày{d?.thangLabel ? ` · Tháng ${d.thangLabel}` : ""}
             </div>
-            <div style={{ marginTop: 3, fontSize: 11.5, color: "#64748b", display: "flex", gap: 14, flexWrap: "wrap" }}>
-              {d?.ngayCapNhat && <span>Dữ liệu tính đến <b style={{ color: "#334155" }}>{d.ngayCapNhat}</b></span>}
+            <div style={{ marginTop: 3, fontSize: 11.5, color: "rgba(255,255,255,.78)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+              {d?.ngayCapNhat && <span>Dữ liệu tính đến <b style={{ color: "#fff" }}>{d.ngayCapNhat}</b></span>}
               {d && <span>{d.duAn.length} dự án · {d.ngay.length} ngày · đã chấm {soNgayCoDau} ngày</span>}
             </div>
-            {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "#475569" }}>{d.mocGio}</div>}
+            {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "rgba(255,255,255,.7)" }}>{d.mocGio}</div>}
+            {/* FILE TỰ NÓI HAI THÁNG KHÁC NHAU → nói ra, đừng âm thầm chọn một bên.
+                Đây đúng là lúc người xem tưởng báo cáo "không chịu sang tháng mới", trong khi app
+                đang bày đúng dữ liệu mà file có. */}
+            {d && d.thangTieuDe && d.thangLabel && d.thangTieuDe !== d.thangLabel && (
+              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#fbbf24" }}>
+                File ghi hai tháng khác nhau: tiêu đề {d.thangTieuDe}, cột ngày {d.thangLabel}. Báo cáo đang chấm theo cột ngày.
+              </div>
+            )}
             {/* NẰM TRONG refDau nên nó ĐI VÀO BẢN PDF — xem ghi chú ở `dangLoc`. */}
             {dangLoc && (
-              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#b45309" }}>
+              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#fbbf24" }}>
                 Đang lọc — {dangLoc} · {duAnXep.length}/{d?.duAn.length ?? 0} dự án
               </div>
             )}
             {/* Phản hồi cho chính thao tác người dùng vừa bấm — tự tắt sau vài giây. */}
-            {ketQuaXuat && <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#b91c1c" : "#15803d" }}>{ketQuaXuat}</div>}
+            {ketQuaXuat && <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#fca5a5" : "#86efac" }}>{ketQuaXuat}</div>}
             {/* KHÔNG bày chuyện nội bộ (app bắt đầu ghi từ ngày nào, đã ghi nhận mấy lượt) lên đây —
                 người xem báo cáo không cần biết, và nó làm loãng phần số liệu. */}
           </div>
           <button type="button" onClick={xuatPdf} disabled={dangXuat || !d}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #0f172a", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#0f172a", color: "#fff", cursor: dangXuat || !d ? "default" : "pointer", opacity: dangXuat || !d ? 0.5 : 1 }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #fff", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#fff", color: NAVY, cursor: dangXuat || !d ? "default" : "pointer", opacity: dangXuat || !d ? 0.5 : 1 }}>
             <FileDown className="h-3.5 w-3.5" /> {dangXuat ? "Đang dựng…" : "Xuất PDF"}
           </button>
           <button type="button" onClick={() => { setBump((n) => n + 1); track("bcn_lam_moi", ""); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "#fff", cursor: "pointer" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid rgba(255,255,255,.35)", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,.12)", color: "#fff", cursor: "pointer" }}>
             <RefreshCw className="h-3.5 w-3.5" /> Làm mới
           </button>
           <a href={BCN_FILE_URL} target="_blank" rel="noreferrer"
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "#334155", textDecoration: "none" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid rgba(255,255,255,.35)", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "rgba(255,255,255,.12)", color: "#fff", textDecoration: "none" }}>
             <ExternalLink className="h-3.5 w-3.5" /> File nguồn
           </a>
           <button type="button" onClick={onClose} aria-label="Đóng"
-            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748b", padding: 4 }}>
+            style={{ border: "none", background: "transparent", cursor: "pointer", color: "rgba(255,255,255,.8)", padding: 4 }}>
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -317,8 +366,6 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
               </thead>
               <tbody>
                 {duAnXep.map((p, pi) => {
-                  /* DÒNG THỨ TƯ: dấu suy ra từ lượt xuất PDF. Dựng thành một "hạng mục ảo" để nó đi
-                     chung đường vẽ với ba hạng mục thật — khỏi có hai nhánh render dễ lệch nhau. */
                   /* TCLĐ = "Thi công lắp đặt", MỘT DÒNG — anh Tiến chốt 08/10/2026 ("gộp đi").
                      Dấu của dòng đó nay suy ra từ lượt xuất PDF, KHÔNG đọc từ file nữa.
 
@@ -335,18 +382,21 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                   });
                   return hangMucVe.map((h, hi) => {
                   const dau = hi === 0;                       // dòng đầu của cụm → kẻ đậm phía trên
-                  const vien = dau && pi > 0 ? "2px solid #cbd5e1" : undefined;
-                  const laPdf = "theoPdf" in h;
+                  const vien = dau && pi > 0 ? "2px solid #94a3b8" : undefined;
+                  /* NỀN THEO HẠNG MỤC — vệt ba màu của file nguồn, xem NEN_HANG_MUC. */
+                  const nenDong = nenCuaHangMuc(h.ten);
                   return (
                     <tr key={`${pi}-${hi}`}>
                       {dau && (
                         <>
-                          <td rowSpan={p.hangMuc.length} style={{ ...td, ...oNen, left: 0, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top" }}>
-                            <div style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "normal", maxWidth: 200 }}>{p.ten}</div>
-                            <div style={{ fontSize: 10.5, color: "#94a3b8", fontFamily: "ui-monospace,monospace" }}>{p.maCT}</div>
+                          <td rowSpan={hangMucVe.length} title={`${p.ten}${p.maCT ? ` · ${p.maCT}` : ""}`}
+                            style={{ ...td, ...oNen, left: 0, width: W_DU_AN, minWidth: W_DU_AN, maxWidth: W_DU_AN, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top" }}>
+                            <div style={{ ...motDong, fontWeight: 700, color: "#0f172a" }}>{p.ten}</div>
+                            <div style={{ ...motDong, fontSize: 10.5, color: "#94a3b8", fontFamily: "ui-monospace,monospace" }}>{p.maCT}</div>
                           </td>
-                          <td rowSpan={p.hangMuc.length} style={{ ...td, ...oNen, left: 210, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top", color: "#334155" }}>
-                            <div style={{ whiteSpace: "normal", maxWidth: 140 }}>{p.pm}</div>
+                          <td rowSpan={hangMucVe.length} title={p.pm}
+                            style={{ ...td, ...oNen, left: LEFT_PM, width: W_PM, minWidth: W_PM, maxWidth: W_PM, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top", color: "#334155" }}>
+                            <div style={motDong}>{p.pm}</div>
                             {diemCuaPm.has(p.pm) && (
                               <div style={{ fontSize: 10.5, color: mauDiem(diemCuaPm.get(p.pm) ?? null), fontWeight: 700 }}>
                                 TB {diemCuaPm.get(p.pm)}
@@ -355,21 +405,25 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                           </td>
                         </>
                       )}
-                      <td style={{ ...td, ...oNen, left: 360, borderRight: "2px solid #0f172a", borderTop: vien, color: "#475569" }}>{h.ten}</td>
+                      <td style={{ ...td, ...oNen, left: LEFT_HANG_MUC, width: W_HANG_MUC, minWidth: W_HANG_MUC, maxWidth: W_HANG_MUC, borderRight: "2px solid #0f172a", borderTop: vien, color: "#334155", fontWeight: 600, background: nenDong ?? "#fff" }}>{h.ten}</td>
                       {h.marks.map((m, i) => {
                         const cn = laChuNhat(d.ngay[i]?.thu ?? "");
                         const mau = m ? MAU_DAU[m] : null;
                         return (
                           <td key={i} style={{ ...td, borderTop: vien, textAlign: "center", padding: "4px 2px",
-                            background: mau?.nen ?? (cn ? "#f8fafc" : undefined),
-                            color: mau ? mau.chu : "#e2e8f0", fontSize: mau ? mau.co : 12, fontWeight: mau ? mau.dam : 400, lineHeight: 1 }}>
+                            /* Nền hạng mục là nền chung của dòng; ✕ đè nền đỏ nhạt vì nó là ngoại lệ
+                               cần đập vào mắt. Chủ nhật phủ thêm một lớp tối rất nhạt LÊN TRÊN nền
+                               hạng mục, không thay bằng xám riêng — thay là đứt vệt màu của dòng. */
+                            background: mau?.nen ?? nenDong ?? (cn ? "#f1f5f9" : undefined),
+                            boxShadow: cn && !mau?.nen ? "inset 0 0 0 999px rgba(15,23,42,.05)" : undefined,
+                            color: mau ? mau.chu : "#94a3b8", fontSize: mau ? mau.co : 12, fontWeight: mau ? mau.dam : 400, lineHeight: 1 }}>
                             {mau ? mau.ky : ""}
                           </td>
                         );
                       })}
                       <td style={{ ...td, borderTop: vien, borderLeft: "2px solid #0f172a", textAlign: "center", fontWeight: 700,
-                        color: mauDiem(h.diem), background: laPdf ? "#f0f9ff" : undefined }}>
-                        {laPdf ? "" : (h.diem ?? "–")}
+                        color: mauDiem(h.diem), background: nenDong ?? undefined }}>
+                        {h.diem ?? "–"}
                       </td>
                     </tr>
                   );

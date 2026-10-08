@@ -60,8 +60,10 @@ export type BcnDuAn = {
 export type BcnNgay = { so: string; thu: string };
 
 export type BcnData = {
-  /** "09/2026" — rỗng nếu không đọc được. */
+  /** "09/2026" — rỗng nếu không đọc được. Lấy ở nhãn TRÊN VÙNG NGÀY, xem ghi chú ở parseBcnGrid. */
   thangLabel: string;
+  /** Tháng ghi ở TIÊU ĐỀ SHEET — chỉ để đối chứng với `thangLabel`. Lệch nhau = file dở dang. */
+  thangTieuDe: string;
   /** "05/10/2026" — null nếu file không ghi. */
   ngayCapNhat: string | null;
   ngay: BcnNgay[];
@@ -126,7 +128,7 @@ function timO(grid: unknown[][], re: RegExp, hetDong = 12): string {
 export function parseBcnGrid(grid: unknown[][]): BcnData {
   const hdr = timDongTieuDe(grid);
   if (hdr < 0) {
-    return { thangLabel: "", ngayCapNhat: null, ngay: [], duAn: [], mocGio: "", chuThich: [], cachTinh: [] };
+    return { thangLabel: "", thangTieuDe: "", ngayCapNhat: null, ngay: [], duAn: [], mocGio: "", chuThich: [], cachTinh: [] };
   }
   const H = grid[hdr] ?? [];
   const cStt = cotCua(H, "STT"), cVung = cotCua(H, "Vùng"), cMa = cotCua(H, "Mã CT");
@@ -156,10 +158,27 @@ export function parseBcnGrid(grid: unknown[][]): BcnData {
   const ngay: BcnNgay[] = cotNgay.map((c) => ({ so: soNgayCuaO(hSo[c]).padStart(2, "0"), thu: thuCuaO(c) }));
 
   /* NHÃN THÁNG nằm trên chính dòng tiêu đề, ở ô mở đầu vùng ngày ("THÁNG 09/2026"). */
+  /* THÁNG LẤY Ở NHÃN TRÊN VÙNG NGÀY, không lấy ở tiêu đề sheet.
+     Nhãn vùng ngày nằm ngay trên dãy cột ngày nên nó mô tả đúng dữ liệu bên dưới; tiêu đề sheet là
+     chữ người gõ, hay bị đổi trước khi số liệu kịp sang tháng mới. Đo file ngày 08/10/2026: tiêu đề
+     ghi "THÁNG 10/2026" mà nhãn vùng ngày ghi "THÁNG 09/2026", và dấu lại đậm đặc ở ngày 16-20 và
+     27 (61-65 ô mỗi ngày) — mấy ngày đó còn CHƯA TỚI nếu là tháng 10. Tức dữ liệu là tháng 9, nhãn
+     vùng ngày mới là cái đúng. */
   const thangLabel = (() => {
     for (const o of H) { const m = s(o).match(/TH[ÁA]NG\s*(\d{1,2}\/\d{4})/i); if (m) return m[1]; }
     const m2 = timO(grid, /TH[ÁA]NG\s*\d{1,2}\/\d{4}/i).match(/TH[ÁA]NG\s*(\d{1,2}\/\d{4})/i);
     return m2 ? m2[1] : "";
+  })();
+  /* THÁNG GHI Ở TIÊU ĐỀ SHEET — chỉ để ĐỐI CHỨNG. Lệch với `thangLabel` là file đang dở dang giữa
+     hai tháng; giao diện nói ra chỗ lệch đó thay vì âm thầm chọn một bên, vì người xem sẽ tưởng báo
+     cáo "không chịu sang tháng mới". */
+  const thangTieuDe = (() => {
+    for (let r = 0; r < Math.min(grid.length, 3); r++)
+      for (const o of grid[r] ?? []) {
+        const m = s(o).match(/TH[ÁA]NG\s*(\d{1,2}\/\d{4})/i);
+        if (m) return m[1];
+      }
+    return "";
   })();
   const ngayCapNhat = (() => {
     const m = timO(grid, /Ng[àa]y c[ậa]p nh[ậa]t/i).match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
@@ -204,7 +223,7 @@ export function parseBcnGrid(grid: unknown[][]): BcnData {
     d.diem = co.length ? Math.round(co.reduce((a, b) => a + b, 0) / co.length) : null;
   }
 
-  return { thangLabel, ngayCapNhat, ngay, duAn, mocGio, chuThich, cachTinh };
+  return { thangLabel, thangTieuDe, ngayCapNhat, ngay, duAn, mocGio, chuThich, cachTinh };
 }
 
 /** ĐIỂM PM = tổng điểm các dự án PM quản ÷ số dự án (đúng câu ghi trong file). Dự án chưa có điểm
