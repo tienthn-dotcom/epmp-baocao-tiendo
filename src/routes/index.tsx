@@ -584,6 +584,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.148.0", date: "08/10/2026", items: [
+    "Báo cáo tuân thủ hằng ngày — đầu báo cáo gọn lại còn hai dòng (trước là năm). Cảnh báo và thông báo chuyển xuống dải riêng, không nằm trong bản PDF nữa.",
+    "Màu đồng bộ lại: cột chủ nhật dùng sắc đậm hơn của chính màu hạng mục thay vì phủ xám — hết loáng màu khi xuất PDF.",
+  ] },
   { v: "3.147.0", date: "08/10/2026", items: [
     "Báo cáo tuân thủ hằng ngày — SỬA LỖI CHỬe ĐÈ CHỬe khi cuộn ngang: ba cột trái (Dự án · PM · Hạng mục) chồng lên nhau. Nay khóa bề ngang, tên dài thì cắt bằng “…”, rê chuột xem đủ.",
     "Màu lấy đúng theo file nguồn: nền dòng theo hạng mục — Quân số đào, Thi công lắp đặt xanh nhạt, Sản lượng tím nhạt — và dải tiêu đề xanh đậm như file.",

@@ -69,6 +69,15 @@ const NEN_HANG_MUC: { khop: RegExp; nen: string }[] = [
 ];
 const nenCuaHangMuc = (ten: string): string | undefined => NEN_HANG_MUC.find((x) => x.khop.test(ten))?.nen;
 
+/* CHỦ NHẬT — biến thể ĐẬM HƠN của chính màu hạng mục, pha sẵn thành màu đặc.
+   Pha sẵn chứ không phủ lớp tối lúc chạy: html2canvas dựng bản PDF không render đúng lớp phủ, bản
+   xuất ra loang màu cả mảng. Màu đặc thì màn hình và bản in giống hệt nhau. */
+const NEN_CHU_NHAT: Record<string, string> = { "#FDE9D9": "#F6D7BE", "#DAEEF3": "#BEDDE6", "#E5DFEC": "#D2C9DE" };
+const nenChuNhat = (ten: string): string | undefined => {
+  const n = nenCuaHangMuc(ten);
+  return n ? NEN_CHU_NHAT[n] : undefined;
+};
+
 /** Dải tiêu đề — cùng màu navy file dùng. */
 const NAVY = "#1E3A5F";
 
@@ -243,34 +252,30 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
 
         {/* ── ĐẦU BÁO CÁO ─────────────────────────────────────────────── */}
         {/* DẢI TIÊU ĐỀ NAVY — đúng màu #1E3A5F file nguồn dùng cho dòng tiêu đề của nó. */}
-        <div style={{ padding: "12px 16px", borderBottom: `1px solid ${NAVY}`, display: "flex", alignItems: "flex-start", gap: 12, background: NAVY, color: "#fff" }}>
-          <div ref={refDau} style={{ minWidth: 0, flex: 1, background: NAVY, color: "#fff", padding: 2 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 800, color: "#fff" }}>
+        <div style={{ padding: "8px 14px", borderBottom: `1px solid ${NAVY}`, display: "flex", alignItems: "center", gap: 10, background: NAVY, color: "#fff" }}>
+          <div ref={refDau} style={{ minWidth: 0, flex: 1, background: NAVY, color: "#fff", padding: "1px 2px" }}>
+            {/* ĐẦU BÁO CÁO GỌN HAI DÒNG. Anh Tiến 08/10/2026: "header quá to".
+                Bản trước đổ tới năm dòng chữ trên nền xanh, chiếm gần một phần tư trang PDF mà
+                phần lớn là chuyện phụ. Nay: dòng một là tên + tháng, dòng hai gộp hết số liệu và
+                mốc giờ, ngăn nhau bằng dấu chấm giữa. */}
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", lineHeight: 1.25 }}>
               Đánh giá tuân thủ báo cáo hằng ngày{d?.thangLabel ? ` · Tháng ${d.thangLabel}` : ""}
             </div>
-            <div style={{ marginTop: 3, fontSize: 11.5, color: "rgba(255,255,255,.78)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-              {d?.ngayCapNhat && <span>Dữ liệu tính đến <b style={{ color: "#fff" }}>{d.ngayCapNhat}</b></span>}
-              {d && <span>{d.duAn.length} dự án · {d.ngay.length} ngày · đã chấm {soNgayCoDau} ngày</span>}
+            <div style={{ marginTop: 2, fontSize: 10.5, color: "rgba(255,255,255,.75)", lineHeight: 1.35 }}>
+              {[
+                d?.ngayCapNhat ? `Dữ liệu tính đến ${d.ngayCapNhat}` : "",
+                d ? `${d.duAn.length} dự án · đã chấm ${soNgayCoDau}/${d.ngay.length} ngày` : "",
+                d?.mocGio ?? "",
+              ].filter(Boolean).join("  ·  ")}
             </div>
-            {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "rgba(255,255,255,.7)" }}>{d.mocGio}</div>}
-            {/* FILE TỰ NÓI HAI THÁNG KHÁC NHAU → nói ra, đừng âm thầm chọn một bên.
-                Đây đúng là lúc người xem tưởng báo cáo "không chịu sang tháng mới", trong khi app
-                đang bày đúng dữ liệu mà file có. */}
-            {d && d.thangTieuDe && d.thangLabel && d.thangTieuDe !== d.thangLabel && (
-              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#fbbf24" }}>
-                File ghi hai tháng khác nhau: tiêu đề {d.thangTieuDe}, cột ngày {d.thangLabel}. Báo cáo đang chấm theo cột ngày.
-              </div>
-            )}
-            {/* NẰM TRONG refDau nên nó ĐI VÀO BẢN PDF — xem ghi chú ở `dangLoc`. */}
+            {/* Chỉ LỌC mới cần đi vào bản PDF — xem ghi chú ở `dangLoc`. Cảnh báo lệch tháng và
+                phản hồi xuất file để ra NGOÀI khối in: bản in cần biết đang lọc gì, không cần mấy
+                thông báo thoáng qua trên màn. */}
             {dangLoc && (
-              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#fbbf24" }}>
+              <div style={{ marginTop: 2, fontSize: 10.5, fontWeight: 700, color: "#fbbf24", lineHeight: 1.35 }}>
                 Đang lọc — {dangLoc} · {duAnXep.length}/{d?.duAn.length ?? 0} dự án
               </div>
             )}
-            {/* Phản hồi cho chính thao tác người dùng vừa bấm — tự tắt sau vài giây. */}
-            {ketQuaXuat && <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#fca5a5" : "#86efac" }}>{ketQuaXuat}</div>}
-            {/* KHÔNG bày chuyện nội bộ (app bắt đầu ghi từ ngày nào, đã ghi nhận mấy lượt) lên đây —
-                người xem báo cáo không cần biết, và nó làm loãng phần số liệu. */}
           </div>
           <button type="button" onClick={xuatPdf} disabled={dangXuat || !d}
             style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #fff", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#fff", color: NAVY, cursor: dangXuat || !d ? "default" : "pointer", opacity: dangXuat || !d ? 0.5 : 1 }}>
@@ -289,6 +294,21 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* DẢI NHẮC — NGOÀI khối in. Chuyện của file nguồn và phản hồi thao tác, người nhận bản PDF
+            không cần. Để trên nền vàng nhạt chứ không nhét vào dải xanh: dải xanh là tiêu đề báo
+            cáo, trộn thêm cảnh báo vào đó làm đầu báo cáo vừa to vừa rối. */}
+        {d && d.thangTieuDe && d.thangLabel && d.thangTieuDe !== d.thangLabel && (
+          <div style={{ padding: "5px 14px", background: "#fffbeb", borderBottom: "1px solid #fde68a", fontSize: 11.5, color: "#92400e" }}>
+            File nguồn ghi hai tháng khác nhau — tiêu đề <b>{d.thangTieuDe}</b>, cột ngày <b>{d.thangLabel}</b>. Báo cáo chấm theo cột ngày.
+          </div>
+        )}
+        {ketQuaXuat && (
+          <div style={{ padding: "5px 14px", background: ketQuaXuat.startsWith("Không") ? "#fef2f2" : "#f0fdf4", borderBottom: "1px solid #e2e8f0",
+            fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#b91c1c" : "#15803d" }}>
+            {ketQuaXuat}
+          </div>
+        )}
 
         {/* ── THANH LỌC ───────────────────────────────────────────────────
             Ngoài refDau nên KHÔNG lọt vào bản PDF — bản in cần biết đang lọc gì (dòng chữ ở trên),
@@ -412,10 +432,13 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                         return (
                           <td key={i} style={{ ...td, borderTop: vien, textAlign: "center", padding: "4px 2px",
                             /* Nền hạng mục là nền chung của dòng; ✕ đè nền đỏ nhạt vì nó là ngoại lệ
-                               cần đập vào mắt. Chủ nhật phủ thêm một lớp tối rất nhạt LÊN TRÊN nền
-                               hạng mục, không thay bằng xám riêng — thay là đứt vệt màu của dòng. */
-                            background: mau?.nen ?? nenDong ?? (cn ? "#f1f5f9" : undefined),
-                            boxShadow: cn && !mau?.nen ? "inset 0 0 0 999px rgba(15,23,42,.05)" : undefined,
+                               cần đập vào mắt. Chủ nhật dùng BIẾN THỂ ĐẬM HƠN của chính màu hạng
+                               mục, nên vệt màu của dòng không bị đứt.
+
+                               TRƯỚC DÙNG `inset box-shadow` để phủ tối — ĐÃ BỎ: html2canvas (thứ
+                               dựng bản PDF) render inset shadow không đúng, bản xuất ra bị loang
+                               màu cả mảng. Màu đặc thì trình duyệt nào, bản in nào cũng như nhau. */
+                            background: mau?.nen ?? (cn ? (nenChuNhat(h.ten) ?? "#eef2f7") : nenDong),
                             color: mau ? mau.chu : "#94a3b8", fontSize: mau ? mau.co : 12, fontWeight: mau ? mau.dam : 400, lineHeight: 1 }}>
                             {mau ? mau.ky : ""}
                           </td>
