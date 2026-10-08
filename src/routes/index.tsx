@@ -1,5 +1,6 @@
 import { loiNoi, loiNoiVaGhi } from "@/lib/loi-noi";
 import { BaoCaoNgayDialog } from "@/lib/bao-cao-ngay-app";
+import { ghiLuot } from "@/lib/cham-theo-pdf";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -2908,6 +2909,12 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       const input = await buildProjectReportInput(g);
       const { exportProjectPdf } = await import("@/lib/pdf-project-report");
       await exportProjectPdf(input);
+      /* GHI NHẬT KÝ SAU KHI DỰNG XONG, không ghi trước.
+         Dấu tuân thủ mỗi ngày suy ra từ chính mấy dòng này (xem src/lib/cham-theo-pdf.ts), nên
+         ghi trước rồi dựng hỏng là ghi nhận một lượt nộp chưa từng xảy ra — chấm lợi cho người
+         chưa làm, mà bảng trông vẫn bình thường.
+         Ô chữ dựng bằng ghiLuot để bên đọc tách lại được mã CT; đừng gõ chuỗi tay ở đây. */
+      track("export_pdf_duan", ghiLuot(g.maCT, g.name));
       toast.success("Đã tạo báo cáo (.pdf)", { id: "ppt", position: "bottom-left" });
     } catch (err) {
       console.error("[pdf-report]", err);

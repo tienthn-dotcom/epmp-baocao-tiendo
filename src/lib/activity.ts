@@ -50,6 +50,9 @@ export const ACTION_LABEL: Record<string, string> = {
   open_roles: "Mở phân cấp người dùng",
   open_datatools: "Mở công cụ dữ liệu",
   export_pdf: "Xuất PDF",
+  /* Xuat PDF bao cao cua MOT du an — dong nay la CAN CU CHAM tuan thu moi ngay
+     (xem src/lib/cham-theo-pdf.ts), khong phai chi de xem nhat ky. */
+  export_pdf_duan: "Xuất PDF báo cáo dự án",
   export_excel: "Xuất Excel",
   save_edit: "Sửa dữ liệu (vướng mắc/PIC/deadline)",
   change_source: "Đổi nguồn dữ liệu",
