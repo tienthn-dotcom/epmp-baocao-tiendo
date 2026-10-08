@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getInstallList, getMediaProjects } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { loadRegion } from "@/lib/region-load";
+import { ChonDuAn, type MucChon } from "@/lib/chon-du-an";
 import * as XLSXNS from "xlsx";
 import type * as XLSX from "xlsx";
 import { STD_RAMP } from "@/lib/summary-render";
@@ -120,6 +121,13 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
       .sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }, [allQ.data, list]);
 
+  /* DANH SÁCH CHO Ô CHỌN — gộp hai nhóm, GIỮ ĐÚNG thứ tự "theo từng căn" trước rồi "cả dự án" sau,
+     y như hai optgroup cũ. Ô chọn tự lo việc gõ tìm, xem src/lib/chon-du-an.tsx. */
+  const mucChonDuAn = useMemo<MucChon[]>(() => [
+    ...list.map((p) => ({ id: projId(p), ten: p.name, maCT: p.maCT, nhom: "Xem theo từng căn" })),
+    ...khongMaTran.map((p) => ({ id: kmtId(p), ten: p.name, maCT: p.maCT, nhom: "Xem cả dự án" })),
+  ], [list, khongMaTran]);
+
   const [selId, setSelId] = useState<string>("");
   const sel = useMemo(() => list.find((p) => projId(p) === selId) || (selId.startsWith("kmt:") ? undefined : list[0]), [list, selId]);
   // Dự án chưa có ma trận đang chọn (id dạng "kmt:<hid|maCT|tên>").
@@ -178,20 +186,10 @@ export function CanMediaApp({ wantProject }: { wantProject?: string | null } = {
               đẩy rộng cả trang, sinh cuộn ngang toàn màn. */}
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flex: "1 1 220px", minWidth: 0, maxWidth: 460 }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, opacity: .85, textTransform: "uppercase", letterSpacing: ".04em", flexShrink: 0 }}>Dự án</span>
-            <select value={selKmt ? selId : (sel ? projId(sel) : "")} onChange={(e) => setSelId(e.target.value)}
-              style={{ height: 40, borderRadius: 10, border: "none", padding: "0 12px", fontSize: 14, fontWeight: 700, color: C.ink, background: "#fff", flex: 1, minWidth: 0, maxWidth: "100%" }}>
-              {list.length === 0 && khongMaTran.length === 0 && <option value="">(chưa có dự án nào)</option>}
-              {list.length > 0 && (
-                <optgroup label="Xem theo từng căn">
-                  {list.map((p) => <option key={projId(p)} value={projId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
-                </optgroup>
-              )}
-              {khongMaTran.length > 0 && (
-                <optgroup label="Xem cả dự án">
-                  {khongMaTran.map((p) => <option key={kmtId(p)} value={kmtId(p)}>{p.name}{p.maCT ? ` · ${p.maCT}` : ""}</option>)}
-                </optgroup>
-              )}
-            </select>
+            {/* Ô GÕ-ĐỂ-LỌC thay cho <select>. Danh sách hơn ba chục dự án, mà <select> của trình
+                duyệt không gõ tìm được — gõ chỉ nhảy theo chữ cái đầu, trong khi "Nam Phương…" có
+                tới bốn dòng liền nhau. Xem src/lib/chon-du-an.tsx. */}
+            <ChonDuAn muc={mucChonDuAn} giaTri={selKmt ? selId : (sel ? projId(sel) : "")} onChon={setSelId} />
           </label>
           {/* Lối vào thứ hai (xem TOÀN BỘ media dự án): ĐIỆN THOẠI bỏ đi cho gọn — vào đây là để bấm ô căn;
               xem cả dự án thì bấm nút “Media” ngay dòng dự án bên ePMP. Máy tính giữ nguyên. */}

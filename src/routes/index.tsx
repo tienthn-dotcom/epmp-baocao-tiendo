@@ -584,6 +584,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.146.0", date: "08/10/2026", items: [
+    "Hình ảnh mỗi ngày — ô chọn dự án nay GÕ ĐỂ TÌM thay vì cuộn tìm trong danh sách dài. Gõ tên hay mã CT đều ra, gõ không dấu cũng ra. Bàn phím: ↑ ↓ chọn, Enter xác nhận.",
+  ] },
   { v: "3.145.0", date: "08/10/2026", items: [
     "Báo cáo tuân thủ hằng ngày — thêm thanh lọc: gõ tìm tên dự án hoặc mã CT (gõ không dấu cũng ra), chọn vùng, chọn PM. Bản PDF xuất ra có ghi đang lọc gì.",
   ] },
