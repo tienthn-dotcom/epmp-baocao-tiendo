@@ -47,7 +47,11 @@ const gio = (h: number, p = 0) => h * 60 + p;
 
 export const HANG_MUC: readonly HangMuc[] = [
   { ma: "QS", ten: "Báo cáo quân số", tenNgan: "Quân số", han: gio(9), hetTre: gio(11) },
-  { ma: "TC", ten: "Báo cáo thi công lắp đặt", tenNgan: "TC lắp đặt", han: gio(17, 30), hetTre: gio(19, 30) },
+  /* TCLĐ = "Thi công lắp đặt" — MỘT THỨ, anh Tiến chốt 08/10/2026 ("cái TCLĐ với Thi công lắp đặt
+     là 1, chốt theo đó nhé, gộp đi").
+     ĐỔI 17:30/19:30 → 18:00/20:00. Số cũ là PMO chốt 16/09, nhưng ĐẦU FILE NGUỒN ghi "Thi công lắp
+     đặt 18:00" và anh Tiến nhắn lại đúng 18:00 / 20:00. Hai nguồn mới khớp nhau nên lấy theo đó. */
+  { ma: "TC", ten: "Báo cáo thi công lắp đặt", tenNgan: "TC lắp đặt", han: gio(18), hetTre: gio(20) },
   { ma: "SL", ten: "Báo cáo sản lượng", tenNgan: "Sản lượng", han: gio(18), hetTre: gio(20) },
 ];
 

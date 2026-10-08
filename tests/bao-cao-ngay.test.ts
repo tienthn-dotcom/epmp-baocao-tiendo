@@ -19,10 +19,13 @@ const NGAY = "2026-09-16";
 const SAU = "2026-09-30";
 const cham = (hm: typeof QS, ...gio: string[]) => chamNgay(NGAY, hm, gio.map((g) => `${NGAY}T${g}`), SAU);
 
-describe("giờ hạn ba hạng mục — PMO chốt 16/09/2026", () => {
+/* TC LẮP ĐẶT ĐỔI 17:30/19:30 → 18:00/20:00 ngày 08/10/2026. Anh Tiến: "cái TCLĐ với Thi công
+   lắp đặt là 1, chốt theo đó nhé, gộp đi". Đầu file nguồn BCN ghi "Thi công lắp đặt 18:00" và
+   anh Tiến nhắn lại đúng 18:00 / 20:00 — hai nguồn mới khớp nhau nên thay số của 16/09. */
+describe("giờ hạn ba hạng mục", () => {
   it("đúng giờ đã chốt", () => {
     expect([gioHan(QS), gioHetTre(QS)]).toEqual(["09:00", "11:00"]);
-    expect([gioHan(TC), gioHetTre(TC)]).toEqual(["17:30", "19:30"]);
+    expect([gioHan(TC), gioHetTre(TC)]).toEqual(["18:00", "20:00"]);
     expect([gioHan(SL), gioHetTre(SL)]).toEqual(["18:00", "20:00"]);
   });
   it("cả ba đều có cửa sổ trễ đúng 120 phút", () => {
@@ -44,11 +47,11 @@ describe("ranh giới giờ — kiểm cả hai phía từng mốc", () => {
     expect(cham(QS, "11:00")).toBe("o");   // ĐÚNG mốc vẫn còn trong cửa sổ trễ
     expect(cham(QS, "11:01")).toBe("x");
   });
-  it("thi công lắp đặt: 17:30 và 19:30", () => {
-    expect(cham(TC, "17:30")).toBe("P");
-    expect(cham(TC, "17:31")).toBe("o");
-    expect(cham(TC, "19:30")).toBe("o");
-    expect(cham(TC, "19:31")).toBe("x");
+  it("thi công lắp đặt: 18:00 và 20:00", () => {
+    expect(cham(TC, "18:00")).toBe("P");
+    expect(cham(TC, "18:01")).toBe("o");
+    expect(cham(TC, "20:00")).toBe("o");
+    expect(cham(TC, "20:01")).toBe("x");
   });
   it("sản lượng: 18:00 và 20:00", () => {
     expect(cham(SL, "18:00")).toBe("P");
@@ -164,7 +167,8 @@ describe("chấm trọn một dự án", () => {
     // QS nộp đúng hạn mọi ngày; TC trễ một hôm; SL quên một hôm.
     const nop = [
       ...ngay.map((d) => ({ ngay: d, ma: "QS" as const, luc: `${d}T08:00` })),
-      ...ngay.map((d, i) => ({ ngay: d, ma: "TC" as const, luc: `${d}T${i === 0 ? "18:00" : "17:00"}` })),
+      // TC hạn 18:00 (đổi từ 17:30 ngày 08/10/2026) → nộp 18:30 mới là TRỄ, 18:00 vẫn đúng giờ.
+      ...ngay.map((d, i) => ({ ngay: d, ma: "TC" as const, luc: `${d}T${i === 0 ? "18:30" : "17:00"}` })),
       ...ngay.slice(1).map((d) => ({ ngay: d, ma: "SL" as const, luc: `${d}T17:00` })),
     ];
     const r = chamDuAn(duAn, "2026-09", nop, SAU);

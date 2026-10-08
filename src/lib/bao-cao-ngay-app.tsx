@@ -14,9 +14,9 @@
  * SỐ LIỆU ĐỌC THẲNG TỪ FILE NGUỒN, app KHÔNG chấm lại — giống hệt bản tháng. Điểm, dấu, mốc giờ,
  * chú thích đều là của file. App chỉ bày.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, RefreshCw, ExternalLink, AlertTriangle } from "lucide-react";
+import { X, RefreshCw, ExternalLink, AlertTriangle, FileDown } from "lucide-react";
 import { taiBangCham, BCN_FILE_URL } from "@/lib/bcn-tai";
 import type { BcnDuAn, BcnMark } from "@/lib/bcn-file";
 import { diemPm } from "@/lib/bcn-file";
@@ -25,12 +25,20 @@ import { gomLuot, dauCuaNgay, NGAY_BAT_DAU_CHAM } from "@/lib/cham-theo-pdf";
 import { loiNoi } from "@/lib/loi-noi";
 import { track } from "@/lib/track";
 
-/* Màu dấu — cùng bộ với bản tháng để hai báo cáo đọc như một. */
-const MAU_DAU: Record<Exclude<BcnMark, null>, { nen: string; chu: string; ky: string }> = {
-  P: { nen: "#dcfce7", chu: "#15803d", ky: "✓" },
-  o: { nen: "#fef3c7", chu: "#b45309", ky: "O" },
-  x: { nen: "#fee2e2", chu: "#b91c1c", ky: "✕" },
-  na: { nen: "#f1f5f9", chu: "#94a3b8", ky: "–" },
+/* DẤU — LẤY ĐÚNG BỘ CỦA BÁO CÁO TUÂN THỦ THÁNG (ComplianceMark trong routes/index.tsx), để hai
+   báo cáo đọc như một: ✓ xanh lùi lại, o vàng, ✕ đỏ đậm nổi bật, – xám nhạt.
+
+   GLYPH KÝ TỰ, KHÔNG ICON SVG — và đây không phải chuyện thẩm mỹ: html2canvas (thứ dựng bản PDF)
+   render SVG không ổn định, dấu ✓/✕ bị méo hoặc mất hẳn trong file xuất ra. Bản tháng đã vấp và
+   đã ghi lại; đừng đổi sang icon.
+
+   KHÔNG TÔ NỀN Ô: 31 cột ngày mà ô nào cũng có nền thì bảng thành tấm chăn vá, nhìn không ra chỗ
+   cần chú ý. Chỉ ✕ mới có nền nhạt — nó là ngoại lệ cần đập vào mắt. */
+const MAU_DAU: Record<Exclude<BcnMark, null>, { nen?: string; chu: string; ky: string; co: number; dam: number }> = {
+  P: { chu: "#10b981", ky: "✓", co: 13, dam: 700 },
+  o: { chu: "#f59e0b", ky: "o", co: 17, dam: 900 },
+  x: { chu: "#dc2626", ky: "✕", co: 13, dam: 700, nen: "#fef2f2" },
+  na: { chu: "#cbd5e1", ky: "–", co: 11, dam: 400 },
 };
 
 const mauDiem = (d: number | null): string =>
@@ -39,8 +47,18 @@ const mauDiem = (d: number | null): string =>
 /** Cột ngày của CHỦ NHẬT tô nền xám — ngày không chấm, để mắt khỏi đọc nhầm ô trống thành bỏ sót. */
 const laChuNhat = (thu: string) => /^cn$/i.test(thu.trim());
 
+/** "TCLĐ" và "Thi công lắp đặt" là MỘT (anh Tiến chốt 08/10/2026) — nhận cả hai cách gõ trong file. */
+const laTcld = (ten: string) => /tcl[đd]|thi\s*c[ôo]ng\s*l[ắa]p\s*[đd][ặa]t/i.test(ten);
+
 export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
   const [bump, setBump] = useState(0);
+  /* HAI REF CHO BẢN PDF: khối đầu báo cáo và bảng. Bộ máy xuất (lib/pdf-export.ts) CHỤP chính hai
+     phần tử này — dùng lại đúng đường của báo cáo tuân thủ tháng, nên bản ngày ra cùng một khuôn:
+     cùng lề, cùng cách cắt trang, cùng cỡ chữ. */
+  const refDau = useRef<HTMLDivElement>(null);
+  const refBang = useRef<HTMLTableElement>(null);
+  const [dangXuat, setDangXuat] = useState(false);
+  const [ketQuaXuat, setKetQuaXuat] = useState("");
   const q = useQuery({
     queryKey: ["bcn-bang-cham", bump],
     queryFn: () => taiBangCham(bump > 0),
@@ -99,6 +117,44 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
     return co.size;
   }, [d]);
 
+  /* XUẤT PDF — dùng LẠI bộ máy của báo cáo tuân thủ tháng (exportDashboardPdf), không viết bản
+     thứ hai. Hai báo cáo ra cùng một khuôn, và mọi thứ bản tháng đã vấp rồi sửa (lề, cắt trang
+     theo ranh giới hàng, glyph thay icon) thì bản ngày hưởng luôn.
+     KHỔ NGANG: 31 cột ngày, khổ dọc thì chữ nhỏ tới mức không đọc nổi.
+     TÊN FILE theo khuôn PMO đã chốt 05/10/2026: yymmdd_Tên cố định_MM.YYYY */
+  const xuatPdf = async () => {
+    if (!refBang.current || dangXuat) return;
+    setDangXuat(true);
+    try {
+      const { exportDashboardPdf } = await import("@/lib/pdf-export");
+      /* BỎ KHỐI CÓ BỀ NGANG 0. html2canvas chụp khối rộng 0 ra ảnh rỗng, rồi jsPDF chia cho 0 và
+         ném "Invalid argument passed to jsPDF.scale" — bản PDF hỏng hẳn chứ không chỉ thiếu phần
+         đầu. Khối đầu nằm trong hàng flex nên có lúc đo ra 0 (đo thật 08/10/2026: 0 × 794).
+         Thà PDF thiếu dòng tiêu đề còn hơn không có PDF. */
+      const khoi = [refDau.current].filter((el): el is HTMLDivElement => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 1 && r.height > 1;
+      });
+      const n = new Date();
+      const p2 = (x: number) => String(x).padStart(2, "0");
+      const yymmdd = `${String(n.getFullYear()).slice(2)}${p2(n.getMonth() + 1)}${p2(n.getDate())}`;
+      const ky = d?.thangLabel ? d.thangLabel.replace("/", ".") : `${p2(n.getMonth() + 1)}.${n.getFullYear()}`;
+      const r = await exportDashboardPdf({
+        blocks: khoi,
+        table: refBang.current,
+        wide: true, orientation: "landscape", tableFitOnePage: true,
+        fileName: `${yymmdd}_Báo cáo tuân thủ hằng ngày_${ky}.pdf`,
+      });
+      setKetQuaXuat(`Đã tải bản PDF · ${r.pages} trang`);
+      window.setTimeout(() => setKetQuaXuat(""), 6000);
+      track("export_pdf", `Báo cáo tuân thủ hằng ngày${d?.thangLabel ? ` tháng ${d.thangLabel}` : ""}`);
+    } catch (e) {
+      /* Không nuốt lặng: người bấm phải biết nó hỏng, chứ không phải đứng chờ một file không bao giờ tới. */
+      setKetQuaXuat(`Không dựng được PDF: ${loiNoi(e)}`);
+    } finally { setDangXuat(false); }
+  };
+
   const oNen: React.CSSProperties = { position: "sticky", background: "#fff", zIndex: 2 };
   const th: React.CSSProperties = { padding: "6px 8px", fontSize: 11.5, fontWeight: 700, color: "#334155", borderBottom: "2px solid #0f172a", whiteSpace: "nowrap", textAlign: "left" };
   const td: React.CSSProperties = { padding: "4px 8px", fontSize: 12, borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" };
@@ -111,7 +167,7 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
 
         {/* ── ĐẦU BÁO CÁO ─────────────────────────────────────────────── */}
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
+          <div ref={refDau} style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 15.5, fontWeight: 800, color: "#0f172a" }}>
               Đánh giá tuân thủ báo cáo hằng ngày{d?.thangLabel ? ` · Tháng ${d.thangLabel}` : ""}
             </div>
@@ -120,16 +176,15 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
               {d && <span>{d.duAn.length} dự án · {d.ngay.length} ngày · đã chấm {soNgayCoDau} ngày</span>}
             </div>
             {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "#475569" }}>{d.mocGio}</div>}
-            {/* NÓI THẲNG VÌ SAO DÒNG THEO PDF CÒN TRỐNG. Không nói thì người xem tưởng cả khối không
-                ai báo cáo — mà thật ra app mới bắt đầu ghi, chưa có gì để chấm. */}
-            {d && thangIso && (
-              <div style={{ marginTop: 4, fontSize: 11.5, color: "#0369a1" }}>
-                Dòng <b>TCLĐ (theo PDF)</b> chấm theo lượt bấm Xuất PDF báo cáo dự án: trước 18:00 ✓ · 18:00–20:00 O · sau 20:00 ✕.
-                {` App bắt đầu ghi từ ${NGAY_BAT_DAU_CHAM.split("-").reverse().join("/")}, ngày trước đó để trống.`}
-                {qPdf.data && ` Đã ghi nhận ${qPdf.data.luot.length} lượt trong tháng này.`}
-              </div>
-            )}
+            {/* Phản hồi cho chính thao tác người dùng vừa bấm — tự tắt sau vài giây. */}
+            {ketQuaXuat && <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#b91c1c" : "#15803d" }}>{ketQuaXuat}</div>}
+            {/* KHÔNG bày chuyện nội bộ (app bắt đầu ghi từ ngày nào, đã ghi nhận mấy lượt) lên đây —
+                người xem báo cáo không cần biết, và nó làm loãng phần số liệu. */}
           </div>
+          <button type="button" onClick={xuatPdf} disabled={dangXuat || !d}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #0f172a", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#0f172a", color: "#fff", cursor: dangXuat || !d ? "default" : "pointer", opacity: dangXuat || !d ? 0.5 : 1 }}>
+            <FileDown className="h-3.5 w-3.5" /> {dangXuat ? "Đang dựng…" : "Xuất PDF"}
+          </button>
           <button type="button" onClick={() => { setBump((n) => n + 1); track("bcn_lam_moi", ""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "#fff", cursor: "pointer" }}>
             <RefreshCw className="h-3.5 w-3.5" /> Làm mới
@@ -161,7 +216,7 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
               File nguồn chưa có dòng dự án nào đọc được. Kiểm tra lại tab bảng chấm.
             </div>
           ) : (
-            <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "max-content", minWidth: "100%" }}>
+            <table ref={refBang} style={{ borderCollapse: "separate", borderSpacing: 0, width: "max-content", minWidth: "100%" }}>
               <thead>
                 <tr>
                   {/* GHIM BA CỘT TRÁI — cuộn ngang tới cuối tháng vẫn biết đang đọc dòng của ai. */}
@@ -181,11 +236,20 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                 {duAnXep.map((p, pi) => {
                   /* DÒNG THỨ TƯ: dấu suy ra từ lượt xuất PDF. Dựng thành một "hạng mục ảo" để nó đi
                      chung đường vẽ với ba hạng mục thật — khỏi có hai nhánh render dễ lệch nhau. */
+                  /* TCLĐ = "Thi công lắp đặt", MỘT DÒNG — anh Tiến chốt 08/10/2026 ("gộp đi").
+                     Dấu của dòng đó nay suy ra từ lượt xuất PDF, KHÔNG đọc từ file nữa.
+
+                     CÒN TRỐNG THÌ LẤY DẤU CŨ CỦA FILE. Nhật ký chỉ có từ 08/10, nên nếu bỏ hẳn dấu
+                     file thì mọi ngày trước đó trắng bong — xoá sạch phần đã chấm tay bao lâu nay.
+                     Vậy: có dấu theo PDF thì dùng, không có thì rơi về dấu file. Từ ngày app bắt
+                     đầu ghi trở đi, PDF quyết — kể cả khi nó ra ✕ vì không ai bấm xuất. */
                   const ma = chuanMa(p.maCT);
-                  const marksPdf: BcnMark[] = d.ngay.map((n) => (
-                    thangIso ? dauCuaNgay(bangPdfTheoMa, ma, `${thangIso}-${n.so}`, bayGio) : null
-                  ));
-                  const hangMucVe = [...p.hangMuc, { ten: "TCLĐ (theo PDF)", marks: marksPdf, demP: 0, demO: 0, demX: 0, demNa: 0, diem: null, luyKe: null, theoPdf: true }];
+                  const hangMucVe = p.hangMuc.map((h) => {
+                    if (!laTcld(h.ten)) return h;
+                    return { ...h, marks: h.marks.map((m, i) => (
+                      (thangIso ? dauCuaNgay(bangPdfTheoMa, ma, `${thangIso}-${d.ngay[i].so}`, bayGio) : null) ?? m
+                    )) };
+                  });
                   return hangMucVe.map((h, hi) => {
                   const dau = hi === 0;                       // dòng đầu của cụm → kẻ đậm phía trên
                   const vien = dau && pi > 0 ? "2px solid #cbd5e1" : undefined;
@@ -214,7 +278,8 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                         const mau = m ? MAU_DAU[m] : null;
                         return (
                           <td key={i} style={{ ...td, borderTop: vien, textAlign: "center", padding: "4px 2px",
-                            background: mau ? mau.nen : cn ? "#f8fafc" : undefined, color: mau ? mau.chu : "#cbd5e1", fontWeight: 700 }}>
+                            background: mau?.nen ?? (cn ? "#f8fafc" : undefined),
+                            color: mau ? mau.chu : "#e2e8f0", fontSize: mau ? mau.co : 12, fontWeight: mau ? mau.dam : 400, lineHeight: 1 }}>
                             {mau ? mau.ky : ""}
                           </td>
                         );
@@ -238,7 +303,7 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
             <span style={{ display: "inline-flex", gap: 10 }}>
               {(Object.keys(MAU_DAU) as Exclude<BcnMark, null>[]).map((k) => (
                 <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ background: MAU_DAU[k].nen, color: MAU_DAU[k].chu, fontWeight: 700, borderRadius: 4, padding: "0 5px" }}>{MAU_DAU[k].ky}</span>
+                  <span style={{ color: MAU_DAU[k].chu, fontSize: MAU_DAU[k].co, fontWeight: MAU_DAU[k].dam, lineHeight: 1 }}>{MAU_DAU[k].ky}</span>
                   {k === "P" ? "đúng hạn" : k === "o" ? "trễ" : k === "x" ? "không báo cáo" : "không áp dụng"}
                 </span>
               ))}

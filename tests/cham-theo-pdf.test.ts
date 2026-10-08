@@ -32,8 +32,10 @@ describe("đổi mốc ISO sang giờ VN", () => {
 
 describe("ranh giới dấu — đọc đúng câu chữ", () => {
   it("17:59 → tick", () => expect(dauTheoPhut(17 * 60 + 59)).toBe("P"));
-  /* "TRƯỚC 18 giờ thì tick" → đúng 18:00 KHÔNG còn là trước, nên đã là trễ. */
-  it("18:00 đúng phút → đã là trễ, KHÔNG còn tick", () => expect(dauTheoPhut(HAN_PHUT)).toBe("o"));
+  /* ĐÚNG PHÚT HẠN VẪN LÀ ĐÚNG GIỜ — giữ y luật của chamNgay (17:30 là ✓, 17:31 mới là o). Anh Tiến
+     chốt 08/10/2026 gộp TCLĐ với Thi công lắp đặt làm một, nên hai chỗ phải cùng MỘT thước. */
+  it("18:00 đúng phút → vẫn là tick, cùng luật với bảng chấm cũ", () => expect(dauTheoPhut(HAN_PHUT)).toBe("P"));
+  it("18:01 → đã trễ", () => expect(dauTheoPhut(HAN_PHUT + 1)).toBe("o"));
   it("19:59 → trễ", () => expect(dauTheoPhut(19 * 60 + 59)).toBe("o"));
   /* "SAU 20 giờ thì là x" → đúng 20:00 chưa phải "sau", nên vẫn còn là trễ. */
   it("20:00 đúng phút → vẫn trễ, CHƯA thành x", () => expect(dauTheoPhut(HET_TRE_PHUT)).toBe("o"));

@@ -24,17 +24,19 @@
  *     hè nên cộng cứng 7 tiếng là đúng, không cần thư viện múi giờ.
  */
 
-/* ── MỐC GIỜ ──────────────────────────────────────────────────────────────────
-   MUỐN ĐỔI GIỜ THÌ SỬA ĐÚNG HAI SỐ NÀY, không sửa chỗ nào khác.
+/* ── MỐC GIỜ — LẤY TỪ ĐÚNG MỘT CHỖ ───────────────────────────────────────────
+   Anh Tiến chốt 08/10/2026: *"cái TCLĐ với Thi công lắp đặt là 1, chốt theo đó nhé, gộp đi"*.
 
-   LƯU Ý CÓ XUNG ĐỘT SỐ LIỆU, đã báo anh Tiến 08/10/2026 — ba nguồn ghi ba kiểu:
-     · bảng HANG_MUC trong bao-cao-ngay.ts (PMO chốt 16/09): TC lắp đặt hạn 17:30, hết trễ 19:30
-     · đầu file nguồn BCN_BangCham:                          "Thi công lắp đặt 18:00"
-     · anh Tiến nhắn 08/10:                                  trước 18:00 ✓ · sau 18:00 o · sau 20:00 ✕
-   Lấy theo câu anh Tiến nhắn vì nó mới nhất VÀ khớp với file nguồn. Bảng HANG_MUC để nguyên, chưa
-   đụng — đổi nó là đổi luật chấm của cả ba hạng mục, phải hỏi trước. */
-export const HAN_PHUT = 18 * 60;      // 18:00 — trước mốc này là đúng hạn
-export const HET_TRE_PHUT = 20 * 60;  // 20:00 — quá mốc này là không báo cáo
+   Nên giờ hạn KHÔNG khai lại ở đây nữa mà đọc thẳng hạng mục "TC" trong HANG_MUC — bảng giờ gốc
+   của cả ba hạng mục. Trước đó hai chỗ khai hai bộ số (17:30/19:30 và 18:00/20:00) mà vẫn chạy
+   bình thường, chỉ là chấm ra hai kết quả khác nhau: đúng kiểu sai không ai thấy.
+
+   MUỐN ĐỔI GIỜ thì sửa HANG_MUC trong src/lib/bao-cao-ngay.ts, không sửa ở đây. */
+import { hangMucTheoMa } from "@/lib/bao-cao-ngay";
+
+const TC = hangMucTheoMa("TC");
+export const HAN_PHUT = TC?.han ?? 18 * 60;          // 18:00 — trước mốc này là đúng hạn
+export const HET_TRE_PHUT = TC?.hetTre ?? 20 * 60;   // 20:00 — quá mốc này là không báo cáo
 
 /* ── NGÀY BẮT ĐẦU CHẤM ────────────────────────────────────────────────────────
    App CHỈ BẮT ĐẦU ghi nhật ký lượt xuất PDF từ 08/10/2026 (commit này). Trước đó nút xuất PDF báo
@@ -65,11 +67,13 @@ export function lucVn(iso: string): { ngay: string; phut: number } | null {
 
 /** Phút trong ngày (giờ VN) → dấu.
  *
- *  RANH GIỚI ĐẶT Ở ĐÂU: "trước 18 giờ thì tick" nên ĐÚNG 18:00:00 đã là trễ. "sau 20 giờ thì là x"
- *  nên đúng 20:00:00 vẫn còn là trễ, qua 20:00 mới thành x. Hai mốc đọc khác nhau một chút, và đó
- *  là đọc theo đúng câu chữ chứ không phải cho cân đối. */
+ *  ĐÚNG PHÚT HẠN VẪN LÀ ĐÚNG GIỜ (18:00:00 → ✓, 18:01 → o). Giữ y luật của `chamNgay` trong
+ *  bao-cao-ngay.ts, nơi 17:30 là ✓ và 17:31 mới là o. Anh Tiến chốt 08/10/2026 gộp TCLĐ với Thi
+ *  công lắp đặt làm một, nên hai chỗ phải cùng MỘT thước — để hai luật lệch nhau ở phút ranh giới
+ *  thì một ngày nào đó hai bảng cho hai kết quả mà không ai biết bên nào đúng.
+ *  Tương tự ở đầu kia: đúng 20:00 vẫn còn là trễ, qua 20:00 mới thành x. */
 export function dauTheoPhut(phut: number): DauPdf {
-  if (phut < HAN_PHUT) return "P";
+  if (phut <= HAN_PHUT) return "P";
   if (phut <= HET_TRE_PHUT) return "o";
   return "x";
 }
