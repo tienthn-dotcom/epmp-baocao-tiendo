@@ -23,6 +23,7 @@ import { diemPm } from "@/lib/bcn-file";
 import { fetchLuotXuatPdf } from "@/lib/cham-pdf.functions";
 import { gomLuot, dauCuaNgay, NGAY_BAT_DAU_CHAM } from "@/lib/cham-theo-pdf";
 import { loiNoi } from "@/lib/loi-noi";
+import { normProjName } from "@/lib/vung";
 import { track } from "@/lib/track";
 
 /* DẤU — LẤY ĐÚNG BỘ CỦA BÁO CÁO TUÂN THỦ THÁNG (ComplianceMark trong routes/index.tsx), để hai
@@ -59,6 +60,14 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
   const refBang = useRef<HTMLTableElement>(null);
   const [dangXuat, setDangXuat] = useState(false);
   const [ketQuaXuat, setKetQuaXuat] = useState("");
+
+  /* ── BỘ LỌC ────────────────────────────────────────────────────────────────
+     Anh Tiến 08/10/2026: *"cho 1 cách nào đó lọc hay gì để tìm dự án cho nhanh"*.
+     32 dự án × 3 hạng mục = 96 dòng, cuộn tay tìm một cái tên là mất thời gian.
+     Làm theo đúng khuôn bản tháng: ô gõ tìm + chọn PM + chọn vùng, nhiều bộ lọc thì GIAO NHAU. */
+  const [qTim, setQTim] = useState("");
+  const [pmChon, setPmChon] = useState("");
+  const [vungChon, setVungChon] = useState("");
   const q = useQuery({
     queryKey: ["bcn-bang-cham", bump],
     queryFn: () => taiBangCham(bump > 0),
@@ -102,13 +111,40 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
      mỗi nhóm thì điểm thấp lên trước — người cần nhắc nằm trên cùng, giống bản tháng. */
   const duAnXep = useMemo(() => {
     if (!d) return [] as BcnDuAn[];
-    return [...d.duAn].sort((a, b) => {
+    /* LỌC TRƯỚC, XẾP SAU. Nhiều bộ lọc cùng bật thì GIAO NHAU. Lọc ra 0 dòng là một câu trả lời
+       hợp lệ — KHÔNG âm thầm bỏ lọc để lấp đầy bảng, vì người xem sẽ tưởng mình lọc hụt. */
+    const q = normProjName(qTim);
+    const loc = d.duAn.filter((p) => {
+      if (pmChon && p.pm !== pmChon) return false;
+      if (vungChon && p.vung !== vungChon) return false;
+      /* TÌM KHÔNG DẤU, khớp cả TÊN lẫn MÃ CT — gõ "apec" hay "ct26-040" đều ra. Dùng chung
+         normProjName với bản tháng, khỏi dựng phép so thứ hai rồi hai chỗ khớp khác nhau. */
+      if (q && !`${normProjName(p.ten)} ${normProjName(p.maCT)}`.includes(q)) return false;
+      return true;
+    });
+    return loc.sort((a, b) => {
       const ca = a.diem == null ? 1 : 0, cb = b.diem == null ? 1 : 0;
       if (ca !== cb) return ca - cb;
       if (a.diem != null && b.diem != null && a.diem !== b.diem) return a.diem - b.diem;
       return (a.stt ?? 9999) - (b.stt ?? 9999);
     });
-  }, [d]);
+  }, [d, qTim, pmChon, vungChon]);
+
+  /* Danh sách chọn lấy từ TOÀN BỘ dữ liệu, không lấy từ phần đã lọc: lọc theo một PM rồi mà ô chọn
+     chỉ còn đúng PM đó thì không đổi sang người khác được nữa. */
+  const dsPm = useMemo(() => [...new Set((d?.duAn ?? []).map((p) => p.pm).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")), [d]);
+  const dsVung = useMemo(() => [...new Set((d?.duAn ?? []).map((p) => p.vung).filter(Boolean))], [d]);
+
+  /* ĐANG LỌC GÌ — chữ này phải ĐI VÀO BẢN PDF, không chỉ hiện trên màn hình. Bản PDF chụp đúng
+     bảng đang lọc, nên một bản in không ghi đang lọc gì là một bản in nói dối: người nhận tưởng
+     đó là toàn bộ khối. Bản tháng đã làm đúng thế, giữ nguyên nếp. */
+  const dangLoc = useMemo(() => {
+    const p: string[] = [];
+    if (vungChon) p.push(`Vùng: ${vungChon}`);
+    if (pmChon) p.push(`PM: ${pmChon}`);
+    if (qTim.trim()) p.push(`Tìm: "${qTim.trim()}"`);
+    return p.join(" · ");
+  }, [vungChon, pmChon, qTim]);
 
   const soNgayCoDau = useMemo(() => {
     if (!d) return 0;
@@ -176,6 +212,12 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
               {d && <span>{d.duAn.length} dự án · {d.ngay.length} ngày · đã chấm {soNgayCoDau} ngày</span>}
             </div>
             {d?.mocGio && <div style={{ marginTop: 4, fontSize: 11.5, color: "#475569" }}>{d.mocGio}</div>}
+            {/* NẰM TRONG refDau nên nó ĐI VÀO BẢN PDF — xem ghi chú ở `dangLoc`. */}
+            {dangLoc && (
+              <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: "#b45309" }}>
+                Đang lọc — {dangLoc} · {duAnXep.length}/{d?.duAn.length ?? 0} dự án
+              </div>
+            )}
             {/* Phản hồi cho chính thao tác người dùng vừa bấm — tự tắt sau vài giây. */}
             {ketQuaXuat && <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 600, color: ketQuaXuat.startsWith("Không") ? "#b91c1c" : "#15803d" }}>{ketQuaXuat}</div>}
             {/* KHÔNG bày chuyện nội bộ (app bắt đầu ghi từ ngày nào, đã ghi nhận mấy lượt) lên đây —
@@ -199,6 +241,37 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {/* ── THANH LỌC ───────────────────────────────────────────────────
+            Ngoài refDau nên KHÔNG lọt vào bản PDF — bản in cần biết đang lọc gì (dòng chữ ở trên),
+            chứ không cần mấy cái ô bấm. */}
+        {d && d.duAn.length > 0 && (
+          <div style={{ padding: "8px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", background: "#f8fafc" }}>
+            <input value={qTim} onChange={(e) => setQTim(e.target.value)} placeholder="Tìm tên dự án hoặc mã CT…"
+              style={{ flex: "1 1 240px", minWidth: 180, maxWidth: 340, border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12.5, outline: "none" }} />
+            {dsVung.length > 1 && (
+              <select value={vungChon} onChange={(e) => setVungChon(e.target.value)}
+                style={{ border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff" }}>
+                <option value="">Tất cả vùng</option>
+                {dsVung.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            )}
+            {dsPm.length > 1 && (
+              <select value={pmChon} onChange={(e) => setPmChon(e.target.value)}
+                style={{ border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", maxWidth: 220 }}>
+                <option value="">Tất cả PM</option>
+                {dsPm.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            )}
+            {dangLoc && (
+              <button type="button" onClick={() => { setQTim(""); setPmChon(""); setVungChon(""); }}
+                style={{ border: "1px solid #cbd5e1", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, background: "#fff", cursor: "pointer" }}>
+                Bỏ lọc
+              </button>
+            )}
+            <span style={{ fontSize: 11.5, color: "#64748b", marginLeft: "auto" }}>{duAnXep.length}/{d.duAn.length} dự án</span>
+          </div>
+        )}
+
         {/* ── BẢNG ────────────────────────────────────────────────────── */}
         <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
           {q.isPending ? (
@@ -214,6 +287,16 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
           ) : !d || !d.duAn.length ? (
             <div style={{ padding: 24, color: "#64748b", fontSize: 13 }}>
               File nguồn chưa có dòng dự án nào đọc được. Kiểm tra lại tab bảng chấm.
+            </div>
+          ) : !duAnXep.length ? (
+            /* LỌC RA 0 DÒNG LÀ MỘT CÂU TRẢ LỜI HỢP LỆ — nói rõ là do bộ lọc, đừng để bảng trắng
+               trơn rồi người xem tưởng file hỏng. */
+            <div style={{ padding: 24, color: "#64748b", fontSize: 13 }}>
+              Không có dự án nào khớp bộ lọc.{" "}
+              <button type="button" onClick={() => { setQTim(""); setPmChon(""); setVungChon(""); }}
+                style={{ border: "none", background: "transparent", color: "#0369a1", fontWeight: 600, fontSize: 13, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                Bỏ lọc
+              </button>
             </div>
           ) : (
             <table ref={refBang} style={{ borderCollapse: "separate", borderSpacing: 0, width: "max-content", minWidth: "100%" }}>
