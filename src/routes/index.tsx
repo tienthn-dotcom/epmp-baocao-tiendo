@@ -175,6 +175,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  ── LỊCH SỬ (MỖI LẦN DEPLOY nhớ bump số này + ghi 1 dòng) ──────────────────────
  *   ⚠️ APP_VERSION giờ TỰ suy từ CHANGELOG[0].v (mảng user-facing gần const APP_VERSION). Mỗi deploy
  *      THÊM 1 mục ĐẦU mảng CHANGELOG (user-facing) + 1 dòng comment kỹ thuật ở đây.
+ *   v3.149.0 (09/10/2026): mã "GCN" ("Ký hợp đồng NTP") được nạp. parser.ts: thêm /^GCN\b/ vào
+ *     STAGE_BY_PREFIX ("Khác", y như MB/PS) VÀ vào allowlist của nhánh "mã bị bỏ" — thiếu chỗ thứ
+ *     hai là vẫn rơi. index.tsx: stageIdOf trả "GCN", stageLabelOf → "Ký hợp đồng NTP" (không gộp
+ *     thành "Khác"), STAGE_ABBR_ORDER chèn GCN giữa TKSX và SX theo đúng STT file nguồn. Đo file
+ *     09/10: 6 dòng GCN → 5 nạp được (1 nằm trong dự án Hide), 3 hiện ở bảng (2 dòng đã 100%).
+ *     CÒN SÓT cùng họ, chưa đưa lên vì chưa có chỉ đạo: BOQ ×2 ("Chốt BOQ"), NTP ×2 + TĐT ×1
+ *     ("Chốt hợp đồng NTP") — vẫn nằm ở cổng dữ liệu dạng "mã bị bỏ".
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -584,12 +591,15 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.149.0", date: "09/10/2026", items: [
+    "Hạng mục “Ký hợp đồng NTP” (mã GCN trong file nguồn) nay LÊN APP — trước đây mọi dòng GCN bị bỏ, dự án có mốc đó mà trên app không thấy. Bảng hiện đủ tên, xếp sau TKSX trước SX đúng như file.",
+  ] },
   { v: "3.148.0", date: "08/10/2026", items: [
     "Báo cáo tuân thủ hằng ngày — đầu báo cáo gọn lại còn hai dòng (trước là năm). Cảnh báo và thông báo chuyển xuống dải riêng, không nằm trong bản PDF nữa.",
     "Màu đồng bộ lại: cột chủ nhật dùng sắc đậm hơn của chính màu hạng mục thay vì phủ xám — hết loáng màu khi xuất PDF.",
   ] },
   { v: "3.147.0", date: "08/10/2026", items: [
-    "Báo cáo tuân thủ hằng ngày — SỬA LỖI CHỬe ĐÈ CHỬe khi cuộn ngang: ba cột trái (Dự án · PM · Hạng mục) chồng lên nhau. Nay khóa bề ngang, tên dài thì cắt bằng “…”, rê chuột xem đủ.",
+    "Báo cáo tuân thủ hằng ngày — SỬA LỖI CHỮ ĐÈ CHỮ khi cuộn ngang: ba cột trái (Dự án · PM · Hạng mục) chồng lên nhau. Nay khóa bề ngang, tên dài thì cắt bằng “…”, rê chuột xem đủ.",
     "Màu lấy đúng theo file nguồn: nền dòng theo hạng mục — Quân số đào, Thi công lắp đặt xanh nhạt, Sản lượng tím nhạt — và dải tiêu đề xanh đậm như file.",
     "File nguồn ghi hai tháng khác nhau (tiêu đề một đằng, cột ngày một nẻo) thì báo cáo nói rõ ra và chấm theo cột ngày.",
   ] },
@@ -1473,10 +1483,11 @@ const OTHER_LABEL = "Khác";
 const STAGE_ABBR: Record<StageId, string> = {
   TK: "TK", MA: "MA", BG: "BG", VT: "VT", SD: "TKSX", SX: "SX", TC: "TC",
 };
-function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
+function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER"): string {
   if (sid === "MB") return "MB";
   if (sid === "PS") return "PS";
   if (sid === "SHOP") return "SD";
+  if (sid === "GCN") return "GCN";
   if (sid === "OTHER") return "Khác";
   return STAGE_ABBR[sid];
 }
@@ -1484,7 +1495,10 @@ function stageAbbrOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
 /** THỨ TỰ SẮP XẾP hàng theo VIẾT TẮT hạng mục. Khác STAGE_ORDER (internal id, dùng cho 7 thẻ giai
  *  đoạn): ở đây "SD" (Shop Drawing) đứng NGAY TRƯỚC "TKSX" (chốt 04/08/2026), và TKSX xếp đúng chỗ
  *  (STAGE_ORDER dùng id "SD"=TKSX nên sort theo abbr "TKSX" từng bị rớt xuống cuối). Mã lạ → 90 (cuối). */
-const STAGE_ABBR_ORDER: string[] = ["TK", "BG", "MA", "VT", "SD", "TKSX", "SX", "TC"];
+/* GCN (Ký hợp đồng NTP) đứng SAU TKSX, TRƯỚC SX — lấy theo STT của chính file nguồn, không tự xếp:
+ * đo ngày 09/10/2026, CT26-013 chạy 3.1 TK → 3.5 SD → 3.6 GCN → 3.7 SX, CT26-052 chạy 64.4 VT →
+ * 64.5 GCN → 64.6 SX. Cả sáu dự án có GCN đều cùng một chỗ. */
+const STAGE_ABBR_ORDER: string[] = ["TK", "BG", "MA", "VT", "SD", "TKSX", "GCN", "SX", "TC"];
 function stageRankByAbbr(abbr: string): number {
   const i = STAGE_ABBR_ORDER.indexOf(abbr);
   return i < 0 ? 90 : i;
@@ -1495,7 +1509,7 @@ function stageRankByAbbr(abbr: string): number {
  *  LUÔN lấy từ NGƯỜI PHỤ TRÁCH CẤP DỰ ÁN (projectPm — "lấy từ trên xuống"), KHÔNG đọc từ ô công đoạn.
  *  Nhờ vậy ô TKSX nhập "SD - Tuấn Khanh" sẽ ra "PM - {PM dự án}, SD - Tuấn Khanh" (không còn hiểu
  *  nhầm Tuấn Khanh là PM). Chốt 31/07/2026. */
-function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OTHER", projectPm = ""): string {
+function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER", projectPm = ""): string {
   const bare = (owner || "").replace(/^\s*(pm|scm|qs|nm|sd|tđt|tdt|nhà\s*máy)\b[\s\-–—:.&]*/i, "").trim();
   // tên PM = người phụ trách CẤP DỰ ÁN, LẤY TÊN ĐẦU TIÊN (tên sau dấu "/" là DPM, không phải PM).
   const pm = pmFirstOf(projectPm);
@@ -1534,7 +1548,7 @@ function picByStageConv(owner: string, sid: StageId | "MB" | "PS" | "SHOP" | "OT
  *  theo cách khác (block/nhập tay không breakdown) nên KHÔNG chấm vàng chỉ vì thiếu số mã. */
 const COUNT_STAGES = new Set<string>(["Trình duyệt mẫu", "Đặt vật tư", "Triển khai sản xuất", "Sản xuất nhập kho"]);
 
-function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "SHOP" | "OTHER" {
+function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER" {
   const c = it.rawCode.trim().toUpperCase();
   // "Triển khai sản xuất" CHỈ tính mã TKSX (KHÔNG lẫn với mã "SD"). Phải kiểm TKSX TRƯỚC
   // /^SD/ để "TKSX…" không bị bắt nhầm — nhưng TKSX bắt đầu bằng "TK" nên vốn khác "SD".
@@ -1548,15 +1562,19 @@ function stageIdOf(it: ItemRow): StageId | "MB" | "PS" | "SHOP" | "OTHER" {
   if (/^SX/.test(c)) return "SX";
   if (/^TC/.test(c)) return "TC";
   if (/^MB/.test(c)) return "MB";
+  // GCN (Ký hợp đồng NTP) — ngoài bảy giai đoạn, nhưng CÓ mốc ngày + % nên vẫn xét cảnh báo
+  // như SD/MB (khác PS được miễn trừ). Anh Tiến 09/10/2026 yêu cầu đưa lên app, hiện đủ tên.
+  if (/^GCN/.test(c)) return "GCN";
   // PS (Phát sinh) — việc phát sinh thêm, mốc riêng, KHÔNG thuộc dòng chảy giai đoạn
   // chuẩn nên đứng ngoài STAGE_ORDER (không có thẻ giai đoạn, không lọc theo giai đoạn).
   if (/^PS/.test(c)) return "PS";
   return "OTHER";
 }
-function stageLabelOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
+function stageLabelOf(sid: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER"): string {
   if (sid === "MB") return "Bàn giao mặt bằng";
   if (sid === "PS") return "Phát sinh";
   if (sid === "SHOP") return "Shop Drawing";
+  if (sid === "GCN") return "Ký hợp đồng NTP";
   if (sid === "OTHER") return "Khác";
   return STAGE_META[sid].label;
 }
@@ -1566,12 +1584,13 @@ const STAGE_DISPLAY: Record<string, ReactNode> = {
   "Sản xuất nhập kho":   <>Sản xuất<br />nhập kho</>,
   "Thi công lắp đặt":    <>Thi công<br />lắp đặt</>,
   "LOA, Tạm ứng":        <>LOA,<br />Tạm ứng</>,
+  "Ký hợp đồng NTP":     <>Ký hợp đồng<br />NTP</>,
 };
-function stageDisplayLabel(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): ReactNode {
+function stageDisplayLabel(sid: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER"): ReactNode {
   return STAGE_DISPLAY[stageLabelOf(sid)] ?? stageLabelOf(sid);
 }
-function deptOf(sid: StageId | "MB" | "PS" | "SHOP" | "OTHER"): string {
-  if (sid === "MB" || sid === "PS" || sid === "SHOP" || sid === "OTHER") return OTHER_LABEL;
+function deptOf(sid: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER"): string {
+  if (sid === "MB" || sid === "PS" || sid === "SHOP" || sid === "GCN" || sid === "OTHER") return OTHER_LABEL;
   return STAGE_META[sid].dept;
 }
 
@@ -2249,7 +2268,7 @@ function Field({ label, unit, value, min, max, onChange }: {
  * ====================================================================== */
 
 type EnrichedItem = ItemRow & {
-  _stageId: StageId | "MB" | "PS" | "SHOP" | "OTHER";
+  _stageId: StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER";
   _stageLabel: string;
   _stageDisplay: ReactNode;
   _dept: string;
@@ -2447,7 +2466,7 @@ const fmtMsgTime = (iso: string): string => {
 
 type HiRange = [number, number];
 
-type StageOrOther = StageId | "MB" | "PS" | "SHOP" | "OTHER";
+type StageOrOther = StageId | "MB" | "PS" | "SHOP" | "GCN" | "OTHER";
 type AlertK2 = Exclude<AlertKind, "none">;
 
 type Filters = {

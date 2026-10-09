@@ -115,6 +115,13 @@ const STAGE_BY_PREFIX: Array<[RegExp, StageKey | "Khác"]> = [
   // "PS" (Phát sinh) không phải một giai đoạn trong dòng chảy chuẩn — việc phát sinh
   // thêm, có mốc riêng, nên xếp "Khác" y như MB. Xem thêm luật miễn cảnh báo ở index.tsx.
   [/^PS\b/i,   "Khác"],
+  /* "GCN" = Ký hợp đồng NTP (nhà thầu phụ). Anh Tiến 09/10/2026: *"file nguồn có thêm dòng GCN
+     có mã là GCN -> tên là Ký hợp đồng NTP, cho lên app luôn nhé"*. Đo file ngày 09/10: SÁU dòng
+     mã GCN ở sáu dự án, TRƯỚC NAY BỊ BỎ SẠCH vì không khớp allowlist bên dưới — trên app sáu đầu
+     việc đó coi như không tồn tại, chỉ lộ ra ở cổng dữ liệu dưới dạng "mã bị bỏ".
+     Xếp "Khác" chứ KHÔNG nhận là giai đoạn: nó không nằm trong bảy giai đoạn của dòng chảy chuẩn,
+     y như MB (bàn giao mặt bằng) và PS (phát sinh). */
+  [/^GCN\b/i,  "Khác"],
 ];
 
 function detectStage(code: string): StageKey | "Khác" {
@@ -824,7 +831,7 @@ export function parseTimelineRows(rows: unknown[][], refDateIso: string, getForm
     }
 
     const stage = detectStage(rawCode);
-    if (stage === "Khác" && !/^(TK|MA|BG|VT|TKSX|SD|SX|TC|MB|DM|PS)/i.test(rawCode)) {
+    if (stage === "Khác" && !/^(TK|MA|BG|VT|TKSX|SD|SX|TC|MB|DM|PS|GCN)/i.test(rawCode)) {
       // Mã không thuộc nhóm giai đoạn nào → bị bỏ qua. ĐẾM để cảnh báo
       // (file đổi quy ước prefix thì phải lộ ra, không được nuốt trong im lặng).
       unknownPrefixCount++;
