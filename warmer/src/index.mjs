@@ -926,6 +926,42 @@ Content-Type: application/pdf
  */
 const APP_URL = "https://baocao-tiendo-pmo.tienthn.workers.dev";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  TỰ CHẤM TUÂN THỦ MỖI NGÀY — worker chỉ BẤM GIỜ, app mới làm
+ *
+ *  Anh Tiến 12/10/2026: *"app của chúng ta sẽ auto data đẩy dữ liệu về đây […] mục tiêu của
+ *  việc này là để giảm tải việc tôi phải ngồi rà soát mỗi ngày"*.
+ *
+ *  VIỆC THẬT NẰM BÊN APP (src/lib/cham-bcn.functions.ts): hỏi Drive xem file ma trận nào hôm
+ *  nay có người sửa, hỏi nhật ký xem ai xuất PDF, rồi ghi dấu vào file nguồn bằng Sheets API.
+ *
+ *  VÌ SAO KHÔNG LÀM LUÔN Ở ĐÂY: gói free cho TỐI ĐA 50 lượt gọi mạng mỗi lần worker chạy. Hai
+ *  mốc 18:00/20:00 đã nuôi warmAll + warmMaTran, cộng thêm ~30 lượt hỏi Drive/Sheets nữa là
+ *  chạm trần — mà chạm trần thì lượt gọi sau cùng ĐỨT GIỮA CHỪNG, không báo gì. Gọi sang app
+ *  thì app có ngân sách riêng của nó, và luật chấm nằm chung chỗ với bộ kiểm.
+ *
+ *  Chìa là RENDER_TOKEN, dùng chung với cửa dựng PDF — warmer vốn đã có secret đó. */
+/* GOI APP QUA SERVICE BINDING. Worker goi worker khac bang URL cong khai thi Cloudflare chan
+   thang: error code 1042 (do dung thu 12/10/2026). Binding "APP" di trong mang noi bo.
+   Van giu duong fetch thuong lam duong lui, phong khi binding chua kip khai. */
+async function gapApp(env, u) {
+  const req = new Request(u, { headers: { "x-epmp-render": env.RENDER_TOKEN } });
+  return env.APP ? env.APP.fetch(req) : fetch(req);
+}
+
+async function goiChamBcn(env, chot) {
+  if (!env.RENDER_TOKEN) return { skip: "thiếu secret RENDER_TOKEN" };
+  const u = `${APP_URL}/may/cham-bcn?chot=${chot ? 1 : 0}`;
+  const r = await gapApp(env, u);
+  const chu = await r.text();
+  if (!r.ok) return { loi: `app trả mã ${r.status}`, than: chu.slice(0, 300) };
+  try {
+    const j = JSON.parse(chu);
+    /* Gọn lại cho dòng log: lượt chấm trả cả danh sách bằng chứng, in hết thì log ngập. */
+    return { ok: j.ok, ngay: j.ngay, chot: j.chot, soGhi: (j.ghi || []).length, thang: j.thangBang, sangThang: j.sangThang, dung: j.dung };
+  } catch { return { loi: "app trả về không phải JSON", than: chu.slice(0, 300) }; }
+}
+
 async function tuBamNutGuiMail(env) {
   if (!env.RENDER_TOKEN) return { ok: false, skip: "thiếu secret RENDER_TOKEN" };
   if (!env.MYBROWSER) return { ok: false, skip: "chưa gắn binding MYBROWSER (Browser Rendering)" };
@@ -1036,6 +1072,10 @@ export default {
         .catch((e) => console.error("warmAll 20h lỗi:", e)));
       ctx.waitUntil(warmMaTran(env).then((r) => console.log("maTran 20h:", JSON.stringify(r)))
         .catch((e) => console.error("warmMaTran 20h lỗi:", e)));
+      /* LƯỢT CHỐT NGÀY: qua 20:00 rồi nên ô nào còn trống là "không báo cáo". ĐẶT TRƯỚC nhánh
+         kiểm thứ Tư bên dưới — để sau là ngày thường không chấm, mà chấm thì phải chấm mỗi ngày. */
+      ctx.waitUntil(goiChamBcn(env, true).then((r) => console.log("chamBcn 20h:", JSON.stringify(r)))
+        .catch((e) => console.error("chamBcn 20h lỗi:", e)));
       const vn = new Date(Date.now() + 7 * 3600_000);   // worker chạy UTC
       if (vn.getUTCDay() !== 3) return;                 // 0=CN … 3=THỨ TƯ — PDF chỉ dựng thứ Tư
       /* TỰ BẤM NÚT TRÊN APP — ra ĐÚNG bản app xuất (~1.5MB), đúng thứ cần đính mail.
@@ -1075,10 +1115,21 @@ export default {
       .catch((e) => console.error("warmAll lỗi:", e)));
     ctx.waitUntil(warmMaTran(env).then((r) => console.log("maTran:", JSON.stringify(r)))
       .catch((e) => console.error("warmMaTran lỗi:", e)));
+    /* Lượt 18:00 CHỈ ghi ✓ và O, chưa kết tội ai: cửa sổ trễ còn mở tới 20:00. */
+    ctx.waitUntil(goiChamBcn(env, false).then((r) => console.log("chamBcn 18h:", JSON.stringify(r)))
+      .catch((e) => console.error("chamBcn 18h lỗi:", e)));
   },
   // Gọi tay để test: mở URL worker (GET) → warm + sao lưu ngay + trả kết quả.
   async fetch(req, env) {
     const tham = new URL(req.url).searchParams;
+    /* THỬ CHẤM TUÂN THỦ: "…/?cham=1" chạy thật, "…/?cham=1&thu=1" chỉ xem trước (KHÔNG ghi vào
+       file nguồn), thêm "&chot=1" để thử lượt chốt sau 20:00. */
+    if (tham.get("cham")) {
+      if (!env.RENDER_TOKEN) return new Response(JSON.stringify({ loi: "thiếu secret RENDER_TOKEN" }), { status: 500, headers: { "content-type": "application/json" } });
+      const u = `${APP_URL}/may/cham-bcn?chot=${tham.get("chot") === "1" ? 1 : 0}&thu=${tham.get("thu") === "1" ? 1 : 0}`;
+      const r = await gapApp(env, u);
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json; charset=utf-8" } });
+    }
     /* THỬ CAMERA: mở "…/?cam=1" để chụp NGAY toàn bộ danh sách; "…/?cam=<số máy>" để thử đúng một
        camera mà không đụng tới ảnh của cả công trường. Trả về JSON nói rõ chụp được mấy cái, hụt
        cái nào và vì sao — cần thế để dò lúc mới cắm camera. */

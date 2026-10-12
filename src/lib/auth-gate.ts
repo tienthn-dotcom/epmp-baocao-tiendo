@@ -47,6 +47,28 @@ const kill = (name: string, url: URL) => cookieHeader(name, "", 0, isHttps(url))
 export async function authGate(request: Request, envIn: unknown): Promise<Response | null> {
   const url = new URL(request.url);
   const env = resolveEnv(envIn);
+  /* ── CỬA MÁY: TỰ CHẤM TUÂN THỦ MỖI NGÀY ───────────────────────────────────────────────────
+   * Worker phụ gọi lúc 18:00 và 20:00 giờ VN. Đặt ở ĐÂY, trước cả bước kiểm cấu hình, vì nó
+   * KHÔNG phải một trang của app: không phiên, không cookie, chỉ một chuỗi bí mật và trả JSON.
+   *
+   * KHOÁ: đúng đường dẫn này + RENDER_TOKEN (so kiểu không lộ thời gian) — dùng chung chuỗi với
+   * cửa dựng PDF, warmer vốn đã có secret đó. Không đặt secret = cửa tự tắt.
+   * Ở BẢN DEV mở sẵn để thử trên máy; bản dev vốn không có secret nào nên không mở thêm gì.
+   *
+   * ?thu=1  xem trước, KHÔNG ghi gì vào file nguồn.
+   * ?chot=1 lượt chốt (sau 20:00): ô còn trống thành "X". Thiếu cờ này thì chỉ ghi ✓/O. */
+  if (url.pathname === "/may/cham-bcn") {
+    const dua = request.headers.get("x-epmp-render") || url.searchParams.get("rt") || "";
+    const mo = import.meta.env.DEV || (!!env.RENDER_TOKEN && !!dua && bangNhauAnToan(dua, env.RENDER_TOKEN));
+    if (!mo) return new Response(JSON.stringify({ ok: false, loi: "không có chìa" }), { status: 403, headers: { "content-type": "application/json; charset=utf-8" } });
+    const { chayChamBcn } = await import("./cham-bcn.functions");
+    const kq = await chayChamBcn({
+      chot: url.searchParams.get("chot") === "1",
+      thu: url.searchParams.get("thu") === "1",
+    }).catch((e: unknown) => ({ ok: false, loi: (e as Error)?.message ?? String(e) }));
+    return new Response(JSON.stringify(kq, null, 1), { headers: { "content-type": "application/json; charset=utf-8" } });
+  }
+
   const configured = !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET);
 
   if (!configured) {

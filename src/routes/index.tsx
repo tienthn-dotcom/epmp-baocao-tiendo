@@ -182,6 +182,18 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     09/10: 6 dòng GCN → 5 nạp được (1 nằm trong dự án Hide), 3 hiện ở bảng (2 dòng đã 100%).
  *     CÒN SÓT cùng họ, chưa đưa lên vì chưa có chỉ đạo: BOQ ×2 ("Chốt BOQ"), NTP ×2 + TĐT ×1
  *     ("Chốt hợp đồng NTP") — vẫn nằm ở cổng dữ liệu dạng "mã bị bỏ".
+ *   v3.150.0 (12/10/2026): TỰ CHẤM tuân thủ ngày rồi GHI vào file nguồn. Luật ở lib/cham-bcn.ts
+ *     (thuần, 40 ca kiểm), đường dây ở lib/cham-bcn.functions.ts, cửa máy /may/cham-bcn trong
+ *     auth-gate (chìa RENDER_TOKEN), warmer gọi lúc 18:00 (chot=0) và 20:00 (chot=1).
+ *     ĐO TRƯỚC KHI DỰNG và phép đo đổi hẳn thiết kế: action `export_pdf_duan` có ĐÚNG 0 dòng
+ *     trong toàn bộ D1 — nút xuất PDF dự án chưa ai bấm lần nào, chấm chỉ theo nó thì cả bảng
+ *     ra "X". Nguồn thật là Drive modifiedTime + lastModifyingUser của file ma trận (10:06 sáng
+ *     12/10 đã có 4 mã CT được người khác anh Tiến sửa). Giữ cả hai nguồn, lấy lượt SỚM NHẤT.
+ *     Google KHÔNG cho biết ai MỞ file (Drive API không có hoạt động "view"), chỉ biết ai SỬA.
+ *     Token Drive của app chính là tienthn@aacorporation.com và canEdit=true trên file v6 →
+ *     ghi thẳng bằng Sheets API, KHÔNG cần Apps Script; cũng vì thế phải LOẠI email này khỏi
+ *     bằng chứng (anh mở file rà soát mỗi ngày, không loại là bảng tự tick).
+ *     drive.functions: driveFileMetaImpl trả thêm `email`, thêm driveTokenImpl().
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -591,6 +603,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.150.0", date: "12/10/2026", items: [
+    "Báo cáo tuân thủ hằng ngày TỰ CHẤM dòng “Thi công lắp đặt” và ghi thẳng vào file nguồn, không phải ngồi rà tay nữa. Hôm đó có người (không tính anh Tiến) sửa file ma trận của dự án, hoặc xuất PDF dự án trên ePMP: trước 18:00 là ✓, tới 20:00 là O, quá 20:00 hoặc không có gì là X.",
+    "Máy chạy hai lượt mỗi ngày — 18:00 ghi ✓/O, 20:00 chốt phần còn lại. Ô nào đã chấm tay thì máy KHÔNG đè lên, và dự án chưa gắn ma trận thì để trống chứ không chấm X.",
+    "Sang tháng mới bảng tự dọn: tháng cũ được lưu nguyên sang một tab riêng (ví dụ “BCN 09-2026”) rồi bảng chính đổi sang tháng mới.",
+  ] },
   { v: "3.149.0", date: "09/10/2026", items: [
     "Hạng mục “Ký hợp đồng NTP” (mã GCN trong file nguồn) nay LÊN APP — trước đây mọi dòng GCN bị bỏ, dự án có mốc đó mà trên app không thấy. Bảng hiện đủ tên, xếp sau TKSX trước SX đúng như file.",
   ] },

@@ -44,6 +44,14 @@ binding = "MYBROWSER"
 # CẦN THÊM 1 SECRET: npx wrangler secret put RENDER_TOKEN  (phải TRÙNG chuỗi đặt trên app chính)
 
 # KV DÙNG CHUNG với app chính — id lấy từ scripts/patch-wrangler.cjs của app chính.
+# GOI THANG SANG APP CHINH (Service Binding).
+# Worker goi worker khac qua URL cong khai thi Cloudflare tu choi: error code 1042. Service
+# binding di thang trong mang noi bo, khong qua Internet, va app van co ngan sach subrequest
+# rieng cua no. Day la duong de cron 18:00/20:00 bam nut "tu cham tuan thu" ben app.
+[[services]]
+binding = "APP"
+service = "baocao-tiendo-pmo"
+
 [[kv_namespaces]]
 binding = "PMO_EDITS"
 id = "2bdbce7b49014e538ee3156728ab9548"

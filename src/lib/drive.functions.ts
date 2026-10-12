@@ -122,7 +122,7 @@ async function updateFileMedia(token: string, fileId: string, uri: string): Prom
  *  Dùng cho dòng "Ngày cập nhật" trong popup ma trận: ngày này do Google ghi mỗi lần file đổi,
  *  nên không ai gõ tay được — khác hẳn cột ngày trong bảng. Trả null khi chưa cấu hình OAuth
  *  hoặc tài khoản không thấy file (link chưa chia sẻ), để giao diện lặng lẽ ẩn dòng đó đi. */
-export async function driveFileMetaImpl(fileId: string): Promise<{ modifiedTime: string; nguoiSua: string } | null> {
+export async function driveFileMetaImpl(fileId: string): Promise<{ modifiedTime: string; nguoiSua: string; email: string } | null> {
   const env = await getEnv();
   if (!env || !(env as Env).GDRIVE_OAUTH_CLIENT_ID || !(env as Env).GDRIVE_OAUTH_REFRESH) return null;
   try {
@@ -133,8 +133,24 @@ export async function driveFileMetaImpl(fileId: string): Promise<{ modifiedTime:
     if (!r.ok) return null;
     const j = await r.json() as { modifiedTime?: string; lastModifyingUser?: { displayName?: string; emailAddress?: string } };
     if (!j.modifiedTime) return null;
-    return { modifiedTime: j.modifiedTime, nguoiSua: j.lastModifyingUser?.displayName || j.lastModifyingUser?.emailAddress || "" };
+    /* TRẢ CẢ EMAIL, không chỉ tên hiển thị. Bộ tự chấm tuân thủ (cham-bcn) phải LOẠI đúng một
+       người — anh Tiến, vì anh mở file nguồn mỗi ngày để rà soát — mà tên hiển thị thì trùng
+       được, còn email thì không. Giao diện vẫn dùng `nguoiSua` như cũ. */
+    return {
+      modifiedTime: j.modifiedTime,
+      nguoiSua: j.lastModifyingUser?.displayName || j.lastModifyingUser?.emailAddress || "",
+      email: (j.lastModifyingUser?.emailAddress || "").toLowerCase(),
+    };
   } catch { return null; }
+}
+
+/** ACCESS TOKEN dùng chung (đã cache ~50 phút trong isolate).
+ *  Mở ra cho bộ tự chấm tuân thủ gọi Sheets API — scope `auth/drive` của token này bao luôn
+ *  quyền đọc/ghi Sheets, nên KHÔNG phải xin thêm scope hay dựng Apps Script. */
+export async function driveTokenImpl(): Promise<string | null> {
+  const env = await getEnv();
+  if (!env || !(env as Env).GDRIVE_OAUTH_CLIENT_ID || !(env as Env).GDRIVE_OAUTH_REFRESH) return null;
+  try { return await accessToken(env as Env); } catch { return null; }
 }
 
 /** true nếu đã đủ cấu hình OAuth để dùng Drive. */
