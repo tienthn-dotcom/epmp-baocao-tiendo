@@ -32,7 +32,7 @@ import { taoHangDoi } from "@/lib/hang-doi";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { track } from "@/lib/track";
-import { getInstallList, getLinkUpdatedAt, getSheetPdf } from "@/lib/mtld-install.functions";
+import { getInstallList, getLinkUpdatedAt, getLinksUpdatedAt, getSheetPdf } from "@/lib/mtld-install.functions";
 import { nhanTrang } from "@/lib/trang-pdf";
 import { useTuLamMoi } from "@/lib/tu-lam-moi-hook";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
@@ -508,6 +508,36 @@ function MtldApp() {
     if (Array.isArray(l) && l.length) { const u = dedupInstall(l as InstallProj[]); setList(u); try { localStorage.setItem(MTLD_INSTALL_LS, JSON.stringify(u)); } catch { /* bỏ qua */ } }
   }, [listQ.data]);
 
+  /* ── XUẤT BÁO CÁO BOD ───────────────────────────────────────────────────────────────────
+     Anh Tiến 13/10/2026: *"tôi cần 1 nút export hàng loạt PDF, hoặc ra 1 báo cáo kiểu này"* (kèm
+     bản BAO_CAO_TCLD_TTBG_TUAN40_BOD). Luật xếp cụm và luật dán nhãn ở lib/bao-cao-bod.ts.
+
+     HỎI NGÀY SỬA MỘT LƯỢT CHO CẢ DANH SÁCH (getLinksUpdatedAt) chứ không hỏi từng file: 46 lượt
+     gọi riêng vừa chậm vừa đụng trần lượt gọi mạng của Worker. */
+  const [dangXuat, setDangXuat] = useState<string | null>(null);
+  const xuatBod = async () => {
+    if (dangXuat || !list.length) return;
+    setDangXuat("Đang hỏi ngày cập nhật…");
+    try {
+      const ids = [...new Set(list.map((p) => p.fileId).filter(Boolean))];
+      const meta = await getLinksUpdatedAt({ data: { fileIds: ids } }).catch(() => ({ map: {} as Record<string, { modifiedTime: string }> }));
+      const ngay = new Map<string, string | null>(ids.map((id) => [id, meta.map?.[id]?.modifiedTime ?? null]));
+      const { xepTrangBod } = await import("@/lib/bao-cao-bod");
+      const { xuatBaoCaoBod } = await import("@/lib/bao-cao-bod-xuat");
+      const trang = xepTrangBod(list, ngay, Date.now());
+      const vn = new Date(Date.now() + 7 * 3600_000);
+      const nhan = `Ngày ${String(vn.getUTCDate()).padStart(2, "0")}/${String(vn.getUTCMonth() + 1).padStart(2, "0")}/${vn.getUTCFullYear()}`;
+      const kq = await xuatBaoCaoBod(trang, nhan, (p) => setDangXuat(`Đang ghép ${p.xong}/${p.tong}…`));
+      /* NÓI THẲNG DỰ ÁN NÀO HỤT. Thiếu vài trang mà im lặng thì bản gửi BOD thiếu dự án mà không
+         ai biết — đúng kiểu sai nhìn vẫn như đúng. */
+      setDangXuat(kq.hut.length ? `Xong ${kq.soTrang} trang · hụt ${kq.hut.length}` : `Xong ${kq.soTrang} trang`);
+      if (kq.hut.length) console.warn("[bao-cao-bod] không tải được ma trận:", kq.hut);
+    } catch (e) {
+      setDangXuat("Hụt: " + (e instanceof Error ? e.message : String(e)).slice(0, 60));
+    }
+    setTimeout(() => setDangXuat(null), 6000);
+  };
+
   const regionOf = (p: InstallProj) => p.region || "Khác";
   const allByRegion = new Map<string, InstallProj[]>();
   for (const p of list) { const r = regionOf(p); (allByRegion.get(r) ?? allByRegion.set(r, []).get(r)!).push(p); }
@@ -587,6 +617,14 @@ function MtldApp() {
             <button type="button" onClick={() => setBump((n) => n + 1)}
               style={{ display: "inline-flex", alignItems: "center", gap: 5, background: MTLD_T.panel, color: MTLD_T.ink, border: `1px solid ${MTLD_T.line}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
               <RefreshCw className="h-3.5 w-3.5" /> Làm mới
+            </button>
+            {/* XUẤT HÀNG LOẠT — ghép mọi ma trận thành một file PDF kiểu bản gửi BOD.
+                Xuất CẢ DANH SÁCH chứ không phải phần đang lọc: bản gửi BOD là bản đầy đủ, lọc
+                còn 3 dự án rồi xuất ra "báo cáo tổng hợp" 3 trang là hiểu nhầm chết người. */}
+            <button type="button" onClick={() => void xuatBod()} disabled={!!dangXuat || !list.length}
+              title="Ghép ma trận của TẤT CẢ dự án thành một file PDF, xếp theo cụm, dán nhãn đã/chưa vận hành"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, background: dangXuat ? MTLD_T.panel : MTLD_T.accent, color: dangXuat ? MTLD_T.soft : "#fff", border: `1px solid ${dangXuat ? MTLD_T.line : MTLD_T.accent}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: dangXuat ? "default" : "pointer" }}>
+              {dangXuat ?? "⬇ Xuất báo cáo BOD"}
             </button>
           </div>
         </div>

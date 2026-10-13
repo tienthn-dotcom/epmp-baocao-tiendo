@@ -207,6 +207,19 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     getLinkUpdatedAt: metaQ của hai popup đổi sang force + staleTime 0 (số cache 5 phút vừa bày
  *     ngày cũ vừa bỏ sót lần sửa vừa xong); bù lại CHỈ GHI KV khi số đổi thật, và tắt
  *     refetchOnWindowFocus để bấm ra bấm vào không thành một lượt hỏi Drive nữa.
+ *   v3.152.0 (13/10/2026): XUẤT HÀNG LOẠT ma trận thành một PDF kiểu bản gửi BOD. Đọc 43 trang
+ *     bản BAO_CAO_TCLD_TTBG_TUAN40_BOD anh Tiến gửi: bìa + mỗi trang một ma trận, xếp theo bốn
+ *     cụm, mỗi trang dán dải tiêu đề kèm nhãn ĐÃ/CHƯA VẬN HÀNH; ruột trang chính là bản Google
+ *     xuất của tab ma trận — đúng thứ app vẫn cache cho popup.
+ *     ĐO TRƯỚC: nhãn vận hành KHÔNG có trong file ma trận (mở 8 file đầu danh sách, không file
+ *     nào có chữ đó) → người làm báo cáo gõ tay. Anh Tiến chốt luật: "đang chạy = trong 7 ngày
+ *     gần nhất có người sửa file ma trận", đo bằng Drive modifiedTime.
+ *     lib/bao-cao-bod.ts (thuần, 19 ca kiểm): cụm theo region, giữ nguyên thứ tự trong cụm,
+ *     vùng lạ KHÔNG bị rơi mà xuống cụm cuối. lib/bao-cao-bod-xuat.ts: pdf-lib ghép + dải tiêu
+ *     đề VẼ BẰNG CANVAS rồi dán ảnh (font chuẩn pdf-lib là WinAnsi, không có chữ Việt có dấu);
+ *     tải theo lô 3 (46 lượt song song là đường đã làm MTLĐ chết Error 1102).
+ *     Đo trên máy: 21 ma trận → 101 trang, 2 ma trận hụt (CT25-015, CT23-042 — hai sheet chưa
+ *     chia sẻ, vốn đã 401 từ trước) và được liệt kê ra chứ không bỏ im.
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -616,6 +629,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.152.0", date: "13/10/2026", items: [
+    "Màn MTLĐ có nút “Xuất báo cáo BOD”: ghép ma trận của TẤT CẢ dự án thành một file PDF, xếp theo cụm (Phú Quốc · Miền Nam · Miền Trung · Miền Bắc) đúng khuôn bản gửi BOD, kèm trang bìa.",
+    "Mỗi trang dán sẵn dải tiêu đề: cụm, số thứ tự, tên dự án, mã CT và nhãn “TCLĐ: ĐÃ VẬN HÀNH” hay “CHƯA VẬN HÀNH” — tính theo việc trong 7 ngày gần nhất có ai cập nhật file ma trận hay không.",
+    "Ma trận nào tải không được thì nút báo rõ số lượng, không lặng lẽ bỏ trang.",
+  ] },
   { v: "3.151.0", date: "13/10/2026", items: [
     "Mở popup ma trận là TỰ LẤY BẢN MỚI: app hỏi ngày sửa cuối của file, file đã đổi sau bản đang xem thì tự tải lại chart — không phải bấm “Cập nhật lại” nữa. File không đổi thì giữ bản cũ cho nhanh.",
   ] },
