@@ -15,7 +15,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { parseMediaMsgs, capNganMsg, MEDIA_MSG_MAX, type MediaMsg } from "@/lib/media-msg";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "@/lib/activity";
-import { DEFAULT_ROLES, roleOf, type UserRole } from "@/lib/roles";
+import { DEFAULT_ROLES, laDieuHanh, roleOf, type UserRole } from "@/lib/roles";
 import { SESSION_COOKIE, readCookie, verifySession } from "@/lib/auth";
 
 // LƯU Ý (giống edits.functions.ts): file này BỊ CLIENT IMPORT. Mọi hàm đụng server-only
@@ -63,7 +63,7 @@ async function laAdminHoacPmo(devAs?: string | null): Promise<boolean> {
     const kv = env.PMO_EDITS as undefined | { get: (k: string) => Promise<string | null> };
     const raw = kv ? await kv.get("roles:v1") : null;
     const map = (raw ? JSON.parse(raw) : {}) as Record<string, UserRole>;
-    return roleOf(Object.keys(map).length ? map : DEFAULT_ROLES, email) === "PMO";
+    return laDieuHanh(roleOf(Object.keys(map).length ? map : DEFAULT_ROLES, email));
   } catch { return false; }
 }
 

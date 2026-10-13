@@ -3,7 +3,7 @@ import { ROBOT_EMAIL } from "@/lib/auth";
 import { z } from "zod";
 import { demGhiKv } from "@/lib/kv-dem";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
-import { DEFAULT_ROLES, roleOf, type UserRole } from "./roles";
+import { DEFAULT_ROLES, laDieuHanh, roleOf, type UserRole } from "./roles";
 import { SESSION_COOKIE, readCookie, verifySession } from "./auth";
 // LƯU Ý QUAN TRỌNG: file này bị CLIENT import (saveEdits, EditsMap). Mọi hàm đụng server-only
 // ("@tanstack/react-start/server") PHẢI là hàm nội bộ, CHỈ gọi trong thân serverFn handler (thân
@@ -50,7 +50,7 @@ async function callerIsPmo(devAs?: string | null): Promise<boolean> {
   if (!email) return false;
   const cur = await readRoles();
   const map = Object.keys(cur).length ? cur : DEFAULT_ROLES;
-  return roleOf(map, email) === "PMO";
+  return laDieuHanh(roleOf(map, email));
 }
 
 /**
@@ -985,7 +985,7 @@ export const saveUserRole = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z.object({
       email: z.string().email().max(200),
-      role: z.enum(["PMO", "BOD", "PM"]).nullable(),
+      role: z.enum(["PMO", "OCC", "BOD", "PM"]).nullable(),
       devAs: z.string().nullable().optional(),
     }).parse(input),
   )

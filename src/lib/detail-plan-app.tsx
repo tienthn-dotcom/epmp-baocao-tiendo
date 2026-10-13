@@ -13,7 +13,7 @@ import { ChevronRight, RefreshCw, Upload, X, AlertTriangle, ExternalLink, Slider
 import { getSummaryFile, listSheetTabs } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles, listDstSources, addDstSource, deleteDstSource, type DstSourceItem } from "@/lib/edits.functions";
-import { roleOf } from "@/lib/roles";
+import { laDieuHanh, roleOf } from "@/lib/roles";
 import { parseDetailPlan, type DetailNode, type DetailProject } from "@/lib/detail-plan";
 import { track } from "@/lib/track";
 import { useIsMobile } from "@/lib/use-breakpoint";
@@ -266,7 +266,7 @@ export function DetailPlanApp() {
   const meQ = useQuery({ queryKey: ["dst-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["dst-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
   const xemNhuUser = useXemNhuUser();   // admin/PMO đang soi bằng con mắt người thường
-  const canManage = !xemNhuUser && !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  const canManage = !xemNhuUser && !!(meQ.data?.isAdmin || (meQ.data?.email && laDieuHanh(roleOf(rolesQ.data?.roles ?? {}, meQ.data.email))));
   /** Link tới ĐÚNG file của MỘT nguồn. Không còn một link dùng chung cho cả bảng — bảng gộp nhiều
    *  nguồn thì một link chung chắc chắn lệch với phần lớn số đang hiện. */
   const linkOf = (x: { fileId: string; gid?: string }) => `https://docs.google.com/spreadsheets/d/${x.fileId}/edit${x.gid ? `#gid=${x.gid}` : ""}`;

@@ -22,7 +22,7 @@
  * họ trong app là nút PM có số ngay, không cần sửa code.
  */
 import type { UserRole } from "./roles";
-import { roleOf } from "./roles";
+import { laDieuHanh, roleOf } from "./roles";
 import { MSG_NGUON } from "./types";
 
 export type NhomCmt = "BOD" | "OCC" | "PM" | "KHAC";
@@ -48,7 +48,9 @@ export function nhomCuaTin(m: TinToiThieu, roles: Record<string, UserRole>): Nho
   if (m.id === MSG_NGUON) return "OCC";
   const vai = roleOf(roles, m.author ?? "");
   if (vai === "BOD") return "BOD";
-  if (vai === "PMO") return "OCC";
+  /* PMO và OCC cùng một nhóm bình luận: tách vai là để gọi đúng tên bộ phận, còn bộ lọc bình
+     luận chỉ cần ba tầng BOD / điều hành / PM. Thêm một nút lọc nữa chỉ làm rối. */
+  if (laDieuHanh(vai)) return "OCC";
   if (vai === "PM") return "PM";
   return "KHAC";
 }

@@ -27,7 +27,7 @@ import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
-import { roleOf, type UserRole } from "@/lib/roles";
+import { laDieuHanh, roleOf, type UserRole } from "@/lib/roles";
 import { taoHangDoi } from "@/lib/hang-doi";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
@@ -101,7 +101,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
   const rolesQ = useQuery({ queryKey: ["shell-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
   const xemNhuUser = useXemNhuUser();
   const myRoleThat = meQ.data?.email ? roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) : null;
-  const canManageThat = !!(meQ.data?.isAdmin || myRoleThat === "PMO");
+  const canManageThat = !!(meQ.data?.isAdmin || laDieuHanh(myRoleThat));
   // Đang xem như người thường thì rail cũng phải giấu app riêng, kẻo vẫn thấy MTLĐ với Hiệu suất.
   const myRole = xemNhuUser ? null : myRoleThat;
   const canManage = !xemNhuUser && canManageThat;
@@ -497,7 +497,7 @@ function MtldApp() {
   const devAs = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("as") : null;
   const meQ = useQuery({ queryKey: ["mtld-whoami", devAs], queryFn: () => whoami({ data: { devAs } }) });
   const rolesQ = useQuery({ queryKey: ["mtld-roles"], queryFn: () => fetchUserRoles(), staleTime: 5 * 60 * 1000 });
-  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && laDieuHanh(roleOf(rolesQ.data?.roles ?? {}, meQ.data.email))));
   // localStorage = vẽ ngay (nếu cùng máy đã có); KV = NGUỒN THẬT (Dashboard đẩy lên) → chạy mọi lúc/tab.
   useEffect(() => {
     try { const l = JSON.parse(localStorage.getItem(MTLD_INSTALL_LS) || "[]"); if (Array.isArray(l) && l.length) setList(dedupInstall(l)); } catch { /* bỏ qua */ }

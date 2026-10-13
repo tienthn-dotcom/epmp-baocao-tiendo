@@ -15,7 +15,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { DEFAULT_ADMINS, isAdminEmail, normEmail } from "./activity";
-import { DEFAULT_ROLES, roleOf } from "./roles";
+import { DEFAULT_ROLES, laDieuHanh, roleOf } from "./roles";
 import { SQL_TAO_BANG, COT_KHO, sangCsv, docCsv, chuanNgay, type MocKho } from "./lapdat-kho";
 
 const DEV_FILE = ".data/lapdat-kho.json";
@@ -65,7 +65,7 @@ async function duocQuanTri(): Promise<boolean> {
   const email = await callerEmail();
   if (!email) return false;
   if (isAdminEmail(email, DEFAULT_ADMINS)) return true;
-  return roleOf(DEFAULT_ROLES, email) === "PMO";
+  return laDieuHanh(roleOf(DEFAULT_ROLES, email));
 }
 
 /* ── dev: file thay cho D1 ──────────────────────────────────────────────────────────────────── */

@@ -83,7 +83,7 @@ import { loadRegion } from "@/lib/region-load";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { whoami, recordActivity, fetchActivityLog, fetchActivityFromDrive, fetchAuditPosMap, backupAuditLogToDrive } from "@/lib/activity.functions";
 import { actionLabel, type ActivityRow } from "@/lib/activity";
-import { roleOf, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
+import { roleOf, laDieuHanh, ROLE_META, ALL_ROLES, DEFAULT_ROLES, type UserRole } from "@/lib/roles";
 import { VUNG_ORDER, vungVN, vungRank, normProjName } from "@/lib/vung";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
@@ -225,6 +225,15 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     ("1B. Báo cáo TCLĐ", "1B.TCLĐ PHÒNG", "3B. Báo cáo TCLĐ public CT25-07"). Đo 13/10:
  *     41/46 ma trận có tab chuẩn; 5 cái còn lại (tab "Summary", "MT TTBG", "CHATEAU- MA TRAN
  *     LAP DAT"…) bị bỏ VÀ ĐƯỢC NÓI RA ở nút + console, không lọc im.
+ *   v3.154.0 (13/10/2026): TÁCH PMO với OCC thành hai vai, quyền NGANG NHAU (anh Tiến chốt).
+ *     roles.ts: UserRole thêm "OCC", ROLE_META.PMO và .OCC cùng badge navy #1e3a5f.
+ *     Thêm laDieuHanh() và ĐỔI MỌI chỗ xét quyền từ === "PMO" sang laDieuHanh(): app-shell (2),
+ *     detail-plan-app, perf-chart-app, can-media-app (2), can-media.functions, edits.functions,
+ *     lapdat-kho.functions, nhom-cmt, index.tsx (7). Sót một chỗ là người OCC mất quyền ở đúng
+ *     màn hình hôm đó không ai mở. saveUserRole: z.enum thêm "OCC".
+ *     CHUYỂN DỮ LIỆU KV roles:v1: 11 người mang "PMO" đổi sang "OCC" (đến 13/10 họ đều là
+ *     người bộ phận OCC — giá trị "PMO" cũ mang NGHĨA OCC từ lần đổi tên 28/09). Chuyển sau khi
+ *     deploy code, và an toàn vì hai vai quyền ngang nhau: đổi sai nhóm cũng không mất quyền nào.
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -634,6 +643,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.154.0", date: "13/10/2026", items: [
+    "PMO và OCC nay là HAI cấp riêng trong màn Phân cấp người dùng, quyền ngang nhau. Badge PMO cùng màu xanh navy với OCC, phân biệt bằng chữ.",
+    "Nhật ký giám sát tách nút lọc OCC và PMO riêng.",
+    "11 người đang ở cấp cũ được chuyển sang OCC — đúng bộ phận họ đang làm. Ai thuộc PMO thì vào Phân cấp người dùng gán lại, không ai mất quyền gì.",
+  ] },
   { v: "3.153.0", date: "13/10/2026", items: [
     "Xuất báo cáo BOD nay CHỈ lấy các tab 1B · 2B · 3B (bộ tab báo cáo chuẩn của ma trận), bỏ qua các tab làm việc nội bộ như Summary hay MT TTBG. Bản xuất ra gọn và đúng khuôn hơn hẳn.",
     "Nút báo rõ bỏ qua bao nhiêu ma trận vì không có tab 1B/2B/3B, không lọc lặng lẽ.",
@@ -5041,7 +5055,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   // Cảnh báo chất lượng dữ liệu (STT trùng/trống…) — KHÔNG bày ngoài trang; rút vào menu "Hệ thống"
   // cho PMO xem (chỉ hiện khi có cảnh báo + là admin/PMO). Đếm số mục ≠ ok để gắn badge.
   const dataQualityBad = useMemo(() => (data.quality?.checks ?? []).filter((c) => c.level !== "ok"), [data.quality]);
-  const canSeeSystem = !xemNhuUser && (me.isAdmin || roleOf(roleMap, me.email ?? "") === "PMO");
+  const canSeeSystem = !xemNhuUser && (me.isAdmin || laDieuHanh(roleOf(roleMap, me.email ?? "")));
   /** KHOÁ CÁC DÒNG có bình luận của nhóm đang lọc — gồm cả khoá dòng hạng mục lẫn khoá dòng
    *  dự án. Dòng dự án tính cả câu của file nguồn (câu đó là chữ của OCC). */
   const khoaCoCmt = useMemo(() => {
@@ -5197,7 +5211,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         banGiaoThangNay: dueMonthProjectKeys.size, top20: topProjectKeys.size },
       phienBan: APP_VERSION,
       banMoi: CHANGELOG.slice(0, 3).map((b) => ({ v: b.v, date: b.date, items: [...b.items] })),
-      vaiTro: me.isAdmin ? "admin" : roleOf(roleMap, me.email ?? "") === "BOD" ? "BOD" : roleOf(roleMap, me.email ?? "") === "PMO" ? "OCC" : null,
+      vaiTro: me.isAdmin ? "admin" : roleOf(roleMap, me.email ?? "") === "BOD" ? "BOD" : laDieuHanh(roleOf(roleMap, me.email ?? "")) ? "OCC" : null,
       nguCanh: ncTroLy,   // MỘT nguồn cho cả đầu khung lẫn câu trả lời, khỏi hai nơi hai chữ
     };
   }, [data.projects, activeProjectCount, nhomCanhBao, khoaDangHien, mpInfo, edits, tinNguon, mpDeadlineByName, mpWeeksByName, sheetViews, today, alerts, dueMonthProjectKeys, topProjectKeys, me, roleMap, ncTroLy, pkProj]);
@@ -5224,7 +5238,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
 
   /** CHỈ admin / OCC / BOD thấy trợ lý. Đang xem như người thường thì cũng giấu. */
   const vaiHienTai = roleOf(roleMap, me.email ?? "");
-  const duocDungTroLy = !xemNhuUser && (me.isAdmin || vaiHienTai === "PMO" || vaiHienTai === "BOD");
+  const duocDungTroLy = !xemNhuUser && (me.isAdmin || laDieuHanh(vaiHienTai) || vaiHienTai === "BOD");
 
   return (
     <RolesCtx.Provider value={roleMap}>
@@ -5277,7 +5291,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           onOpenCompliance={() => { setShowCompliance(true); track("open_compliance"); }}
           onOpenBcn={() => { setShowBcn(true); track("open_bcn"); }}
           isAdmin={me.isAdmin}
-          canXemNhuUser={meThat.isAdmin || roleOf(roleMap, meThat.email ?? "") === "PMO"}
+          canXemNhuUser={meThat.isAdmin || laDieuHanh(roleOf(roleMap, meThat.email ?? ""))}
           onXemNhuUser={() => { datXemNhuUser(true); track("xem_nhu_user", "bật"); }}
           onOpenActivity={() => { setShowActivity(true); track("open_activity"); }}
           onOpenRoles={() => { setShowRoles(true); track("open_roles"); }}
@@ -6638,7 +6652,7 @@ function ChatCell({ msgs, dark, motTin, field, myEmail, isAdmin, onOp, onOpen, o
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const vaiTro = useContext(RolesCtx);
-  const isPmo = roleOf(vaiTro, myEmail) === "PMO";
+  const isPmo = laDieuHanh(roleOf(vaiTro, myEmail));
   // Bộ lọc bình luận theo nhóm đối tượng. Tin đã ẩn thủ công vẫn ẩn như cũ.
   const locCmt = useContext(LocCmtCtx);
   const vis = msgs.filter((m) => !m.hidden && lotLoc(m, vaiTro, locCmt));
@@ -6760,7 +6774,7 @@ function ChatBox({ msgs, isAdmin, myEmail, field, onOp, reply, onClearReply, onC
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const noun = field === "note" ? "vướng mắc" : "giải pháp";
-  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
+  const isPmo = laDieuHanh(roleOf(useContext(RolesCtx), myEmail));
   // TÁC GIẢ / ADMIN / PMO đều SỬA + ẨN + XOÁ được comment người khác (PMO ngang admin ở 3 thao tác này).
   /* Tin lấy từ FILE NGUỒN KHÔNG nằm trong kho của app, nên sửa / ẩn / xoá nó đều vô nghĩa —
      bấm cũng không có gì đổi. Ô trên bảng đã chặn từ trước; hộp thoại này thì chưa, nên nó vẫn
@@ -7072,7 +7086,7 @@ function FlatTablePanel({ items, mpMode, mpProjectRows, groupMode, groups, deadl
   const [exporting, setExporting] = useState(false);
   /** ẨN DÒNG: admin + PMO. PMO rà bảng hằng ngày nên là người biết hạng mục nào trong khuôn khổ,
    *  không cần raise. Server vẫn chốt quyền lần nữa (setHiddenRow) — nút này chỉ là lớp giao diện. */
-  const isPmo = roleOf(useContext(RolesCtx), myEmail) === "PMO";
+  const isPmo = laDieuHanh(roleOf(useContext(RolesCtx), myEmail));
   /* AI CŨNG ẩn được — vì mặc định là "chỉ ẩn với tôi", chỉ đổi bảng của chính người bấm.
      Riêng lựa chọn "ẩn với mọi người" trong menu mới cần admin/PMO (server chốt lại lần nữa). */
   const canHideRow = true;
@@ -9771,7 +9785,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
   }, [rows, q, capF, rolesMapAct]);
   // Đếm số dòng theo từng cấp để hiện ngay trên nút (biết nhóm nào đang hoạt động nhiều).
   const demCap = useMemo(() => {
-    const d: Record<string, number> = { PMO: 0, BOD: 0, PM: 0, KHAC: 0 };
+    const d: Record<string, number> = { PMO: 0, OCC: 0, BOD: 0, PM: 0, KHAC: 0 };
     for (const r of rows) d[capCua(r.email)] = (d[capCua(r.email)] ?? 0) + 1;
     return d;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -9813,7 +9827,7 @@ function ActivityLogDialog({ onClose }: { onClose: () => void }) {
           {/* Lọc theo CẤP người dùng — xem riêng hoạt động của từng nhóm. */}
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-medium text-slate-500">Cấp:</span>
-            {([["", "Tất cả"], ["PMO", "OCC"], ["BOD", "BOD"], ["PM", "PM"], ["KHAC", "Chưa phân cấp"]] as const).map(([v, l]) => (
+            {([["", "Tất cả"], ["OCC", "OCC"], ["PMO", "PMO"], ["BOD", "BOD"], ["PM", "PM"], ["KHAC", "Chưa phân cấp"]] as const).map(([v, l]) => (
               <button key={v || "all"} onClick={() => setCapF(v)}
                 className={`rounded-md border px-2 py-1 text-[11px] font-medium ${capF === v ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600 hover:border-indigo-400"}`}>
                 {l}{v && demCap[v] ? ` (${demCap[v]})` : ""}

@@ -23,7 +23,7 @@ import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X, Externa
 import { getSummaryFile, getProjRegions, getInstallList } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, linkFileNguonHieuSuat, fetchUserRoles } from "@/lib/edits.functions";
-import { roleOf } from "@/lib/roles";
+import { laDieuHanh, roleOf } from "@/lib/roles";
 import { useIsNarrow } from "@/lib/use-breakpoint";
 import { track } from "@/lib/track";
 import { VUNG_ORDER, vungVN, vungRank, vungColor, lookupRegion, normProjName } from "@/lib/vung";
@@ -899,7 +899,7 @@ export function PerfChartApp() {
   }, [installQ.data, regionQ.data]);
   /** Vùng đã tra xong chưa — chờ rồi mới vẽ lưới, khỏi hiện thứ tự cũ rồi nhảy sang thứ tự vùng. */
   const regionReady = !regionQ.isPending && !installQ.isPending;
-  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && roleOf(rolesQ.data?.roles ?? {}, meQ.data.email) === "PMO"));
+  const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && laDieuHanh(roleOf(rolesQ.data?.roles ?? {}, meQ.data.email))));
 
   useEffect(() => {
     let off = false;
