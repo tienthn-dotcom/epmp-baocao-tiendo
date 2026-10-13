@@ -32,6 +32,10 @@ import {
 import type { BlockChild, CodeCount, DataQualityCheck, DoanGhiChu, ItemRow, ReportData } from "@/lib/types";
 // Hằng số (không phải type) — tin vướng mắc lấy từ file nguồn. Xem ghi chú tại chỗ khai báo.
 import { MSG_NGUON } from "@/lib/types";
+
+import { useTuLamMoi } from "@/lib/tu-lam-moi-hook";
+
+import { nhanTuMoi } from "@/lib/tu-lam-moi";
 import {
   getFilteredProjects,
   auditFilterResult,
@@ -194,6 +198,15 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     ghi thẳng bằng Sheets API, KHÔNG cần Apps Script; cũng vì thế phải LOẠI email này khỏi
  *     bằng chứng (anh mở file rà soát mỗi ngày, không loại là bảng tự tick).
  *     drive.functions: driveFileMetaImpl trả thêm `email`, thêm driveTokenImpl().
+ *   v3.151.0 (13/10/2026): popup ma trận TỰ LÀM MỚI. lib/tu-lam-moi.ts (thuần, 9 ca kiểm):
+ *     canLamMoi(tsCache, modifiedTime) + dung sai 15s cho lệch đồng hồ Worker/Google.
+ *     lib/tu-lam-moi-hook.tsx: mỗi bản cache CHỈ XÉT MỘT LẦN (khoá `ts|modifiedTime`) — thiếu
+ *     khoá này là vòng tải lại vô tận. Gắn vào SummaryDialog (bảng chính) và PopupModal (MTLĐ).
+ *     KHÔNG ép tải lại mỗi lần mở: ép là mỗi lần chờ 2-4s + một lượt ghi KV (trần 1.000/ngày,
+ *     đã tràn thật 03/10). Hỏi NGÀY SỬA trước (nhẹ), tải lại sau (nặng) và chỉ khi file ĐÃ đổi.
+ *     getLinkUpdatedAt: metaQ của hai popup đổi sang force + staleTime 0 (số cache 5 phút vừa bày
+ *     ngày cũ vừa bỏ sót lần sửa vừa xong); bù lại CHỈ GHI KV khi số đổi thật, và tắt
+ *     refetchOnWindowFocus để bấm ra bấm vào không thành một lượt hỏi Drive nữa.
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -603,6 +616,9 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.151.0", date: "13/10/2026", items: [
+    "Mở popup ma trận là TỰ LẤY BẢN MỚI: app hỏi ngày sửa cuối của file, file đã đổi sau bản đang xem thì tự tải lại chart — không phải bấm “Cập nhật lại” nữa. File không đổi thì giữ bản cũ cho nhanh.",
+  ] },
   { v: "3.150.0", date: "12/10/2026", items: [
     "Báo cáo tuân thủ hằng ngày TỰ CHẤM dòng “Thi công lắp đặt” và ghi thẳng vào file nguồn, không phải ngồi rà tay nữa. Hôm đó có người (không tính anh Tiến) sửa file ma trận của dự án, hoặc xuất PDF dự án trên ePMP: trước 18:00 là ✓, tới 20:00 là O, quá 20:00 hoặc không có gì là X.",
     "Máy chạy hai lượt mỗi ngày — 18:00 ghi ✓/O, 20:00 chốt phần còn lại. Ô nào đã chấm tay thì máy KHÔNG đè lên, và dự án chưa gắn ma trận thì để trống chứ không chấm X.",
@@ -5895,6 +5911,8 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
   });
   const [render, setRender] = useState<{ html: string; css: string } | null>(null);
   const [pdfB64, setPdf] = useState<string | null>(null);
+
+  const [pdfTs, setPdfTs] = useState(0);        // mốc của bản chart đang xem — để biết nó có cũ hơn file không
   const [parseErr, setParseErr] = useState<string | null>(null);
   const [cfOn, setCfOn] = useState(true);         // tô màu 0→100 (đỏ→xanh) theo % — chỉ cho nhánh mặc định
   const [full, setFull] = useState(false);        // phóng to hết cỡ
@@ -5909,7 +5927,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
     let off = false; setChartLoading(true); setChartErr(null); setPdf(null);
     const args = pdfRangeArgs(gid, ov.sheet, ov.range);
     getSheetPdf({ data: { fileId: fid, gid: args.gid, range: args.range, force: force || undefined } })
-      .then((r) => { if (!off) setPdf(r.b64); })
+      .then((r) => { if (!off) { setPdf(r.b64); setPdfTs(r.ts || 0); } })
       .catch((e) => { if (!off) setChartErr(loiNoi(e)); })
       .finally(() => { if (!off) setChartLoading(false); });
     return () => { off = true; };
@@ -5987,14 +6005,25 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
      thì hỏi lại (force) để thấy ngay kết quả sau khi ai đó vừa sửa file. */
   const metaQ = useQuery({
     queryKey: ["link-updated", fid, refreshN],
-    queryFn: () => getLinkUpdatedAt({ data: { fileId: fid, force: refreshN > 0 || undefined } }),
-    staleTime: 5 * 60 * 1000,
+    /* LUÔN HỎI MỚI. Dòng "Ngày cập nhật" và luật tự tải lại bên dưới đều dựa vào con số này;
+       lấy bản cache 5 phút thì vừa bày ngày cũ, vừa bỏ sót lần sửa vừa xong. Một lượt hỏi Drive
+       mỗi lần mở popup là rẻ — nặng là lượt dựng lại PDF, mà lượt đó chỉ chạy khi file ĐÃ đổi. */
+    queryFn: () => getLinkUpdatedAt({ data: { fileId: fid, force: true } }),
+    staleTime: 0,
+    /* KHONG hoi lai khi quay ve tab trinh duyet. staleTime 0 + mac dinh cua React Query = moi lan
+       bam ra bam vao la mot luot hoi Drive nua, trong khi popup van dang mo va chang co gi doi. */
+    refetchOnWindowFocus: false,
     enabled: !!fid,
   });
   const ngaySua = (() => {
     const m = metaQ.data?.modifiedTime?.match(/^(\d{4})-(\d{2})-(\d{2})/);
     return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
   })();
+
+  /* MỞ LÀ TỰ LẤY BẢN MỚI — xem lib/tu-lam-moi.ts. Bản đang xem lấy mốc ở nhánh đang dùng:
+     xem chart thì là mốc của PDF, xem bảng lưới thì là mốc của file Summary. */
+  const tsDangXem = chartMode ? pdfTs : (q.data?.ts ?? 0);
+  const ttTuMoi = useTuLamMoi(tsDangXem, metaQ.isPending ? undefined : (metaQ.data?.modifiedTime ?? null), doRefresh);
 
   const loading = !hasOverride && (q.isPending || (!!q.data && !render && !parseErr && !pdfB64));
   const err = (!hasOverride && q.isError) ? (q.error as Error).message : (hasOverride ? null : parseErr);
@@ -6010,6 +6039,7 @@ function SummaryDialog({ fileId, initSheet, initRange, initTl, initBr, initSnap,
               <div className="truncate text-[11px] text-slate-500" title={metaQ.data?.nguoiSua ? `Người sửa gần nhất: ${metaQ.data.nguoiSua}` : undefined}>
                 Ngày cập nhật: <b className="text-slate-700 tabular-nums">{ngaySua}</b>
                 {metaQ.data?.nguoiSua ? <span className="text-slate-400"> · {metaQ.data.nguoiSua}</span> : null}
+                {nhanTuMoi(ttTuMoi) ? <span className="text-teal-700"> · {nhanTuMoi(ttTuMoi)}</span> : null}
               </div>
             )}
           </div>

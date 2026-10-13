@@ -32,8 +32,9 @@ import { taoHangDoi } from "@/lib/hang-doi";
 import { useIsMobile } from "@/lib/use-breakpoint";
 import { useXemNhuUser, datXemNhuUser } from "@/lib/view-as";
 import { track } from "@/lib/track";
-import { getInstallList, getSheetPdf } from "@/lib/mtld-install.functions";
+import { getInstallList, getLinkUpdatedAt, getSheetPdf } from "@/lib/mtld-install.functions";
 import { nhanTrang } from "@/lib/trang-pdf";
+import { useTuLamMoi } from "@/lib/tu-lam-moi-hook";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { DetailPlanApp } from "@/lib/detail-plan-app";
 import { PmoAiApp } from "@/lib/pmo-ai-app";
@@ -399,6 +400,7 @@ function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump:
     return [dau, ...sau];
   }, [proj]);
   const [iTrang, setITrang] = useState(0);
+  const [tuMoi, setTuMoi] = useState(0);   // tăng khi thấy file đã đổi → tải lại bản live
   const tr = dsTrang[Math.min(iTrang, dsTrang.length - 1)];
   /* CHIẾU MỘT TRANG MỘT LÚC. Xếp chồng 8 iframe PDF là đúng cái đã gây Error 1102 ở màn MTLĐ
      (mỗi PDF một lượt gọi Worker, giữ cả tệp trong bộ nhớ). Đổi trang là đổi queryKey, bản đã
@@ -406,10 +408,23 @@ function PopupModal({ proj, bump, canEdit, onClose }: { proj: InstallProj; bump:
   const pdfQ = useQuery({
     // Khoá theo CHÍNH tham số gửi đi (gid + range đã ghép) — đổi trang là đổi khoá, bản đã tải
     // nằm trong cache nên bấm qua lại không tải lại.
-    queryKey: ["mtld-pdf", proj.fileId, tr.args.gid ?? "", tr.args.range ?? "", bump],
-    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...tr.args, force: bump > 0 || undefined } }),
+    queryKey: ["mtld-pdf", proj.fileId, tr.args.gid ?? "", tr.args.range ?? "", bump, tuMoi],
+    queryFn: () => getSheetPdf({ data: { fileId: proj.fileId, ...tr.args, force: bump > 0 || tuMoi > 0 || undefined } }),
     enabled: !!proj.chart, staleTime: 5 * 60 * 1000, retry: 1,
   });
+  /* MỞ LÀ TỰ LẤY BẢN MỚI — xem lib/tu-lam-moi.ts. Hỏi ngày sửa cuối của file (nhẹ); file mới hơn
+     bản đang chiếu thì mới dựng lại PDF (nặng). File không đổi thì không tốn thêm gì. */
+  const metaQ = useQuery({
+    queryKey: ["mtld-ngay-sua", proj.fileId, tuMoi],
+    queryFn: () => getLinkUpdatedAt({ data: { fileId: proj.fileId, force: true } }),
+    // refetchOnWindowFocus: tat - xem ghi chu cung ten ben SummaryDialog (index.tsx).
+    enabled: !!proj.chart, staleTime: 0, retry: 1, refetchOnWindowFocus: false,
+  });
+  useTuLamMoi(
+    pdfQ.data?.ts ?? 0,
+    metaQ.isPending ? undefined : (metaQ.data?.modifiedTime ?? null),
+    () => setTuMoi((n) => n + 1),
+  );
   const [full, setFull] = useState(false);   // XEM TOÀN MÀN HÌNH để coi chi tiết
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

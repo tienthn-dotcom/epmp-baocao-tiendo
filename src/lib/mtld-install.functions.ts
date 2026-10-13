@@ -599,7 +599,14 @@ export const getLinkUpdatedAt = createServerFn({ method: "POST" })
       const m = await drive.driveFileMetaImpl(data.fileId);
       if (m) ra = { modifiedTime: m.modifiedTime, nguoiSua: m.nguoiSua };
     } catch { /* Drive lỗi → coi như chưa biết, KHÔNG làm hỏng popup */ }
-    if (ra.modifiedTime) { map[data.fileId] = { ...ra, ts: gio }; await ghiFMeta(kv, map); }
+    /* CHỈ GHI KHI SỐ ĐỔI THẬT. Từ 13/10/2026 mỗi lần mở popup là một lượt hỏi `force` (để chart tự
+       lấy bản mới — xem lib/tu-lam-moi.ts), mà popup thì mở cả ngày. Ghi mỗi lượt hỏi là đốt hạn
+       mức 1.000 lượt ghi KV/ngày cho những lần file CHẲNG đổi gì. Không ghi thì `conTuoi` coi mục
+       cũ là hết tươi và đi hỏi Drive lại — hỏi Drive rẻ, ghi KV mới là thứ có trần. */
+    if (ra.modifiedTime && (cu?.modifiedTime !== ra.modifiedTime || cu?.nguoiSua !== ra.nguoiSua)) {
+      map[data.fileId] = { ...ra, ts: gio };
+      await ghiFMeta(kv, map);
+    }
     // Drive hỏi hụt mà cache còn số cũ thì trả số cũ, hơn là để popup trống.
     else if (cu) return { modifiedTime: cu.modifiedTime, nguoiSua: cu.nguoiSua };
     return ra;
