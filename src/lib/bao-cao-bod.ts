@@ -63,6 +63,26 @@ export function cumCuaVung(vung: string | undefined): number {
   return i >= 0 ? i : CUM.length - 1;
 }
 
+/* ── CHỈ LẤY TAB 1B / 2B / 3B ────────────────────────────────────────────────
+   Anh Tiến 13/10/2026: *"chỉ lấy mấy sheet 1B, 2B, 3B thôi"*.
+
+   Đó là bộ tab báo cáo chuẩn của ma trận — 1B/3B là Báo cáo TCLĐ, 2B là Báo cáo TTBG. Các tab
+   khác ("Summary", "MT TTBG", "CHATEAU- MA TRAN LAP DAT"…) là bảng làm việc nội bộ, xuất ra vừa
+   dài vừa không đúng khuôn bản gửi BOD. Đo danh sách thật 13/10: 41/46 ma trận có tab 1B/2B/3B.
+
+   LẤY DANH SÁCH BỊ BỎ RA CHO NGƯỜI DÙNG THẤY, không lọc im: dự án biến mất khỏi báo cáo gửi BOD
+   mà không ai biết là kiểu sai tệ nhất ở đây. */
+export const RE_TAB_BOD = /^\s*[123]\s*B\b/i;
+
+export const laTabBod = (sheet: string | undefined): boolean => RE_TAB_BOD.test(sheet ?? "");
+
+/** Tách danh sách thành phần ĐƯA VÀO báo cáo và phần bị bỏ (kèm lý do để nói ra). */
+export function locTabBod<T extends { sheet?: string }>(ds: readonly T[]): { lay: T[]; bo: T[] } {
+  const lay: T[] = [], bo: T[] = [];
+  for (const m of ds) (laTabBod(m.sheet) ? lay : bo).push(m);
+  return { lay, bo };
+}
+
 /* ── MỘT TRANG CỦA BÁO CÁO ───────────────────────────────────────────────── */
 
 export type MucMaTran = {

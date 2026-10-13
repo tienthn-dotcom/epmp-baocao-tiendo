@@ -522,15 +522,19 @@ function MtldApp() {
       const ids = [...new Set(list.map((p) => p.fileId).filter(Boolean))];
       const meta = await getLinksUpdatedAt({ data: { fileIds: ids } }).catch(() => ({ map: {} as Record<string, { modifiedTime: string }> }));
       const ngay = new Map<string, string | null>(ids.map((id) => [id, meta.map?.[id]?.modifiedTime ?? null]));
-      const { xepTrangBod } = await import("@/lib/bao-cao-bod");
+      const { xepTrangBod, locTabBod } = await import("@/lib/bao-cao-bod");
       const { xuatBaoCaoBod } = await import("@/lib/bao-cao-bod-xuat");
-      const trang = xepTrangBod(list, ngay, Date.now());
+      /* CHI LAY TAB 1B / 2B / 3B (anh Tien chot 13/10/2026) - xem ghi chu o bao-cao-bod.ts. */
+      const { lay, bo } = locTabBod(list);
+      if (bo.length) console.warn("[bao-cao-bod] bo qua vi khong phai tab 1B/2B/3B:", bo.map((p) => `${p.maCT} · ${p.name} · tab "${p.sheet ?? ""}"`));
+      const trang = xepTrangBod(lay, ngay, Date.now());
       const vn = new Date(Date.now() + 7 * 3600_000);
       const nhan = `Ngày ${String(vn.getUTCDate()).padStart(2, "0")}/${String(vn.getUTCMonth() + 1).padStart(2, "0")}/${vn.getUTCFullYear()}`;
       const kq = await xuatBaoCaoBod(trang, nhan, (p) => setDangXuat(`Đang ghép ${p.xong}/${p.tong}…`));
       /* NÓI THẲNG DỰ ÁN NÀO HỤT. Thiếu vài trang mà im lặng thì bản gửi BOD thiếu dự án mà không
          ai biết — đúng kiểu sai nhìn vẫn như đúng. */
-      setDangXuat(kq.hut.length ? `Xong ${kq.soTrang} trang · hụt ${kq.hut.length}` : `Xong ${kq.soTrang} trang`);
+      const them = [kq.hut.length ? `hụt ${kq.hut.length}` : "", bo.length ? `bỏ ${bo.length} tab lạ` : ""].filter(Boolean).join(" · ");
+      setDangXuat(`Xong ${kq.soTrang} trang${them ? " · " + them : ""}`);
       if (kq.hut.length) console.warn("[bao-cao-bod] không tải được ma trận:", kq.hut);
     } catch (e) {
       setDangXuat("Hụt: " + (e instanceof Error ? e.message : String(e)).slice(0, 60));

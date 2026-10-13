@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  CUM, NGUONG_VAN_HANH_NGAY, cumCuaVung, dangChay, dongTong, nhanVanHanh, tenTep, xepTrangBod,
+  CUM, NGUONG_VAN_HANH_NGAY, cumCuaVung, dangChay, dongTong, laTabBod, locTabBod, nhanVanHanh, tenTep, xepTrangBod,
   type MucMaTran,
 } from "@/lib/bao-cao-bod";
 
@@ -105,5 +105,33 @@ describe("chữ phụ", () => {
     const ds = [muc("A", "PQ"), muc("B", "PQ")];
     const r = xepTrangBod(ds, new Map([["A", truoc(1)]]), NAY);
     expect(dongTong(r)).toBe("2 ma trận · 1 đã vận hành · 1 chưa vận hành");
+  });
+});
+
+/* ── CHỈ LẤY TAB 1B / 2B / 3B ────────────────────────────────────────────────
+   Anh Tiến 13/10/2026: *"chỉ lấy mấy sheet 1B, 2B, 3B thôi"*. Lọc kiểu này rất dễ lọc nhầm cả
+   dự án ra khỏi báo cáo gửi BOD, nên ranh giới phải có ca kiểm giữ. */
+describe("lọc tab 1B/2B/3B", () => {
+  it("nhận đúng ba bộ tab báo cáo, mọi kiểu gõ gặp trong danh sách thật", () => {
+    for (const s of ["1B. Báo cáo TCLĐ", "1B.TCLĐ PHÒNG", "2B. Báo cáo TTBG Phòng",
+      "3B. Báo cáo TCLĐ Public", "3B. Báo cáo TCLĐ public CT25-07", " 2b. báo cáo ttbg"])
+      expect(laTabBod(s)).toBe(true);
+  });
+  it("loại tab làm việc nội bộ", () => {
+    for (const s of ["Summary", "CT26-078 Summary", "MT TTBG", "SUMMARY PUBLIC",
+      "CHATEAU- MA TRAN LAP DAT", "Public Summary 2", "", undefined])
+      expect(laTabBod(s)).toBe(false);
+  });
+  /* "4B" hay "11B" KHÔNG phải bộ tab chuẩn — nới ra là lại lọt mấy tab nội bộ. */
+  it("số khác 1/2/3 thì không nhận", () => {
+    expect(laTabBod("4B. Báo cáo gì đó")).toBe(false);
+    expect(laTabBod("11B. Báo cáo")).toBe(false);
+  });
+  it("tách ra hai phần, không mất mục nào", () => {
+    const ds = [{ sheet: "1B. Báo cáo TCLĐ" }, { sheet: "Summary" }, { sheet: "2B. Báo cáo TTBG" }];
+    const { lay, bo } = locTabBod(ds);
+    expect(lay).toHaveLength(2);
+    expect(bo).toHaveLength(1);
+    expect(lay.length + bo.length).toBe(ds.length);
   });
 });

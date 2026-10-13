@@ -220,6 +220,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     tải theo lô 3 (46 lượt song song là đường đã làm MTLĐ chết Error 1102).
  *     Đo trên máy: 21 ma trận → 101 trang, 2 ma trận hụt (CT25-015, CT23-042 — hai sheet chưa
  *     chia sẻ, vốn đã 401 từ trước) và được liệt kê ra chứ không bỏ im.
+ *   v3.153.0 (13/10/2026): xuất BOD chỉ lấy tab 1B/2B/3B (anh Tiến chốt). laTabBod/locTabBod ở
+ *     lib/bao-cao-bod.ts, khớp /^\s*[123]\s*B\b/i — bắt đủ mọi kiểu gõ gặp trong danh sách thật
+ *     ("1B. Báo cáo TCLĐ", "1B.TCLĐ PHÒNG", "3B. Báo cáo TCLĐ public CT25-07"). Đo 13/10:
+ *     41/46 ma trận có tab chuẩn; 5 cái còn lại (tab "Summary", "MT TTBG", "CHATEAU- MA TRAN
+ *     LAP DAT"…) bị bỏ VÀ ĐƯỢC NÓI RA ở nút + console, không lọc im.
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -629,6 +634,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.153.0", date: "13/10/2026", items: [
+    "Xuất báo cáo BOD nay CHỈ lấy các tab 1B · 2B · 3B (bộ tab báo cáo chuẩn của ma trận), bỏ qua các tab làm việc nội bộ như Summary hay MT TTBG. Bản xuất ra gọn và đúng khuôn hơn hẳn.",
+    "Nút báo rõ bỏ qua bao nhiêu ma trận vì không có tab 1B/2B/3B, không lọc lặng lẽ.",
+  ] },
   { v: "3.152.0", date: "13/10/2026", items: [
     "Màn MTLĐ có nút “Xuất báo cáo BOD”: ghép ma trận của TẤT CẢ dự án thành một file PDF, xếp theo cụm (Phú Quốc · Miền Nam · Miền Trung · Miền Bắc) đúng khuôn bản gửi BOD, kèm trang bìa.",
     "Mỗi trang dán sẵn dải tiêu đề: cụm, số thứ tự, tên dự án, mã CT và nhãn “TCLĐ: ĐÃ VẬN HÀNH” hay “CHƯA VẬN HÀNH” — tính theo việc trong 7 ngày gần nhất có ai cập nhật file ma trận hay không.",
