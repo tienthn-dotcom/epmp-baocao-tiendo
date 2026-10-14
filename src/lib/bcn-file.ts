@@ -85,6 +85,29 @@ const sNhieuDong = (v: unknown): string[] =>
 const kh = (v: unknown): string =>
   s(v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
 
+/* ── CHẤM MỘT HẠNG MỤC TỪ DÃY DẤU ───────────────────────────────────────────
+   MỘT CÔNG THỨC, MỘT CHỖ. Bảng trên app có hai nguồn dấu: dấu gõ tay trong file, và dấu suy ra
+   từ lượt xuất PDF (xem cham-theo-pdf.ts). Trước đây chỗ gộp dấu ở giao diện KHÔNG chấm lại, nên
+   bảng bày bảy dấu ✕ mà cột Điểm vẫn 100 — anh Tiến 14/10/2026: *"sao đánh 1 loạt dấu X mà số
+   điểm lại là 100 nhỉ, cảm giác tính năng này chưa chạy"*. Nhìn như tính năng chết, thật ra là
+   bảng tự mâu thuẫn với chính nó.
+
+   Công thức đúng như file nguồn ghi ở ô Y4: khởi 100, trễ −2, không báo cáo −5. Đã đối chiếu với
+   chính cột điểm của file trên toàn bộ 96 dòng ngày 05/10/2026: khớp tuyệt đối.
+   KẸP Ở 0: điểm âm không nói lên điều gì với người đọc. Dữ liệu thật chưa bao giờ chạm mức này
+   nên kẹp không làm lệch số nào đang có. */
+export function chamTheoDau(marks: readonly BcnMark[]): { demP: number; demO: number; demX: number; demNa: number; diem: number | null } {
+  let demP = 0, demO = 0, demX = 0, demNa = 0;
+  for (const m of marks) {
+    if (m === "P") demP++; else if (m === "o") demO++;
+    else if (m === "x") demX++; else if (m === "na") demNa++;
+  }
+  /* CHƯA CÓ DẤU NÀO → null, KHÔNG phải 100. Cho 100 là khen người ta vì chưa làm gì — đúng loại
+     sai âm thầm mà một bảng chấm người không được phép có. */
+  const coDau = demP + demO + demX + demNa > 0;
+  return { demP, demO, demX, demNa, diem: coDau ? Math.max(0, 100 - 2 * demO - 5 * demX) : null };
+}
+
 /** Ô dấu → mã. Nhận cả "✓" "v" "P" cho đúng hạn, "o"/"0" cho trễ, "x" cho không báo cáo. */
 export function docMark(v: unknown): BcnMark {
   const t = s(v);
@@ -206,14 +229,8 @@ export function parseBcnGrid(grid: unknown[][]): BcnData {
     if (!hien) continue;                                 // hạng mục mồ côi (không có dự án đứng trước)
 
     const marks = cotNgay.map((c) => docMark(row[c]));
-    let demP = 0, demO = 0, demX = 0, demNa = 0;
-    for (const m of marks) { if (m === "P") demP++; else if (m === "o") demO++; else if (m === "x") demX++; else if (m === "na") demNa++; }
-    /* CHƯA CÓ DẤU NÀO → null, KHÔNG phải 100. Một hạng mục chưa tới lượt báo cáo mà cho 100 điểm
-       là khen người ta vì chưa làm gì — đúng loại sai âm thầm mà báo cáo đánh giá người không được phép có. */
-    const coDau = demP + demO + demX + demNa > 0;
     hien.hangMuc.push({
-      ten: hm, marks, demP, demO, demX, demNa,
-      diem: coDau ? 100 - 2 * demO - 5 * demX : null,
+      ten: hm, marks, ...chamTheoDau(marks),
       luyKe: cLuyKe >= 0 ? soNguyen(row[cLuyKe]) : null,
     });
   }

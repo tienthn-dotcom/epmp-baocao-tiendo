@@ -234,6 +234,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     CHUYỂN DỮ LIỆU KV roles:v1: 11 người mang "PMO" đổi sang "OCC" (đến 13/10 họ đều là
  *     người bộ phận OCC — giá trị "PMO" cũ mang NGHĨA OCC từ lần đổi tên 28/09). Chuyển sau khi
  *     deploy code, và an toàn vì hai vai quyền ngang nhau: đổi sai nhóm cũng không mất quyền nào.
+ *   v3.155.0 (14/10/2026): báo cáo tuân thủ ngày — DẤU với ĐIỂM ra từ HAI NGUỒN nên bảng tự mâu thuẫn:
+ *     dấu dòng TCLĐ suy từ lượt xuất PDF (dauCuaNgay) còn điểm bê nguyên của file → 7 dấu ✕ mà vẫn 100.
+ *     anh Tiến bắt được: "cảm giác tính năng này chưa chạy". Tách chamTheoDau() ra bcn-file.ts
+ *     (9 ca kiểm) làm MỘT công thức duy nhất, parseBcnGrid dùng chung; app gộp dấu MỘT lần trong
+ *     dHien rồi chấm lại, mọi chỗ dưới (xếp thứ tự, diemPm, cột Điểm, đếm ngày có dấu) ăn theo
+ *     bản đã gộp. ChỈ ĐỤNG dòng TCLĐ — Quân số và Sản lượng app không có nguồn nào khác,
+ *     chấm lại là bịa. Thêm kẹp 0 cho điểm — dữ liệu thật chưa chạm mức này nên không lệch số nào.
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -643,6 +650,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.155.0", date: "14/10/2026", items: [
+    "SỬA LỖI báo cáo tuân thủ hằng ngày: dòng Thi công lắp đặt đầy dấu ✕ mà cột Điểm vẫn 100. Nay điểm chấm đúng trên dấu đang bày — 6 dấu ✕ ra 70, không phải 100.",
+    "Điểm trung bình của PM và thứ tự sắp xếp cũng theo điểm đã chấm lại, không còn lấy số cũ của file.",
+  ] },
   { v: "3.154.0", date: "13/10/2026", items: [
     "PMO và OCC nay là HAI cấp riêng trong màn Phân cấp người dùng, quyền ngang nhau. Badge PMO cùng màu xanh navy với OCC, phân biệt bằng chữ.",
     "Nhật ký giám sát tách nút lọc OCC và PMO riêng.",

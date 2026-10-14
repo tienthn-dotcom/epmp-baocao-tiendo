@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, RefreshCw, ExternalLink, AlertTriangle, FileDown } from "lucide-react";
 import { taiBangCham, BCN_FILE_URL } from "@/lib/bcn-tai";
 import type { BcnDuAn, BcnMark } from "@/lib/bcn-file";
-import { diemPm } from "@/lib/bcn-file";
+import { chamTheoDau, diemPm } from "@/lib/bcn-file";
 import { fetchLuotXuatPdf } from "@/lib/cham-pdf.functions";
 import { gomLuot, dauCuaNgay, NGAY_BAT_DAU_CHAM } from "@/lib/cham-theo-pdf";
 import { loiNoi } from "@/lib/loi-noi";
@@ -125,7 +125,6 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
   });
 
   const d = q.data?.data;
-  const diemCuaPm = useMemo(() => (d ? diemPm(d.duAn) : new Map<string, number>()), [d]);
 
   /* ── DẤU SUY RA TỪ LƯỢT XUẤT PDF ───────────────────────────────────────────
      Anh Tiến 08/10/2026: *"nút xuất PDF TCLĐ của dự án đi, cứ xuất = báo cáo"*.
@@ -156,14 +155,45 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
     return m;
   }, [bangPdf]);
 
+  /* ── GỘP HAI NGUỒN RỒI MỚI CHẤM ────────────────────────────────────────────
+     Dấu dòng TCLĐ suy ra từ lượt xuất PDF, nhưng ĐIỂM thì trước nay vẫn bê nguyên của file. Hai
+     con số ra từ hai nguồn, nên bảng bày bảy dấu ✕ mà cột Điểm vẫn 100 — anh Tiến 14/10/2026:
+     *"sao đánh 1 loạt dấu X mà số điểm lại là 100 nhỉ, cảm giác tính năng này chưa chạy"*. Nhìn
+     thì y như tính năng chết, mà thật ra là bảng tự mâu thuẫn với chính nó.
+
+     Nay gộp dấu MỘT LẦN ở đây rồi chấm lại trên chính dấu đang bày, và mọi chỗ bên dưới (xếp thứ
+     tự, điểm PM, cột Điểm) đều ăn theo bản đã gộp. Công thức giữ y file nguồn: 100 − 2×(số O) −
+     5×(số X), chưa có dấu nào thì để trống. Kẹp ở 0 vì điểm âm không nói lên điều gì.
+
+     CHỈ ĐỤNG DÒNG TCLĐ. Quân số và Sản lượng vẫn là điểm của file — app không có nguồn nào khác
+     cho hai dòng đó, chấm lại là bịa. */
+  const dHien = useMemo(() => {
+    if (!d) return d;
+    const duAn = d.duAn.map((p) => {
+      const ma = chuanMa(p.maCT);
+      const hangMuc = p.hangMuc.map((h) => {
+        if (!laTcld(h.ten) || !thangIso) return h;
+        const marks = h.marks.map((m, i) =>
+          dauCuaNgay(bangPdfTheoMa, ma, `${thangIso}-${d.ngay[i].so}`, bayGio) ?? m);
+        return { ...h, marks, ...chamTheoDau(marks) };
+      });
+      const co = hangMuc.map((h) => h.diem).filter((x): x is number => x != null);
+      return { ...p, hangMuc, diem: co.length ? Math.round(co.reduce((a, b) => a + b, 0) / co.length) : null };
+    });
+    return { ...d, duAn };
+  }, [d, thangIso, bangPdfTheoMa, bayGio]);
+
+  /* Điểm PM tính trên bản ĐÃ GỘP — lấy của file thì PM nào cũng 100 trong khi dự án đầy dấu ✕. */
+  const diemCuaPm = useMemo(() => (dHien ? diemPm(dHien.duAn) : new Map<string, number>()), [dHien]);
+
   /* Dự án CHƯA CÓ DẤU NÀO xếp xuống cuối: đầu bảng để dành cho chỗ thật sự có gì để xem. Trong
      mỗi nhóm thì điểm thấp lên trước — người cần nhắc nằm trên cùng, giống bản tháng. */
   const duAnXep = useMemo(() => {
-    if (!d) return [] as BcnDuAn[];
+    if (!dHien) return [] as BcnDuAn[];
     /* LỌC TRƯỚC, XẾP SAU. Nhiều bộ lọc cùng bật thì GIAO NHAU. Lọc ra 0 dòng là một câu trả lời
        hợp lệ — KHÔNG âm thầm bỏ lọc để lấp đầy bảng, vì người xem sẽ tưởng mình lọc hụt. */
     const q = normProjName(qTim);
-    const loc = d.duAn.filter((p) => {
+    const loc = dHien.duAn.filter((p) => {
       if (pmChon && p.pm !== pmChon) return false;
       if (vungChon && p.vung !== vungChon) return false;
       /* TÌM KHÔNG DẤU, khớp cả TÊN lẫn MÃ CT — gõ "apec" hay "ct26-040" đều ra. Dùng chung
@@ -177,7 +207,7 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
       if (a.diem != null && b.diem != null && a.diem !== b.diem) return a.diem - b.diem;
       return (a.stt ?? 9999) - (b.stt ?? 9999);
     });
-  }, [d, qTim, pmChon, vungChon]);
+  }, [dHien, qTim, pmChon, vungChon]);
 
   /* Danh sách chọn lấy từ TOÀN BỘ dữ liệu, không lấy từ phần đã lọc: lọc theo một PM rồi mà ô chọn
      chỉ còn đúng PM đó thì không đổi sang người khác được nữa. */
@@ -196,11 +226,11 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
   }, [vungChon, pmChon, qTim]);
 
   const soNgayCoDau = useMemo(() => {
-    if (!d) return 0;
+    if (!dHien) return 0;
     const co = new Set<number>();
-    for (const p of d.duAn) for (const h of p.hangMuc) h.marks.forEach((m, i) => { if (m) co.add(i); });
+    for (const p of dHien.duAn) for (const h of p.hangMuc) h.marks.forEach((m, i) => { if (m) co.add(i); });
     return co.size;
-  }, [d]);
+  }, [dHien]);
 
   /* XUẤT PDF — dùng LẠI bộ máy của báo cáo tuân thủ tháng (exportDashboardPdf), không viết bản
      thứ hai. Hai báo cáo ra cùng một khuôn, và mọi thứ bản tháng đã vấp rồi sửa (lề, cắt trang
@@ -393,14 +423,7 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                      file thì mọi ngày trước đó trắng bong — xoá sạch phần đã chấm tay bao lâu nay.
                      Vậy: có dấu theo PDF thì dùng, không có thì rơi về dấu file. Từ ngày app bắt
                      đầu ghi trở đi, PDF quyết — kể cả khi nó ra ✕ vì không ai bấm xuất. */
-                  const ma = chuanMa(p.maCT);
-                  const hangMucVe = p.hangMuc.map((h) => {
-                    if (!laTcld(h.ten)) return h;
-                    return { ...h, marks: h.marks.map((m, i) => (
-                      (thangIso ? dauCuaNgay(bangPdfTheoMa, ma, `${thangIso}-${d.ngay[i].so}`, bayGio) : null) ?? m
-                    )) };
-                  });
-                  return hangMucVe.map((h, hi) => {
+                  return p.hangMuc.map((h, hi) => {
                   const dau = hi === 0;                       // dòng đầu của cụm → kẻ đậm phía trên
                   const vien = dau && pi > 0 ? "2px solid #94a3b8" : undefined;
                   /* NỀN THEO HẠNG MỤC — vệt ba màu của file nguồn, xem NEN_HANG_MUC. */
@@ -409,12 +432,12 @@ export function BaoCaoNgayDialog({ onClose }: { onClose: () => void }) {
                     <tr key={`${pi}-${hi}`}>
                       {dau && (
                         <>
-                          <td rowSpan={hangMucVe.length} title={`${p.ten}${p.maCT ? ` · ${p.maCT}` : ""}`}
+                          <td rowSpan={p.hangMuc.length} title={`${p.ten}${p.maCT ? ` · ${p.maCT}` : ""}`}
                             style={{ ...td, ...oNen, left: 0, width: W_DU_AN, minWidth: W_DU_AN, maxWidth: W_DU_AN, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top" }}>
                             <div style={{ ...motDong, fontWeight: 700, color: "#0f172a" }}>{p.ten}</div>
                             <div style={{ ...motDong, fontSize: 10.5, color: "#94a3b8", fontFamily: "ui-monospace,monospace" }}>{p.maCT}</div>
                           </td>
-                          <td rowSpan={hangMucVe.length} title={p.pm}
+                          <td rowSpan={p.hangMuc.length} title={p.pm}
                             style={{ ...td, ...oNen, left: LEFT_PM, width: W_PM, minWidth: W_PM, maxWidth: W_PM, borderRight: "1px solid #cbd5e1", borderTop: vien, verticalAlign: "top", color: "#334155" }}>
                             <div style={motDong}>{p.pm}</div>
                             {diemCuaPm.has(p.pm) && (
