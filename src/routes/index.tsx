@@ -32,6 +32,7 @@ import {
 import type { BlockChild, CodeCount, DataQualityCheck, DoanGhiChu, ItemRow, ReportData } from "@/lib/types";
 // Hằng số (không phải type) — tin vướng mắc lấy từ file nguồn. Xem ghi chú tại chỗ khai báo.
 import { MSG_NGUON } from "@/lib/types";
+import { NHAN_LOAI, demTheo, demTheoLoai, doLoiDuLieu, locLoi, type LoaiLoi, type LoiDong } from "@/lib/loi-du-lieu";
 
 import { useTuLamMoi } from "@/lib/tu-lam-moi-hook";
 
@@ -241,6 +242,13 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *     dHien rồi chấm lại, mọi chỗ dưới (xếp thứ tự, diemPm, cột Điểm, đếm ngày có dấu) ăn theo
  *     bản đã gộp. ChỈ ĐỤNG dòng TCLĐ — Quân số và Sản lượng app không có nguồn nào khác,
  *     chấm lại là bịa. Thêm kẹp 0 cho điểm — dữ liệu thật chưa chạm mức này nên không lệch số nào.
+ *   v3.156.0 (15/10/2026): thẻ “Lỗi số liệu” trong Công cụ dữ liệu. KHÔNG phát minh luật mới:
+ *     lấy đúng luật pctSuspect đang chạy trong popup % rồi tách thành bốn loại đếm được, lọc
+ *     được. Trước đó app ĐÃ bắt nhưng chỉ hiện khi RÊ CHUỘT vào đúng ô % — không ai rê qua
+ *     vài trăm đầu việc để tìm lỗi, nên coi như không có.
+ *     lib/loi-du-lieu.ts (thuần, 21 ca kiểm): chỉ xét 4 giai đoạn có nhập số mã; chỉ kêu khi lệch
+ *     với CẢ HAI cách tính (trung bình và gộp) từ 3 điểm trở lên — kêu oan một lần là lần sau không
+ *     ai mở bảng nữa. Đo trên nguồn thật 15/10: 75 chỗ (11 lệch · 60 thiếu số mã · 4 trống).
  *   v3.126.0 (02/10/2026): parser.ts BỎ yêu cầu nhãn số mã phải kết thúc bằng ":" — thêm
  *     laNhanSoMa() khớp ĐÚNG TÊN (Mẫu·VT·VT.xx·SD·TKSX·Kho·GCN) sau khi cắt dấu cuối. Đo file
  *     2.3_Shared: 329 dòng số mã, luật cũ đọc 326, mất 3 dòng vì gõ "TKSX;" / "TKSX" / "VT.CT"
@@ -650,6 +658,10 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.156.0", date: "15/10/2026", items: [
+    "Công cụ dữ liệu có thẻ mới “Lỗi số liệu”: liệt kê đích danh từng dòng có số không khớp trong file nguồn, kèm ô % đang ghi và số mã thực tế. Lọc được theo loại lỗi, vùng, PM, hoặc gõ tìm tên dự án — mỗi người khoanh về phần mình rồi đi rà, không phải dò tay trên Excel.",
+    "Bốn loại được bắt: % lệch với số mã · thiếu chi tiết số mã nên không đối chiếu được · chưa nhập % · ô % nhập sai định dạng. Mở thẻ là vào thẳng danh sách lỗi.",
+  ] },
   { v: "3.155.0", date: "14/10/2026", items: [
     "SỬA LỖI báo cáo tuân thủ hằng ngày: dòng Thi công lắp đặt đầy dấu ✕ mà cột Điểm vẫn 100. Nay điểm chấm đúng trên dấu đang bày — 6 dấu ✕ ra 70, không phải 100.",
     "Điểm trung bình của PM và thứ tự sắp xếp cũng theo điểm đã chấm lại, không còn lấy số cũ của file.",
@@ -4194,6 +4206,27 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     void saveProjRegions({ data: { map } }).catch(() => {});
   }, [regionByName, data.items, dataMode, dangTaiKho]);
 
+  /* ── LỖI SỐ LIỆU TRONG FILE NGUỒN ──────────────────────────────────────────
+     Anh Tiến 15/10/2026: *"làm sao auto nhận diện lỗi >>> người vô đọc thấy được lỗi ở đâu >>>
+     xử lý […] rồi PC vùng nào nhìn vô vùng mình rồi đi rà, thay vì phải rà thủ công trên excel"*.
+
+     App vốn ĐÃ bắt được mấy lỗi này — nhưng chỉ hiện khi rê chuột vào đúng ô % và một chấm vàng
+     bé xíu. Không ai rê chuột qua vài trăm đầu việc để tìm. Nay gom thành danh sách đếm được,
+     lọc được, giao được cho đúng người. Luật nằm ở lib/loi-du-lieu.ts (có bộ kiểm riêng). */
+  const loiSoLieu = useMemo(() => doLoiDuLieu(enriched.map((i) => ({
+    maCT: i.maCT || i.projectCode,
+    duAn: i.projectName,
+    hangMuc: i.desc || i._stageLabel,
+    giaiDoan: String(i.stage),
+    stt: i.id,
+    vung: i.region,
+    pm: pmFirstOf(i._projectPm),
+    cum: i.groupDA,
+    pctActual: i.pctActual,
+    pctActualInvalid: i.pctActualInvalid,
+    soMa: i.codeCounts,
+  }))), [enriched]);
+
   /* ── FACET COUNT cho 2 nút chế độ (Bàn giao tháng này / Top 20) ──
      Con số trên mỗi nút = số DỰ ÁN (mã+tên) khớp tiêu chí nút đó TRONG ngữ cảnh
      các bộ lọc KHÁC đang bật (kể cả nút chế độ còn lại) → 2 nút "có quan hệ" với
@@ -5314,7 +5347,7 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
         />
       </HeaderSlot>
 
-      {showDataQ && <AdminDataToolsDialog checks={dataQualityBad} qualityStats={data?.quality?.stats} lac={noteLac} onFixLacOne={fixLacOne} onFixLacAll={fixLacAll} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} donRid={oDonRid} onDoiVeRid={doiVeRid} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
+      {showDataQ && <AdminDataToolsDialog loiSoLieu={loiSoLieu} checks={dataQualityBad} qualityStats={data?.quality?.stats} lac={noteLac} onFixLacOne={fixLacOne} onFixLacAll={fixLacAll} drift={noteDrift} onAckDrift={ackDrift} onFixDrift={fixDriftTo} onFixAllDrift={fixAllDrift} audit={auditDrift} auditLoading={auditMapQuery.isLoading} onFixAudit={applyAuditOne} onFixAuditAll={applyAuditAll} shiftDiag={shiftDiag} onLoadShift={loadShiftDiag} onApplyShift={applyShiftDiag} donRid={oDonRid} onDoiVeRid={doiVeRid} onClose={() => { setShowDataQ(false); setShiftDiag({ status: "idle" }); }} />}
       {pdfPreview && <PdfPreviewDialog url={pdfPreview.url} fileName={pdfPreview.name} onClose={() => setPdfPreview(null)} />}
 
       <OverviewStrip
@@ -8993,10 +9026,13 @@ function fpLabel(fp: string | null): string {
 type AuditDriftItem = { key: string; text: string; now: string; correct: string; target: string | null };
 /** Ghi chú MẤT ĐỊA CHỈ — khoá không còn khớp dòng nào, nên không hiện ở đâu trên bảng. */
 type NoteLacItem = { key: string; text: string; nhan: string; dich: string | null; nhanDich: string; canGop: boolean; vuong: string };
-function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, onFixLacAll, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, donRid, onDoiVeRid, onClose }: { checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; lac: NoteLacItem[]; onFixLacOne: (key: string, dich: string) => void; onFixLacAll: () => void; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; donRid: ODon[]; onDoiVeRid: (ds: ODon[]) => void; onClose: () => void }) {
+function AdminDataToolsDialog({ loiSoLieu, checks, qualityStats, drift, lac, onFixLacOne, onFixLacAll, onAckDrift, onFixDrift, onFixAllDrift, audit, auditLoading, onFixAudit, onFixAuditAll, shiftDiag, onLoadShift, onApplyShift, donRid, onDoiVeRid, onClose }: { loiSoLieu: LoiDong[]; checks: DataQualityCheck[]; qualityStats?: { parentsTotal: number; shownProjects: number; activeItems: number; allStageRows: number }; lac: NoteLacItem[]; onFixLacOne: (key: string, dich: string) => void; onFixLacAll: () => void; drift: NoteDriftItem[]; onAckDrift: (key: string) => void; onFixDrift: (key: string, target: string, before: string) => void; onFixAllDrift: () => void; audit: AuditDriftItem[]; auditLoading: boolean; onFixAudit: (key: string, target: string) => void; onFixAuditAll: () => void; shiftDiag: ShiftDiag; onLoadShift: (from: number, delta: number) => void; onApplyShift: (from: number, delta: number) => void; donRid: ODon[]; onDoiVeRid: (ds: ODon[]) => void; onClose: () => void }) {
   useEscapeToClose(onClose);
   type Bak = { id: string; label: string; at: string; counts: { edits: number; completed: number; updates: number; mpflag: number } };
-  const [tab, setTab] = useState<"quality" | "shift" | "backup" | "donrid">((lac.length || audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
+  /* MO THANG VAO THE "Loi so lieu" khi co loi: do la thu nguoi ta vao day de xem. Khong co loi
+   moi roi ve cac the cu. */
+  const [tab, setTab] = useState<"quality" | "shift" | "backup" | "donrid" | "loi">(
+    loiSoLieu.length ? "loi" : (lac.length || audit.length || drift.length) ? "shift" : checks.length ? "quality" : "shift");
   // GỘP audit + drift thành 1 danh sách "ghi chú đặt sai chỗ" (dedupe theo note): audit (theo nhật ký) là chuẩn,
   // drift (lệch so lần trước) bổ sung. Mỗi note: Đang ở (wrong) → Phải ở (right) + nguồn phát hiện.
   const misplaced = useMemo(() => {
@@ -9047,7 +9083,21 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
   if (typeof document === "undefined") return null;
   const donDoiDuoc = useMemo(() => donRid.filter((x) => x.dich), [donRid]);
   const donSo = useMemo(() => demDon(donRid), [donRid]);
-  const tabBtn = (id: "quality" | "shift" | "backup" | "donrid", label: string, badge?: number) => (
+  /* ── THẺ "LỖI SỐ LIỆU" ────────────────────────────────────────────────────
+     Bộ lọc nằm NGAY TRÊN bảng và chỉ có bốn cái: loại lỗi · vùng · PM · gõ tìm. Đủ để một người
+     khoanh về phần mình trong hai cú bấm; thêm nữa thì thành một màn hình phải học cách dùng. */
+  const [loaiLoi, setLoaiLoi] = useState<LoaiLoi | "">("");
+  const [vungLoi, setVungLoi] = useState("");
+  const [pmLoi, setPmLoi] = useState("");
+  const [timLoi, setTimLoi] = useState("");
+  const demLoai = useMemo(() => demTheoLoai(loiSoLieu), [loiSoLieu]);
+  const dsVungLoi = useMemo(() => demTheo(loiSoLieu, "vung"), [loiSoLieu]);
+  const dsPmLoi = useMemo(() => demTheo(loiSoLieu, "pm"), [loiSoLieu]);
+  const loiHien = useMemo(
+    () => locLoi(loiSoLieu, { loai: loaiLoi, vung: vungLoi, pm: pmLoi, tim: timLoi }),
+    [loiSoLieu, loaiLoi, vungLoi, pmLoi, timLoi]);
+
+  const tabBtn = (id: "quality" | "shift" | "backup" | "donrid" | "loi", label: string, badge?: number) => (
     <button onClick={() => setTab(id)} className={`rounded-md px-3 py-1.5 text-[12px] font-semibold ${tab === id ? "bg-teal-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
       {label}{badge != null && badge > 0 && <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">{badge}</span>}
     </button>
@@ -9064,12 +9114,92 @@ function AdminDataToolsDialog({ checks, qualityStats, drift, lac, onFixLacOne, o
           <button onClick={onClose} aria-label="Đóng" title="Đóng (Esc)" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5">
+          {tabBtn("loi", "Lỗi số liệu", loiSoLieu.length)}
           {tabBtn("shift", "Ghi chú sai chỗ", misplaced.length + lac.length)}
           {tabBtn("quality", "Cảnh báo dữ liệu", checks.length)}
           {tabBtn("donrid", "Dọn về RID", donDoiDuoc.length)}
           {tabBtn("backup", "Sao lưu & Khôi phục")}
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          {tab === "loi" && (
+            <div className="space-y-2">
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">
+                <b className="text-slate-900">{loiSoLieu.length}</b> chỗ cần rà trong file nguồn.
+                Bấm một loại để lọc, rồi chọn vùng hoặc PM của mình.
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {([["", "Tất cả"], ...(Object.keys(NHAN_LOAI) as LoaiLoi[]).map((k) => [k, NHAN_LOAI[k]])] as [LoaiLoi | "", string][])
+                  .map(([k, nhan]) => {
+                    const so = k === "" ? loiSoLieu.length : demLoai[k];
+                    if (k !== "" && so === 0) return null;
+                    return (
+                      <button key={k || "all"} onClick={() => setLoaiLoi(k)}
+                        className={`rounded-md border px-2 py-1 text-[11.5px] font-medium ${loaiLoi === k ? "border-teal-600 bg-teal-50 text-teal-800" : "border-slate-300 text-slate-600 hover:border-teal-500"}`}>
+                        {nhan} <span className="tabular-nums text-slate-400">({so})</span>
+                      </button>
+                    );
+                  })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={vungLoi} onChange={(e) => setVungLoi(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-[11.5px] text-slate-700">
+                  <option value="">Tất cả vùng</option>
+                  {dsVungLoi.map((v) => <option key={v.ten} value={v.ten}>{v.ten} ({v.so})</option>)}
+                </select>
+                <select value={pmLoi} onChange={(e) => setPmLoi(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-[11.5px] text-slate-700">
+                  <option value="">Tất cả PM</option>
+                  {dsPmLoi.map((v) => <option key={v.ten} value={v.ten}>{v.ten} ({v.so})</option>)}
+                </select>
+                <input value={timLoi} onChange={(e) => setTimLoi(e.target.value)} placeholder="Tìm mã CT hoặc tên dự án…"
+                  className="min-w-[180px] flex-1 rounded-md border border-slate-300 px-2 py-1 text-[11.5px] text-slate-700" />
+                {(loaiLoi || vungLoi || pmLoi || timLoi) && (
+                  <button onClick={() => { setLoaiLoi(""); setVungLoi(""); setPmLoi(""); setTimLoi(""); }}
+                    className="rounded-md px-2 py-1 text-[11.5px] font-semibold text-slate-500 hover:bg-slate-100">Xoá lọc</button>
+                )}
+                <span className="text-[11.5px] tabular-nums text-slate-500">{loiHien.length}/{loiSoLieu.length}</span>
+              </div>
+
+              {loiHien.length === 0 ? (
+                /* LỌC HỤT PHẢI NÓI RA, đừng để bảng trắng rồi người ta tưởng hết lỗi. */
+                <div className="rounded-md border border-slate-200 px-3 py-6 text-center text-[12px] text-slate-500">
+                  {loiSoLieu.length === 0 ? "Không tìm thấy chỗ nào lệch — số liệu đang sạch." : "Không có dòng nào khớp bộ lọc đang bật."}
+                </div>
+              ) : (
+                <table className="w-full border-collapse text-[11.5px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-1 pr-2 font-semibold">Mã CT</th>
+                      <th className="py-1 pr-2 font-semibold">Dự án</th>
+                      <th className="py-1 pr-2 font-semibold">Hạng mục</th>
+                      <th className="py-1 pr-2 font-semibold">Đang ghi</th>
+                      <th className="py-1 pr-2 font-semibold">Theo số mã</th>
+                      <th className="py-1 pr-2 font-semibold">Vùng</th>
+                      <th className="py-1 font-semibold">PM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loiHien.map((l, i) => (
+                      <tr key={`${l.maCT}-${l.hangMuc}-${i}`} className="border-b border-slate-100 align-top last:border-0">
+                        <td className="py-1 pr-2 font-mono text-[10.5px] text-slate-500 whitespace-nowrap">{l.maCT}</td>
+                        <td className="py-1 pr-2 font-semibold text-slate-800">{l.duAn}</td>
+                        <td className="py-1 pr-2 text-slate-600">
+                          {l.hangMuc}
+                          <div className={`text-[10.5px] ${l.nang ? "text-rose-600" : "text-amber-700"}`}>{l.moTa}</div>
+                        </td>
+                        <td className="py-1 pr-2 font-semibold tabular-nums text-slate-900 whitespace-nowrap">{l.dangGhi}</td>
+                        <td className="py-1 pr-2 tabular-nums text-slate-600 whitespace-nowrap">{l.theoSoMa || "—"}</td>
+                        <td className="py-1 pr-2 text-slate-600 whitespace-nowrap">{l.vung}</td>
+                        <td className="py-1 text-slate-600 whitespace-nowrap">{l.pm}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
           {tab === "shift" && (
             <div className="space-y-3">
               {/* ── ① GHI CHÚ BIẾN MẤT ── loại người dùng kêu nhiều nhất, mà công cụ cũ không hề thấy:
