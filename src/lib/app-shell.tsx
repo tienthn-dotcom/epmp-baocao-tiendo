@@ -522,18 +522,28 @@ function MtldApp() {
       const ids = [...new Set(list.map((p) => p.fileId).filter(Boolean))];
       const meta = await getLinksUpdatedAt({ data: { fileIds: ids } }).catch(() => ({ map: {} as Record<string, { modifiedTime: string }> }));
       const ngay = new Map<string, string | null>(ids.map((id) => [id, meta.map?.[id]?.modifiedTime ?? null]));
-      const { xepTrangBod, locTabBod } = await import("@/lib/bao-cao-bod");
+      const { xepTrangBod, locTabBod, thieuTrongTracking } = await import("@/lib/bao-cao-bod");
       const { xuatBaoCaoBod } = await import("@/lib/bao-cao-bod-xuat");
+      /* NHAN VAN HANH lay tu bang Tracking cua PMO (anh Tien chot 16/10/2026), khong con suy
+         theo ngay sua file. Xem lib/tracking-vanhanh.ts. */
+      const { docTracking } = await import("@/lib/tracking-vanhanh");
+      const { TRACKING_TSV, NGAY_CHUP } = await import("@/lib/tracking-vanhanh-data");
+      const bang = docTracking(TRACKING_TSV);
       /* CHI LAY TAB 1B / 2B / 3B (anh Tien chot 13/10/2026) - xem ghi chu o bao-cao-bod.ts. */
       const { lay, bo } = locTabBod(list);
       if (bo.length) console.warn("[bao-cao-bod] bo qua vi khong phai tab 1B/2B/3B:", bo.map((p) => `${p.maCT} · ${p.name} · tab "${p.sheet ?? ""}"`));
-      const trang = xepTrangBod(lay, ngay, Date.now());
+      const trang = xepTrangBod(lay, bang, ngay);
       const vn = new Date(Date.now() + 7 * 3600_000);
       const nhan = `Ngày ${String(vn.getUTCDate()).padStart(2, "0")}/${String(vn.getUTCMonth() + 1).padStart(2, "0")}/${vn.getUTCFullYear()}`;
-      const kq = await xuatBaoCaoBod(trang, nhan, (p) => setDangXuat(`Đang ghép ${p.xong}/${p.tong}…`));
+      const kq = await xuatBaoCaoBod(trang, nhan, (p) => setDangXuat(`Đang ghép ${p.xong}/${p.tong}…`),
+        `Nhãn vận hành lấy từ bảng Tracking tiến độ vận hành ma trận TCLĐ, bản ngày ${NGAY_CHUP}.`);
       /* NÓI THẲNG DỰ ÁN NÀO HỤT. Thiếu vài trang mà im lặng thì bản gửi BOD thiếu dự án mà không
-         ai biết — đúng kiểu sai nhìn vẫn như đúng. */
-      const them = [kq.hut.length ? `hụt ${kq.hut.length}` : "", bo.length ? `bỏ ${bo.length} tab lạ` : ""].filter(Boolean).join(" · ");
+         ai biết — đúng kiểu sai nhìn vẫn như đúng. Ma tran KHONG CO trong bang Tracking cung vay:
+         no se mang nhan xam "CHUA RO", phai noi ra de PMO bo sung vao bang. */
+      const thieu = thieuTrongTracking(trang);
+      if (thieu.length) console.warn("[bao-cao-bod] khong co trong bang Tracking:", thieu);
+      const them = [kq.hut.length ? `hụt ${kq.hut.length}` : "", bo.length ? `bỏ ${bo.length} tab lạ` : "",
+        thieu.length ? `${thieu.length} chưa có trong Tracking` : ""].filter(Boolean).join(" · ");
       setDangXuat(`Xong ${kq.soTrang} trang${them ? " · " + them : ""}`);
       if (kq.hut.length) console.warn("[bao-cao-bod] không tải được ma trận:", kq.hut);
     } catch (e) {

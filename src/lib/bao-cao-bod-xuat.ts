@@ -17,12 +17,24 @@
  *
  * 3. TẢI THEO LÔ, không thả hết một lượt. 46 lượt gọi song song thì Worker phải giữ 46 tệp PDF
  *    trong bộ nhớ cùng lúc — đúng kiểu đã làm màn MTLĐ chết Error 1102 hồi tháng 9.
+ *
+ * 4. NỚI GIẤY RA CHO DẢI TIÊU ĐỀ, KHÔNG VẼ ĐÈ. Anh Tiến 16/10/2026, kèm ảnh chụp trang Tây Hồ
+ *    View tháp 4B: *"đẹp, nhưng mà nó che phần đầu rồi, chỉnh lại cho tôi để nó đừng che là
+ *    xong"*. Bản trước dán dải vào đúng 42pt trên cùng của trang ma trận, nuốt mất nửa hàng
+ *    tiêu đề bảng. Nay mỗi trang được nới CAO THÊM 42pt — gốc toạ độ PDF nằm ở góc dưới trái
+ *    nên khoảng trống mới hiện ra ở TRÊN, ruột trang không xê dịch một ly. Không thu nhỏ: chữ
+ *    trong ma trận vốn đã bé, co thêm 7% nữa là đọc không ra.
+ *    Nới cho MỌI trang (kể cả trang 2, 3… của ma trận nhiều trang) để cả tệp cùng một khổ giấy.
  */
 import { getSheetPdf } from "@/lib/mtld-install.functions";
-import { tenTep, type TrangBod } from "@/lib/bao-cao-bod";
+import { dongTong, tenTep, type TrangBod } from "@/lib/bao-cao-bod";
+import { MAU_VH } from "@/lib/tracking-vanhanh";
 
 /** Mỗi lượt tải bao nhiêu ma trận. Giữ nhỏ — xem lý do 3 ở đầu tệp. */
 const SONG_SONG = 3;
+
+/** Chiều cao dải tiêu đề (pt). Cũng là phần giấy nới thêm ở trên mỗi trang — xem lý do 4. */
+const CAO_DAI = 42;
 
 export type TienTrinh = { xong: number; tong: number; dang: string };
 
@@ -44,6 +56,20 @@ function veDai(rong: number, cao: number, ve: (c: CanvasRenderingContext2D) => v
   return b64ToBytes(url.slice(url.indexOf(",") + 1));
 }
 
+/** Dòng phụ dưới mã CT: ghi chú PMO viết trong bảng tracking, kèm ngày sửa file nếu biết. */
+function dongPhu(t: TrangBod): string {
+  const p = [t.maCT];
+  if (t.ghiChu) p.push(t.ghiChu);
+  if (t.ngaySua) {
+    const d = new Date(t.ngaySua);
+    if (!Number.isNaN(d.getTime())) {
+      const z = (n: number) => String(n).padStart(2, "0");
+      p.push(`cập nhật ${z(d.getDate())}/${z(d.getMonth() + 1)}`);
+    }
+  }
+  return p.join("   ·   ");
+}
+
 /** Dải tiêu đề dán lên đầu mỗi trang ma trận. */
 function daiTieuDe(t: TrangBod, rongPt: number): Uint8Array {
   const S = 3;                                   // vẽ to gấp 3 rồi thu lại cho nét
@@ -51,26 +77,33 @@ function daiTieuDe(t: TrangBod, rongPt: number): Uint8Array {
   return veDai(rong, cao, (c) => {
     c.fillStyle = "#1E3A5F";                     // navy, cùng tông với báo cáo tuân thủ
     c.fillRect(0, 0, rong, cao);
-    c.fillStyle = "#ffffff";
-    c.font = `700 ${11 * S}px Arial, sans-serif`;
-    c.textBaseline = "middle";
-    c.fillText(`${t.cum}   ·   ${t.stt}. ${t.ten}`, 14 * S, cao * 0.34, rong - 220 * S);
-    c.font = `400 ${9.5 * S}px Arial, sans-serif`;
-    c.fillStyle = "#cbd5e1";
-    c.fillText(t.maCT, 14 * S, cao * 0.72, rong - 220 * S);
-    // Nhãn vận hành: xanh lá = đang chạy, xám = chưa.
-    const w = 150 * S, h = 22 * S, x = rong - w - 14 * S, y = (cao - h) / 2;
-    c.fillStyle = t.chay ? "#10b981" : "#64748b";
+
+    /* Ô NHÃN RỘNG THEO CHỮ. Bản cũ chốt cứng 150pt vì chỉ có hai nhãn ngắn; nay bảng tracking có
+       "KHÔNG CẦN TRIỂN KHAI" dài gần gấp rưỡi, để nguyên là chữ tràn ra ngoài ô. */
+    c.font = `700 ${9.5 * S}px Arial, sans-serif`;
+    const w = Math.min(rong * 0.42, c.measureText(t.nhan).width + 24 * S);
+    const h = 22 * S, x = rong - w - 14 * S, y = (cao - h) / 2;
+    c.fillStyle = MAU_VH[t.tt];
     c.fillRect(x, y, w, h);
     c.fillStyle = "#ffffff";
-    c.font = `700 ${9.5 * S}px Arial, sans-serif`;
     c.textAlign = "center";
+    c.textBaseline = "middle";
     c.fillText(t.nhan, x + w / 2, y + h / 2);
+
+    /* Chữ bên trái vẽ SAU và cắt theo đúng chỗ còn lại, để không bao giờ chui xuống dưới ô nhãn. */
+    const roiRong = x - 28 * S;
+    c.textAlign = "left";
+    c.fillStyle = "#ffffff";
+    c.font = `700 ${11 * S}px Arial, sans-serif`;
+    c.fillText(`${t.cum}   ·   ${t.stt}. ${t.ten}`, 14 * S, cao * 0.34, roiRong);
+    c.font = `400 ${9.5 * S}px Arial, sans-serif`;
+    c.fillStyle = "#cbd5e1";
+    c.fillText(dongPhu(t), 14 * S, cao * 0.72, roiRong);
   });
 }
 
 /** Trang bìa. */
-function trangBia(rong: number, cao: number, tuan: string, tong: string): Uint8Array {
+function trangBia(rong: number, cao: number, tuan: string, tong: string, nguon: string): Uint8Array {
   const S = 2;
   return veDai(Math.round(rong * S), Math.round(cao * S), (c) => {
     const W = rong * S, H = cao * S;
@@ -99,7 +132,7 @@ function trangBia(rong: number, cao: number, tuan: string, tong: string): Uint8A
     c.font = `400 ${11 * S}px Arial, sans-serif`;
     c.fillStyle = "#64748b";
     c.fillText("Mỗi trang là ma trận của một dự án, xếp theo cụm.", 80 * S, 378 * S);
-    c.fillText("Nhãn “ĐÃ VẬN HÀNH” = trong 7 ngày gần nhất có người cập nhật file ma trận.", 80 * S, 400 * S);
+    c.fillText(nguon, 80 * S, 400 * S);
   });
 }
 
@@ -110,7 +143,13 @@ function trangBia(rong: number, cao: number, tuan: string, tong: string): Uint8A
  * @param tuan    chữ hiện ở bìa, vd "TUẦN 42 · 13/10/2026"
  * @param bao     gọi sau mỗi ma trận xong, để giao diện báo tiến trình
  */
-export async function xuatBaoCaoBod(trang: readonly TrangBod[], tuan: string, bao?: (t: TienTrinh) => void): Promise<{ soTrang: number; hut: string[] }> {
+export async function xuatBaoCaoBod(
+  trang: readonly TrangBod[],
+  tuan: string,
+  bao?: (t: TienTrinh) => void,
+  /** Câu nói rõ nhãn vận hành lấy ở đâu, in ở bìa. */
+  nguonNhan = "Nhãn vận hành lấy từ bảng Tracking tiến độ vận hành ma trận TCLĐ (PMO chấm).",
+): Promise<{ soTrang: number; hut: string[] }> {
   const { PDFDocument } = await import("pdf-lib");
   const ra = await PDFDocument.create();
   const hut: string[] = [];
@@ -141,9 +180,12 @@ export async function xuatBaoCaoBod(trang: readonly TrangBod[], tuan: string, ba
       break;
     } catch { /* tệp hỏng → thử tệp sau */ }
   }
-  const bia = ra.addPage([khoRong, khoCao]);
-  const anhBia = await ra.embedPng(trangBia(khoRong, khoCao, tuan, `${trang.length} ma trận · ${trang.filter((t) => t.chay).length} đã vận hành · ${trang.filter((t) => !t.chay).length} chưa vận hành`));
-  bia.drawImage(anhBia, { x: 0, y: 0, width: khoRong, height: khoCao });
+  /* Bìa cũng cao thêm đúng CAO_DAI để cả tệp một khổ giấy — lệch khổ thì lúc in mỗi trang một
+     tỉ lệ, bản gửi BOD nhìn là thấy chắp vá. */
+  const biaCao = khoCao + CAO_DAI;
+  const bia = ra.addPage([khoRong, biaCao]);
+  const anhBia = await ra.embedPng(trangBia(khoRong, biaCao, tuan, dongTong(trang), nguonNhan));
+  bia.drawImage(anhBia, { x: 0, y: 0, width: khoRong, height: biaCao });
 
   /* Ghép từng ma trận + dán dải tiêu đề. */
   for (let i = 0; i < trang.length; i++) {
@@ -153,13 +195,27 @@ export async function xuatBaoCaoBod(trang: readonly TrangBod[], tuan: string, ba
     try { nguon = await PDFDocument.load(b, { ignoreEncryption: true }); }
     catch { hut.push(`${t.maCT} · ${t.ten}`); continue; }
     const chep = await ra.copyPages(nguon, nguon.getPageIndices());
-    for (const p of chep) ra.addPage(p);
+    /* NỚI GIẤY TRƯỚC KHI DÁN (lý do 4 ở đầu tệp). Đọc hộp giấy thật rồi cộng chiều cao, KHÔNG
+       giả định gốc toạ độ là (0,0): vài bản Google xuất ra có MediaBox lệch gốc, cứ vẽ ở y=0 là
+       dải tiêu đề rơi ra ngoài mép giấy. Nới cả CropBox vì trình đọc cắt theo hộp này. */
+    const dinh: number[] = [];
+    for (const p of chep) {
+      const mb = p.getMediaBox();
+      p.setMediaBox(mb.x, mb.y, mb.width, mb.height + CAO_DAI);
+      try {
+        const cb = p.getCropBox();
+        p.setCropBox(cb.x, cb.y, cb.width, cb.height + CAO_DAI);
+      } catch { /* trang không có CropBox riêng — MediaBox là đủ */ }
+      dinh.push(mb.y + mb.height);   // mép trên CŨ = chân của dải tiêu đề mới
+      ra.addPage(p);
+    }
     /* MỘT MA TRẬN CÓ THỂ RA NHIỀU TRANG. Dán dải tiêu đề lên TRANG ĐẦU thôi — dán cả cụm thì
        người đọc tưởng mỗi trang một dự án, đếm nhầm số dự án trong báo cáo. */
     const dau = chep[0];
     if (!dau) { hut.push(`${t.maCT} · ${t.ten}`); continue; }
-    const anh = await ra.embedPng(daiTieuDe(t, dau.getWidth()));
-    dau.drawImage(anh, { x: 0, y: dau.getHeight() - 42, width: dau.getWidth(), height: 42 });
+    const mb0 = dau.getMediaBox();
+    const anh = await ra.embedPng(daiTieuDe(t, mb0.width));
+    dau.drawImage(anh, { x: mb0.x, y: dinh[0], width: mb0.width, height: CAO_DAI });
   }
 
   const bytes = await ra.save();

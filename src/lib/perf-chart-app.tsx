@@ -18,8 +18,8 @@
  */
 import { loiNoi } from "@/lib/loi-noi";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, X, ExternalLink } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BarChart3, Upload, Maximize2, Minimize2, FileDown, Database, RefreshCw, X, ExternalLink } from "lucide-react";
 import { getSummaryFile, getProjRegions, getInstallList } from "@/lib/mtld-install.functions";
 import { whoami } from "@/lib/activity.functions";
 import { getPerfData, savePerfData, startPerfSourceUpload, linkFileNguonHieuSuat, fetchUserRoles } from "@/lib/edits.functions";
@@ -562,14 +562,16 @@ function BigChart({ rows, monthIdx }: { rows: RankRow[]; monthIdx: number }) {
         <div style={{ position: "absolute", top: -3, left: "var(--lw)", right: "var(--rw)", height: 0 }}>
           <div style={{ position: "absolute", left: `${kpiP}%`, transform: "translateX(-50%)", fontSize: 10.5, fontWeight: 700, color: KDA_SOFT, whiteSpace: "nowrap" }}>Mốc KPI</div>
         </div>
-        {/* Lớp phủ đường mốc: zero (nếu có âm) + KPI — canh đúng dải track (left/right = lw/rw) */}
-        <div style={{ position: "absolute", top: 14, bottom: 6, left: "var(--lw)", right: "var(--rw)", pointerEvents: "none" }}>
-          {minV < 0 && <div style={{ position: "absolute", left: `${zeroP}%`, top: 0, bottom: 0, width: 1, background: "#cbd5e1" }} />}
-          <div style={{ position: "absolute", left: `${kpiP}%`, top: 0, bottom: 0, width: 0, borderLeft: "2px dashed #94a3b8" }} />
-        </div>
-
         {/* CÁC DÒNG */}
         <div style={{ position: "relative", paddingTop: 14 }}>
+          {/* Lớp phủ đường mốc: zero (nếu có âm) + KPI — canh đúng dải track (left/right = lw/rw).
+              ĐẶT TRONG KHỐI CÁC DÒNG, không đặt ở khung ngoài: khung ngoài ôm cả phần chú thích phía
+              dưới nên đường gạch chạy quá dòng cuối rồi cắt ngang xuống chỗ chú thích — anh Tiến
+              19/10/2026: *"cái line nó cắt xuống xấu nha"*. Nay nó dừng đúng đáy dòng cuối. */}
+          <div style={{ position: "absolute", top: 14, bottom: 0, left: "var(--lw)", right: "var(--rw)", pointerEvents: "none" }}>
+            {minV < 0 && <div style={{ position: "absolute", left: `${zeroP}%`, top: 0, bottom: 0, width: 1, background: "#cbd5e1" }} />}
+            <div style={{ position: "absolute", left: `${kpiP}%`, top: 0, bottom: 0, width: 0, borderLeft: "2px dashed #94a3b8" }} />
+          </div>
           {data.map((d, i) => {
             const c = kcolor(d.t, d.rev === 0);
             const barL = d.t >= 0 ? zeroP : pos(d.t);
@@ -757,8 +759,8 @@ function RevPerCapChart({ perCapVnd, priorYearVnd }: { perCapVnd: (number | null
  * rời ePMP vì nó là bảng chiếu; bảng chi tiết mà giấu dòng thì người đọc cộng lại không khớp dòng
  * tổng, rồi mất lòng tin vào cả bảng.
  */
-function BangChiTiet({ projs, block, nm, regionMap }: {
-  projs: Proj[]; block: { rev: number[]; ns: number[] } | null; nm: number; regionMap: Record<string, string>;
+function BangChiTiet({ projs, block, regionMap }: {
+  projs: Proj[]; block: { rev: number[]; ns: number[] } | null; regionMap: Record<string, string>;
 }) {
   /** Tỷ đồng, 1 chữ số thập phân, dấu phẩy kiểu Việt. */
   const ty = (v: number | undefined): string =>
@@ -774,17 +776,80 @@ function BangChiTiet({ projs, block, nm, regionMap }: {
        không có trong đó rơi xuống cuối vùng. Bảng này bê TRỌN các dòng của Pivot (trừ dòng gom), để
        anh Tiến sửa gì thì sửa thẳng trong Pivot. */
     const uuTien = (p: Proj) => { if (p.hien != null) return p.hien; const i = SHOW_KEYS.indexOf(keyName(p.name)); return i < 0 ? 9999 : 1000 + i; };
-    return co.sort((a, b) => vungRank(a.vung) - vungRank(b.vung) || uuTien(a) - uuTien(b) || a.name.localeCompare(b.name, "vi", { numeric: true }));
+    const xep = co.sort((a, b) => vungRank(a.vung) - vungRank(b.vung) || uuTien(a) - uuTien(b) || a.name.localeCompare(b.name, "vi", { numeric: true }));
+
+    /* HAI DÒNG KHÁC NHAU KHÔNG ĐƯỢC MANG CÙNG MỘT TÊN TRÊN BẢNG.
+       Anh Tiến 19/10/2026: *"sao có 2 cái tropical đấy"*. Trong file là hai dòng riêng — "TROPICAL PQ"
+       (dự án thật) và "Tropical" (dòng lẻ, tháng 4 ghi −21,5 triệu, không có nhân sự) — nhưng bảng
+       đổi tên hiển thị "tropical pq" → "Tropical" (PERF_TEN_HIEN) nên cả hai cùng hiện "TROPICAL",
+       nhìn như app nhân đôi một dự án.
+       Bảng này CỐ Ý bày đủ mọi dòng của file để cộng lại khớp dòng tổng, nên không xoá dòng nào —
+       chỉ trả tên gốc cho những dòng bị đụng tên, để người đọc thấy ngay chúng khác nhau ở đâu. */
+    const dem = new Map<string, number>();
+    for (const p of xep) { const t = tenHien(p.name); dem.set(t, (dem.get(t) ?? 0) + 1); }
+    return xep.map((p) => ({ ...p, nhan: (dem.get(tenHien(p.name)) ?? 0) > 1 ? p.name.toLocaleUpperCase("vi") : tenHien(p.name) }));
   }, [projs, regionMap]);
 
-  /** Cộng dồn cả năm của một dự án — để người xem khỏi tự cộng 9 ô. */
-  const tongDt = (p: Proj) => p.rev.slice(0, nm).reduce((s, v) => s + (v || 0), 0);
-  /** Nhân sự KHÔNG cộng dồn được (một người có mặt nhiều tháng) → lấy tháng cuối có số. */
-  const nsCuoi = (p: Proj) => { for (let m = nm - 1; m >= 0; m--) if (p.ns[m] > 0) return p.ns[m]; return 0; };
+  /* BẢNG LUÔN ĐỦ 12 THÁNG (anh Tiến chốt 19/10/2026). File mới chạy tới T9 thì T10-T12 để TRỐNG —
+     cả năm nhìn một mạch, khỏi phải nhớ file đang tới đâu. Mảng số của file ngắn hơn 12 phần tử là
+     chuyện thường, nên mọi chỗ đọc đều qua `?? 0`. */
+  const SO_THANG = 12;
 
-  const thMonth: React.CSSProperties = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" };
-  const tdNum: React.CSSProperties = { padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap", borderTop: "1px solid #f1f5f9" };
-  // Cột tên DÍNH TRÁI: bảng rộng hơn màn hình là chuyện chắc chắn (9 tháng + 2 cột tổng), cuộn ngang
+  /* CÓ NGƯỜI MÀ KHÔNG CÓ DOANH THU = DOANH THU 0, KHÔNG PHẢI "CHƯA CÓ SỐ" (anh Tiến chốt
+     19/10/2026). Tháng nào đã bố trí người thì tháng đó có trách nhiệm ra sản lượng; để trống là
+     giấu mất đúng những tháng nuôi quân mà không ra tiền — vd TROPICAL PQ tháng 2 có 18 người,
+     sản lượng 0. Nên: hễ ns > 0 là ô có số, sản lượng ghi 0,0 và đầu người ghi 0,00, và tháng đó
+     ĐƯỢC TÍNH vào trung bình cả năm (kéo bình quân xuống, đúng như thực tế).
+     Ngược lại ns = 0 thì không chia được cho ai → ô đầu người để trống. */
+  const coSo = (dt: number, ns: number) => ns > 0 || dt !== 0;
+
+  /** Tỷ đồng, luôn hiện kể cả số 0 (dùng cho ô đã xác định là "có số"). */
+  const tyCoSo = (v: number): string => (v / 1e9).toLocaleString("vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  /** Doanh thu đầu người của một tháng (tỷ/người). Công thức lấy đúng chart "Doanh thu đầu người
+   *  theo dự án" (perfOf): sản lượng ÷ nhân sự. */
+  const dauNguoi = (dt: number, ns: number): string =>
+    ns > 0 ? (dt / ns / 1e9).toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
+
+  /** Cộng dồn cả năm của một dự án — để người xem khỏi tự cộng 12 ô. */
+  const tongDt = (p: Proj) => p.rev.slice(0, SO_THANG).reduce((s, v) => s + (v || 0), 0);
+  /** Nhân sự KHÔNG cộng dồn được (một người có mặt nhiều tháng) → bình quân các tháng CÓ người. */
+  const nsTb = (p: Proj) => {
+    let tong = 0, so = 0;
+    for (let m = 0; m < SO_THANG; m++) { const v = p.ns[m] ?? 0; if (v > 0) { tong += v; so++; } }
+    return so ? Math.round(tong / so) : 0;
+  };
+  /** Đầu người CẢ NĂM = trung bình các THÁNG CÓ NGƯỜI — cùng cách tính "TB năm nay" của chart
+   *  "Sản lượng đầu người khối dự án", để hai chỗ trong cùng một app không nói hai con số khác nhau.
+   *  Tháng có người mà sản lượng 0 VẪN VÀO mẫu số (xem ghi chú `coSo`). */
+  const dauNguoiNam = (rev: readonly number[], ns: readonly number[]): string => {
+    const v: number[] = [];
+    for (let m = 0; m < SO_THANG; m++) { const n = ns[m] ?? 0; if (n > 0) v.push((rev[m] ?? 0) / n); }
+    return v.length ? (v.reduce((a, b) => a + b, 0) / v.length / 1e9).toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
+  };
+
+  /** Ô số: TRÁI xếp chồng sản lượng / nhân sự, PHẢI là doanh thu đầu người — đúng khuôn anh Tiến vẽ. */
+  const OSo = ({ dt, ns, toi }: { dt: number; ns: number; toi?: boolean }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
+      <div style={{ textAlign: "right", minWidth: 30 }}>
+        <div style={{ fontWeight: 700, color: dt < 0 ? "#f87171" : toi ? "#fff" : dt === 0 ? "#94a3b8" : "#0f172a" }}>
+          {coSo(dt, ns) ? tyCoSo(dt) : ""}
+        </div>
+        <div style={{ fontSize: 10.5, color: toi ? "#94a3b8" : "#1d4ed8" }}>{ns > 0 ? ns : ""}</div>
+      </div>
+      <div style={{ minWidth: 29, textAlign: "right", fontSize: 11, color: toi ? "#cbd5e1" : "#b45309", borderLeft: `1px solid ${toi ? "#334155" : "#e2e8f0"}`, paddingLeft: 5 }}>
+        {dauNguoi(dt, ns)}
+      </div>
+    </div>
+  );
+
+  /* BỀ NGANG: anh Tiến 19/10/2026 *"cái pivot đủ chỗ mà, sao phải kéo qua"*. Bản trước chốt cứng
+     bề ngang tối thiểu 1420px nên màn 1400 vẫn phải kéo ngang dù nội dung thừa chỗ. Nay chỉ đặt
+     mức tối thiểu đủ ĐỌC ĐƯỢC rồi để trình duyệt tự co theo nội dung — màn rộng thì vừa khít,
+     màn hẹp mới kéo. */
+  const thMonth: React.CSSProperties = { padding: "6px 5px", textAlign: "center", fontWeight: 700, whiteSpace: "nowrap", minWidth: 72 };
+  const tdNum: React.CSSProperties = { padding: "5px 5px", textAlign: "right", whiteSpace: "nowrap", borderTop: "1px solid #f1f5f9" };
+  // Cột tên DÍNH TRÁI: bảng rộng hơn màn hình là chuyện chắc chắn (12 tháng + cột cả năm), cuộn ngang
   // mà mất tên dự án thì không còn đọc được dòng nào.
   const stickyName: React.CSSProperties = {
     position: "sticky", left: 0, zIndex: 2, background: "#fff",
@@ -795,16 +860,18 @@ function BangChiTiet({ projs, block, nm, regionMap }: {
   let vungTruoc = "";
   return (
     <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-      <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 12, width: "100%", minWidth: 760 }}>
+      <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 12, width: "100%", minWidth: 1130 }}>
         <thead>
           <tr style={{ background: "#f8fafc", color: "#334155" }}>
             <th style={{ ...stickyName, background: "#f8fafc", zIndex: 3, fontWeight: 700, borderTop: "none" }}>
               Dự án
-              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 500, color: "#94a3b8" }}>trên: sản lượng (tỷ) · dưới: nhân sự</span>
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 500, color: "#94a3b8" }}>
+                trên: sản lượng (tỷ) · dưới: <span style={{ color: "#1d4ed8" }}>nhân sự</span> · phải: <span style={{ color: "#b45309" }}>doanh thu đầu người (tỷ/người)</span>
+              </span>
             </th>
-            {Array.from({ length: nm }, (_, m) => <th key={m} style={thMonth}>T{m + 1}</th>)}
-            <th style={{ ...thMonth, borderLeft: "1px solid #e2e8f0" }}>Cả năm</th>
-            <th style={thMonth}>NS nay</th>
+            {Array.from({ length: SO_THANG }, (_, m) => <th key={m} style={thMonth}>T{m + 1}</th>)}
+            <th style={{ ...thMonth, borderLeft: "1px solid #e2e8f0" }}
+              title="Sản lượng cộng dồn · nhân sự bình quân các tháng có người · doanh thu đầu người = trung bình các tháng có số">Cả năm</th>
           </tr>
         </thead>
         <tbody>
@@ -815,20 +882,28 @@ function BangChiTiet({ projs, block, nm, regionMap }: {
               <tr key={`${p.no}-${p.name}`}>
                 {/* Vạch màu bên trái = vùng, trùng mã màu với viền thẻ ở tab xu hướng. */}
                 <td style={{ ...stickyName, borderLeft: `4px solid ${vungColor(p.vung)}`, fontWeight: 600, color: "#0f172a", borderTop: vien }}>
-                  {tenHien(p.name)}
+                  {p.nhan}
                   {p.vung !== "—" && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: "#94a3b8" }}>{p.vung}</span>}
                 </td>
-                {Array.from({ length: nm }, (_, m) => {
-                  const dt = p.rev[m] ?? 0, ns = p.ns[m] ?? 0;
-                  return (
-                    <td key={m} style={{ ...tdNum, borderTop: vien }}>
-                      <div style={{ fontWeight: 700, color: dt < 0 ? "#dc2626" : dt === 0 ? "#cbd5e1" : "#0f172a" }}>{dt === 0 ? "–" : ty(dt)}</div>
-                      <div style={{ fontSize: 10.5, color: ns === 0 ? "#cbd5e1" : "#64748b" }}>{ns === 0 ? "–" : ns}</div>
-                    </td>
-                  );
-                })}
-                <td style={{ ...tdNum, borderTop: vien, borderLeft: "1px solid #e2e8f0", fontWeight: 700, color: tongDt(p) < 0 ? "#dc2626" : "#0f172a" }}>{ty(tongDt(p)) || "–"}</td>
-                <td style={{ ...tdNum, borderTop: vien, color: "#334155" }}>{nsCuoi(p) || "–"}</td>
+                {Array.from({ length: SO_THANG }, (_, m) => (
+                  <td key={m} style={{ ...tdNum, borderTop: vien }}>
+                    <OSo dt={p.rev[m] ?? 0} ns={p.ns[m] ?? 0} />
+                  </td>
+                ))}
+                {/* Cả năm: cùng khuôn ba số với các tháng, chỉ khác là số cộng dồn / bình quân. */}
+                <td style={{ ...tdNum, borderTop: vien, borderLeft: "1px solid #e2e8f0" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
+                    <div style={{ textAlign: "right", minWidth: 30 }}>
+                      <div style={{ fontWeight: 700, color: tongDt(p) < 0 ? "#dc2626" : tongDt(p) === 0 ? "#94a3b8" : "#0f172a" }}>
+                        {coSo(tongDt(p), nsTb(p)) ? tyCoSo(tongDt(p)) : ""}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "#1d4ed8" }}>{nsTb(p) || ""}</div>
+                    </div>
+                    <div style={{ minWidth: 29, textAlign: "right", fontSize: 11, color: "#b45309", borderLeft: "1px solid #e2e8f0", paddingLeft: 5 }}>
+                      {dauNguoiNam(p.rev, p.ns)}
+                    </div>
+                  </div>
+                </td>
               </tr>
             );
           })}
@@ -837,16 +912,22 @@ function BangChiTiet({ projs, block, nm, regionMap }: {
           {block && (
             <tr style={{ background: "#0f172a", color: "#fff" }}>
               <td style={{ ...stickyName, background: "#0f172a", color: "#fff", fontWeight: 700, borderTop: "2px solid #0f172a", borderRight: "1px solid #334155" }}>TOÀN KHỐI</td>
-              {Array.from({ length: nm }, (_, m) => (
+              {Array.from({ length: SO_THANG }, (_, m) => (
                 <td key={m} style={{ ...tdNum, borderTop: "2px solid #0f172a" }}>
-                  <div style={{ fontWeight: 700 }}>{ty(block.rev[m]) || "–"}</div>
-                  <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{block.ns[m] || "–"}</div>
+                  <OSo dt={block.rev[m] ?? 0} ns={block.ns[m] ?? 0} toi />
                 </td>
               ))}
-              <td style={{ ...tdNum, borderTop: "2px solid #0f172a", borderLeft: "1px solid #334155", fontWeight: 700 }}>
-                {ty(block.rev.slice(0, nm).reduce((s, v) => s + (v || 0), 0)) || "–"}
+              <td style={{ ...tdNum, borderTop: "2px solid #0f172a", borderLeft: "1px solid #334155" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
+                  <div style={{ textAlign: "right", minWidth: 30 }}>
+                    <div style={{ fontWeight: 700 }}>{tyCoSo(block.rev.slice(0, SO_THANG).reduce((s, v) => s + (v || 0), 0))}</div>
+                    <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{nsTb({ ns: block.ns } as Proj) || ""}</div>
+                  </div>
+                  <div style={{ minWidth: 29, textAlign: "right", fontSize: 11, color: "#cbd5e1", borderLeft: "1px solid #334155", paddingLeft: 5 }}>
+                    {dauNguoiNam(block.rev, block.ns)}
+                  </div>
+                </div>
               </td>
-              <td style={{ ...tdNum, borderTop: "2px solid #0f172a", color: "#cbd5e1" }}>{block.ns[nm - 1] || "–"}</td>
             </tr>
           )}
         </tbody>
@@ -901,17 +982,43 @@ export function PerfChartApp() {
   const regionReady = !regionQ.isPending && !installQ.isPending;
   const canManage = !!(meQ.data?.isAdmin || (meQ.data?.email && laDieuHanh(roleOf(rolesQ.data?.roles ?? {}, meQ.data.email))));
 
-  useEffect(() => {
-    let off = false;
-    getPerfData().then((r) => {
-      if (off || !r.data) return;
+  const qc = useQueryClient();
+
+  /** Nạp BẢN LƯU trên máy chủ vào màn hình. Tách ra khỏi useEffect để nút "Làm mới" dùng chung
+   *  đúng một đường — hai đường nạp thì sớm muộn cũng lệch nhau một trường nào đó. */
+  const napBanLuu = useCallback(async (huy?: () => boolean) => {
+    try {
+      const r = await getPerfData();
+      if (huy?.() || !r.data) return false;
       setProjs(r.data.projects);
       setBlock(r.data.block ?? null);   // số TOÀN KHỐI của báo cáo (nếu bản lưu có)
       setTongPivot(r.data.tongPivot ?? null);
       setStatus(`Bản lưu: ${r.data.src || "—"} · ${new Date(r.data.at).toLocaleString("vi-VN")} · bởi ${(r.data.by || "?").split("@")[0]}`);
-    }).catch(() => { /* chưa có bản lưu */ });
-    return () => { off = true; };
+      return true;
+    } catch { return false; }   // chưa có bản lưu
   }, []);
+
+  useEffect(() => {
+    let off = false;
+    void napBanLuu(() => off);
+    return () => { off = true; };
+  }, [napBanLuu]);
+
+  /* NÚT LÀM MỚI (anh Tiến 19/10/2026: *"cái hiệu suất dự án bị thiếu nút reload dữ liệu nha"*).
+     Trước đây màn này chỉ nạp ĐÚNG MỘT LẦN lúc mở, nên ai đó vừa cập nhật file xong thì người đang
+     mở sẵn vẫn ngồi nhìn số cũ, phải tải lại cả trang mới thấy. Nút này nạp lại bản lưu, đồng thời
+     xin lại vùng dự án (hai thứ đó quyết định bảng bày ra sao). CHO MỌI NGƯỜI, không riêng admin:
+     chỉ là đọc lại, không ghi gì. */
+  const [dangMoi, setDangMoi] = useState(false);
+  const lamMoi = useCallback(async () => {
+    setDangMoi(true);
+    await Promise.all([
+      napBanLuu(),
+      qc.invalidateQueries({ queryKey: ["proj-regions"] }),
+      qc.invalidateQueries({ queryKey: ["mtld-install-list"] }),
+    ]);
+    setDangMoi(false);
+  }, [napBanLuu, qc]);
 
   const nm = nmOf(projs);
   // THÁNG MỚI NHẤT = tháng CUỐI CÙNG có DOANH THU (tự nhảy khi update file có thêm tháng); nếu chưa
@@ -1154,6 +1261,11 @@ export function PerfChartApp() {
               </select>
             </label>
           )}
+          <button type="button" onClick={() => void lamMoi()} disabled={dangMoi}
+            title="Nạp lại bản lưu mới nhất trên máy chủ (không phải tải lại cả trang)"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11.5px] font-medium text-slate-600 hover:border-slate-400 disabled:opacity-50">
+            <RefreshCw className={`h-3.5 w-3.5 ${dangMoi ? "animate-spin" : ""}`} /> {dangMoi ? "Đang nạp…" : "Làm mới"}
+          </button>
           {projs.length > 0 && (
             <button aria-label={"Toàn màn hình (chiếu 16:9)"} type="button" onClick={toggleFull} title="Toàn màn hình (chiếu 16:9)"
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-[11.5px] font-medium text-slate-600 hover:border-slate-400">
@@ -1270,7 +1382,7 @@ export function PerfChartApp() {
               {/* TOÀN KHỐI ở bảng này lấy DÒNG CUỐI của bảng Pivot, KHÔNG phải SLTB — anh Tiến chốt
                   07/10/2026. Bản lưu cũ chưa có dòng đó thì cộng từ chính các dòng đang bày: vẫn ra
                   đúng con số của Pivot, chỉ là cộng thay vì đọc, và khỏi bắt nạp lại file mới thấy. */}
-              <BangChiTiet projs={projs} block={tongPivot ?? tongCong} nm={nm} regionMap={regionMap} />
+              <BangChiTiet projs={projs} block={tongPivot ?? tongCong} regionMap={regionMap} />
             </div>
           ) : (
             <div style={{ width: "100%", maxWidth: 1120, margin: "0 auto" }}>

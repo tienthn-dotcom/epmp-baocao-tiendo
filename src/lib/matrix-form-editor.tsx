@@ -128,7 +128,7 @@ export function MatrixFormEditor({ fid, opts, formKey, canEdit, force, hideChrom
 
   // PHẢI phụ thuộc `colorsReady`: bảng mã màu tải XONG SAU khi region có → không tính lại thì chú giải
   // vẫn hiện màu cũ trong khi ô ma trận đã đổi màu mới (lệch nhau, nhìn là sai ngay).
-  useEffect(() => { if (region && onLegend) onLegend(legendEntries(region.sh)); }, [region, onLegend, colorsReady]);
+  useEffect(() => { if (region && onLegend) onLegend(legendEntries(region.sh, region.codeColors)); }, [region, onLegend, colorsReady]);
 
   const commit = useCallback((fn: (s: FormSpec) => FormSpec) => { setSpec((s) => fn(structuredClone(s))); setDirty(true); }, []);
 

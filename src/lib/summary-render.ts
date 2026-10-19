@@ -64,15 +64,19 @@ function argbColor(rgb: string | undefined): string | null {
 /** BẢNG MÃ→MÀU CHUẨN đọc từ LEGEND của 1 sheet (Màu / Diễn giải / Nhập-Mã / "Tăng hôm nay"=hex).
  *  Ưu tiên hex khai trong legend > map chuẩn theo diễn giải > fill ô. Dùng chung cho MỌI bảng render
  *  (summary-render + rangeToHtml của matrix editor) → áp quy ước màu tự động, khỏi chỉnh tay. {} nếu không có legend. */
-export function legendCodeColors(sh: XLSX.WorkSheet): Record<string, string> {
+export function legendCodeColors(sh: XLSX.WorkSheet, cfColors?: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const e of legendEntries(sh)) out[e.code] = e.color;
+  /* DÒNG ĐẦU THẮNG khi hai dòng legend trùng mã. Đo trên Mini Hotel PQ (B1-B5) 19/10/2026: bảng
+     legend có hai dòng đuôi ("Căn MEP đã T&C", "Bàn giao VH thực tế") là dòng ĐẾM, không phải bậc
+     trạng thái, nhưng cột Mã của chúng để trống / lặp lại mã 6. Ghi đè kiểu "dòng sau thắng" làm
+     mã "" (Chưa bàn giao, ĐỎ) biến thành xanh lá — tức mọi căn chưa bàn giao đổi màu sang đã xong. */
+  for (const e of legendEntries(sh, cfColors)) if (!(e.code in out)) out[e.code] = e.color;
   return out;
 }
 
 /** Như trên nhưng trả ĐẦY ĐỦ từng dòng legend: mã ô · DIỄN GIẢI · màu. Dùng để dựng chú giải màu cho
  *  người xem — cần thiết vì heatmap ẩn chữ, mà admin lại hay XOÁ cột legend khỏi bảng cho gọn. */
-export function legendEntries(sh: XLSX.WorkSheet): { code: string; text: string; color: string }[] {
+export function legendEntries(sh: XLSX.WorkSheet, cfColors?: Record<string, string>): { code: string; text: string; color: string }[] {
   const ec = XLSX.utils.encode_cell;
   const ref = sh["!ref"]; if (!ref) return [];
   const range = XLSX.utils.decode_range(ref);
@@ -116,8 +120,24 @@ export function legendEntries(sh: XLSX.WorkSheet): { code: string; text: string;
   if (!rows.length) return [];
   // Không dòng nào có mã (cột "Màu" chỉ là ô tô màu) → mã = THỨ TỰ dòng 1..n (như trước).
   if (!rows.some((x) => x.code)) rows.forEach((x, i) => { x.code = String(i + 1); });
-  // ── 2) MÀU: hex khai trong legend > THANG 7 CẤP theo THỨ HẠNG dòng > tên chuẩn > fill ô legend.
-  //    Dòng đầu = thấp nhất (đỏ), dòng cuối = cao nhất (xanh lục); legend n dòng thì rải đều trên thang 7.
+  /* ── 2) MÀU — THỨ TỰ ƯU TIÊN (sửa 19/10/2026) ────────────────────────────────────────────────
+     Anh Tiến, kèm ảnh chụp Mini Hotel PQ (B1-B5): *"màu trớt quớt, sai hoàn toàn so với bảng màu
+     ta đã chốt trong các báo cáo nhé, cố render màu giống giúp tôi"*.
+
+     Bản cũ xếp THANG 7 CẤP (đoán màu theo THỨ HẠNG dòng legend) TRÊN cả màu thật của file. Hậu quả
+     đo được trên chính file đó: bảng legend 9 dòng, 6 dòng đầu trùng tên bảng chốt nên đúng màu,
+     còn mã 6 ("Xóa list Defect bàn giao VH") không có trong bảng chốt nên rơi xuống thang và ra
+     #C2FEBA — một màu KHÔNG hề có trong bảng chốt, phủ 306 ô, tức gần hết ma trận. Trong khi chính
+     file đã khai mã 6 = #006100 qua conditional formatting.
+
+     Nay thang 7 cấp bị đẩy xuống CUỐI: nó chỉ là phương án đoán khi không còn gì để dựa.
+       1. bảng mã màu chốt trên Drive (theo diễn giải)  — chuẩn nhà, thắng tất
+       2. hex ghi thẳng trong legend
+       3. MÀU THẬT của file (conditional formatting)     — thứ Excel đang hiện
+       4. map tên mặc định trong code
+       5. fill tĩnh của ô legend
+       6. thang 7 cấp theo thứ hạng dòng                 — đoán, chỉ khi hết cách
+     Dòng đầu = thấp nhất (đỏ), dòng cuối = cao nhất (xanh lục); legend n dòng thì rải đều trên thang 7. */
   const out: { code: string; text: string; color: string }[] = [];
   const scale = rows.filter((x) => !/^x$/i.test(x.code));   // "X" nằm NGOÀI thang, không chiếm bậc
   const n = scale.length;
@@ -125,10 +145,8 @@ export function legendEntries(sh: XLSX.WorkSheet): { code: string; text: string;
     if (/^x$/i.test(row.code)) { out.push({ code: row.code, text: row.text, color: NO_WORK }); return; }
     const i = scale.indexOf(row);
     const rank = n <= 1 ? -1 : Math.round((i * (STD_RAMP.length - 1)) / (n - 1));
-    // ƯU TIÊN: bảng mã màu của chủ nhà (Drive) > hex khai ngay trong legend > thang chuẩn theo thứ hạng
-    // > map tên mặc định > fill ô legend.
-    const color = EXTERNAL_STATUS[norm(row.text)] || row.hex || (rank >= 0 ? STD_RAMP[rank] : null)
-      || STD_STATUS[norm(row.text)] || row.fill;
+    const color = EXTERNAL_STATUS[norm(row.text)] || row.hex || cfColors?.[row.code]
+      || STD_STATUS[norm(row.text)] || row.fill || (rank >= 0 ? STD_RAMP[rank] : null);
     if (color) out.push({ code: row.code, text: row.text, color });   // code "" = ô TRỐNG trong lưới (bậc thấp nhất)
   });
   return out;
@@ -175,8 +193,11 @@ export function summaryToHtml(sh: XLSX.WorkSheet, cfColors?: Record<string, stri
     let order = 0;
     for (let r = legR + 1; r <= Math.min(legR + 12, nR); r++) {
       const text = cText >= 0 ? S(valAt(r, cText)) : "";
-      // MÀU CHUẨN: hex khai trong legend (cột "Tăng hôm nay") > map chuẩn theo diễn giải > fill ô.
-      const color = (cHex >= 0 ? hex6(S(valAt(r, cHex))) : null) || STD_STATUS[norm(text)] || fillAt(r, cMau);
+      // MÀU CHUẨN: bảng chốt trên Drive > hex khai trong legend (cột "Tăng hôm nay") > map chuẩn
+      // theo diễn giải > fill ô. Bảng Drive đứng đầu để heatmap tự động và popup ma trận ra CÙNG
+      // một bộ màu — trước đây chỉ popup đọc bảng Drive nên hai nơi lệch nhau.
+      const color = EXTERNAL_STATUS[norm(text)] || (cHex >= 0 ? hex6(S(valAt(r, cHex))) : null)
+        || STD_STATUS[norm(text)] || fillAt(r, cMau);
       if (!color) { if (/phân nhóm|tổng số/.test(text.toLowerCase())) break; continue; }
       order++;
       const code = cCode >= 0 ? S(valAt(r, cCode)) : String(order);

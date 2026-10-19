@@ -1,5 +1,8 @@
 import { loiNoi, loiNoiVaGhi } from "@/lib/loi-noi";
 import { BaoCaoNgayDialog } from "@/lib/bao-cao-ngay-app";
+import { BangDiemTongHopDialog } from "@/lib/bang-diem-tong-hop-app";
+import TramBaoCao from "@/lib/tram-bao-cao-app";
+import type { DongNguon as TramDong } from "@/lib/tram-bao-cao";
 import { ghiLuot } from "@/lib/cham-theo-pdf";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -658,6 +661,50 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.165.0", date: "19/10/2026", items: [
+    "MỚI: Hệ thống ▸ “Bảng điểm tuân thủ tổng hợp” — gộp điểm báo cáo NGÀY (Quân số · Sản lượng · Thi công lắp đặt), báo cáo TUẦN (cập nhật Master Plan) và báo cáo THÁNG vào một bảng, chọn tháng để xem lại tháng cũ (có từ 05/2026).",
+    "Trình bày theo đúng form Báo cáo tuân thủ cập nhật Master Plan: khung Điểm PM · Chú thích · Cách tính, bảng gộp ô theo Vùng → Người phụ trách, mỗi dòng là một dự án trong danh sách PMP (tháng 10: 83 dự án, 24 PM).",
+    "ĐIỂM TRUNG BÌNH của dự án = cộng các ô điểm có số rồi chia cho số ô có số; ô chưa có dữ liệu không tính. Điểm PM = trung bình điểm các dự án PM quản lý. Có nút Xuất PDF.",
+    "Số đọc thẳng từ file Báo cáo tuân thủ hằng ngày (script tính mỗi giờ), nên app và sheet luôn ra cùng một số.",
+  ] },
+  { v: "3.164.0", date: "19/10/2026", items: [
+    "Biểu đồ “Doanh thu đầu người theo dự án”: đường gạch Mốc KPI nay dừng đúng đáy dòng cuối, không còn chạy quá xuống cắt ngang phần chú thích màu.",
+    "Bảng “Chi tiết dự án” nay VỪA MÀN HÌNH, khỏi kéo ngang: bỏ mức bề ngang tối thiểu đặt cứng, để các cột tự co theo nội dung. Màn 1400px hiện đủ 12 tháng và cột Cả năm mà không còn thanh cuộn.",
+  ] },
+  { v: "3.163.0", date: "19/10/2026", items: [
+    "Hiệu suất dự án có nút “Làm mới” (cạnh nút Chiếu). Trước đây màn này chỉ nạp số đúng một lần lúc mở, nên ai vừa cập nhật file xong thì người đang mở sẵn vẫn ngồi nhìn số cũ cho tới khi tải lại cả trang. Nút này nạp lại bản lưu mới nhất và xin lại vùng dự án, ai cũng bấm được.",
+  ] },
+  { v: "3.162.0", date: "19/10/2026", items: [
+    "Chi tiết dự án: tháng nào CÓ NHÂN SỰ mà chưa có doanh thu thì ghi thẳng 0,0 và đầu người 0,00, không để trống nữa — và tháng đó được tính vào bình quân cả năm. Tháng nuôi quân mà không ra sản lượng là số cần thấy, không phải số nên giấu.",
+    "Hết hai dòng “TROPICAL” nhìn như trùng nhau: file nguồn có hai dòng riêng (“TROPICAL PQ” là dự án, “Tropical” là dòng lẻ ghi −21,5 triệu ở tháng 4) nhưng bảng đổi tên hiển thị làm cả hai cùng tên. Nay dòng nào bị đụng tên thì hiện đúng tên trong file.",
+  ] },
+  { v: "3.161.0", date: "19/10/2026", items: [
+    "Hiệu suất dự án ▸ Chi tiết dự án: bảng nay LUÔN đủ 12 tháng, tháng file chưa có số thì để trống chứ không còn cắt ngang ở tháng cuối có dữ liệu.",
+    "Mỗi ô thêm DOANH THU ĐẦU NGƯỜI nằm bên phải (sản lượng ÷ nhân sự, tỷ/người) — trái vẫn là sản lượng trên, nhân sự dưới.",
+    "Bỏ cột “NS nay”. Cột “Cả năm” nay cũng ba số: sản lượng cộng dồn · nhân sự bình quân các tháng có người · đầu người trung bình các tháng có số.",
+  ] },
+  { v: "3.160.0", date: "19/10/2026", items: [
+    "SỬA LỖI không up được ảnh / clip vào cột “2.1” và “2.2” (Hyatt Hạ Long): hai cột này là căn chèn giữa 02 và 03, app chỉ nhận số nguyên nên coi chúng không phải căn — bấm vào chỉ báo “Ô này không phải căn”. Nay nhận cả số lẻ kiểu 2.1 · 2.2 · 10.1, nên bấm vào mở được kho ảnh của căn, ô cũng ăn màu trạng thái và đeo dấu media như các căn khác.",
+  ] },
+  { v: "3.159.0", date: "19/10/2026", items: [
+    "SỬA MÀU MA TRẬN: ô nào mang trạng thái không có tên trong bảng mã màu đã chốt thì trước đây app ĐOÁN màu theo thứ tự dòng trong chú giải, ra những màu không hề có trong bảng. Đo trên Mini Hotel PQ (B1-B5): 306 ô — gần hết ma trận — đang mang một màu xanh nhạt lạ, nay về đúng xanh lá đậm “Đã giao Vận Hành”.",
+    "Thứ tự lấy màu nay là: bảng mã màu chốt trên Drive → mã màu ghi trong chú giải → MÀU THẬT trong file Excel → mới tới đoán. Trước đây bước đoán đứng trên cả màu thật của file.",
+    "Sửa lỗi chú giải có hai dòng trùng mã (dòng đếm nằm lẫn với dòng trạng thái) làm ô “Chưa bàn giao” mất màu đỏ, nhìn như đã bàn giao xong.",
+    "Heatmap tự động nay cũng đọc bảng mã màu chốt như popup ma trận — hai nơi không còn lệch màu nhau.",
+  ] },
+  { v: "3.158.0", date: "16/10/2026", items: [
+    "Báo cáo gửi BOD: nhãn vận hành trên đầu MỖI TRANG nay lấy từ bảng Tracking tiến độ vận hành ma trận TCLĐ do PMO chấm, không còn tự suy theo ngày sửa file ma trận nữa.",
+    "Giữ đủ năm trạng thái của bảng chứ không gộp làm hai: Đã vận hành (xanh) · Chưa vận hành (đỏ) · Chưa triển khai (cam) · Chưa cần triển khai và Không cần triển khai (xám). Gộp ba cái sau vào “chưa vận hành” là vu oan cho PM.",
+    "Dưới mã CT thêm ghi chú PMO viết trong bảng (vd “PENDING DO CĐT”) và ngày cập nhật file ma trận gần nhất.",
+    "Ma trận nào chưa có tên trong bảng Tracking thì để nhãn xám “CHƯA RÕ TÌNH TRẠNG” và được đếm ra ở nút xuất, không lặng lẽ dán nhãn đoán.",
+    "SỬA LỖI dải tiêu đề che mất hàng đầu của ma trận: nay mỗi trang được nới cao thêm một dải giấy ở trên để đặt tiêu đề, ruột ma trận giữ nguyên kích cỡ và không bị cắt mất dòng nào.",
+  ] },
+  { v: "3.157.0", date: "16/10/2026", items: [
+    "TRẠM XUẤT BÁO CÁO (Hệ thống ▸ Trạm xuất báo cáo): chọn loại báo cáo → chọn hạng mục → lọc vùng, cụm, PM, dự án → bấm Xuất PDF. Bản ra theo mẫu công ty: logo AA, khung màu, bảng gọn, đủ để đem đi báo cáo luôn.",
+    "Ba loại: Theo hạng mục (một hạng mục, từng dự án, kế hoạch · thực tế · số mã · mốc ngày) · Tổng hợp tiến độ (mỗi dự án một dòng, hạng mục xếp thành cột) · Việc trễ hạn (chỉ dòng quá mốc, trễ nhiều lên trước, kèm vướng mắc).",
+    "Nút “% tiến độ / Số mã” đổi cột số liệu bên phải. Cuối bản có khối Đánh giá nhanh rút thẳng từ số vừa lọc.",
+    "Khung bên phải là CHÍNH bản sắp in, chỉ thu nhỏ — thấy sao in ra vậy. Ô nào trong file nguồn để trống thì bản in để gạch ngang, không hoá thành 0%.",
+  ] },
   { v: "3.156.0", date: "15/10/2026", items: [
     "Công cụ dữ liệu có thẻ mới “Lỗi số liệu”: liệt kê đích danh từng dòng có số không khớp trong file nguồn, kèm ô % đang ghi và số mã thực tế. Lọc được theo loại lỗi, vùng, PM, hoặc gõ tìm tên dự án — mỗi người khoanh về phần mình rồi đi rà, không phải dò tay trên Excel.",
     "Bốn loại được bắt: % lệch với số mã · thiếu chi tiết số mã nên không đối chiếu được · chưa nhập % · ô % nhập sai định dạng. Mở thẻ là vào thẳng danh sách lỗi.",
@@ -4206,6 +4253,45 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     void saveProjRegions({ data: { map } }).catch(() => {});
   }, [regionByName, data.items, dataMode, dangTaiKho]);
 
+  /* ── NGUỒN DÒNG CHO TRẠM XUẤT BÁO CÁO ─────────────────────────────────────
+     `enriched` CỐ TÌNH bỏ việc đã xong (pct ≥ 100) — màn hình chính chỉ quan tâm việc đang chạy.
+     Báo cáo thì ngược lại: bỏ việc đã xong là bản in nói dối, "Đặt vật tư 40%" trong khi nửa số
+     dự án đã đặt xong. Nên gom thêm đúng những dòng đó vào, theo cùng luật với doneEnriched
+     (bỏ dòng hide, bỏ dòng đã ẩn, áp ghi chú/ngày PM sửa trên app). */
+  const tramItems = useMemo(() => {
+    const out: EnrichedItem[] = [...enriched];
+    for (const p of data.projects) for (const raw of (p.allItems ?? [])) {
+      if (raw.shown === false) continue;
+      if (!(raw.pctActual != null && raw.pctActual >= 100)) continue;
+      const k = nk(raw);
+      if (hiddenKeys.has(k)) continue;
+      const ed = edits[k];
+      const deadline = ed?.deadline ?? raw.deadline;
+      const eff: ItemRow = { ...raw, note: ed?.note ?? "", owner: ed?.pic ?? raw.owner, deadline,
+        overdueDays: ed?.deadline ? getDaysOverdue({ deadline, pctActual: raw.pctActual }, today) : raw.overdueDays };
+      out.push(enrichItem(raw, eff));
+    }
+    return out;
+  }, [enriched, data.projects, edits, today, enrichItem, hiddenKeys, nk]);
+
+  const tramDong = useMemo<TramDong[]>(() => tramItems.map((i) => ({
+    maCT: i.maCT || i.projectCode,
+    duAn: i.projectName,
+    cdt: i.cdt,
+    vung: vungVN(i.region || ""),
+    cum: i.groupDA || "",
+    pm: pmFirstOf(i._projectPm),
+    hangMuc: i._stageLabel,
+    abbr: stageAbbrOf(i._stageId),
+    pctPlan: i.pctPlan,
+    pctActual: i.pctActual,
+    start: i.start,
+    deadline: i.deadline,
+    overdueDays: i.overdueDays,
+    soMa: i.codeCounts,
+    vuongMac: i.note,
+  })), [tramItems]);
+
   /* ── LỖI SỐ LIỆU TRONG FILE NGUỒN ──────────────────────────────────────────
      Anh Tiến 15/10/2026: *"làm sao auto nhận diện lỗi >>> người vô đọc thấy được lỗi ở đâu >>>
      xử lý […] rồi PC vùng nào nhìn vô vùng mình rồi đi rà, thay vì phải rà thủ công trên excel"*.
@@ -4894,6 +4980,10 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   const [showCompliance, setShowCompliance] = useState(false);
   /* Bao cao tuan thu MOI NGAY — hop thoai rieng, nguon rieng. Xem src/lib/bao-cao-ngay-app.tsx. */
   const [showBcn, setShowBcn] = useState(false);
+  /* Bảng điểm tuân thủ TỔNG HỢP (ngày + tuần + tháng) — xem src/lib/bang-diem-tong-hop-app.tsx. */
+  const [showTongHop, setShowTongHop] = useState(false);
+  /* Tram xuat bao cao — xem src/lib/tram-bao-cao-app.tsx. */
+  const [showTram, setShowTram] = useState(false);
   /* ?tudong=1 → mở hộp thoại tuân thủ rồi TỰ bấm "Cập nhật bản gửi mail".
      Đường này dành cho warmer: thứ Tư 20:00 VN nó mở app bằng trình duyệt trên mây, vì nút đó
      dựng PDF bằng cách chụp giao diện nên phải có trình duyệt thật.
@@ -5297,6 +5387,9 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
       {/* BAO CAO TUAN THU MOI NGAY — nap LUOI khi mo, khong nap san: file nguon rieng, khong
           lien quan gi toi man hinh chinh. */}
       {showBcn && <BaoCaoNgayDialog onClose={() => setShowBcn(false)} />}
+      {showTongHop && <BangDiemTongHopDialog onClose={() => setShowTongHop(false)} />}
+      {showTram && <TramBaoCao dong={tramDong} rank={vungRank} thuTuAbbr={STAGE_ABBR_ORDER}
+        nguoiXuat={me.email ?? ""} onClose={() => setShowTram(false)} />}
       {showCompliance && <ComplianceDialog
         data={duLieuTuanThu}
         loading={complianceFileQuery.isLoading}
@@ -5334,6 +5427,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
           complianceBadge={complianceReport.duAnTong - complianceReport.duAnDungHan}
           onOpenCompliance={() => { setShowCompliance(true); track("open_compliance"); }}
           onOpenBcn={() => { setShowBcn(true); track("open_bcn"); }}
+          onOpenTongHop={() => { setShowTongHop(true); track("open_bang_diem_tong_hop"); }}
+          onOpenTram={() => { setShowTram(true); track("open_tram_bao_cao"); }}
           isAdmin={me.isAdmin}
           canXemNhuUser={meThat.isAdmin || laDieuHanh(roleOf(roleMap, meThat.email ?? ""))}
           onXemNhuUser={() => { datXemNhuUser(true); track("xem_nhu_user", "bật"); }}
@@ -9422,7 +9517,7 @@ function AdminDataToolsDialog({ loiSoLieu, checks, qualityStats, drift, lac, onF
   );
 }
 
-function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, onOpenBcn, isAdmin, canXemNhuUser, onXemNhuUser, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
+function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, onOpenBcn, onOpenTongHop, onOpenTram, isAdmin, canXemNhuUser, onXemNhuUser, onOpenActivity, onOpenRoles, qualityIssues = 0, onOpenDataTools, onOpenSource, tvMode, onToggleTv }: {
   /** Quyền THẬT (không bị che) — để còn hiện mục "Xem như người dùng thường". */
   canXemNhuUser?: boolean;
   onXemNhuUser?: () => void;
@@ -9431,6 +9526,9 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, onOpen
   onOpenCompliance: () => void;
   /** Bao cao tuan thu MOI NGAY — doc file nguon rieng, xem src/lib/bao-cao-ngay-app.tsx. */
   onOpenBcn?: () => void;
+  onOpenTongHop?: () => void;
+  /** Tram xuat bao cao — CHO MOI NGUOI, moi nguoi tu loc phan vung minh roi xuat. */
+  onOpenTram?: () => void;
   isAdmin: boolean;
   onOpenActivity: () => void;
   onOpenRoles: () => void;
@@ -9459,6 +9557,10 @@ function ReportsMenu({ showCompliance, complianceBadge, onOpenCompliance, onOpen
   if (showCompliance) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-slate-500" />, label: "Đánh giá tuân thủ", badge: complianceBadge, onClick: onOpenCompliance });
   /* Bao cao tuan thu MOI NGAY — dat ngay duoi ban thang, cung mot cho, cung mot quyen. */
   if (showCompliance && onOpenBcn) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-sky-600" />, label: "Tuân thủ báo cáo hằng ngày", onClick: onOpenBcn });
+  if (showCompliance && onOpenTongHop) items.push({ icon: <ClipboardCheck className="h-4 w-4 text-emerald-600" />, label: "Bảng điểm tuân thủ tổng hợp", onClick: onOpenTongHop });
+  /* Tram xuat bao cao — KHONG gioi han admin: anh Tien muon "PC vung nao nhin vo vung minh roi
+     tu xuat", nen ai mo app cung thay. */
+  if (onOpenTram) items.push({ icon: <FileDown className="h-4 w-4 text-[#A51C21]" />, label: "Trạm xuất báo cáo", onClick: onOpenTram });
   if (isAdmin && onOpenDataTools) items.push({ icon: <AlertTriangle className="h-4 w-4 text-indigo-500" />, label: "Công cụ dữ liệu (Admin)", badge: qualityIssues, badgeAmber: true, onClick: onOpenDataTools });
   if (isAdmin) items.push({ icon: <ScrollText className="h-4 w-4 text-indigo-500" />, label: "Nhật ký giám sát", onClick: onOpenActivity });
   if (isAdmin) items.push({ icon: <Users className="h-4 w-4 text-teal-600" />, label: "Phân cấp người dùng", onClick: onOpenRoles });

@@ -13,33 +13,25 @@
  *     "TCLĐ: ĐÃ VẬN HÀNH" hoặc "TCLĐ: CHƯA VẬN HÀNH";
  *   · ruột trang chính là bản Google xuất của tab ma trận — đúng thứ app vẫn tải và cache sẵn.
  *
- * ── NHÃN VẬN HÀNH KHÔNG CÓ TRONG FILE NGUỒN ─────────────────────────────────────────────────
- * Đã mở 8 file ma trận đầu danh sách ngày 13/10/2026: KHÔNG file nào có chữ "ĐÃ/CHƯA VẬN HÀNH" ở
- * phần đầu bảng. Đó là chữ người làm báo cáo gõ tay lúc ghép trang. Nên app phải tự quyết, và
- * luật là do anh Tiến chốt chứ không phải mình nghĩ ra:
+ * ── NHÃN VẬN HÀNH LẤY TỪ BẢNG TRACKING CỦA PMO (đổi 16/10/2026) ─────────────────────────────
+ * Nhãn "ĐÃ/CHƯA VẬN HÀNH" KHÔNG có trong file ma trận — đã mở 8 file đầu danh sách ngày
+ * 13/10/2026 để kiểm. Đó là chữ người làm báo cáo gõ tay lúc ghép trang.
  *
- *     "ĐANG CHẠY = trong 7 ngày gần nhất có người sửa file ma trận."   (chốt 13/10/2026)
+ * Lần đầu (13/10/2026) app tự suy: "đang chạy = trong 7 ngày gần nhất có người sửa file ma
+ * trận". Đó là cách đoán khi chưa ai chấm tay.
  *
- * Luật này đo bằng `modifiedTime` của Drive — thứ không ai gõ tay được. ĐIỂM YẾU PHẢI BIẾT: dự án
- * vẫn thi công nhưng bỏ bê không cập nhật file thì bị dán "CHƯA VẬN HÀNH". Đó là chủ ý: báo cáo
- * này đọc theo file, và file không ai đụng thì chính nó là vấn đề cần lộ ra.
+ * Nay PMO đã có bảng chấm thật. Anh Tiến 16/10/2026: *"dựa vào thông tin mới bên sheet Tracking
+ * tiến độ, đánh lại cho tôi trên header mỗi page tình trạng đã vận hành hoặc chưa vận hành"*.
+ * Nên nhãn LẤY THẲNG từ bảng đó (xem lib/tracking-vanhanh.ts) và phép đoán theo ngày sửa bị bỏ
+ * hẳn — trộn hai nguồn vào một nhãn thì về sau không ai biết nhãn đang nói theo cái nào.
+ *
+ * `modifiedTime` của Drive vẫn được hiện, nhưng chỉ như một DÒNG THÔNG TIN ("cập nhật dd/mm"),
+ * không còn quyền quyết định nhãn.
  */
 
-/** Bao nhiêu ngày không ai sửa thì coi là chưa vận hành. Anh Tiến chốt 7 ngày (13/10/2026). */
-export const NGUONG_VAN_HANH_NGAY = 7;
-
-const NGAY_MS = 86_400_000;
-
-/** File còn được cập nhật trong `nguong` ngày gần nhất không. Không biết ngày sửa → false. */
-export function dangChay(modifiedTime: string | null | undefined, bayGio: number, nguong = NGUONG_VAN_HANH_NGAY): boolean {
-  if (!modifiedTime) return false;
-  const t = Date.parse(modifiedTime);
-  if (!Number.isFinite(t)) return false;
-  return bayGio - t <= nguong * NGAY_MS;
-}
-
-/** Nhãn dán lên dải tiêu đề, đúng chữ bản BOD đang dùng. */
-export const nhanVanHanh = (chay: boolean): string => `TCLĐ: ${chay ? "ĐÃ VẬN HÀNH" : "CHƯA VẬN HÀNH"}`;
+import {
+  dangVanHanh, nhanDai, traVH, dongTongVH, type BangTracking, type TrangThaiVH,
+} from "@/lib/tracking-vanhanh";
 
 /* ── CỤM ─────────────────────────────────────────────────────────────────────
    Thứ tự và tên cụm lấy ĐÚNG bản BOD tuần 40. Cột `region` của danh sách MTLĐ ghi mã vùng
@@ -103,8 +95,16 @@ export type TrangBod = {
   stt: number;
   ten: string;
   maCT: string;
+  /** Trạng thái lấy từ bảng tracking của PMO. "chuaRo" = không tra được tên trong bảng. */
+  tt: TrangThaiVH;
+  /** Chữ dán lên ô nhãn, vd "TCLĐ: ĐÃ VẬN HÀNH". */
   nhan: string;
+  /** Rút gọn cho chỗ nào chỉ cần hỏi "có đang chạy không". */
   chay: boolean;
+  /** Ghi chú PMO viết trong bảng tracking (vd "PENDING DO CĐT"). Rỗng nếu không có. */
+  ghiChu: string;
+  /** Ngày sửa cuối của file ma trận (ISO) — CHỈ để hiện, không quyết định nhãn. */
+  ngaySua: string | null;
   muc: MucMaTran;
 };
 
@@ -115,13 +115,13 @@ export type TrangBod = {
  * phá mất ý của người sắp (y như bài học bên perf-chart: "cái nào tôi không yêu cầu đổi thì bê
  * nguyên lên").
  *
- * @param ngaySua  fileId → ngày sửa cuối (ISO). Thiếu một file thì file đó thành "chưa vận hành".
+ * @param bang     bảng tracking đã đọc (xem lib/tracking-vanhanh.ts) — NGUỒN của nhãn vận hành.
+ * @param ngaySua  fileId → ngày sửa cuối (ISO). CHỈ để hiện dưới mã CT, không quyết định nhãn.
  */
 export function xepTrangBod(
   ds: readonly MucMaTran[],
-  ngaySua: ReadonlyMap<string, string | null>,
-  bayGio: number,
-  nguong = NGUONG_VAN_HANH_NGAY,
+  bang: BangTracking,
+  ngaySua?: ReadonlyMap<string, string | null>,
 ): TrangBod[] {
   const theoCum: MucMaTran[][] = CUM.map(() => []);
   for (const m of ds) theoCum[cumCuaVung(m.region)].push(m);
@@ -130,14 +130,20 @@ export function xepTrangBod(
   let stt = 0;
   CUM.forEach((c, i) => {
     for (const m of theoCum[i]) {
-      const chay = dangChay(ngaySua.get(m.fileId) ?? null, bayGio, nguong);
+      /* Không tra được tên trong bảng thì để "chuaRo" chứ KHÔNG lùi về phép đoán cũ: một nhãn
+         xanh dựa trên luật khác hẳn, đứng cạnh các nhãn chấm tay, là chỗ sai không ai soi ra. */
+      const d = traVH(bang, m.name);
+      const tt: TrangThaiVH = d?.tt ?? "chuaRo";
       ra.push({
         cum: `${c.ma}. ${c.ten}`,
         stt: ++stt,
         ten: m.name,
         maCT: m.maCT,
-        nhan: nhanVanHanh(chay),
-        chay,
+        tt,
+        nhan: nhanDai(tt),
+        chay: dangVanHanh(tt),
+        ghiChu: d?.ghiChu ?? "",
+        ngaySua: ngaySua?.get(m.fileId) ?? null,
         muc: m,
       });
     }
@@ -152,8 +158,13 @@ export function tenTep(bayGio: number): string {
   return `BAO_CAO_TCLD_TTBG_${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}.pdf`;
 }
 
-/** Dòng tổng ở bìa: "46 ma trận · 31 đang vận hành · 15 chưa". */
+/** Dòng tổng ở bìa: "21 ma trận · 15 đã vận hành · 4 chưa vận hành · 2 ngoài diện". */
 export function dongTong(trang: readonly TrangBod[]): string {
-  const chay = trang.filter((t) => t.chay).length;
-  return `${trang.length} ma trận · ${chay} đã vận hành · ${trang.length - chay} chưa vận hành`;
+  return dongTongVH(trang.map((t) => t.tt));
+}
+
+/** Những ma trận KHÔNG tra được trong bảng tracking — phải nói ra để PMO bổ sung vào bảng,
+ *  chứ không để chúng mang nhãn xám rồi trôi vào bản gửi BOD. */
+export function thieuTrongTracking(trang: readonly TrangBod[]): string[] {
+  return trang.filter((t) => t.tt === "chuaRo").map((t) => `${t.maCT} · ${t.ten}`);
 }

@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getInstallList, getMediaProjects } from "@/lib/mtld-install.functions";
 import { MatrixFormEditor } from "@/lib/matrix-form-editor";
 import { loadRegion } from "@/lib/region-load";
+import { RE_DON_VI } from "@/lib/sheet-dump";
 import { ChonDuAn, type MucChon } from "@/lib/chon-du-an";
 import * as XLSXNS from "xlsx";
 import type * as XLSX from "xlsx";
@@ -392,7 +393,10 @@ function ManualEntry({ onOpen }: { onOpen: (project: string, toa: string, can: s
 const txt = (el?: Element | null) => (el?.textContent || "").replace(/\s+/g, " ").trim();
 /** Ô tiêu đề đơn vị của lưới: SỐ CĂN (mỗi file gõ một kiểu — Mini Hotel "01".."21", Hyatt "1".."16")
  *  hoặc hành lang ("HL"). Nhận 1-3 chữ số; khi ghép mã căn thì luôn đệm về 2 chữ số cho đồng nhất. */
-const isUnitHdr = (t: string) => /^\d{1,3}$/.test(t) || /^HL$/i.test(t);
+/* Nhận cả căn chèn kiểu "2.1", "2.2" (Hyatt Hạ Long). Dùng CHUNG luật với sheet-dump để ô nào
+   tô màu được thì cũng bấm lên up clip được — hai nơi lệch luật là ra cảnh ô có màu mà bấm vào
+   báo "Ô này không phải căn". Anh Tiến báo 19/10/2026. */
+const isUnitHdr = (t: string) => RE_DON_VI.test(t);
 const pad2 = (t: string) => (t.length < 2 ? "0" + t : t);
 /** Ô đầu hàng header là MÃ TOÀ hay chỉ là chữ tiêu đề? Dự án nhiều toà ghi "B1".."B5"; dự án 1 toà lại
  *  ghi tiêu đề cột như "KHU PHÒNG" — lấy nguyên si sẽ đẻ ra thư mục Drive tên "KHU PHÒNG". Chỉ nhận

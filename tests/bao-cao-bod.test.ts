@@ -1,41 +1,28 @@
 /* BÁO CÁO GỬI BOD — luật xếp cụm và luật dán nhãn vận hành.
  *
- * Anh Tiến 13/10/2026 gửi bản tuần 40 và chốt: *"đang chạy = trong 7 ngày gần nhất có người sửa
- * file ma trận"*. Báo cáo này đi thẳng lên BOD nên hai thứ phải chắc: KHÔNG rơi dự án nào, và
- * nhãn vận hành không được dán nhầm.
+ * Anh Tiến 13/10/2026 gửi bản tuần 40; 16/10/2026 đổi nguồn nhãn: *"dựa vào thông tin mới bên
+ * sheet Tracking tiến độ, đánh lại cho tôi trên header mỗi page tình trạng đã vận hành hoặc chưa
+ * vận hành"*. Báo cáo này đi thẳng lên BOD nên hai thứ phải chắc: KHÔNG rơi dự án nào, và nhãn
+ * vận hành không được dán nhầm.
+ *
+ * Luật cũ (ngày sửa file trong 7 ngày) đã BỎ — phép đoán đó chỉ dùng khi chưa ai chấm tay.
  */
 import { describe, expect, it } from "vitest";
 import {
-  CUM, NGUONG_VAN_HANH_NGAY, cumCuaVung, dangChay, dongTong, laTabBod, locTabBod, nhanVanHanh, tenTep, xepTrangBod,
+  CUM, cumCuaVung, dongTong, laTabBod, locTabBod, tenTep, thieuTrongTracking, xepTrangBod,
   type MucMaTran,
 } from "@/lib/bao-cao-bod";
+import { docTracking } from "@/lib/tracking-vanhanh";
 
 const NAY = Date.parse("2026-10-13T04:00:00Z");
 const truoc = (ngay: number) => new Date(NAY - ngay * 86_400_000).toISOString();
 const muc = (maCT: string, region: string, fileId = maCT): MucMaTran =>
   ({ fileId, maCT, name: `Dự án ${maCT}`, region });
 
-describe("đang chạy hay chưa", () => {
-  it("sửa hôm nay → đang chạy", () => expect(dangChay(truoc(0), NAY)).toBe(true));
-  it("sửa 6 ngày trước → vẫn đang chạy", () => expect(dangChay(truoc(6), NAY)).toBe(true));
-  it("đúng 7 ngày → vẫn tính là đang chạy", () => expect(dangChay(truoc(7), NAY)).toBe(true));
-  it("8 ngày không ai đụng → chưa vận hành", () => expect(dangChay(truoc(8), NAY)).toBe(false));
-  /* Không hỏi được ngày sửa thì KHÔNG dán "đã vận hành" — khen nhầm nặng hơn chê nhầm ở báo cáo
-     gửi BOD, vì nó giấu đi đúng dự án đang bỏ bê. */
-  it("không biết ngày sửa → chưa vận hành", () => {
-    expect(dangChay(null, NAY)).toBe(false);
-    expect(dangChay(undefined, NAY)).toBe(false);
-    expect(dangChay("hôm kia", NAY)).toBe(false);
-  });
-  it("ngưỡng đổi được để test, mặc định 7 ngày", () => {
-    expect(NGUONG_VAN_HANH_NGAY).toBe(7);
-    expect(dangChay(truoc(10), NAY, 14)).toBe(true);
-  });
-  it("nhãn đúng chữ bản BOD đang dùng", () => {
-    expect(nhanVanHanh(true)).toBe("TCLĐ: ĐÃ VẬN HÀNH");
-    expect(nhanVanHanh(false)).toBe("TCLĐ: CHƯA VẬN HÀNH");
-  });
-});
+/** Bảng tracking giả: mỗi dòng "Dự án <maCT>" + trạng thái. */
+const TAB = String.fromCharCode(9);
+const bangCua = (cap: readonly [string, string][]) =>
+  docTracking(cap.map(([ma, tt], i) => [`${i + 1}`, "PM", `Dự án ${ma}`, "Vùng", tt, ""].join(TAB)).join("\n"));
 
 describe("cụm", () => {
   it("đúng thứ tự bản BOD tuần 40", () => {
@@ -66,7 +53,11 @@ describe("xếp trang", () => {
     ["CT-P1", truoc(1)], ["CT-P2", truoc(30)], ["CT-N1", truoc(2)],
     ["CT-M1", null], ["CT-B1", truoc(3)],
   ]);
-  const tr = xepTrangBod(ds, ngay, NAY);
+  const bang = bangCua([
+    ["CT-P1", "Đã vận hành"], ["CT-P2", "Chưa vận hành"], ["CT-N1", "Chưa triển khai"],
+    ["CT-B1", "Không cần triển khai"],
+  ]);   // CT-M1 CỐ TÌNH không có trong bảng
+  const tr = xepTrangBod(ds, bang, ngay);
 
   it("không rơi dự án nào", () => expect(tr).toHaveLength(ds.length));
   it("gom theo cụm, đúng thứ tự cụm", () => {
@@ -81,30 +72,47 @@ describe("xếp trang", () => {
   it("số thứ tự chạy liên tục trong cả báo cáo", () => {
     expect(tr.map((t) => t.stt)).toEqual([1, 2, 3, 4, 5]);
   });
-  it("dán nhãn theo ngày sửa của đúng file đó", () => {
-    expect(tr.find((t) => t.maCT === "CT-P1")!.chay).toBe(true);
-    expect(tr.find((t) => t.maCT === "CT-P2")!.chay).toBe(false);   // 30 ngày không ai đụng
-    expect(tr.find((t) => t.maCT === "CT-M1")!.chay).toBe(false);   // không biết ngày sửa
+  it("dán nhãn theo ĐÚNG dòng của dự án đó trong bảng tracking", () => {
+    const o = (ma: string) => tr.find((t) => t.maCT === ma)!;
+    expect(o("CT-P1").tt).toBe("da");
+    expect(o("CT-P1").nhan).toBe("TCLĐ: ĐÃ VẬN HÀNH");
+    expect(o("CT-P2").tt).toBe("chua");
+    expect(o("CT-N1").tt).toBe("chuaTrienKhai");
+    expect(o("CT-B1").tt).toBe("khongCan");
+    expect(tr.filter((t) => t.chay).map((t) => t.maCT)).toEqual(["CT-P1"]);
+  });
+  /* Ngày sửa file KHÔNG còn quyết định nhãn — CT-P2 sửa cách đây 30 ngày vẫn chỉ là "chưa vận
+     hành" vì bảng ghi vậy, còn CT-B1 sửa 3 ngày trước vẫn là "không cần triển khai". */
+  it("ngày sửa chỉ đi kèm để hiện, không đổi nhãn", () => {
+    expect(tr.find((t) => t.maCT === "CT-B1")!.ngaySua).toBe(truoc(3));
+    expect(tr.find((t) => t.maCT === "CT-B1")!.tt).toBe("khongCan");
+    expect(tr.find((t) => t.maCT === "CT-M1")!.ngaySua).toBeNull();
+  });
+  /* Không có trong bảng thì để "chưa rõ" và NÓI RA, không lùi về phép đoán cũ. */
+  it("ma trận thiếu trong bảng thì chưa rõ và được liệt kê", () => {
+    expect(tr.find((t) => t.maCT === "CT-M1")!.tt).toBe("chuaRo");
+    expect(thieuTrongTracking(tr)).toEqual(["CT-M1 · Dự án CT-M1"]);
   });
   /* Nhiều dự án dùng CHUNG một file ma trận (Tây Hồ View 11 dự án một file) → cùng một ngày sửa,
      cùng một nhãn. Đúng theo luật, và phải không rơi dự án nào trong nhóm đó. */
-  it("nhiều dự án chung một file thì cùng nhãn, không mất dự án", () => {
+  it("nhiều dự án chung một file nhưng nhãn theo TỪNG dự án", () => {
     const chung = [muc("CT-X1", "North", "F1"), muc("CT-X2", "North", "F1")];
-    const r = xepTrangBod(chung, new Map([["F1", truoc(1)]]), NAY);
+    const r = xepTrangBod(chung, bangCua([["CT-X1", "Đã vận hành"], ["CT-X2", "Chưa vận hành"]]),
+      new Map([["F1", truoc(1)]]));
     expect(r).toHaveLength(2);
-    expect(r.every((t) => t.chay)).toBe(true);
+    expect(r.map((t) => t.tt)).toEqual(["da", "chua"]);
   });
   it("danh sách rỗng → báo cáo rỗng, không nổ", () => {
-    expect(xepTrangBod([], new Map(), NAY)).toEqual([]);
+    expect(xepTrangBod([], bangCua([]))).toEqual([]);
   });
 });
 
 describe("chữ phụ", () => {
   it("tên tệp theo ngày giờ VN", () => expect(tenTep(NAY)).toBe("BAO_CAO_TCLD_TTBG_13-10-2026.pdf"));
-  it("dòng tổng ở bìa", () => {
-    const ds = [muc("A", "PQ"), muc("B", "PQ")];
-    const r = xepTrangBod(ds, new Map([["A", truoc(1)]]), NAY);
-    expect(dongTong(r)).toBe("2 ma trận · 1 đã vận hành · 1 chưa vận hành");
+  it("dòng tổng ở bìa tách riêng phần ngoài diện", () => {
+    const ds = [muc("A", "PQ"), muc("B", "PQ"), muc("C", "PQ")];
+    const r = xepTrangBod(ds, bangCua([["A", "Đã vận hành"], ["B", "Chưa vận hành"], ["C", "Không cần triển khai"]]));
+    expect(dongTong(r)).toBe("3 ma trận · 1 đã vận hành · 1 chưa vận hành · 1 ngoài diện");
   });
 });
 

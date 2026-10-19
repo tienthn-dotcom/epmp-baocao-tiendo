@@ -7,6 +7,11 @@
 import * as XLSX from "xlsx";
 import { legendCodeColors } from "@/lib/summary-render";
 
+/** NHÃN CỘT ĐƠN VỊ (một căn) trong ma trận bàn giao: "01" · "7" · "2.1" · "2-2" · "HL" (hành lang).
+ *  Dùng CHUNG với can-media-app để ô nào tô màu được thì cũng bấm lên được — hai nơi lệch luật là
+ *  ra đúng cảnh ô có màu mà bấm vào báo "không phải căn". */
+export const RE_DON_VI = /^(?:\d{1,3}(?:[.\-]\d{1,2})?|HL)$/i;
+
 const esc = (s: string) => String(s).replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!));
 function argb(rgb: string | undefined): string | null {
   if (!rgb) return null;
@@ -147,7 +152,9 @@ export function rangeToHtml(sh: XLSX.WorkSheet, rangeStr?: string, codeColors?: 
   const hidR = new Set(spec?.hiddenR ?? []);
   const key = (r: number, c: number) => `${r}:${c}`;
   // MÀU CHUẨN theo TRẠNG THÁI (legend "Tăng hôm nay"/diễn giải) — thắng CF đọc từ file, nhưng form tay vẫn ưu tiên.
-  const cc: Record<string, string> = { ...(codeColors ?? {}), ...legendCodeColors(sh) };
+  // Truyền CF vào legend: dòng legend nào không tra được trong bảng màu chốt thì lấy MÀU THẬT của
+  // file thay vì đoán theo thứ hạng — xem ghi chú thứ tự ưu tiên trong summary-render.ts.
+  const cc: Record<string, string> = { ...(codeColors ?? {}), ...legendCodeColors(sh, codeColors) };
 
   // ── KHOANH VÙNG "Ô TRẠNG THÁI CỦA CĂN" (lưới thật) — dùng cho 2 việc: tô ô TRỐNG = bậc thấp nhất
   // của legend ("Chưa bàn giao"), và ẨN CHỮ heatmap ĐÚNG chỗ (nhãn Toà/số phòng/tầng + dòng tổng vẫn
@@ -158,7 +165,12 @@ export function rangeToHtml(sh: XLSX.WorkSheet, rangeStr?: string, codeColors?: 
   // 2 chữ số nhưng không tăng dần 1) KHÔNG bị coi là lưới.
   const blankBg = cc[""];
   const txtOf = (r: number, c: number) => { const x = cell(r, c); return x?.w != null ? String(x.w).trim() : (x?.v != null ? String(x.v).trim() : ""); };
-  const isUnit = (t: string) => /^\d{1,3}$/.test(t) || /^HL$/i.test(t);
+  /* CỘT ĐƠN VỊ nhận cả số LẺ kiểu "2.1", "2.2" — Hyatt Hạ Long chèn hai căn tách giữa 02 và 03.
+     Trước đây chỉ nhận số nguyên nên hai cột đó không được coi là căn: không ăn màu trạng thái,
+     không đeo dấu media, và bấm vào thì app báo "ô này không phải căn" nên KHÔNG up clip được
+     (anh Tiến báo 19/10/2026). Dãy liên tiếp để nhận hàng header vẫn chỉ đếm số NGUYÊN — số lẻ
+     là căn chèn thêm, không được phép phá nhịp đếm. */
+  const isUnit = (t: string) => RE_DON_VI.test(t);
   const gridCell = new Set<string>();
   {
     let unit: number[] = [];
