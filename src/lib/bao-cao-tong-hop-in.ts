@@ -27,6 +27,11 @@ export const COT_TONG_HOP: BanBaoCao["cot"] = [
   { ten: "Tháng", rong: 6, phai: true },
 ];
 
+/** TB làm tròn số nguyên — cho cột Điểm TB và KPI "Điểm trung bình" (chốt 19/10/2026). */
+const tbTron = (a: readonly unknown[]): number | "" => {
+  const n = a.filter(so);
+  return n.length ? Math.round(n.reduce((x, y) => x + y, 0) / n.length) : "";
+};
 const tb = (a: readonly unknown[]): number | "" => {
   const n = a.filter(so);
   return n.length ? Math.round((n.reduce((x, y) => x + y, 0) / n.length) * 10) / 10 : "";
@@ -47,7 +52,7 @@ export function banTongHop(bang: { duAn: DuAnTongHop[]; pm: PmTongHop[] }, thang
     const ds = v.pms.flatMap((g) => g.dong);
     const tong: O[] = [
       { t: `TB vùng · ${ds.length} dự án`, dam: true, mau: "navy" }, { t: "" },
-      oDiem(tb(ds.map((x) => x.tong)), true), oDiem(tb(ds.map((x) => x.qs))), oDiem(tb(ds.map((x) => x.sl))),
+      oDiem(tbTron(ds.map((x) => x.tong)), true), oDiem(tb(ds.map((x) => x.qs))), oDiem(tb(ds.map((x) => x.sl))),
       oDiem(tb(ds.map((x) => x.tc))), oDiem(tb(ds.map((x) => x.tuan))), oDiem(tb(ds.map((x) => x.thangBC))),
     ];
     return { ten: `Vùng ${v.vung}`, dong, tong };
@@ -65,7 +70,7 @@ export function banTongHop(bang: { duAn: DuAnTongHop[]; pm: PmTongHop[] }, thang
     });
   }
 
-  const tbAll = tb(da.map((x) => x.tong));
+  const tbAll = tbTron(da.map((x) => x.tong));
   const duoi50 = da.filter((x) => so(x.tong) && x.tong < 50).length;
   const khongNgay = da.filter((x) => !so(x.qs) && !so(x.sl) && !so(x.tc)).length;
   const pmCoDiem = pmXep.filter((p) => so(p.tong)) as (PmTongHop & { tong: number })[];

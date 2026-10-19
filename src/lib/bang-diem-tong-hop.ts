@@ -34,7 +34,13 @@ export type DuAnTongHop = {
   /** ĐIỂM TRUNG BÌNH = tổng các ô điểm có số ÷ số ô có số (Quân số, Sản lượng, TCLĐ, Master Plan, Điểm tháng). */
   tong: number | "";
 };
-export type PmTongHop = { pm: string; soDuAn: number; qs: number | ""; sl: number | ""; tc: number | ""; tuan: number | ""; thangBC: number | ""; tong: number | "" };
+export type PmTongHop = {
+  pm: string; soDuAn: number; qs: number | ""; sl: number | ""; tc: number | ""; tuan: number | ""; thangBC: number | "";
+  /** ĐIỂM PM = tổng mọi ô điểm có số của các dự án PM quản lý ÷ số ô đó (n/a và ô trống không tính). */
+  tong: number | "";
+  /** số ô có số đã tính vào điểm PM */
+  soO: number;
+};
 
 /** Chuẩn hoá tên để so khớp — y hệt `bdth_norm_` của script. */
 export function chuanTen(s: unknown): string {
@@ -54,6 +60,14 @@ export function trungBinh(arr: readonly unknown[]): number | "" {
   const n = arr.filter(so);
   if (!n.length) return "";
   return Math.round((n.reduce((a, b) => a + b, 0) / n.length) * 10) / 10;
+}
+
+/** Như `trungBinh` nhưng LÀM TRÒN SỐ NGUYÊN — cho Điểm trung bình (chốt 19/10/2026). Làm tròn từ giá trị
+    chính xác, không làm tròn hai lần. Y hệt `bdth_meanTron_`. */
+export function trungBinhTron(arr: readonly unknown[]): number | "" {
+  const n = arr.filter(so);
+  if (!n.length) return "";
+  return Math.round(n.reduce((a, b) => a + b, 0) / n.length);
 }
 
 /** "10/2026" | "2026-10" | Date → "2026-10"; khác → "". */
@@ -107,12 +121,13 @@ export type DuLieuTongHop = {
   capNhatLuc: string;
 };
 
+/** Chỉ NGÀY (anh Tiến 19/10/2026: bỏ giờ). */
 const fmtLuc = (v: unknown): string => {
   if (v instanceof Date && !Number.isNaN(v.getTime())) {
     const p = (x: number) => String(x).padStart(2, "0");
-    return `${p(v.getDate())}/${p(v.getMonth() + 1)}/${v.getFullYear()} ${p(v.getHours())}:${p(v.getMinutes())}`;
+    return `${p(v.getDate())}/${p(v.getMonth() + 1)}/${v.getFullYear()}`;
   }
-  return String(v ?? "").trim();
+  return String(v ?? "").trim().split(" ")[0];
 };
 
 /** Đọc 4 tab → dữ liệu đã chuẩn hoá. Phép gán khoá nhóm BCN cho dự án PMP chép từ `veBangDiemTongHop`. */
@@ -191,7 +206,7 @@ export function dungBangTongHop(thang: string, d: DuLieuTongHop): { duAn: DuAnTo
   });
   const duAn: DuAnTongHop[] = dong.map(({ thangArr, ...x }) => {
     const thangBC = thangArr.length ? trungBinh(thangArr) : "";
-    return { ...x, thangBC, tong: trungBinh([x.qs, x.sl, x.tc, x.tuan, thangBC]) };
+    return { ...x, thangBC, tong: trungBinhTron([x.qs, x.sl, x.tc, x.tuan, thangBC]) };
   });
   // Thứ tự như form: Vùng → PM theo tên gọi → dự án A→Z
   duAn.sort((a, b) => hangVung(a.vung) - hangVung(b.vung) || a.vung.localeCompare(b.vung, "vi")
@@ -203,7 +218,11 @@ export function dungBangTongHop(thang: string, d: DuLieuTongHop): { duAn: DuAnTo
   const pm: PmTongHop[] = thuTuPm.map((k) => {
     const ds = nhom[k];
     const cot = (f: keyof DuAnTongHop) => trungBinh(ds.map((x) => x[f]));
-    return { pm: k, soDuAn: ds.length, qs: cot("qs"), sl: cot("sl"), tc: cot("tc"), tuan: cot("tuan"), thangBC: cot("thangBC"), tong: cot("tong") };
+    // Anh Tiến chốt 19/10/2026: KHÔNG lấy TB điểm dự án (dự án chỉ có 1 ô, vd Master Plan 90, kéo điểm PM
+    // lên) — cộng MỌI Ô có số của các dự án rồi chia số ô. Y hệt bdth_dungBang_.
+    const tatCaO = ds.flatMap((x) => [x.qs, x.sl, x.tc, x.tuan, x.thangBC]);
+    return { pm: k, soDuAn: ds.length, qs: cot("qs"), sl: cot("sl"), tc: cot("tc"), tuan: cot("tuan"), thangBC: cot("thangBC"),
+      tong: trungBinhTron(tatCaO), soO: tatCaO.filter(so).length };
   });
   return { duAn, pm };
 }

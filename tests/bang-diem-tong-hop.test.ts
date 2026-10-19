@@ -47,13 +47,13 @@ describe("bảng điểm tổng hợp — mỗi dòng 1 dự án PMP, khớp ph�
   it("đủ danh sách PMP của tháng; điểm ngày lấy theo nhóm BCN đã gán; Điểm trung bình phẳng", () => {
     const d = docTongHop(luoi());
     expect(d.cacThang).toEqual(["2026-10", "2026-09", "2026-07"]);
-    expect(d.capNhatLuc).toBe("19/10/2026 15:53");
+    expect(d.capNhatLuc).toBe("19/10/2026");
     const b = dungBangTongHop("2026-10", d);
     expect(b.duAn).toHaveLength(6);
     const by = Object.fromEntries(b.duAn.map((x) => [x.ten, x]));
     expect(by["APEC_S2_Public"]).toMatchObject({ vung: "Phú Quốc", pm: "Nguyễn Văn Có", qs: 45, sl: 35, tc: 85, tuan: 100, thangBC: 80, tong: 69, bcnTen: "Apec S2" });
     // nhóm Tây Hồ View: nhận điểm ngày nhóm + điểm tháng nhập theo tên nhóm; TCLĐ n/a không tính
-    expect(by["Tây Hồ View - Tháp 4A"]).toMatchObject({ vung: "Bắc", qs: 100, tc: "n/a", tuan: 75, thangBC: 60, tong: 67.5 });
+    expect(by["Tây Hồ View - Tháp 4A"]).toMatchObject({ vung: "Bắc", qs: 100, tc: "n/a", tuan: 75, thangBC: 60, tong: 68 }); // 67,5 → làm tròn 68
     // (Bỏ qua) → không có điểm ngày, vùng lùi về Location
     expect(by["THV_Villa A2"]).toMatchObject({ bcnKey: "", qs: "", vung: "Phú Quốc", tong: 100 });
     // nhóm có trong MAP nhưng tháng này BCN không có → vùng của nhóm, điểm ngày trống
@@ -78,9 +78,10 @@ describe("bảng điểm tổng hợp — mỗi dòng 1 dự án PMP, khớp ph�
     expect(b.duAn[0]).toMatchObject({ ten: "APEC_S2_Public", qs: "", tuan: -10, tong: -10 });
   });
 
-  it("PM = TB điểm trung bình các dự án; xếp tên gọi; màu như báo cáo Master Plan", () => {
+  it("PM = tổng mọi ô có số ÷ số ô (không lấy TB điểm dự án); xếp tên gọi; màu như báo cáo Master Plan", () => {
     const b = dungBangTongHop("2026-10", docTongHop(luoi()));
-    expect(b.pm.find((p) => p.pm === "Nguyễn Văn Cừ")).toMatchObject({ soDuAn: 2, tong: 83.8 }); // (100 + 67.5)/2
+    // Cừ: THV_Villa A2 [MP 100] + Tháp 4A [QS 100, SL 35, TC n/a, MP 75, tháng 60] → 5 ô số: 370 / 5
+    expect(b.pm.find((p) => p.pm === "Nguyễn Văn Cừ")).toMatchObject({ soDuAn: 2, tong: 74, soO: 5 });
     expect(["Trần Quốc Liêm", "Nguyễn Văn Có", "Đặng Ngọc Sáu"].sort(xepTheoTenGoi)).toEqual(["Nguyễn Văn Có", "Trần Quốc Liêm", "Đặng Ngọc Sáu"]);
     expect([mauDiemPm(45), mauDiemPm(65), mauDiemPm(90), mauDiemPm("")]).toEqual(["#dc2626", "#ca8a04", "#16a34a", "#94a3b8"]);
   });

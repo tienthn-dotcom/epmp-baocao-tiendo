@@ -662,6 +662,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.167.0", date: "19/10/2026", items: [
+    "Báo cáo ▸ Tuân thủ tổng hợp: ĐIỂM PM nay cộng mọi ô điểm có số của các dự án PM quản lý rồi chia cho số ô đó — vd (90 + 100 + 5 + 100 + 90 + 85 + 5 + 25 + 90) / 9 — thay vì lấy trung bình điểm các dự án. Dự án chỉ có một ô điểm không còn kéo điểm PM lên.",
+    "Điểm trung bình của dự án và của PM làm tròn số nguyên.",
+    "Phân biệt rõ ba loại ô: số (kể cả 0) được tính · “n/a” là hạng mục không áp dụng · “–” là chưa có dữ liệu; hai loại sau không tính vào điểm. Hạng mục cả tháng chỉ có dấu n/a không còn bị tính như 100 điểm.",
+    "“Dữ liệu tính đến” dời lên góc phải đầu báo cáo, chỉ ghi ngày, chữ to; phần Chú thích và Cách tính viết gọn lại.",
+  ] },
   { v: "3.166.0", date: "19/10/2026", items: [
     "MỚI: app “Báo cáo” trên thanh bên trái (admin/PMO), gom hai mảng: Tuân thủ tổng hợp (báo cáo ngày · tuần · tháng) và Xuất theo bộ lọc (Trạm xuất báo cáo: hạng mục · vùng · cụm · PM · dự án).",
     "MẪU XUẤT CHUẨN dùng chung cho cả hai mảng: A4 dọc, dải đỏ và logo AA, tiêu đề navy, hàng số liệu chính, bảng theo vùng, khối Đánh giá nhanh — đúng mẫu PR công ty.",

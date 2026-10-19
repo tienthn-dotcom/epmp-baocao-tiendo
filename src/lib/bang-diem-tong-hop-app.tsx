@@ -211,8 +211,13 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
             <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ tổng hợp - Tháng {nhanThang(thang)}</div>
             <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Phòng Điều hành Trung tâm</div>
             <div className="mt-0.5 text-[11px] text-slate-500">
-              Dữ liệu tính đến: <b className="tabular-nums text-slate-700">{d?.capNhatLuc || "—"}</b> · Tổng số: <b className="tabular-nums text-slate-700">{bang?.duAn.length ?? 0}</b> dự án
+              Tổng số: <b className="tabular-nums text-slate-700">{bang?.duAn.length ?? 0}</b> dự án
             </div>
+          </div>
+          {/* Góc phải đầu trang: chỉ NGÀY, chữ to — giống bản sheet (anh Tiến 19/10/2026) */}
+          <div className="self-center text-right text-slate-500">
+            <span className="text-[12px]">Dữ liệu tính đến: </span>
+            <b className="text-[17px] font-extrabold tabular-nums text-[#1e3a5f]">{d?.capNhatLuc || "—"}</b>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-1 text-[11px] text-slate-500">
@@ -259,13 +264,13 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
           ) : !bang ? null : (
             <>
               {/* ── KHUNG 4 Ô — cùng khuôn với báo cáo tuân thủ Master Plan ── */}
-              <div ref={refKhung} className="mb-2 flex flex-wrap items-stretch overflow-hidden rounded-md border border-slate-300 bg-white text-[10px] leading-snug text-slate-600 md:flex-nowrap">
+              <div ref={refKhung} className="mb-2 flex flex-wrap items-stretch overflow-hidden rounded-md border border-slate-300 bg-white text-[10px] leading-snug text-slate-600 xl:flex-nowrap">
                 <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-auto md:flex-[2.4] md:border-b-0 md:border-r">
                   <div className="mb-2 font-semibold text-slate-700">Điểm PM:</div>
                   {nPm ? (
                     <div className="grid gap-x-4 leading-[1.3]" style={{ fontSize: soCotPm === 3 ? 11 : 12, gridAutoFlow: "column", gridTemplateRows: `repeat(${Math.ceil(nPm / soCotPm)}, auto)` }}>
                       {pmXep.map((p) => (
-                        <div key={p.pm} className="flex items-baseline justify-between gap-2 leading-tight" title={`${p.soDuAn} dự án`}>
+                        <div key={p.pm} className="flex items-baseline justify-between gap-2 leading-tight" title={`${p.soDuAn} dự án · ${p.soO} ô điểm có số`}>
                           <span className="whitespace-nowrap font-bold text-slate-800">{p.pm}</span>
                           <b className="shrink-0 tabular-nums" style={{ color: mauDiemPm(p.tong) }}>{typeof p.tong === "number" ? Math.round(p.tong) : "—"}</b>
                         </div>
@@ -276,28 +281,31 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
                 <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-auto md:flex-[0.55] md:border-b-0 md:border-r">
                   <div className="mb-2 font-semibold text-slate-700">Chú thích:</div>
                   <div className="flex flex-col gap-1.5">
-                    <div className="whitespace-nowrap"><b className="text-red-600">45</b>&nbsp; Điểm dưới 50</div>
-                    <div className="whitespace-nowrap"><b className="text-slate-900">90</b>&nbsp; Từ 50 trở lên</div>
-                    <div className="whitespace-nowrap"><b className="text-slate-300">–</b>&nbsp;&nbsp; Chưa có điểm</div>
-                    <div className="mt-1 whitespace-nowrap">Điểm PM: <b style={{ color: "#16a34a" }}>≥70</b> · <b style={{ color: "#ca8a04" }}>50–69</b> · <b style={{ color: "#dc2626" }}>&lt;50</b></div>
+                    <div className="font-semibold text-slate-700">Điểm dự án</div>
+                    <div className="whitespace-nowrap"><span className="text-red-600">●</span> dưới 50</div>
+                    <div className="whitespace-nowrap"><span className="text-slate-900">●</span> từ 50 trở lên</div>
+                    <div className="whitespace-nowrap"><b className="text-slate-300">–</b>&nbsp; chưa có điểm</div>
+                    <div className="whitespace-nowrap"><span className="text-slate-400">n/a</span> không áp dụng</div>
+                    <div className="mt-1 font-semibold text-slate-700">Điểm PM</div>
+                    <div className="whitespace-nowrap"><span style={{ color: "#16a34a" }}>●</span> từ 70 &nbsp;<span style={{ color: "#ca8a04" }}>●</span> 50–69 &nbsp;<span style={{ color: "#dc2626" }}>●</span> dưới 50</div>
                   </div>
                 </div>
-                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-auto md:flex-1 md:border-b-0 md:border-r">
+                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:min-w-[240px] md:basis-auto md:flex-1 md:border-b-0 md:border-r">
                   <div className="mb-2 font-semibold text-slate-700">Cách tính điểm dự án:</div>
                   <div className="flex flex-col gap-1.5">
-                    <div>(1) Báo cáo ngày (cột AS sheet BCN_BangCham, theo nhóm dự án BCN): <b className="text-slate-800">100 điểm/tháng</b>; trễ/thiếu <b className="text-amber-600">−2</b>; không báo cáo <b className="text-red-600">−5</b>.</div>
-                    <div>(2) Báo cáo tuần (cột J, file PMP): không cập nhật <b className="text-red-600">−25</b>; trễ <b className="text-amber-600">−10</b>.</div>
-                    <div>(3) Báo cáo tháng: nhập ở sheet “Nhập báo cáo tháng”.</div>
+                    <div>(1) Báo cáo ngày: <b className="text-slate-800">100 điểm/tháng</b>; trễ/thiếu <b className="text-amber-600">−2</b>; không báo cáo <b className="text-red-600">−5</b>.</div>
+                    <div>(2) Báo cáo tuần: không cập nhật <b className="text-red-600">−25</b>; trễ <b className="text-amber-600">−10</b>.</div>
+                    <div>(3) Báo cáo tháng:</div>
                     <div><b className="text-slate-800">(4) Điểm trung bình = tổng các ô điểm có số ÷ số ô có số</b> (ô chưa có dữ liệu không tính).</div>
                   </div>
                 </div>
-                <div className="flex basis-full flex-col px-3 py-2 md:basis-auto md:flex-1">
+                <div className="flex basis-full flex-col px-3 py-2 md:min-w-[230px] md:basis-auto md:flex-1">
                   <div className="mb-2 font-semibold text-slate-700">Cách tính điểm PM:</div>
                   <div className="flex flex-1 items-center gap-2">
                     <span className="whitespace-nowrap">Điểm PM =</span>
                     <span className="inline-flex flex-col text-center leading-relaxed">
-                      <span className="border-b border-slate-500 px-1 pb-1">Tổng điểm trung bình các dự án PM quản lý</span>
-                      <span className="px-1 pt-1">Tổng số dự án PM quản lý</span>
+                      <span className="border-b border-slate-500 px-1 pb-1">Tổng điểm các ô có số của mọi dự án PM quản lý</span>
+                      <span className="px-1 pt-1">Số ô có số</span>
                     </span>
                   </div>
                 </div>
