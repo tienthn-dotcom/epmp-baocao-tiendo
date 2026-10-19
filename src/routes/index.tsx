@@ -2,6 +2,7 @@ import { loiNoi, loiNoiVaGhi } from "@/lib/loi-noi";
 import { BaoCaoNgayDialog } from "@/lib/bao-cao-ngay-app";
 import { BangDiemTongHopDialog } from "@/lib/bang-diem-tong-hop-app";
 import TramBaoCao from "@/lib/tram-bao-cao-app";
+import { datNguonTram } from "@/lib/bao-cao-nguon";
 import type { DongNguon as TramDong } from "@/lib/tram-bao-cao";
 import { ghiLuot } from "@/lib/cham-theo-pdf";
 import { createFileRoute } from "@tanstack/react-router";
@@ -661,6 +662,12 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.166.0", date: "19/10/2026", items: [
+    "MỚI: app “Báo cáo” trên thanh bên trái (admin/PMO), gom hai mảng: Tuân thủ tổng hợp (báo cáo ngày · tuần · tháng) và Xuất theo bộ lọc (Trạm xuất báo cáo: hạng mục · vùng · cụm · PM · dự án).",
+    "MẪU XUẤT CHUẨN dùng chung cho cả hai mảng: A4 dọc, dải đỏ và logo AA, tiêu đề navy, hàng số liệu chính, bảng theo vùng, khối Đánh giá nhanh — đúng mẫu PR công ty.",
+    "Tuân thủ tổng hợp có thêm nút “Xem bản in” (xem trước đúng bản sẽ tải) và “Xuất PDF mẫu chuẩn”: chia theo vùng, cuối bản có bảng điểm theo PM. Nút “PDF như màn hình” vẫn giữ.",
+    "Hai màn này vẫn mở được từ menu Hệ thống như cũ.",
+  ] },
   { v: "3.165.0", date: "19/10/2026", items: [
     "MỚI: Hệ thống ▸ “Bảng điểm tuân thủ tổng hợp” — gộp điểm báo cáo NGÀY (Quân số · Sản lượng · Thi công lắp đặt), báo cáo TUẦN (cập nhật Master Plan) và báo cáo THÁNG vào một bảng, chọn tháng để xem lại tháng cũ (có từ 05/2026).",
     "Trình bày theo đúng form Báo cáo tuân thủ cập nhật Master Plan: khung Điểm PM · Chú thích · Cách tính, bảng gộp ô theo Vùng → Người phụ trách, mỗi dòng là một dự án trong danh sách PMP (tháng 10: 83 dự án, 24 PM).",
@@ -4291,6 +4298,8 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
     soMa: i.codeCounts,
     vuongMac: i.note,
   })), [tramItems]);
+  /* Đẩy bản đã tính sang app "Báo cáo" (thanh trái) — xem src/lib/bao-cao-nguon.ts. */
+  useEffect(() => { datNguonTram({ dong: tramDong, thuTuAbbr: STAGE_ABBR_ORDER, nguoiXuat: me.email ?? "" }); }, [tramDong, me.email]);
 
   /* ── LỖI SỐ LIỆU TRONG FILE NGUỒN ──────────────────────────────────────────
      Anh Tiến 15/10/2026: *"làm sao auto nhận diện lỗi >>> người vô đọc thấy được lỗi ở đâu >>>

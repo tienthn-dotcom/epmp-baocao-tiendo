@@ -85,3 +85,21 @@ describe("bảng điểm tổng hợp — mỗi dòng 1 dự án PMP, khớp ph�
     expect([mauDiemPm(45), mauDiemPm(65), mauDiemPm(90), mauDiemPm("")]).toEqual(["#dc2626", "#ca8a04", "#16a34a", "#94a3b8"]);
   });
 });
+
+import { banTongHop } from "@/lib/bao-cao-tong-hop-in";
+describe("bản in mẫu công ty cho báo cáo tuân thủ tổng hợp", () => {
+  it("nhóm theo vùng + nhóm cuối Điểm theo PM; KPI và nhận xét rút từ số", () => {
+    const b = dungBangTongHop("2026-10", docTongHop(luoi()));
+    const ban = banTongHop(b, "2026-10", "19/10/2026 15:53");
+    expect(ban.tieuDe).toBe("Báo cáo tuân thủ tổng hợp - Tháng 10/2026");
+    expect(ban.nhom.map((n) => n.ten)).toEqual(["Vùng Phú Quốc", "Vùng Bắc", "Vùng Nam", "Vùng Nước Ngoài", "Điểm theo PM"]);
+    expect(ban.soDong).toBe(6);
+    expect(ban.kpi.map((k) => k.nhan)).toEqual(["Dự án", "Điểm trung bình", "Dự án dưới 50", "PM", "Chưa có báo cáo ngày"]);
+    // mỗi dòng đủ số cột của mẫu; tên PM chỉ ghi ở dòng đầu nhóm PM
+    expect(ban.nhom[0].dong.every((r) => r.length === ban.cot.length)).toBe(true);
+    expect(ban.nhom[0].dong.map((r) => r[0].t)).toEqual(["Nguyễn Văn Có", "Nguyễn Văn Cừ"]);
+    expect(ban.nhom[0].dong[0][2]).toMatchObject({ t: "69", dam: true });
+    expect(ban.nhom[0].tong?.[0].t).toBe("TB vùng · 2 dự án");
+    expect(ban.nhanXet[0]).toContain("6 dự án");
+  });
+});

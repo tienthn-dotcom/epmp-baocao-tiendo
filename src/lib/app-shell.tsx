@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState, type ReactNode, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, LayoutGrid, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X } from "lucide-react";
+import { LayoutDashboard, LineChart, ListTree, Brain, Database, BarChart3, Video, Images, LayoutGrid, PanelLeftClose, PanelLeftOpen, RefreshCw, Maximize2, X, FileText } from "lucide-react";
 import { detectStage, featureOn, type Stage } from "@/lib/flags";
 import { whoami } from "@/lib/activity.functions";
 import { fetchUserRoles } from "@/lib/edits.functions";
@@ -40,6 +40,7 @@ import { DetailPlanApp } from "@/lib/detail-plan-app";
 import { PmoAiApp } from "@/lib/pmo-ai-app";
 import { DataStudioApp } from "@/lib/data-studio-app";
 import { PerfChartApp } from "@/lib/perf-chart-app";
+import { BaoCaoApp } from "@/lib/bao-cao-app";
 import { CanMediaApp } from "@/lib/can-media-app";
 import { MtldV2App } from "@/lib/mtld-v2-app";
 
@@ -59,6 +60,8 @@ const APPS: AppDef[] = [
   { id: "pmoai", name: "Trợ lý PMO", sub: "Cảnh báo & quyết định", icon: <Brain className="h-5 w-5" /> },
   { id: "datastudio", name: "Dữ liệu dự án", sub: "Nhập & quản lý dữ liệu", icon: <Database className="h-5 w-5" /> },
   { id: "perf", name: "Hiệu suất dự án", sub: "Doanh thu / Nhân sự", icon: <BarChart3 className="h-5 w-5" />, live: true, roleOnly: ["BOD", "PMO"] },
+  // BÁO CÁO (19/10/2026): Tuân thủ tổng hợp + Xuất theo bộ lọc, cùng một mẫu xuất công ty. Xem bao-cao-app.tsx.
+  { id: "baocao", name: "Báo cáo", sub: "Tuân thủ · Xuất theo mẫu", icon: <FileText className="h-5 w-5" />, live: true, adminPmoOnly: true },
   // ĐANG DỰNG (dev-only) — Media công trường: chọn dự án → ma trận → click ô căn → xem/tải ảnh+video.
   // GỘP 04/09/2026: app cũ "Video tại công trường" (clipcan) đã BỎ — Media là bản duy nhất, cùng
   // một cây Drive chuẩn (xem can-media.functions.ts). Đừng dựng lại app cũ.
@@ -132,6 +135,7 @@ export function AppShell({ epmpApp }: { epmpApp: ReactNode }) {
     : shellOn && effectiveApp === "pmoai" ? <PmoAiApp />
     : shellOn && effectiveApp === "datastudio" ? <DataStudioApp />
     : shellOn && effectiveApp === "perf" ? <PerfChartApp />
+    : shellOn && effectiveApp === "baocao" ? <BaoCaoApp onMoEpmp={() => setActiveApp("epmp")} />
     : shellOn && effectiveApp === "media" ? <CanMediaApp wantProject={wantProject} />
     : shellOn && effectiveApp === "mtld2" ? <MtldV2App />
     : epmpApp;

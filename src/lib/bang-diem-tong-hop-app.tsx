@@ -11,11 +11,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, RefreshCw, ExternalLink, FileDown } from "lucide-react";
+import { X, RefreshCw, ExternalLink, FileDown, Eye, Loader2 } from "lucide-react";
 import { getSummaryFile } from "@/lib/mtld-install.functions";
 import { BCN_FILE_ID } from "@/lib/bcn-tai";
 import { docTongHop, dungBangTongHop, gomVungPm, mauDiemPm, nhanThang, xepTheoTenGoi, type DiemO, type LuoiTongHop } from "@/lib/bang-diem-tong-hop";
 import { loiNoi } from "@/lib/loi-noi";
+import { banTongHop } from "@/lib/bao-cao-tong-hop-in";
+import type { BanBaoCao } from "@/lib/tram-bao-cao";
 import { track } from "@/lib/track";
 
 /* GID 4 tab do script tạo — tra ngày 19/10/2026 trên file thật. Đi theo gid để Worker tải ĐÚNG MỘT
@@ -75,7 +77,57 @@ function ODiem({ v, dam }: { v: DiemO | number | ""; dam?: boolean }) {
   return <span className="text-slate-300" title="Chưa có dữ liệu">–</span>;
 }
 
-export function BangDiemTongHopDialog({ onClose }: { onClose: () => void }) {
+/** Khổ A4 ở 96dpi — giữ khớp với tram-bao-cao-pdf.ts. */
+const TRANG_W = 794, TRANG_H = 1123;
+
+/** Xem trước BẢN IN MẪU AA — chính `dungTrang` lúc xuất sẽ gọi, chỉ thu nhỏ (thấy sao in ra vậy). */
+function XemBanIn({ ban, onClose, onXuat, dangXuat }: { ban: BanBaoCao; onClose: () => void; onXuat: () => void; dangXuat: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+  const khung = useRef<HTMLDivElement>(null);
+  const [soTrang, setSoTrang] = useState(0);
+  const [ti, setTi] = useState(0.72);
+  useEffect(() => {
+    const k = khung.current;
+    if (!k) return;
+    const doTi = () => setTi(Math.min(0.9, Math.max(0.3, (k.clientWidth - 32) / TRANG_W)));
+    doTi();
+    const ro = new ResizeObserver(doTi);
+    ro.observe(k);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    const h = host.current;
+    if (!h) return;
+    let huy = false;
+    void import("@/lib/tram-bao-cao-pdf").then(({ xemTruoc }) => { if (!huy) setSoTrang(xemTruoc(ban, h)); });
+    return () => { huy = true; h.textContent = ""; };
+  }, [ban]);
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-900/60 p-0 sm:p-4" onClick={onClose}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white sm:rounded-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-bold text-slate-800">Bản in theo mẫu công ty</div>
+            <div className="text-[11px] text-slate-500">{soTrang} trang A4 · chính là bản sẽ tải về</div>
+          </div>
+          <button onClick={onXuat} disabled={dangXuat}
+            className="flex h-8 items-center gap-1.5 rounded-md bg-[#1F3864] px-3 text-[12px] font-semibold text-white hover:bg-[#162b4d] disabled:opacity-50">
+            {dangXuat ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}{dangXuat ? "Đang dựng…" : "Tải PDF"}
+          </button>
+          <button onClick={onClose} aria-label="Đóng" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
+        </div>
+        <div ref={khung} className="min-h-0 flex-1 overflow-auto bg-slate-200 p-4">
+          <div className="mx-auto" style={{ width: TRANG_W * ti, height: soTrang ? (soTrang * TRANG_H + (soTrang - 1) * 14) * ti : 0 }}>
+            <div ref={host} style={{ width: TRANG_W, transform: `scale(${ti})`, transformOrigin: "top left" }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** `nhung` = đặt thẳng trong trang (app "Báo cáo" ở thanh trái) thay vì hộp thoại. */
+export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void; nhung?: boolean }) {
   const [bump, setBump] = useState(0);
   const q = useQuery({
     queryKey: ["bang-diem-tong-hop", bump],
@@ -96,10 +148,28 @@ export function BangDiemTongHopDialog({ onClose }: { onClose: () => void }) {
   const refBang = useRef<HTMLTableElement>(null);
   const [dangXuat, setDangXuat] = useState(false);
   const [thongBao, setThongBao] = useState("");
+  const [xemIn, setXemIn] = useState(false);
+  const banIn = useMemo(() => (bang ? banTongHop(bang, thang, d?.capNhatLuc ?? "") : null), [bang, thang, d?.capNhatLuc]);
+  const dong = onClose ?? (() => {});
 
-  /* XUẤT PDF — dùng lại bộ máy của báo cáo tuân thủ Master Plan (exportDashboardPdf), khổ dọc gọn
-     một trang như bản Master Plan. Tên file theo khuôn PMO: yymmdd_Tên cố định_MM.YYYY */
-  const xuatPdf = async () => {
+  /* XUẤT PDF THEO MẪU CÔNG TY — cùng khuôn với Trạm xuất báo cáo (lib/bao-cao-tong-hop-in.ts). */
+  const xuatPdfMau = async () => {
+    if (!banIn || dangXuat) return;
+    setDangXuat(true);
+    try {
+      const { xuatPdf } = await import("@/lib/tram-bao-cao-pdf");
+      const ten = await xuatPdf(banIn);
+      setThongBao(`Đã tải ${ten}`);
+      window.setTimeout(() => setThongBao(""), 6000);
+      track("export_pdf", `Tuân thủ tổng hợp (mẫu AA) tháng ${nhanThang(thang)}`);
+    } catch (e) {
+      setThongBao(`Không dựng được PDF: ${loiNoi(e)}`);
+    } finally { setDangXuat(false); }
+  };
+
+  /* BẢN NHƯ MÀN HÌNH — chụp đúng form trên màn (exportDashboardPdf, khổ dọc gọn một trang như bản
+     tuân thủ Master Plan). Tên file theo khuôn PMO: yymmdd_Tên cố định_MM.YYYY */
+  const xuatPdfManHinh = async () => {
     if (!refBang.current || dangXuat) return;
     setDangXuat(true);
     try {
@@ -130,8 +200,11 @@ export function BangDiemTongHopDialog({ onClose }: { onClose: () => void }) {
   const soCotPm = hep ? 1 : nPm > 10 ? 3 : 2;
 
   return (
-    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 sm:p-4">
-      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[94vh] w-full max-w-[1360px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+    <div onClick={nhung ? undefined : dong} className={nhung ? "flex h-full min-h-0 flex-col" : "fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 sm:p-4"}>
+      {xemIn && banIn && <XemBanIn ban={banIn} onClose={() => setXemIn(false)} onXuat={() => void xuatPdfMau()} dangXuat={dangXuat} />}
+      <div onClick={(e) => e.stopPropagation()} className={nhung
+        ? "flex min-h-0 w-full flex-1 flex-col rounded-xl border border-slate-200 bg-white"
+        : "flex max-h-[94vh] w-full max-w-[1360px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl"}>
         {/* ── ĐẦU TRANG (đi vào PDF) + điều khiển (không vào PDF) ── */}
         <div className="flex flex-wrap items-start justify-between gap-2 px-4 pb-1 pt-2 sm:px-5">
           <div ref={refDau} className="min-w-0 flex-1 bg-white text-left">
@@ -157,11 +230,19 @@ export function BangDiemTongHopDialog({ onClose }: { onClose: () => void }) {
               className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
               <ExternalLink className="h-3.5 w-3.5" />File nguồn
             </a>
-            <button onClick={() => void xuatPdf()} disabled={!bang?.duAn.length || dangXuat}
-              className="inline-flex items-center gap-1 rounded-md bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">
-              <FileDown className="h-3.5 w-3.5" />{dangXuat ? "Đang tạo…" : "Xuất PDF"}
+            <button onClick={() => void xuatPdfManHinh()} disabled={!bang?.duAn.length || dangXuat} title="Chụp đúng form đang thấy trên màn hình ra PDF"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+              <FileDown className="h-3.5 w-3.5" />PDF như màn hình
             </button>
-            <button onClick={onClose} aria-label="Đóng" title="Đóng" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+            <button onClick={() => setXemIn(true)} disabled={!bang?.duAn.length} title="Xem trước bản in theo mẫu công ty (logo AA, khung đỏ) rồi tải"
+              className="inline-flex items-center gap-1 rounded-md border border-[#1F3864] bg-white px-2 py-1 text-[11px] font-semibold text-[#1F3864] hover:bg-[#1F3864]/5 disabled:opacity-40">
+              <Eye className="h-3.5 w-3.5" />Xem bản in
+            </button>
+            <button onClick={() => void xuatPdfMau()} disabled={!bang?.duAn.length || dangXuat} title="Xuất PDF theo mẫu công ty (A4 dọc, logo AA)"
+              className="inline-flex items-center gap-1 rounded-md bg-[#1F3864] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#162b4d] disabled:opacity-40">
+              <FileDown className="h-3.5 w-3.5" />{dangXuat ? "Đang tạo…" : "Xuất PDF mẫu chuẩn"}
+            </button>
+            {!nhung && <button onClick={dong} aria-label="Đóng" title="Đóng" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
           </div>
           {thongBao && <div className="w-full text-right text-[11px] text-slate-500">{thongBao}</div>}
         </div>

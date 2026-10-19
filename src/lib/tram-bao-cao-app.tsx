@@ -33,12 +33,15 @@ export type TramProps = {
   thuTuAbbr: readonly string[];
   nguoiXuat?: string;
   onClose: () => void;
+  /** NHÚNG vào trang (app "Báo cáo" ở thanh trái) thay vì hộp thoại phủ màn hình: không lớp phủ,
+      không nút đóng, không bắt phím Esc. */
+  nhung?: boolean;
 };
 
 const oLoc = "h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-[12px] text-slate-700 outline-none focus:border-teal-500";
 const nhanLoc = "mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400";
 
-export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose }: TramProps) {
+export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose, nhung }: TramProps) {
   const [loai, setLoai] = useState<LoaiBaoCao>("hangMuc");
   const [kieu, setKieu] = useState<KieuSo>("pct");
   const [hangMuc, setHangMuc] = useState("");
@@ -96,10 +99,11 @@ export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose }
   }, [ban, nguoiXuat]);
 
   useEffect(() => {
+    if (nhung) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, nhung]);
 
   const xoaLoc = () => { setVung(""); setCum(""); setPm(""); setTim(""); setChonDuAn([]); };
   const coLoc = !!(vung || cum || pm || tim || chonDuAn.length);
@@ -118,9 +122,10 @@ export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose }
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/55 p-0 sm:p-4">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:rounded-lg">
+  const noiDung = (
+      <div className={nhung
+        ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"
+        : "flex min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:rounded-lg"}>
         <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-4 py-2.5">
           <FileText className="h-4 w-4 text-[#A51C21]" />
           <div className="min-w-0 flex-1">
@@ -134,9 +139,11 @@ export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose }
             {dangXuat ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             {dangXuat ? "Đang dựng…" : "Xuất PDF"}
           </button>
-          <button onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-            <X className="h-4 w-4" />
-          </button>
+          {!nhung && (
+            <button onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -239,7 +246,10 @@ export default function TramBaoCao({ dong, rank, thuTuAbbr, nguoiXuat, onClose }
           </div>
         </div>
       </div>
-    </div>,
+  );
+  if (nhung) return noiDung;
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/55 p-0 sm:p-4">{noiDung}</div>,
     document.body,
   );
 }
