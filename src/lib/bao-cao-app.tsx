@@ -3,9 +3,10 @@
  * này là báo cáo tuân thủ tổng hợp, còn mảng báo cáo bộ lọc theo template […] tạo thành 1 app riêng
  * nằm bên cột bên trái"*.
  *
- * Hai mảng, cùng MỘT mẫu xuất (mẫu công ty của Trạm xuất báo cáo — xem tram-bao-cao-pdf.ts):
- *   1. Tuân thủ tổng hợp — bảng điểm ngày + tuần + tháng (bang-diem-tong-hop-app.tsx).
- *   2. Xuất theo bộ lọc — Trạm xuất báo cáo (tram-bao-cao-app.tsx), dữ liệu lấy từ màn ePMP qua
+ * Hai mảng:
+ *   1. Tuân thủ tổng hợp — bảng điểm ngày + tuần + tháng (bang-diem-tong-hop-app.tsx); PDF dựng đúng
+ *      form sheet anh Tiến chỉnh 19/10/2026 (bao-cao-tong-hop-form.ts).
+ *   2. Xuất theo bộ lọc — Trạm xuất báo cáo (tram-bao-cao-app.tsx, mẫu công ty logo AA), dữ liệu lấy từ màn ePMP qua
  *      bao-cao-nguon.ts.
  * Hai màn này vẫn mở được từ menu Hệ thống của ePMP như cũ.
  */

@@ -69,6 +69,43 @@ export async function authGate(request: Request, envIn: unknown): Promise<Respon
     return new Response(JSON.stringify(kq, null, 1), { headers: { "content-type": "application/json; charset=utf-8" } });
   }
 
+  /* ── CỬA ĐỌC CHO AGENT NGOÀI: /may/bao-cao ─────────────────────────────────────────────────
+     Anh Tiến 20/10/2026: *"để cho 1 AI agent từ tài khoản khác lấy được dữ liệu từ app để làm
+     báo cáo"*. Agent không đăng nhập Google được nên không đi cửa người dùng.
+
+     CHỈ ĐỌC, và dùng CHÌA RIÊNG `AGENT_TOKEN` chứ không mượn RENDER_TOKEN: chìa kia đang chạy
+     warmer với cửa dựng PDF tuân thủ, đưa ra ngoài rồi muốn thu hồi là gãy luôn cron.
+     Không đặt AGENT_TOKEN = cửa đóng hẳn (fail-closed), kể cả bản dev.
+
+     Số lấy từ BẢN CHỤP trong KV do client đẩy lên (xem lib/api-bao-cao.ts) — Worker không parse
+     xlsx nổi. Mỗi câu trả lời kèm `luc` = lúc chụp, agent phải nói ra chứ đừng để người đọc
+     tưởng là số thời gian thực. */
+  if (url.pathname === "/may/bao-cao") {
+    const traLoi = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body, null, 1), {
+        status,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+      });
+
+    /* Chìa đọc từ env của Cloudflare; chạy ở máy thì Worker env rỗng nên lùi về process.env để
+       còn thử được. KHÔNG mở toang ở bản dev như cửa /may/cham-bcn: cửa này trả DỮ LIỆU, mà dev
+       server vẫn có thể bị chia sẻ qua LAN hay tunnel. Không có chìa thì đóng, mọi nơi như nhau. */
+    const chia = env.AGENT_TOKEN
+      || (typeof process !== "undefined" ? (process.env?.AGENT_TOKEN as string | undefined) : undefined);
+    const dua = request.headers.get("x-epmp-agent") || url.searchParams.get("rt") || "";
+    if (!chia || !dua || !bangNhauAnToan(dua, chia)) {
+      return traLoi({ ok: false, loi: "không có chìa" }, 403);
+    }
+    if (request.method !== "GET") return traLoi({ ok: false, loi: "chỉ nhận GET" }, 405);
+
+    const { traPhan } = await import("./api-bao-cao.server");
+    try {
+      return traLoi(await traPhan(url, env));
+    } catch (e) {
+      return traLoi({ ok: false, loi: (e as Error)?.message ?? String(e) }, 500);
+    }
+  }
+
   const configured = !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET);
 
   if (!configured) {

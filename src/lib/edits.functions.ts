@@ -1800,6 +1800,31 @@ export const saveEtlRecords = createServerFn({ method: "POST" })
     await writeEtl(data.source, data.bundle);
     return { ok: true };
   });
+/* ── BẢN CHỤP ePMP CHO CỬA AGENT ─────────────────────────────────────────────────────────────
+   Agent ngoài (tài khoản Claude của sếp) không đăng nhập Google được nên đi cửa /may/bao-cao,
+   mà cửa đó chạy trong Worker — nơi KHÔNG parse nổi xlsx (đo 20/10/2026: riêng XLSX.read đã
+   1.027 ms CPU, trần gói Free là 2 giây). Nên client — vốn đã parse xong để vẽ bảng — đẩy một
+   bản chụp gọn vào đây, cửa chỉ việc đọc ra.
+
+   CHỐT CHỐNG ĐỐT HẠN MỨC: gói Free cho 1.000 lượt GHI KV mỗi ngày cho cả app, mà mỗi ngày có
+   10-17 người mở app. Nên chỉ ghi khi VÂN TAY đổi — người thứ hai trở đi mở cùng một bộ số thì
+   không ghi gì. Kiểm ở SERVER chứ không tin client: client cũ hay tab treo vẫn có thể gửi bừa. */
+export const luuAnhChupEpmp = createServerFn({ method: "POST" })
+  .inputValidator((input) => z.object({
+    vanTay: z.string().min(1).max(200),
+    bundle: z.string().max(20_000_000),
+  }).parse(input))
+  .handler(async ({ data }): Promise<{ ok: true; daGhi: boolean }> => {
+    const cu = await readEtl("epmp");
+    if (cu) {
+      try {
+        if ((JSON.parse(cu) as { vanTay?: string }).vanTay === data.vanTay) return { ok: true, daGhi: false };
+      } catch { /* bản cũ hỏng → ghi đè */ }
+    }
+    await writeEtl("epmp", data.bundle);
+    return { ok: true, daGhi: true };
+  });
+
 /** Đọc bundle ETL (công khai) → trả chuỗi JSON hoặc null. Dùng cho dashboard/AI. */
 export const getEtlRecords = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ source: z.enum(["epmp", "detail"]) }).parse(input))

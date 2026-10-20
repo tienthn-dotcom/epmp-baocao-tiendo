@@ -49,6 +49,9 @@ export type AuthEnv = {
    *  "Cập nhật bản gửi mail". Xem ROBOT_EMAIL và nhánh robot trong auth-gate.ts.
    *  KHÔNG đặt = không có đường nào vào app bằng chìa này. */
   RENDER_TOKEN?: string;
+  /** CHÌA RIÊNG CHO AGENT NGOÀI — cửa /may/bao-cao, chỉ ĐỌC. Tách hẳn khỏi RENDER_TOKEN để thu
+   *  hồi được mà không gãy warmer và cửa dựng PDF. KHÔNG đặt = cửa tự đóng. */
+  AGENT_TOKEN?: string;
 };
 
 /** DANH TÍNH CỦA MÁY khi nó tự bấm "Cập nhật bản gửi mail".

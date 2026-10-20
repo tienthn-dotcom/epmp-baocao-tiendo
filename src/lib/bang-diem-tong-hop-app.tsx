@@ -16,8 +16,8 @@ import { getSummaryFile } from "@/lib/mtld-install.functions";
 import { BCN_FILE_ID } from "@/lib/bcn-tai";
 import { docTongHop, dungBangTongHop, gomVungPm, mauDiemPm, nhanThang, xepTheoTenGoi, type DiemO, type LuoiTongHop } from "@/lib/bang-diem-tong-hop";
 import { loiNoi } from "@/lib/loi-noi";
-import { banTongHop } from "@/lib/bao-cao-tong-hop-in";
-import type { BanBaoCao } from "@/lib/tram-bao-cao";
+import type { DuAnTongHop, PmTongHop } from "@/lib/bang-diem-tong-hop";
+import type { ThongTinForm } from "@/lib/bao-cao-tong-hop-form";
 import { track } from "@/lib/track";
 
 /* GID 4 tab do script tạo — tra ngày 19/10/2026 trên file thật. Đi theo gid để Worker tải ĐÚNG MỘT
@@ -77,48 +77,52 @@ function ODiem({ v, dam }: { v: DiemO | number | ""; dam?: boolean }) {
   return <span className="text-slate-300" title="Chưa có dữ liệu">–</span>;
 }
 
-/** Khổ A4 ở 96dpi — giữ khớp với tram-bao-cao-pdf.ts. */
-const TRANG_W = 794, TRANG_H = 1123;
-
-/** Xem trước BẢN IN MẪU AA — chính `dungTrang` lúc xuất sẽ gọi, chỉ thu nhỏ (thấy sao in ra vậy). */
-function XemBanIn({ ban, onClose, onXuat, dangXuat }: { ban: BanBaoCao; onClose: () => void; onXuat: () => void; dangXuat: boolean }) {
+/** Xem trước BẢN PDF — chính `dungTrangForm` lúc xuất sẽ gọi, chỉ thu nhỏ (thấy sao in ra vậy). */
+function XemBanIn({ bang, tt, onClose, onXuat, dangXuat }: {
+  bang: { duAn: DuAnTongHop[]; pm: PmTongHop[] }; tt: ThongTinForm; onClose: () => void; onXuat: () => void; dangXuat: boolean;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const khung = useRef<HTMLDivElement>(null);
   const [soTrang, setSoTrang] = useState(0);
-  const [ti, setTi] = useState(0.72);
+  const [kho, setKho] = useState({ W: 1164, H: 1646 });
+  const [ti, setTi] = useState(0.6);
   useEffect(() => {
     const k = khung.current;
     if (!k) return;
-    const doTi = () => setTi(Math.min(0.9, Math.max(0.3, (k.clientWidth - 32) / TRANG_W)));
+    const doTi = () => setTi(Math.min(0.9, Math.max(0.25, (k.clientWidth - 32) / kho.W)));
     doTi();
     const ro = new ResizeObserver(doTi);
     ro.observe(k);
     return () => ro.disconnect();
-  }, []);
+  }, [kho.W]);
   useEffect(() => {
     const h = host.current;
     if (!h) return;
     let huy = false;
-    void import("@/lib/tram-bao-cao-pdf").then(({ xemTruoc }) => { if (!huy) setSoTrang(xemTruoc(ban, h)); });
+    void import("@/lib/bao-cao-tong-hop-form").then(({ xemTruocForm, KHO_TRANG }) => {
+      if (huy) return;
+      setKho(KHO_TRANG);
+      setSoTrang(xemTruocForm(bang, tt, h));
+    });
     return () => { huy = true; h.textContent = ""; };
-  }, [ban]);
+  }, [bang, tt]);
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-slate-900/60 p-0 sm:p-4" onClick={onClose}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white sm:rounded-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 px-4 py-2.5">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold text-slate-800">Bản in theo mẫu công ty</div>
-            <div className="text-[11px] text-slate-500">{soTrang} trang A4 · chính là bản sẽ tải về</div>
+            <div className="text-[13px] font-bold text-slate-800">Bản PDF — đúng form báo cáo tuân thủ tổng hợp</div>
+            <div className="text-[11px] text-slate-500">{soTrang} trang A4 dọc · chính là bản sẽ tải về</div>
           </div>
           <button onClick={onXuat} disabled={dangXuat}
-            className="flex h-8 items-center gap-1.5 rounded-md bg-[#1F3864] px-3 text-[12px] font-semibold text-white hover:bg-[#162b4d] disabled:opacity-50">
+            className="flex h-8 items-center gap-1.5 rounded-md bg-teal-700 px-3 text-[12px] font-semibold text-white hover:bg-teal-800 disabled:opacity-50">
             {dangXuat ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}{dangXuat ? "Đang dựng…" : "Tải PDF"}
           </button>
           <button onClick={onClose} aria-label="Đóng" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-4 w-4" /></button>
         </div>
         <div ref={khung} className="min-h-0 flex-1 overflow-auto bg-slate-200 p-4">
-          <div className="mx-auto" style={{ width: TRANG_W * ti, height: soTrang ? (soTrang * TRANG_H + (soTrang - 1) * 14) * ti : 0 }}>
-            <div ref={host} style={{ width: TRANG_W, transform: `scale(${ti})`, transformOrigin: "top left" }} />
+          <div className="mx-auto" style={{ width: kho.W * ti, height: soTrang ? (soTrang * kho.H + (soTrang - 1) * 14) * ti : 0 }}>
+            <div ref={host} style={{ width: kho.W, transform: `scale(${ti})`, transformOrigin: "top left" }} />
           </div>
         </div>
       </div>
@@ -143,52 +147,23 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
   const nhom = useMemo(() => (bang ? gomVungPm(bang.duAn) : []), [bang]);
   const pmXep = useMemo(() => (bang ? [...bang.pm].sort((a, b) => xepTheoTenGoi(a.pm, b.pm)) : []), [bang]);
 
-  const refDau = useRef<HTMLDivElement>(null);
-  const refKhung = useRef<HTMLDivElement>(null);
-  const refBang = useRef<HTMLTableElement>(null);
   const [dangXuat, setDangXuat] = useState(false);
   const [thongBao, setThongBao] = useState("");
   const [xemIn, setXemIn] = useState(false);
-  const banIn = useMemo(() => (bang ? banTongHop(bang, thang, d?.capNhatLuc ?? "") : null), [bang, thang, d?.capNhatLuc]);
+  const tt = useMemo<ThongTinForm>(() => ({ thang, capNhatLuc: d?.capNhatLuc ?? "" }), [thang, d?.capNhatLuc]);
   const dong = onClose ?? (() => {});
 
-  /* XUẤT PDF THEO MẪU CÔNG TY — cùng khuôn với Trạm xuất báo cáo (lib/bao-cao-tong-hop-in.ts). */
-  const xuatPdfMau = async () => {
-    if (!banIn || dangXuat) return;
+  /* XUẤT PDF — đúng form sheet anh Tiến đã chỉnh (lib/bao-cao-tong-hop-form.ts), A4 dọc.
+     Tên file theo khuôn PMO: yymmdd_Tên cố định_MM.YYYY */
+  const xuatPdf = async () => {
+    if (!bang?.duAn.length || dangXuat) return;
     setDangXuat(true);
     try {
-      const { xuatPdf } = await import("@/lib/tram-bao-cao-pdf");
-      const ten = await xuatPdf(banIn);
-      setThongBao(`Đã tải ${ten}`);
+      const { xuatPdfForm } = await import("@/lib/bao-cao-tong-hop-form");
+      const r = await xuatPdfForm(bang, tt);
+      setThongBao(`Đã tải ${r.ten} · ${r.soTrang} trang`);
       window.setTimeout(() => setThongBao(""), 6000);
-      track("export_pdf", `Tuân thủ tổng hợp (mẫu AA) tháng ${nhanThang(thang)}`);
-    } catch (e) {
-      setThongBao(`Không dựng được PDF: ${loiNoi(e)}`);
-    } finally { setDangXuat(false); }
-  };
-
-  /* BẢN NHƯ MÀN HÌNH — chụp đúng form trên màn (exportDashboardPdf, khổ dọc gọn một trang như bản
-     tuân thủ Master Plan). Tên file theo khuôn PMO: yymmdd_Tên cố định_MM.YYYY */
-  const xuatPdfManHinh = async () => {
-    if (!refBang.current || dangXuat) return;
-    setDangXuat(true);
-    try {
-      const { exportDashboardPdf } = await import("@/lib/pdf-export");
-      const khoi = [refDau.current, refKhung.current].filter((el): el is HTMLDivElement => {
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        return r.width > 1 && r.height > 1;   // khối rộng 0 làm jsPDF chia cho 0 — xem bao-cao-ngay-app
-      });
-      const n = new Date();
-      const p2 = (x: number) => String(x).padStart(2, "0");
-      const yymmdd = `${String(n.getFullYear()).slice(2)}${p2(n.getMonth() + 1)}${p2(n.getDate())}`;
-      const r = await exportDashboardPdf({
-        blocks: khoi, table: refBang.current, wide: true, orientation: "portrait", tableFitOnePage: true, keepColWidths: true,
-        fileName: `${yymmdd}_Báo cáo tuân thủ tổng hợp_${thang.slice(5, 7)}.${thang.slice(0, 4)}.pdf`,
-      });
-      setThongBao(`Đã tải bản PDF · ${r.pages} trang`);
-      window.setTimeout(() => setThongBao(""), 6000);
-      track("export_pdf", `Bảng điểm tuân thủ tổng hợp tháng ${nhanThang(thang)}`);
+      track("export_pdf", `Tuân thủ tổng hợp tháng ${nhanThang(thang)}`);
     } catch (e) {
       setThongBao(`Không dựng được PDF: ${loiNoi(e)}`);
     } finally { setDangXuat(false); }
@@ -201,13 +176,13 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
 
   return (
     <div onClick={nhung ? undefined : dong} className={nhung ? "flex h-full min-h-0 flex-col" : "fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 sm:p-4"}>
-      {xemIn && banIn && <XemBanIn ban={banIn} onClose={() => setXemIn(false)} onXuat={() => void xuatPdfMau()} dangXuat={dangXuat} />}
+      {xemIn && bang && <XemBanIn bang={bang} tt={tt} onClose={() => setXemIn(false)} onXuat={() => void xuatPdf()} dangXuat={dangXuat} />}
       <div onClick={(e) => e.stopPropagation()} className={nhung
         ? "flex min-h-0 w-full flex-1 flex-col rounded-xl border border-slate-200 bg-white"
         : "flex max-h-[94vh] w-full max-w-[1360px] flex-col rounded-xl border border-slate-200 bg-white shadow-xl"}>
         {/* ── ĐẦU TRANG (đi vào PDF) + điều khiển (không vào PDF) ── */}
         <div className="flex flex-wrap items-start justify-between gap-2 px-4 pb-1 pt-2 sm:px-5">
-          <div ref={refDau} className="min-w-0 flex-1 bg-white text-left">
+          <div className="min-w-0 flex-1 bg-white text-left">
             <div className="text-base font-extrabold tracking-tight text-[#1e3a5f]">Báo cáo tuân thủ tổng hợp - Tháng {nhanThang(thang)}</div>
             <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700">OCC · Phòng Điều hành Trung tâm</div>
             <div className="mt-0.5 text-[11px] text-slate-500">
@@ -235,17 +210,13 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
               className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
               <ExternalLink className="h-3.5 w-3.5" />File nguồn
             </a>
-            <button onClick={() => void xuatPdfManHinh()} disabled={!bang?.duAn.length || dangXuat} title="Chụp đúng form đang thấy trên màn hình ra PDF"
+            <button onClick={() => setXemIn(true)} disabled={!bang?.duAn.length} title="Xem trước bản PDF (đúng form báo cáo) rồi tải"
               className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-              <FileDown className="h-3.5 w-3.5" />PDF như màn hình
-            </button>
-            <button onClick={() => setXemIn(true)} disabled={!bang?.duAn.length} title="Xem trước bản in theo mẫu công ty (logo AA, khung đỏ) rồi tải"
-              className="inline-flex items-center gap-1 rounded-md border border-[#1F3864] bg-white px-2 py-1 text-[11px] font-semibold text-[#1F3864] hover:bg-[#1F3864]/5 disabled:opacity-40">
               <Eye className="h-3.5 w-3.5" />Xem bản in
             </button>
-            <button onClick={() => void xuatPdfMau()} disabled={!bang?.duAn.length || dangXuat} title="Xuất PDF theo mẫu công ty (A4 dọc, logo AA)"
-              className="inline-flex items-center gap-1 rounded-md bg-[#1F3864] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#162b4d] disabled:opacity-40">
-              <FileDown className="h-3.5 w-3.5" />{dangXuat ? "Đang tạo…" : "Xuất PDF mẫu chuẩn"}
+            <button onClick={() => void xuatPdf()} disabled={!bang?.duAn.length || dangXuat} title="Tải PDF A4 dọc, đúng form báo cáo tuân thủ tổng hợp"
+              className="inline-flex items-center gap-1 rounded-md bg-teal-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-800 disabled:opacity-40">
+              <FileDown className="h-3.5 w-3.5" />{dangXuat ? "Đang tạo…" : "Xuất PDF"}
             </button>
             {!nhung && <button onClick={dong} aria-label="Đóng" title="Đóng" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
           </div>
@@ -263,9 +234,9 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
             </div>
           ) : !bang ? null : (
             <>
-              {/* ── KHUNG 4 Ô — cùng khuôn với báo cáo tuân thủ Master Plan ── */}
-              <div ref={refKhung} className="mb-2 flex flex-wrap items-stretch overflow-hidden rounded-md border border-slate-300 bg-white text-[10px] leading-snug text-slate-600 xl:flex-nowrap">
-                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-auto md:flex-[2.4] md:border-b-0 md:border-r">
+              {/* ── KHUNG 3 Ô — đúng bản anh Tiến chỉnh 19/10/2026 (bỏ ô Chú thích); tỉ lệ bề ngang = sheet ── */}
+              <div className="mb-2 flex flex-wrap items-stretch overflow-hidden rounded-md border border-slate-300 bg-white text-[10px] leading-snug text-slate-600 lg:flex-nowrap">
+                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 lg:basis-[43%] lg:border-b-0 lg:border-r">
                   <div className="mb-2 font-semibold text-slate-700">Điểm PM:</div>
                   {nPm ? (
                     <div className="grid gap-x-4 leading-[1.3]" style={{ fontSize: soCotPm === 3 ? 11 : 12, gridAutoFlow: "column", gridTemplateRows: `repeat(${Math.ceil(nPm / soCotPm)}, auto)` }}>
@@ -278,33 +249,21 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
                     </div>
                   ) : <div className="text-slate-400">Chưa có dữ liệu tháng này.</div>}
                 </div>
-                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-auto md:flex-[0.55] md:border-b-0 md:border-r">
-                  <div className="mb-2 font-semibold text-slate-700">Chú thích:</div>
-                  <div className="flex flex-col gap-1.5">
-                    <div className="font-semibold text-slate-700">Điểm dự án</div>
-                    <div className="whitespace-nowrap"><span className="text-red-600">●</span> dưới 50</div>
-                    <div className="whitespace-nowrap"><span className="text-slate-900">●</span> từ 50 trở lên</div>
-                    <div className="whitespace-nowrap"><b className="text-slate-300">–</b>&nbsp; chưa có điểm</div>
-                    <div className="whitespace-nowrap"><span className="text-slate-400">n/a</span> không áp dụng</div>
-                    <div className="mt-1 font-semibold text-slate-700">Điểm PM</div>
-                    <div className="whitespace-nowrap"><span style={{ color: "#16a34a" }}>●</span> từ 70 &nbsp;<span style={{ color: "#ca8a04" }}>●</span> 50–69 &nbsp;<span style={{ color: "#dc2626" }}>●</span> dưới 50</div>
-                  </div>
-                </div>
-                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:min-w-[240px] md:basis-auto md:flex-1 md:border-b-0 md:border-r">
+                <div className="flex basis-full flex-col border-b border-slate-300 px-3 py-2 md:basis-1/2 md:border-r lg:basis-[29.2%] lg:border-b-0">
                   <div className="mb-2 font-semibold text-slate-700">Cách tính điểm dự án:</div>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-1 flex-col justify-center gap-1">
                     <div>(1) Báo cáo ngày: <b className="text-slate-800">100 điểm/tháng</b>; trễ/thiếu <b className="text-amber-600">−2</b>; không báo cáo <b className="text-red-600">−5</b>.</div>
                     <div>(2) Báo cáo tuần: không cập nhật <b className="text-red-600">−25</b>; trễ <b className="text-amber-600">−10</b>.</div>
                     <div>(3) Báo cáo tháng:</div>
                     <div><b className="text-slate-800">(4) Điểm trung bình = tổng các ô điểm có số ÷ số ô có số</b> (ô chưa có dữ liệu không tính).</div>
                   </div>
                 </div>
-                <div className="flex basis-full flex-col px-3 py-2 md:min-w-[230px] md:basis-auto md:flex-1">
+                <div className="flex basis-full flex-col px-3 py-2 md:basis-1/2 lg:basis-[27.8%]">
                   <div className="mb-2 font-semibold text-slate-700">Cách tính điểm PM:</div>
                   <div className="flex flex-1 items-center gap-2">
                     <span className="whitespace-nowrap">Điểm PM =</span>
                     <span className="inline-flex flex-col text-center leading-relaxed">
-                      <span className="border-b border-slate-500 px-1 pb-1">Tổng điểm các ô có số của mọi dự án PM quản lý</span>
+                      <span className="border-b border-slate-500 px-1 pb-1">Tổng điểm ô có số của mọi dự án PM quản lý</span>
                       <span className="px-1 pt-1">Số ô có số</span>
                     </span>
                   </div>
@@ -313,10 +272,10 @@ export function BangDiemTongHopDialog({ onClose, nhung }: { onClose?: () => void
 
               {/* ── BẢNG ── điện thoại: giữ khổ đọc được rồi cuộn ngang (mẫu FitOrScroll của app) */}
               <div className="overflow-x-auto">
-                <table ref={refBang} className="w-full min-w-[900px] table-fixed border-collapse text-[11px] [&_tbody_td]:border-b [&_tbody_td]:border-slate-300">
+                <table className="w-full min-w-[900px] table-fixed border-collapse text-[11px] [&_tbody_td]:border-b [&_tbody_td]:border-slate-300">
                   <colgroup>
-                    <col style={{ width: "7%" }} /><col style={{ width: "13%" }} /><col style={{ width: "30%" }} /><col style={{ width: "8%" }} />
-                    <col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "9%" }} /><col style={{ width: "9%" }} />
+                    {/* tỉ lệ = đúng bề rộng cột sheet (px): 68 · 136 · 398 · 68 · 68 · 68 · 68 · 125 · 117 */}
+                    {[68, 136, 398, 68, 68, 68, 68, 125, 117].map((w, i) => <col key={i} style={{ width: `${(w / 1116) * 100}%` }} />)}
                   </colgroup>
                   <thead className="text-white">
                     <tr>

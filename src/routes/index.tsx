@@ -4,6 +4,8 @@ import { BangDiemTongHopDialog } from "@/lib/bang-diem-tong-hop-app";
 import TramBaoCao from "@/lib/tram-bao-cao-app";
 import { datNguonTram } from "@/lib/bao-cao-nguon";
 import type { DongNguon as TramDong } from "@/lib/tram-bao-cao";
+import { vanTayCua, type AnhChupEpmp, type DongEpmp } from "@/lib/api-bao-cao";
+import { luuAnhChupEpmp } from "@/lib/edits.functions";
 import { ghiLuot } from "@/lib/cham-theo-pdf";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, createContext, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -662,6 +664,11 @@ function HeaderSlot({ children }: { children: ReactNode }) {
  *  đây = nguồn sự thật DUY NHẤT (khỏi sửa 2 nơi). Chi tiết kỹ thuật xem block comment phía trên. */
 type ChangelogEntry = { v: string; date: string; items: string[] };
 const CHANGELOG: readonly ChangelogEntry[] = [
+  { v: "3.168.0", date: "20/10/2026", items: [
+    "CỬA ĐỌC SỐ CHO CÔNG CỤ NGOÀI: app có thêm một đường /may/bao-cao trả JSON, để một AI agent ở tài khoản khác lấy số làm báo cáo mà không cần đăng nhập Google, không cần mã nguồn, không cần quyền Drive. Năm phần: dự án · cảnh báo · tuân thủ · sản lượng · vận hành ma trận.",
+    "Cửa này CHỈ ĐỌC và dùng chìa riêng, tách khỏi chìa của warmer — thu hồi lúc nào cũng được mà không gãy việc tự động. Chưa đặt chìa thì cửa đóng.",
+    "Số ở cửa lấy từ bản chụp mà app tự đẩy lên mỗi lần có người mở, kèm mốc thời gian chụp để người đọc biết số cũ hay mới.",
+  ] },
   { v: "3.167.0", date: "19/10/2026", items: [
     "Báo cáo ▸ Tuân thủ tổng hợp: ĐIỂM PM nay cộng mọi ô điểm có số của các dự án PM quản lý rồi chia cho số ô đó — vd (90 + 100 + 5 + 100 + 90 + 85 + 5 + 25 + 90) / 9 — thay vì lấy trung bình điểm các dự án. Dự án chỉ có một ô điểm không còn kéo điểm PM lên.",
     "Điểm trung bình của dự án và của PM làm tròn số nguyên.",
@@ -4306,6 +4313,55 @@ function DashboardBody({ data, dataMode, thresholds, onOpenSource }: { data: Rep
   })), [tramItems]);
   /* Đẩy bản đã tính sang app "Báo cáo" (thanh trái) — xem src/lib/bao-cao-nguon.ts. */
   useEffect(() => { datNguonTram({ dong: tramDong, thuTuAbbr: STAGE_ABBR_ORDER, nguoiXuat: me.email ?? "" }); }, [tramDong, me.email]);
+
+  /* ── ĐẨY BẢN CHỤP LÊN KHO CHO CỬA AGENT ───────────────────────────────────
+     Anh Tiến 20/10/2026: sếp cần một AI agent ở tài khoản khác lấy số của app để làm báo cáo.
+     Agent đi cửa /may/bao-cao, mà cửa đó chạy trong Worker — nơi KHÔNG parse nổi xlsx (đo
+     20/10: riêng XLSX.read đã 1.027 ms CPU, trần gói Free 2 giây). Client thì vốn ĐÃ parse xong
+     để vẽ bảng, nên nó đẩy một bản chụp gọn lên KV, cửa chỉ việc đọc ra.
+
+     BA CHỐT để không đốt hạn mức ghi KV (gói Free: 1.000 lượt/ngày cho CẢ app, mà mỗi ngày
+     10-17 người mở):
+       · chỉ gửi khi dữ liệu đã nạp xong và có dòng;
+       · gửi MỘT LẦN mỗi lượt mở app (useRef chặn), không gửi lại khi React vẽ lại;
+       · server so VÂN TAY trước, trùng thì không ghi — người thứ hai mở cùng bộ số là không tốn
+         lượt ghi nào. Xem luuAnhChupEpmp trong edits.functions.ts.
+     Hỏng thì im lặng bỏ qua: đây là việc phụ, không được phép làm hỏng màn hình của người đang dùng. */
+  const daDayAnhRef = useRef(false);
+  useEffect(() => {
+    if (daDayAnhRef.current || !tramItems.length) return;
+    daDayAnhRef.current = true;
+    const dong: DongEpmp[] = tramItems.map((i) => ({
+      maCT: i.maCT || i.projectCode,
+      duAn: i.projectName,
+      vung: vungVN(i.region || ""),
+      cum: i.groupDA || "",
+      pm: pmFirstOf(i._projectPm),
+      hangMuc: i._stageLabel,
+      abbr: stageAbbrOf(i._stageId),
+      nguoiPhuTrach: i._pic || "",
+      batDau: i.start,
+      ketThuc: i.deadline,
+      pctKeHoach: i.pctPlan,
+      pctThucTe: i.pctActual,
+      soNgayTre: i.overdueDays,
+      canhBao: i._alert,
+      vuongMac: i.note || "",
+      giaiPhap: i._action || "",
+      ...(i.codeCounts?.length
+        ? { soMa: i.codeCounts.map((c) => ({ nhan: c.label, xong: c.done, tong: c.total })) }
+        : {}),
+    }));
+    const anh: AnhChupEpmp = {
+      v: 1,
+      luc: new Date().toISOString(),
+      nguon: data.sourceLabel || "Project Master Plan",
+      vanTay: vanTayCua(dong),
+      dong,
+    };
+    void luuAnhChupEpmp({ data: { vanTay: anh.vanTay, bundle: JSON.stringify(anh) } })
+      .catch(() => { /* việc phụ, hỏng cũng không được làm phiền người đang dùng */ });
+  }, [tramItems, data.sourceLabel]);
 
   /* ── LỖI SỐ LIỆU TRONG FILE NGUỒN ──────────────────────────────────────────
      Anh Tiến 15/10/2026: *"làm sao auto nhận diện lỗi >>> người vô đọc thấy được lỗi ở đâu >>>
